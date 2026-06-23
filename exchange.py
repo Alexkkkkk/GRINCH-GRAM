@@ -5,21 +5,13 @@ from config import Config
 from datetime import datetime, timedelta
 from price_feed import price_feed
 
-# Базовые ориентировочные цены монет для демо-режима (USDT)
+# Базовые ориентировочные цены экосистемы TON для демо-режима (USDT).
+# Используются только как фолбэк, если реальный API недоступен.
 BASE_PRICES = {
-    "GRINCH": 0.025,
-    "BTC": 67000.0,
-    "ETH": 3500.0,
-    "TON": 1.55,
-    "SOL": 150.0,
-    "BNB": 600.0,
-    "XRP": 0.52,
-    "DOGE": 0.16,
-    "ADA": 0.45,
-    "AVAX": 35.0,
-    "MATIC": 0.72,
+    "GRINCH": 0.00027,   # GRINCH-джеттон в сети TON
+    "TON": 1.55,         # The Open Network
 }
-DEFAULT_BASE_PRICE = 100.0
+DEFAULT_BASE_PRICE = 1.0
 
 
 class ExchangeClient:

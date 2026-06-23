@@ -56,46 +56,79 @@ class Trader:
         ai     = self.ai.analyze(ohlcv)
         self.last_ai = ai
 
-        signal    = result["signal"]
-        ai_signal = ai.get("ai_signal", "HOLD")
-        price     = result["price"]
-        conf      = ai.get("confidence", 0)
-        regime    = ai.get("regime", {}).get("name", "?")
-        anomaly   = ai.get("anomaly", {}).get("detected", False)
+        signal     = result["signal"]
+        ai_signal  = ai.get("ai_signal", "HOLD")
+        price      = result["price"]
+        conf       = ai.get("confidence", 0)
+        rsi        = result.get("rsi", 50)
+        regime     = ai.get("regime", {}) or {}
+        regime_name = regime.get("name", "?")
+        anomaly    = ai.get("anomaly", {}).get("detected", False)
 
-        # Ансамбль: стратегия + AI должны совпасть
+        # Сначала сопровождаем открытые позиции (трейлинг-стоп, SL/TP)
+        self._check_stop_loss_take_profit(price)
+
+        # Ансамбль: стратегия + AI должны совпасть, либо AI с высокой уверенностью
         final_signal = "HOLD"
         if signal == ai_signal and signal != "HOLD":
             final_signal = signal
-        elif ai_signal != "HOLD" and conf >= 65:
+        elif ai_signal != "HOLD" and conf >= Config.AI_OVERRIDE_CONFIDENCE:
             final_signal = ai_signal
 
         if anomaly:
             self.log(f"⚠️ АНОМАЛИЯ обнаружена! Z-score цены={ai['anomaly']['z_price']}", "WARN")
 
+        # Профит-фильтры качества входа (только для покупки)
+        blocked = None
+        if final_signal == "BUY":
+            if Config.TREND_FILTER and regime_name == "DOWNTREND":
+                blocked = "нисходящий тренд"
+            elif rsi >= Config.RSI_OVERBOUGHT:
+                blocked = f"перекупленность RSI={rsi}"
+            elif conf < Config.MIN_AI_CONFIDENCE:
+                blocked = f"низкая уверенность AI {conf}%"
+            elif anomaly:
+                blocked = "рыночная аномалия"
+
         self.log(
-            f"📊 RSI={result['rsi']} | {regime} | "
-            f"Сигнал={signal} | AI={ai_signal}({conf}%) | Итог={final_signal}",
+            f"📊 RSI={rsi} | {regime_name} | "
+            f"Сигнал={signal} | AI={ai_signal}({conf}%) | Итог={'HOLD' if blocked else final_signal}",
             level="INFO"
         )
 
-        self._check_stop_loss_take_profit(price)
-
-        if final_signal == "BUY" and len(self.open_trades) < Config.MAX_OPEN_TRADES:
+        if final_signal == "BUY" and blocked:
+            self.log(f"⏸️ Вход отменён: {blocked}", "WARN")
+        elif final_signal == "BUY" and len(self.open_trades) < Config.MAX_OPEN_TRADES:
             self._open_trade("buy", price, result, ai)
         elif final_signal == "SELL" and self.open_trades:
             self._close_all_trades(price, result)
 
+    def _targets(self, price, ai):
+        """Динамические стоп-лосс/тейк-профит по волатильности (ATR), с учётом комиссии."""
+        atr_pct = (ai.get("regime", {}) or {}).get("atr_pct", 0) / 100.0 if ai else 0.0
+        if Config.USE_DYNAMIC_TARGETS and atr_pct > 0:
+            sl_pct = max(atr_pct * Config.ATR_SL_MULT * 100, Config.STOP_LOSS_PCT)
+            tp_pct = max(atr_pct * Config.ATR_TP_MULT * 100, Config.TAKE_PROFIT_PCT)
+        else:
+            sl_pct, tp_pct = Config.STOP_LOSS_PCT, Config.TAKE_PROFIT_PCT
+        # Тейк обязан перекрывать комиссию обоих сделок с запасом
+        tp_pct = max(tp_pct, Config.FEE_PCT * 2 + 0.5)
+        return sl_pct, tp_pct
+
     def _open_trade(self, side, price, analysis, ai=None):
-        amount = Config.TRADE_AMOUNT / price
+        ai_conf = ai.get("confidence", 0) if ai else 0
+
+        # Размер позиции масштабируется уверенностью AI (0.5×…1.0× от суммы)
+        conf_factor = 0.5 + min(max((ai_conf - 50) / 50.0, 0.0), 1.0) * 0.5
+        stake  = Config.TRADE_AMOUNT * conf_factor
+        amount = stake / price
         order  = self.exchange.place_order(side, amount)
         if not order:
             return
 
-        sl = self.exchange._round(price * (1 - Config.STOP_LOSS_PCT / 100))
-        tp = self.exchange._round(price * (1 + Config.TAKE_PROFIT_PCT / 100))
-
-        ai_conf = ai.get("confidence", 0) if ai else 0
+        sl_pct, tp_pct = self._targets(price, ai)
+        sl = self.exchange._round(price * (1 - sl_pct / 100))
+        tp = self.exchange._round(price * (1 + tp_pct / 100))
 
         trade = {
             "id": order["id"],
@@ -105,6 +138,8 @@ class Trader:
             "amount": round(amount, 6),
             "stop_loss": sl,
             "take_profit": tp,
+            "trail_pct": Config.TRAILING_STOP_PCT,
+            "high_water": price,
             "opened_at": datetime.utcnow().isoformat(),
             "pnl": 0.0,
             "status": "open",
@@ -113,7 +148,10 @@ class Trader:
         self.open_trades.append(trade)
         self.trades.append(dict(trade))
         self.stats["total_trades"] += 1
-        self.log(f"🟢 BUY @ {price} | SL={sl} | TP={tp} | AI={ai_conf}%", "BUY")
+        self.log(
+            f"🟢 BUY @ {price} | {stake:.0f} USDT | SL={sl}(-{sl_pct:.1f}%) | "
+            f"TP={tp}(+{tp_pct:.1f}%) | AI={ai_conf}%", "BUY"
+        )
 
     def _close_all_trades(self, price, analysis):
         for trade in list(self.open_trades):
@@ -126,14 +164,30 @@ class Trader:
         for trade in list(self.open_trades):
             if trade.get("symbol", Config.SYMBOL) != Config.SYMBOL:
                 continue
+
+            # Трейлинг-стоп: подтягиваем стоп вверх вслед за ценой, фиксируя прибыль
+            trail = trade.get("trail_pct", 0)
+            if trail and price > trade.get("high_water", trade["entry_price"]):
+                trade["high_water"] = price
+                new_sl = self.exchange._round(price * (1 - trail / 100))
+                # Поднимаем стоп только если он выше текущего и уже в зоне прибыли
+                if new_sl > trade["stop_loss"] and new_sl > trade["entry_price"]:
+                    trade["stop_loss"] = new_sl
+                    self.log(f"🔼 Трейлинг-стоп поднят до {new_sl}", "INFO")
+
             if price <= trade["stop_loss"]:
-                self._close_trade(trade, price, "stop_loss")
+                reason = "trailing" if trade["stop_loss"] > trade["entry_price"] else "stop_loss"
+                self._close_trade(trade, price, reason)
             elif price >= trade["take_profit"]:
                 self._close_trade(trade, price, "take_profit")
 
     def _close_trade(self, trade, price, reason):
-        pnl = round((price - trade["entry_price"]) * trade["amount"], 2)
+        gross = (price - trade["entry_price"]) * trade["amount"]
+        # Комиссия берётся на входе и на выходе (FEE_PCT — за одну сделку)
+        fee = (trade["entry_price"] + price) * trade["amount"] * Config.FEE_PCT / 100
+        pnl = round(gross - fee, 2)
         trade["pnl"] = pnl
+        trade["fee"] = round(fee, 2)
         trade["exit_price"] = price
         trade["closed_at"] = datetime.utcnow().isoformat()
         trade["close_reason"] = reason

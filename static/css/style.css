@@ -267,6 +267,17 @@ body { background: var(--bg); color: var(--text); font-family: 'Segoe UI', syste
 .ex-ch { font-size: 11px; min-width: 48px; text-align: right; }
 .ex-liq { font-size: 10px; color: var(--text2); min-width: 64px; text-align: right; }
 
+.cfg-check {
+  flex-direction: row !important; align-items: center; gap: 8px;
+  font-size: 12px; color: var(--text2); cursor: pointer;
+}
+.cfg-check input { width: auto; margin: 0; }
+.cfg-note {
+  font-size: 11px; color: var(--text2); line-height: 1.4;
+  background: rgba(255,176,32,0.08); border: 1px solid rgba(255,176,32,0.2);
+  border-radius: 8px; padding: 8px 10px; margin-top: 4px;
+}
+
 @media (max-width: 900px) {
   .main-grid { grid-template-columns: 1fr; }
   .col-left, .col-right { border: none; }

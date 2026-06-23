@@ -292,7 +292,12 @@ async function saveConfig() {
     trade_amount: document.getElementById("cfg-amount").value,
     stop_loss_pct: document.getElementById("cfg-sl").value,
     take_profit_pct: document.getElementById("cfg-tp").value,
+    trailing_stop_pct: document.getElementById("cfg-trail").value,
+    fee_pct: document.getElementById("cfg-fee").value,
+    min_ai_confidence: document.getElementById("cfg-minconf").value,
     max_open_trades: document.getElementById("cfg-max").value,
+    use_dynamic_targets: document.getElementById("cfg-dyn").checked,
+    trend_filter: document.getElementById("cfg-trend").checked,
   };
   const r = await fetch("/api/config", {method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify(cfg)});
   const d = await r.json();
@@ -305,7 +310,12 @@ async function loadConfig() {
   document.getElementById("cfg-amount").value  = cfg.trade_amount;
   document.getElementById("cfg-sl").value      = cfg.stop_loss_pct;
   document.getElementById("cfg-tp").value      = cfg.take_profit_pct;
+  document.getElementById("cfg-trail").value   = cfg.trailing_stop_pct;
+  document.getElementById("cfg-fee").value     = cfg.fee_pct;
+  document.getElementById("cfg-minconf").value = cfg.min_ai_confidence;
   document.getElementById("cfg-max").value     = cfg.max_open_trades;
+  document.getElementById("cfg-dyn").checked   = !!cfg.use_dynamic_targets;
+  document.getElementById("cfg-trend").checked = !!cfg.trend_filter;
   document.getElementById("demo-badge").style.display = cfg.demo_mode ? "" : "none";
   if (cfg.ton_wallet) {
     window._tonWallet = cfg.ton_wallet;

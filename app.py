@@ -1,4 +1,5 @@
 import json
+import math
 import numpy as np
 from flask import Flask, render_template, jsonify, request
 from flask.json.provider import DefaultJSONProvider
@@ -173,6 +174,11 @@ def api_config_get():
         "max_open_trades": Config.MAX_OPEN_TRADES,
         "stop_loss_pct": Config.STOP_LOSS_PCT,
         "take_profit_pct": Config.TAKE_PROFIT_PCT,
+        "trailing_stop_pct": Config.TRAILING_STOP_PCT,
+        "fee_pct": Config.FEE_PCT,
+        "use_dynamic_targets": Config.USE_DYNAMIC_TARGETS,
+        "trend_filter": Config.TREND_FILTER,
+        "min_ai_confidence": Config.MIN_AI_CONFIDENCE,
         "demo_mode": Config.DEMO_MODE,
         "exchange": Config.EXCHANGE,
         "ton_wallet": Config.TON_WALLET,
@@ -181,10 +187,42 @@ def api_config_get():
 @app.route("/api/config", methods=["POST"])
 def api_config_set():
     data = request.json or {}
-    if "trade_amount"    in data: Config.TRADE_AMOUNT    = float(data["trade_amount"])
-    if "stop_loss_pct"   in data: Config.STOP_LOSS_PCT   = float(data["stop_loss_pct"])
-    if "take_profit_pct" in data: Config.TAKE_PROFIT_PCT = float(data["take_profit_pct"])
-    if "max_open_trades" in data: Config.MAX_OPEN_TRADES = int(data["max_open_trades"])
+    def num(key, lo, hi):
+        """Безопасно парсит число из data[key] в диапазоне [lo, hi]; иначе None."""
+        if key not in data:
+            return None
+        try:
+            v = float(data[key])
+        except (TypeError, ValueError):
+            return None
+        if not math.isfinite(v):
+            return None
+        return max(lo, min(hi, v))
+
+    errors = []
+    for key in ("trade_amount", "stop_loss_pct", "take_profit_pct",
+                "max_open_trades", "trailing_stop_pct", "fee_pct", "min_ai_confidence"):
+        if key in data and num(key, -1e18, 1e18) is None:
+            errors.append(key)
+    if errors:
+        return jsonify({"ok": False, "message": "Некорректные значения: " + ", ".join(errors)}), 400
+
+    v = num("trade_amount", 1, 1e9)
+    if v is not None: Config.TRADE_AMOUNT = v
+    v = num("stop_loss_pct", 0.1, 90)
+    if v is not None: Config.STOP_LOSS_PCT = v
+    v = num("take_profit_pct", 0.1, 1000)
+    if v is not None: Config.TAKE_PROFIT_PCT = v
+    v = num("max_open_trades", 1, 50)
+    if v is not None: Config.MAX_OPEN_TRADES = int(v)
+    v = num("trailing_stop_pct", 0, 90)
+    if v is not None: Config.TRAILING_STOP_PCT = v
+    v = num("fee_pct", 0, 10)
+    if v is not None: Config.FEE_PCT = v
+    v = num("min_ai_confidence", 0, 100)
+    if v is not None: Config.MIN_AI_CONFIDENCE = v
+    if "use_dynamic_targets" in data: Config.USE_DYNAMIC_TARGETS = bool(data["use_dynamic_targets"])
+    if "trend_filter" in data: Config.TREND_FILTER = bool(data["trend_filter"])
     if "symbol" in data and data["symbol"] != Config.SYMBOL:
         if trader.open_trades:
             return jsonify({

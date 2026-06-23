@@ -224,6 +224,7 @@ class AIEngine:
     def _detect_regime(self, df) -> dict:
         c    = df["close"]
         atr  = df["atr"].iloc[-1]
+        atr_pct = float(df["atr_pct"].iloc[-1]) if "atr_pct" in df else 0.0
         price = c.iloc[-1]
         ema9  = df["ema_9"].iloc[-1]
         ema21 = df["ema_21"].iloc[-1]
@@ -266,6 +267,7 @@ class AIEngine:
             "color": regime_color,
             "desc":  regime_desc,
             "atr":   round(float(atr), 2),
+            "atr_pct": round(atr_pct * 100, 3),
             "vol_ratio": round(float(vol_r), 2),
         }
 
