@@ -92,13 +92,14 @@ class Trader:
         if not order:
             return
 
-        sl = round(price * (1 - Config.STOP_LOSS_PCT / 100), 2)
-        tp = round(price * (1 + Config.TAKE_PROFIT_PCT / 100), 2)
+        sl = self.exchange._round(price * (1 - Config.STOP_LOSS_PCT / 100))
+        tp = self.exchange._round(price * (1 + Config.TAKE_PROFIT_PCT / 100))
 
         ai_conf = ai.get("confidence", 0) if ai else 0
 
         trade = {
             "id": order["id"],
+            "symbol": Config.SYMBOL,
             "side": side,
             "entry_price": price,
             "amount": round(amount, 6),
@@ -116,10 +117,15 @@ class Trader:
 
     def _close_all_trades(self, price, analysis):
         for trade in list(self.open_trades):
+            if trade.get("symbol", Config.SYMBOL) != Config.SYMBOL:
+                continue
             self._close_trade(trade, price, "signal")
 
     def _check_stop_loss_take_profit(self, price):
+        # Оцениваем только позиции по текущей паре
         for trade in list(self.open_trades):
+            if trade.get("symbol", Config.SYMBOL) != Config.SYMBOL:
+                continue
             if price <= trade["stop_loss"]:
                 self._close_trade(trade, price, "stop_loss")
             elif price >= trade["take_profit"]:

@@ -205,7 +205,20 @@
       <div class="card">
         <div class="card-title">⚙️ Настройки</div>
         <div class="settings-form">
-          <label>Пара<input type="text" id="cfg-symbol" value="BTC/USDT"></label>
+          <label>Пара
+            <select id="cfg-symbol">
+              <option value="TON/USDT">TON/USDT</option>
+              <option value="BTC/USDT">BTC/USDT</option>
+              <option value="ETH/USDT">ETH/USDT</option>
+              <option value="SOL/USDT">SOL/USDT</option>
+              <option value="BNB/USDT">BNB/USDT</option>
+              <option value="XRP/USDT">XRP/USDT</option>
+              <option value="DOGE/USDT">DOGE/USDT</option>
+              <option value="ADA/USDT">ADA/USDT</option>
+              <option value="AVAX/USDT">AVAX/USDT</option>
+              <option value="MATIC/USDT">MATIC/USDT</option>
+            </select>
+          </label>
           <label>Сумма сделки (USDT)<input type="number" id="cfg-amount" value="100" min="10"></label>
           <label>Стоп-лосс (%)<input type="number" id="cfg-sl" value="2.0" step="0.1" min="0.1"></label>
           <label>Тейк-профит (%)<input type="number" id="cfg-tp" value="4.0" step="0.1" min="0.1"></label>

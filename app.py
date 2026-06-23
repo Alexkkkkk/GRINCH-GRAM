@@ -142,7 +142,13 @@ def api_config_set():
     if "stop_loss_pct"   in data: Config.STOP_LOSS_PCT   = float(data["stop_loss_pct"])
     if "take_profit_pct" in data: Config.TAKE_PROFIT_PCT = float(data["take_profit_pct"])
     if "max_open_trades" in data: Config.MAX_OPEN_TRADES = int(data["max_open_trades"])
-    if "symbol"          in data: Config.SYMBOL          = data["symbol"]
+    if "symbol" in data and data["symbol"] != Config.SYMBOL:
+        if trader.open_trades:
+            return jsonify({
+                "ok": False,
+                "message": "Нельзя сменить пару при открытых сделках. Сначала закройте позиции.",
+            }), 409
+        Config.SYMBOL = data["symbol"]
     return jsonify({"ok": True, "message": "Настройки сохранены"})
 
 @socketio.on("connect")

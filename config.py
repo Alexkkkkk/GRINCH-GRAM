@@ -7,7 +7,7 @@ class Config:
     EXCHANGE = os.getenv("EXCHANGE", "binance")
     API_KEY = os.getenv("API_KEY", "")
     API_SECRET = os.getenv("API_SECRET", "")
-    SYMBOL = os.getenv("SYMBOL", "BTC/USDT")
+    SYMBOL = os.getenv("SYMBOL", "TON/USDT")
     TIMEFRAME = os.getenv("TIMEFRAME", "1h")
     TRADE_AMOUNT = float(os.getenv("TRADE_AMOUNT", "100"))
     MAX_OPEN_TRADES = int(os.getenv("MAX_OPEN_TRADES", "3"))

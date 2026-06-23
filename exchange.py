@@ -4,10 +4,25 @@ import time
 from config import Config
 from datetime import datetime, timedelta
 
+# Базовые ориентировочные цены монет для демо-режима (USDT)
+BASE_PRICES = {
+    "BTC": 67000.0,
+    "ETH": 3500.0,
+    "TON": 5.5,
+    "SOL": 150.0,
+    "BNB": 600.0,
+    "XRP": 0.52,
+    "DOGE": 0.16,
+    "ADA": 0.45,
+    "AVAX": 35.0,
+    "MATIC": 0.72,
+}
+DEFAULT_BASE_PRICE = 100.0
+
+
 class ExchangeClient:
     def __init__(self):
         self.demo_mode = Config.DEMO_MODE
-        self.symbol = Config.SYMBOL
         self._exchange = None
         if not self.demo_mode and Config.API_KEY:
             try:
@@ -20,6 +35,18 @@ class ExchangeClient:
             except Exception as e:
                 print(f"[Exchange] Ошибка подключения: {e}. Переходим в демо-режим.")
                 self.demo_mode = True
+
+    @property
+    def symbol(self):
+        # Читаем динамически — пара может меняться через настройки
+        return Config.SYMBOL
+
+    @property
+    def base_currency(self):
+        return self.symbol.split("/")[0].upper()
+
+    def _base_price(self):
+        return BASE_PRICES.get(self.base_currency, DEFAULT_BASE_PRICE)
 
     def get_ticker(self):
         if self.demo_mode:
@@ -44,7 +71,9 @@ class ExchangeClient:
 
     def get_balance(self):
         if self.demo_mode:
-            return {"USDT": 10000.0, "BTC": 0.05}
+            base = self.base_currency
+            holding = round(500.0 / self._base_price(), 6)
+            return {"USDT": 10000.0, base: holding}
         try:
             bal = self._exchange.fetch_balance()
             return {k: v["free"] for k, v in bal["total"].items() if v > 0}
@@ -65,12 +94,20 @@ class ExchangeClient:
             print(f"[Exchange] place_order error: {e}")
             return None
 
+    def _round(self, p):
+        # Меньше цена — больше знаков после запятой
+        bp = self._base_price()
+        digits = 2 if bp >= 100 else (4 if bp >= 1 else 6)
+        return round(p, digits)
+
     def _fake_ticker(self):
-        base = 67000 + random.uniform(-500, 500)
+        bp = self._base_price()
+        base = bp + random.uniform(-bp * 0.008, bp * 0.008)
+        spread = bp * 0.0002
         return {
-            "price": round(base, 2),
-            "bid": round(base - 10, 2),
-            "ask": round(base + 10, 2),
+            "price": self._round(base),
+            "bid": self._round(base - spread),
+            "ask": self._round(base + spread),
             "volume": round(random.uniform(1000, 5000), 2),
         }
 
@@ -78,15 +115,17 @@ class ExchangeClient:
         bars = []
         now = int(time.time() * 1000)
         interval = 3600 * 1000
-        price = 67000.0
+        bp = self._base_price()
+        price = bp
+        vol = bp * 0.005  # масштаб волатильности относительно цены
         for i in range(limit):
             ts = now - (limit - i) * interval
             o = price
-            h = o + random.uniform(0, 300)
-            l = o - random.uniform(0, 300)
+            h = o + random.uniform(0, vol)
+            l = o - random.uniform(0, vol)
             c = l + random.uniform(0, h - l)
             v = random.uniform(100, 500)
-            bars.append([ts, round(o, 2), round(h, 2), round(l, 2), round(c, 2), round(v, 2)])
+            bars.append([ts, self._round(o), self._round(h), self._round(l), self._round(c), round(v, 2)])
             price = c
         return bars
 
