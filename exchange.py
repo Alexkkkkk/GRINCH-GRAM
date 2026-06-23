@@ -25,6 +25,8 @@ class ExchangeClient:
     def __init__(self):
         self.demo_mode = Config.DEMO_MODE
         self._exchange = None
+        self._live_price = None
+        self._live_symbol = None
         if not self.demo_mode and Config.API_KEY:
             try:
                 exchange_class = getattr(ccxt, Config.EXCHANGE)
@@ -48,6 +50,24 @@ class ExchangeClient:
 
     def _base_price(self):
         return BASE_PRICES.get(self.base_currency, DEFAULT_BASE_PRICE)
+
+    def get_live_price(self):
+        """Живая цена в реальном времени (плавный random walk вокруг базовой)."""
+        if not self.demo_mode:
+            try:
+                return self.get_ticker()["price"]
+            except Exception:
+                pass
+        bp = self._base_price()
+        # Сброс при смене пары или первом запуске
+        if self._live_price is None or self._live_symbol != self.symbol:
+            self._live_price = bp
+            self._live_symbol = self.symbol
+        # Небольшой случайный шаг + лёгкий возврат к базовой цене
+        step = self._live_price * random.uniform(-0.0035, 0.0035)
+        pull = (bp - self._live_price) * 0.02
+        self._live_price = max(self._live_price + step + pull, bp * 0.3)
+        return self._round(self._live_price)
 
     def get_ticker(self):
         if self.demo_mode:

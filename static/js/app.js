@@ -1,16 +1,48 @@
 const socket = io();
 socket.on("connect", () => console.log("Connected"));
 socket.on("status_update", updateUI);
+socket.on("price_update", updatePrice);
+
+function fmtPrice(p) {
+  p = Number(p) || 0;
+  const digits = p >= 100 ? 2 : (p >= 1 ? 4 : 6);
+  return "$" + p.toLocaleString("en-US", { minimumFractionDigits: digits, maximumFractionDigits: digits });
+}
+
+let _lastLivePrice = null;
+function updatePrice(d) {
+  const el = document.getElementById("price");
+  if (!el) return;
+  const price = Number(d.price) || 0;
+  el.textContent = fmtPrice(price);
+
+  // Подсветка движения цены
+  if (_lastLivePrice !== null && price !== _lastLivePrice) {
+    el.classList.remove("price-up", "price-down");
+    void el.offsetWidth;
+    el.classList.add(price > _lastLivePrice ? "price-up" : "price-down");
+  }
+  _lastLivePrice = price;
+
+  const ch = document.getElementById("price-change");
+  if (ch) {
+    const c = Number(d.change) || 0;
+    ch.textContent = (c >= 0 ? "▲ +" : "▼ ") + c.toFixed(3) + "%";
+    ch.className = "price-change " + (c >= 0 ? "chg-up" : "chg-down");
+  }
+}
 
 function updateUI(data) {
   const analysis = data.analysis || {};
   const stats    = data.stats    || {};
   const ai       = data.ai       || {};
 
-  // Цена
-  document.getElementById("price").textContent =
-    "$" + (analysis.price || 0).toLocaleString("en-US", {minimumFractionDigits: 2});
-  document.getElementById("symbol-label").textContent = data.symbol || "BTC/USDT";
+  // Цена обновляется отдельным живым тикером (updatePrice).
+  // Здесь — фолбэк, если живая цена ещё не пришла.
+  if (_lastLivePrice === null) {
+    document.getElementById("price").textContent = fmtPrice(analysis.price || 0);
+  }
+  document.getElementById("symbol-label").textContent = data.symbol || "GRINCH/USDT";
 
   // Технический сигнал
   const sig = analysis.signal || "HOLD";

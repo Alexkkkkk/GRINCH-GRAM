@@ -76,6 +76,32 @@ def push_updates():
         time.sleep(5)
 
 
+def push_price():
+    """Живая цена в реальном времени — частое обновление (каждые 2 сек)."""
+    last = None
+    last_symbol = None
+    while True:
+        try:
+            symbol = Config.SYMBOL
+            # При смене пары сбрасываем базу для расчёта изменения
+            if symbol != last_symbol:
+                last = None
+                last_symbol = symbol
+            price = float(trader.exchange.get_live_price())
+            change = 0.0
+            if last:
+                change = round((price - last) / last * 100, 3)
+            socketio.emit("price_update", {
+                "symbol": symbol,
+                "price": price,
+                "change": change,
+            })
+            last = price
+        except Exception as e:
+            print(f"[Price] Ошибка: {e}")
+        time.sleep(2)
+
+
 _bg_started = False
 _bg_lock = threading.Lock()
 
@@ -87,6 +113,7 @@ def start_background():
             return
         _bg_started = True
         threading.Thread(target=push_updates, daemon=True).start()
+        threading.Thread(target=push_price, daemon=True).start()
         ton.start()
 
 
