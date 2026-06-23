@@ -6,6 +6,7 @@ from datetime import datetime, timedelta
 
 # Базовые ориентировочные цены монет для демо-режима (USDT)
 BASE_PRICES = {
+    "GRINCH": 0.025,
     "BTC": 67000.0,
     "ETH": 3500.0,
     "TON": 5.5,
