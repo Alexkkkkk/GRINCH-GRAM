@@ -169,6 +169,19 @@
         <div id="balance-list" class="balance-list"></div>
       </div>
 
+      <!-- TON Кошелёк -->
+      <div class="card ton-card">
+        <div class="card-title">💎 TON Кошелёк
+          <span class="badge" style="background:#0a2540;color:#0098ea;font-size:10px;margin-left:6px">TON</span>
+        </div>
+        <div class="ton-desc">Пополни бота, отправив TON на адрес:</div>
+        <div class="ton-addr-row">
+          <code id="ton-addr" class="ton-addr">—</code>
+          <button class="btn-ton-copy" onclick="copyTon()">📋</button>
+        </div>
+        <div id="ton-copied" class="ton-copied" style="display:none">✓ Скопировано!</div>
+      </div>
+
       <!-- Настройки -->
       <div class="card">
         <div class="card-title">⚙️ Настройки</div>

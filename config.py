@@ -15,3 +15,4 @@ class Config:
     TAKE_PROFIT_PCT = float(os.getenv("TAKE_PROFIT_PCT", "4.0"))
     DEMO_MODE = os.getenv("DEMO_MODE", "true").lower() == "true"
     SECRET_KEY = os.getenv("SECRET_KEY", "grinch-gram-secret-2024")
+    TON_WALLET = os.getenv("TON_WALLET", "EQA6G0uVERDZTkLNa0drWBna1F5TSbogy7UXEWU5ERHz4uJL")

@@ -103,6 +103,7 @@ def api_config_get():
         "take_profit_pct": Config.TAKE_PROFIT_PCT,
         "demo_mode": Config.DEMO_MODE,
         "exchange": Config.EXCHANGE,
+        "ton_wallet": Config.TON_WALLET,
     })
 
 @app.route("/api/config", methods=["POST"])

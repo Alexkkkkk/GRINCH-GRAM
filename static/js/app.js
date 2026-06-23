@@ -256,5 +256,24 @@ async function loadConfig() {
   document.getElementById("cfg-tp").value      = cfg.take_profit_pct;
   document.getElementById("cfg-max").value     = cfg.max_open_trades;
   document.getElementById("demo-badge").style.display = cfg.demo_mode ? "" : "none";
+  if (cfg.ton_wallet) {
+    window._tonWallet = cfg.ton_wallet;
+    document.getElementById("ton-addr").textContent = cfg.ton_wallet;
+  }
 }
+
+async function copyTon() {
+  const addr = window._tonWallet || document.getElementById("ton-addr").textContent;
+  try {
+    await navigator.clipboard.writeText(addr);
+  } catch (e) {
+    const ta = document.createElement("textarea");
+    ta.value = addr; document.body.appendChild(ta); ta.select();
+    document.execCommand("copy"); document.body.removeChild(ta);
+  }
+  const c = document.getElementById("ton-copied");
+  c.style.display = "";
+  setTimeout(() => { c.style.display = "none"; }, 1800);
+}
+
 loadConfig();
