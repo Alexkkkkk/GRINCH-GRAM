@@ -4,14 +4,17 @@ from datetime import datetime
 from config import Config
 from exchange import ExchangeClient
 from strategy import analyze
+from ai_engine import AIEngine
 
 class Trader:
     def __init__(self):
         self.exchange = ExchangeClient()
+        self.ai = AIEngine()
         self.running = False
         self.trades = []
         self.open_trades = []
         self.logs = []
+        self.last_ai = {}
         self.stats = {
             "total_trades": 0,
             "winning_trades": 0,
@@ -48,31 +51,51 @@ class Trader:
             time.sleep(30)
 
     def _tick(self):
-        ohlcv = self.exchange.get_ohlcv(limit=60)
+        ohlcv  = self.exchange.get_ohlcv(limit=100)
         result = analyze(ohlcv)
-        signal = result["signal"]
-        price = result["price"]
+        ai     = self.ai.analyze(ohlcv)
+        self.last_ai = ai
+
+        signal    = result["signal"]
+        ai_signal = ai.get("ai_signal", "HOLD")
+        price     = result["price"]
+        conf      = ai.get("confidence", 0)
+        regime    = ai.get("regime", {}).get("name", "?")
+        anomaly   = ai.get("anomaly", {}).get("detected", False)
+
+        # Ансамбль: стратегия + AI должны совпасть
+        final_signal = "HOLD"
+        if signal == ai_signal and signal != "HOLD":
+            final_signal = signal
+        elif ai_signal != "HOLD" and conf >= 65:
+            final_signal = ai_signal
+
+        if anomaly:
+            self.log(f"⚠️ АНОМАЛИЯ обнаружена! Z-score цены={ai['anomaly']['z_price']}", "WARN")
 
         self.log(
-            f"Анализ: цена={price} | RSI={result['rsi']} | "
-            f"MACD={result['macd']} | Сигнал={signal} ({result['strength']}%)"
+            f"📊 RSI={result['rsi']} | {regime} | "
+            f"Сигнал={signal} | AI={ai_signal}({conf}%) | Итог={final_signal}",
+            level="INFO"
         )
 
         self._check_stop_loss_take_profit(price)
 
-        if signal == "BUY" and len(self.open_trades) < Config.MAX_OPEN_TRADES:
-            self._open_trade("buy", price, result)
-        elif signal == "SELL" and self.open_trades:
+        if final_signal == "BUY" and len(self.open_trades) < Config.MAX_OPEN_TRADES:
+            self._open_trade("buy", price, result, ai)
+        elif final_signal == "SELL" and self.open_trades:
             self._close_all_trades(price, result)
 
-    def _open_trade(self, side, price, analysis):
+    def _open_trade(self, side, price, analysis, ai=None):
         amount = Config.TRADE_AMOUNT / price
-        order = self.exchange.place_order(side, amount)
+        order  = self.exchange.place_order(side, amount)
         if not order:
             return
 
         sl = round(price * (1 - Config.STOP_LOSS_PCT / 100), 2)
         tp = round(price * (1 + Config.TAKE_PROFIT_PCT / 100), 2)
+
+        ai_conf = ai.get("confidence", 0) if ai else 0
 
         trade = {
             "id": order["id"],
@@ -84,11 +107,12 @@ class Trader:
             "opened_at": datetime.utcnow().isoformat(),
             "pnl": 0.0,
             "status": "open",
+            "ai_confidence": ai_conf,
         }
         self.open_trades.append(trade)
         self.trades.append(dict(trade))
         self.stats["total_trades"] += 1
-        self.log(f"Открыта сделка BUY @ {price} | SL={sl} | TP={tp}", "BUY")
+        self.log(f"🟢 BUY @ {price} | SL={sl} | TP={tp} | AI={ai_conf}%", "BUY")
 
     def _close_all_trades(self, price, analysis):
         for trade in list(self.open_trades):
@@ -120,23 +144,25 @@ class Trader:
                 break
 
         level = "SELL" if pnl >= 0 else "ERROR"
-        self.log(f"Закрыта сделка @ {price} | PNL={pnl} USDT | Причина: {reason}", level)
+        self.log(f"🔴 Закрыто @ {price} | PNL={pnl} USDT | {reason}", level)
 
     def get_status(self):
-        ohlcv = self.exchange.get_ohlcv(limit=60)
+        ohlcv    = self.exchange.get_ohlcv(limit=100)
         analysis = analyze(ohlcv)
-        balance = self.exchange.get_balance()
-        winrate = 0
+        ai       = self.last_ai if self.last_ai else self.ai.analyze(ohlcv)
+        balance  = self.exchange.get_balance()
+        winrate  = 0
         if self.stats["total_trades"] > 0:
             winrate = round(self.stats["winning_trades"] / self.stats["total_trades"] * 100, 1)
         return {
-            "running": self.running,
-            "demo_mode": self.exchange.demo_mode,
-            "symbol": Config.SYMBOL,
-            "balance": balance,
-            "analysis": analysis,
-            "open_trades": self.open_trades,
+            "running":      self.running,
+            "demo_mode":    self.exchange.demo_mode,
+            "symbol":       Config.SYMBOL,
+            "balance":      balance,
+            "analysis":     analysis,
+            "ai":           ai,
+            "open_trades":  self.open_trades,
             "recent_trades": self.trades[-20:],
-            "logs": self.logs[-50:],
-            "stats": {**self.stats, "winrate": winrate},
+            "logs":         self.logs[-50:],
+            "stats":        {**self.stats, "winrate": winrate},
         }

@@ -24,83 +24,115 @@
   <div class="main-grid">
     <!-- Левая колонка -->
     <div class="col-left">
-      <!-- Цена и сигнал -->
+      <!-- Цена + сигналы -->
       <div class="card">
         <div class="price-row">
           <div>
             <div class="label">Цена</div>
             <div class="price" id="price">$0.00</div>
           </div>
-          <div class="signal-block" id="signal-block">
-            <div class="signal-label" id="signal-text">HOLD</div>
-            <div class="signal-strength" id="signal-strength">0%</div>
+          <div style="display:flex;flex-direction:column;gap:6px;align-items:flex-end">
+            <div class="signal-block signal-HOLD" id="signal-block">
+              <div class="signal-label" id="signal-text">HOLD</div>
+              <div class="signal-strength" id="signal-strength">Tech</div>
+            </div>
+            <div class="signal-block signal-HOLD" id="ai-signal-block">
+              <div class="signal-label" id="ai-signal-text">HOLD</div>
+              <div class="signal-strength" id="ai-confidence">AI 0%</div>
+            </div>
           </div>
         </div>
       </div>
 
-      <!-- Индикаторы -->
-      <div class="card">
-        <div class="card-title">📊 Индикаторы</div>
-        <div class="indicators-grid">
-          <div class="ind-item">
-            <span class="ind-label">RSI</span>
-            <span class="ind-value" id="rsi">—</span>
+      <!-- AI Brain блок -->
+      <div class="card ai-card">
+        <div class="card-title">🧠 AI Мозг
+          <span id="ai-trained-badge" class="badge" style="background:#0d2e22;color:#00d4aa;font-size:10px;margin-left:6px">обучается…</span>
+        </div>
+
+        <!-- Вероятности направления -->
+        <div class="prob-bars">
+          <div class="prob-row">
+            <span class="prob-label">▲ Рост</span>
+            <div class="prob-bar-wrap"><div class="prob-bar pb-up" id="bar-up"></div></div>
+            <span class="prob-val" id="val-up">0%</span>
           </div>
-          <div class="ind-item">
-            <span class="ind-label">MACD</span>
-            <span class="ind-value" id="macd">—</span>
+          <div class="prob-row">
+            <span class="prob-label">◆ Боковик</span>
+            <div class="prob-bar-wrap"><div class="prob-bar pb-hold" id="bar-hold"></div></div>
+            <span class="prob-val" id="val-hold">0%</span>
           </div>
-          <div class="ind-item">
-            <span class="ind-label">EMA Fast</span>
-            <span class="ind-value" id="ema-fast">—</span>
+          <div class="prob-row">
+            <span class="prob-label">▼ Падение</span>
+            <div class="prob-bar-wrap"><div class="prob-bar pb-down" id="bar-down"></div></div>
+            <span class="prob-val" id="val-down">0%</span>
           </div>
-          <div class="ind-item">
-            <span class="ind-label">EMA Slow</span>
-            <span class="ind-value" id="ema-slow">—</span>
-          </div>
-          <div class="ind-item">
-            <span class="ind-label">BB Upper</span>
-            <span class="ind-value" id="bb-upper">—</span>
-          </div>
-          <div class="ind-item">
-            <span class="ind-label">BB Lower</span>
-            <span class="ind-value" id="bb-lower">—</span>
-          </div>
+        </div>
+
+        <!-- Режим рынка -->
+        <div id="regime-badge" class="regime-badge">— Нет данных</div>
+
+        <!-- Аномалия -->
+        <div id="anomaly-alert" class="anomaly-alert" style="display:none">
+          ⚡ АНОМАЛИЯ: <span id="anomaly-desc"></span>
         </div>
       </div>
 
-      <!-- Статистика -->
+      <!-- Прогноз -->
       <div class="card">
-        <div class="card-title">📈 Статистика</div>
-        <div class="stats-grid">
-          <div class="stat-item">
-            <div class="stat-label">Всего сделок</div>
-            <div class="stat-value" id="stat-total">0</div>
-          </div>
-          <div class="stat-item">
-            <div class="stat-label">Winrate</div>
-            <div class="stat-value" id="stat-winrate">0%</div>
-          </div>
-          <div class="stat-item">
-            <div class="stat-label">PNL (USDT)</div>
-            <div class="stat-value" id="stat-pnl">$0.00</div>
-          </div>
-          <div class="stat-item">
-            <div class="stat-label">Открытых</div>
-            <div class="stat-value" id="stat-open">0</div>
-          </div>
+        <div class="card-title">🔮 Прогноз цены (AI)</div>
+        <div class="forecast-grid">
+          <div class="fc-item"><div class="fc-label">+1 свеча</div><div class="fc-val" id="fc-t1">—</div></div>
+          <div class="fc-item"><div class="fc-label">+2 свечи</div><div class="fc-val" id="fc-t2">—</div></div>
+          <div class="fc-item"><div class="fc-label">+3 свечи</div><div class="fc-val" id="fc-t3">—</div></div>
         </div>
+        <div class="fc-range" id="fc-range">Диапазон: — – —</div>
       </div>
 
-      <!-- Баланс -->
+      <!-- Поддержка / Сопротивление -->
       <div class="card">
-        <div class="card-title">💰 Баланс</div>
-        <div id="balance-list" class="balance-list"></div>
+        <div class="card-title">📐 Уровни</div>
+        <div class="sr-grid">
+          <div>
+            <div class="sr-label" style="color:#ff4d6d">🔴 Сопротивление</div>
+            <div id="sr-res" class="sr-list"></div>
+          </div>
+          <div>
+            <div class="sr-label" style="color:#00d4aa">🟢 Поддержка</div>
+            <div id="sr-sup" class="sr-list"></div>
+          </div>
+        </div>
       </div>
     </div>
 
     <!-- Средняя колонка -->
     <div class="col-mid">
+      <!-- AI Паттерны + Важность признаков -->
+      <div class="card">
+        <div class="card-title">🕯️ Паттерны свечей</div>
+        <div id="patterns-list" class="patterns-list">
+          <div class="empty-msg">Паттерны не обнаружены</div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">🏆 Важность признаков (RF)</div>
+        <div id="fi-list" class="fi-list"></div>
+      </div>
+
+      <!-- Индикаторы -->
+      <div class="card">
+        <div class="card-title">📊 Технические индикаторы</div>
+        <div class="indicators-grid">
+          <div class="ind-item"><span class="ind-label">RSI</span><span class="ind-value" id="rsi">—</span></div>
+          <div class="ind-item"><span class="ind-label">MACD</span><span class="ind-value" id="macd">—</span></div>
+          <div class="ind-item"><span class="ind-label">EMA Fast</span><span class="ind-value" id="ema-fast">—</span></div>
+          <div class="ind-item"><span class="ind-label">EMA Slow</span><span class="ind-value" id="ema-slow">—</span></div>
+          <div class="ind-item"><span class="ind-label">BB Upper</span><span class="ind-value" id="bb-upper">—</span></div>
+          <div class="ind-item"><span class="ind-label">BB Lower</span><span class="ind-value" id="bb-lower">—</span></div>
+        </div>
+      </div>
+
       <!-- Открытые сделки -->
       <div class="card">
         <div class="card-title">🟢 Открытые сделки</div>
@@ -120,34 +152,39 @@
 
     <!-- Правая колонка -->
     <div class="col-right">
+      <!-- Статистика -->
+      <div class="card">
+        <div class="card-title">📈 Статистика</div>
+        <div class="stats-grid">
+          <div class="stat-item"><div class="stat-label">Всего сделок</div><div class="stat-value" id="stat-total">0</div></div>
+          <div class="stat-item"><div class="stat-label">Winrate</div><div class="stat-value" id="stat-winrate">0%</div></div>
+          <div class="stat-item"><div class="stat-label">PNL (USDT)</div><div class="stat-value" id="stat-pnl">$0.00</div></div>
+          <div class="stat-item"><div class="stat-label">Открытых</div><div class="stat-value" id="stat-open">0</div></div>
+        </div>
+      </div>
+
+      <!-- Баланс -->
+      <div class="card">
+        <div class="card-title">💰 Баланс</div>
+        <div id="balance-list" class="balance-list"></div>
+      </div>
+
       <!-- Настройки -->
       <div class="card">
         <div class="card-title">⚙️ Настройки</div>
         <div class="settings-form">
-          <label>Пара
-            <input type="text" id="cfg-symbol" value="BTC/USDT">
-          </label>
-          <label>Сумма сделки (USDT)
-            <input type="number" id="cfg-amount" value="100" min="10">
-          </label>
-          <label>Стоп-лосс (%)
-            <input type="number" id="cfg-sl" value="2.0" step="0.1" min="0.1">
-          </label>
-          <label>Тейк-профит (%)
-            <input type="number" id="cfg-tp" value="4.0" step="0.1" min="0.1">
-          </label>
-          <label>Макс. открытых сделок
-            <input type="number" id="cfg-max" value="3" min="1" max="10">
-          </label>
+          <label>Пара<input type="text" id="cfg-symbol" value="BTC/USDT"></label>
+          <label>Сумма сделки (USDT)<input type="number" id="cfg-amount" value="100" min="10"></label>
+          <label>Стоп-лосс (%)<input type="number" id="cfg-sl" value="2.0" step="0.1" min="0.1"></label>
+          <label>Тейк-профит (%)<input type="number" id="cfg-tp" value="4.0" step="0.1" min="0.1"></label>
+          <label>Макс. открытых сделок<input type="number" id="cfg-max" value="3" min="1" max="10"></label>
           <button class="btn btn-blue" onclick="saveConfig()">💾 Сохранить</button>
         </div>
       </div>
 
       <!-- Логи -->
       <div class="card">
-        <div class="card-title">📝 Логи
-          <button class="btn-tiny" onclick="clearLogs()">Очистить</button>
-        </div>
+        <div class="card-title">📝 Логи <button class="btn-tiny" onclick="clearLogs()">Очистить</button></div>
         <div id="log-container" class="log-container"></div>
       </div>
     </div>
