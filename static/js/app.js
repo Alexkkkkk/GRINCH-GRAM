@@ -267,6 +267,25 @@ async function startAgent() {
 async function stopAgent() {
   await fetch("/api/stop", {method:"POST"});
 }
+async function switchPair(symbol) {
+  const r = await fetch("/api/config", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ symbol }),
+  });
+  const d = await r.json();
+  if (!d.ok) {
+    alert(d.message);
+    loadConfig();           // вернуть прежнюю пару в списке
+    return;
+  }
+  // Сброс живой цены, чтобы изменение % не переносилось со старой монеты
+  _lastLivePrice = null;
+  document.getElementById("symbol-label").textContent = symbol;
+  document.getElementById("price").textContent = "…";
+  document.getElementById("price-change").textContent = "—";
+}
+
 async function saveConfig() {
   const cfg = {
     symbol: document.getElementById("cfg-symbol").value,
