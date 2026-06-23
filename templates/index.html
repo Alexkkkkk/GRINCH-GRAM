@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>GRINCH-GRAM — Торговый агент</title>
+<link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+<div class="app">
+  <header class="header">
+    <div class="header-left">
+      <span class="logo">🤖 GRINCH-GRAM</span>
+      <span id="demo-badge" class="badge badge-demo">ДЕМО</span>
+      <span id="status-badge" class="badge badge-stopped">ОСТАНОВЛЕН</span>
+    </div>
+    <div class="header-right">
+      <span class="symbol-label" id="symbol-label">BTC/USDT</span>
+      <button id="btn-start" class="btn btn-green" onclick="startAgent()">▶ Запустить</button>
+      <button id="btn-stop" class="btn btn-red" onclick="stopAgent()" style="display:none">⏹ Остановить</button>
+    </div>
+  </header>
+
+  <div class="main-grid">
+    <!-- Левая колонка -->
+    <div class="col-left">
+      <!-- Цена и сигнал -->
+      <div class="card">
+        <div class="price-row">
+          <div>
+            <div class="label">Цена</div>
+            <div class="price" id="price">$0.00</div>
+          </div>
+          <div class="signal-block" id="signal-block">
+            <div class="signal-label" id="signal-text">HOLD</div>
+            <div class="signal-strength" id="signal-strength">0%</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Индикаторы -->
+      <div class="card">
+        <div class="card-title">📊 Индикаторы</div>
+        <div class="indicators-grid">
+          <div class="ind-item">
+            <span class="ind-label">RSI</span>
+            <span class="ind-value" id="rsi">—</span>
+          </div>
+          <div class="ind-item">
+            <span class="ind-label">MACD</span>
+            <span class="ind-value" id="macd">—</span>
+          </div>
+          <div class="ind-item">
+            <span class="ind-label">EMA Fast</span>
+            <span class="ind-value" id="ema-fast">—</span>
+          </div>
+          <div class="ind-item">
+            <span class="ind-label">EMA Slow</span>
+            <span class="ind-value" id="ema-slow">—</span>
+          </div>
+          <div class="ind-item">
+            <span class="ind-label">BB Upper</span>
+            <span class="ind-value" id="bb-upper">—</span>
+          </div>
+          <div class="ind-item">
+            <span class="ind-label">BB Lower</span>
+            <span class="ind-value" id="bb-lower">—</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Статистика -->
+      <div class="card">
+        <div class="card-title">📈 Статистика</div>
+        <div class="stats-grid">
+          <div class="stat-item">
+            <div class="stat-label">Всего сделок</div>
+            <div class="stat-value" id="stat-total">0</div>
+          </div>
+          <div class="stat-item">
+            <div class="stat-label">Winrate</div>
+            <div class="stat-value" id="stat-winrate">0%</div>
+          </div>
+          <div class="stat-item">
+            <div class="stat-label">PNL (USDT)</div>
+            <div class="stat-value" id="stat-pnl">$0.00</div>
+          </div>
+          <div class="stat-item">
+            <div class="stat-label">Открытых</div>
+            <div class="stat-value" id="stat-open">0</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Баланс -->
+      <div class="card">
+        <div class="card-title">💰 Баланс</div>
+        <div id="balance-list" class="balance-list"></div>
+      </div>
+    </div>
+
+    <!-- Средняя колонка -->
+    <div class="col-mid">
+      <!-- Открытые сделки -->
+      <div class="card">
+        <div class="card-title">🟢 Открытые сделки</div>
+        <div id="open-trades-list" class="trades-list">
+          <div class="empty-msg">Нет открытых сделок</div>
+        </div>
+      </div>
+
+      <!-- История сделок -->
+      <div class="card">
+        <div class="card-title">📋 История сделок</div>
+        <div id="trades-history" class="trades-list">
+          <div class="empty-msg">История пуста</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Правая колонка -->
+    <div class="col-right">
+      <!-- Настройки -->
+      <div class="card">
+        <div class="card-title">⚙️ Настройки</div>
+        <div class="settings-form">
+          <label>Пара
+            <input type="text" id="cfg-symbol" value="BTC/USDT">
+          </label>
+          <label>Сумма сделки (USDT)
+            <input type="number" id="cfg-amount" value="100" min="10">
+          </label>
+          <label>Стоп-лосс (%)
+            <input type="number" id="cfg-sl" value="2.0" step="0.1" min="0.1">
+          </label>
+          <label>Тейк-профит (%)
+            <input type="number" id="cfg-tp" value="4.0" step="0.1" min="0.1">
+          </label>
+          <label>Макс. открытых сделок
+            <input type="number" id="cfg-max" value="3" min="1" max="10">
+          </label>
+          <button class="btn btn-blue" onclick="saveConfig()">💾 Сохранить</button>
+        </div>
+      </div>
+
+      <!-- Логи -->
+      <div class="card">
+        <div class="card-title">📝 Логи
+          <button class="btn-tiny" onclick="clearLogs()">Очистить</button>
+        </div>
+        <div id="log-container" class="log-container"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
+<script src="/static/js/app.js"></script>
+</body>
+</html>
