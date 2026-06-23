@@ -381,6 +381,92 @@ async function refreshTon() {
   if (btn) setTimeout(() => btn.classList.remove("spin"), 600);
 }
 
+function fmtBig(n) {
+  n = Number(n) || 0;
+  if (n >= 1e9) return "$" + (n / 1e9).toFixed(2) + "B";
+  if (n >= 1e6) return "$" + (n / 1e6).toFixed(2) + "M";
+  if (n >= 1e3) return "$" + (n / 1e3).toFixed(1) + "K";
+  return "$" + n.toFixed(2);
+}
+function fmtAmt(n) {
+  n = Number(n) || 0;
+  if (n >= 1e6) return (n / 1e6).toFixed(2) + "M";
+  if (n >= 1e3) return (n / 1e3).toFixed(1) + "K";
+  return n.toLocaleString("en-US", { maximumFractionDigits: 2 });
+}
+function timeAgo(ts) {
+  if (!ts) return "";
+  const sec = Math.max(0, (Date.now() - new Date(ts).getTime()) / 1000);
+  if (sec < 60) return Math.floor(sec) + "с";
+  if (sec < 3600) return Math.floor(sec / 60) + "м";
+  if (sec < 86400) return Math.floor(sec / 3600) + "ч";
+  return Math.floor(sec / 86400) + "д";
+}
+
+async function loadCoin() {
+  try {
+    const r = await fetch("/api/coin");
+    const d = await r.json();
+    if (!d || !d.symbol) return;
+    const img = document.getElementById("coin-img");
+    if (d.image) { img.src = d.image; img.style.display = "block"; }
+    else { img.style.display = "none"; }
+    document.getElementById("coin-name").textContent = d.name || d.symbol;
+    document.getElementById("coin-sym").textContent = d.symbol || "—";
+    document.getElementById("coin-source").textContent = d.source ? "· " + d.source : "";
+    document.getElementById("coin-price").textContent = d.price_usd != null ? fmtPrice(d.price_usd) : "—";
+
+    const ch = document.getElementById("coin-change");
+    if (d.change_h24 != null) {
+      const up = d.change_h24 >= 0;
+      ch.textContent = (up ? "+" : "") + d.change_h24.toFixed(2) + "%";
+      ch.className = "cs-val " + (up ? "pos" : "neg");
+    } else { ch.textContent = "—"; ch.className = "cs-val"; }
+
+    document.getElementById("coin-vol").textContent = d.volume_h24 != null ? fmtBig(d.volume_h24) : "—";
+    document.getElementById("coin-liq").textContent = d.liquidity != null ? fmtBig(d.liquidity) : "—";
+    document.getElementById("coin-mcap").textContent = d.market_cap != null ? fmtBig(d.market_cap) : "—";
+
+    const tx = document.getElementById("coin-txns");
+    if (d.buys_h24 != null || d.sells_h24 != null) {
+      tx.innerHTML = '<span class="pos">' + (Number(d.buys_h24) || 0) + '↑</span> / <span class="neg">' + (Number(d.sells_h24) || 0) + '↓</span>';
+    } else { tx.textContent = "—"; }
+
+    const link = document.getElementById("coin-link");
+    if (d.url) { link.href = d.url; link.style.display = "inline"; }
+    else { link.style.display = "none"; }
+  } catch (e) { /* silent */ }
+}
+
+async function loadDexTrades() {
+  try {
+    const r = await fetch("/api/coin/trades");
+    const arr = await r.json();
+    const box = document.getElementById("dex-trades");
+    const note = document.getElementById("trades-note");
+    if (!Array.isArray(arr) || arr.length === 0) {
+      box.innerHTML = '<div class="empty-msg">Лента доступна для GRINCH</div>';
+      note.textContent = "";
+      return;
+    }
+    note.textContent = "· DEX";
+    box.innerHTML = arr.map(t => {
+      const buy = t.kind === "buy";
+      const sym = (document.getElementById("coin-sym").textContent || "").replace("—", "");
+      return '<div class="dex-trade">' +
+        '<span class="dt-side ' + (buy ? "pos" : "neg") + '">' + (buy ? "Покупка" : "Продажа") + '</span>' +
+        '<span class="dt-amt">' + fmtAmt(t.token_amount) + ' ' + escapeHtml(sym) + '</span>' +
+        '<span class="dt-usd">' + (t.amount_usd != null ? fmtBig(t.amount_usd) : "—") + '</span>' +
+        '<span class="dt-time">' + timeAgo(t.ts) + '</span>' +
+        '</div>';
+    }).join("");
+  } catch (e) { /* silent */ }
+}
+
 loadConfig();
 loadTon();
+loadCoin();
+loadDexTrades();
 setInterval(loadTon, 30000);
+setInterval(loadCoin, 20000);
+setInterval(loadDexTrades, 15000);

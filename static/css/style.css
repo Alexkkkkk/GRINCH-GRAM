@@ -206,6 +206,34 @@ body { background: var(--bg); color: var(--text); font-family: 'Segoe UI', syste
 ::-webkit-scrollbar-track { background: var(--bg2); }
 ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
 
+/* Карточка монеты */
+.coin-source { font-size: 10px; color: var(--text2); font-weight: 400; margin-left: 4px; }
+.coin-head { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; }
+.coin-img { width: 38px; height: 38px; border-radius: 50%; background: #111; object-fit: cover; }
+.coin-name { font-size: 15px; font-weight: 700; }
+.coin-sym { font-size: 12px; color: var(--text2); }
+.coin-link { margin-left: auto; color: var(--text2); text-decoration: none; font-size: 16px; }
+.coin-link:hover { color: #fff; }
+.coin-stats { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.coin-stat { background: rgba(255,255,255,0.03); border-radius: 8px; padding: 8px 10px; }
+.cs-label { font-size: 11px; color: var(--text2); margin-bottom: 2px; }
+.cs-val { font-size: 14px; font-weight: 600; }
+
+.pos { color: #00d4aa; }
+.neg { color: #ff4d6d; }
+
+/* Лента сделок на DEX */
+.dex-trades { display: flex; flex-direction: column; gap: 4px; max-height: 320px; overflow-y: auto; }
+.dex-trade {
+  display: grid; grid-template-columns: auto 1fr auto auto; gap: 8px;
+  align-items: center; padding: 6px 8px; border-radius: 6px;
+  background: rgba(255,255,255,0.02); font-size: 12px;
+}
+.dt-side { font-weight: 700; font-size: 11px; }
+.dt-amt { color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dt-usd { color: var(--text2); font-variant-numeric: tabular-nums; }
+.dt-time { color: var(--text2); font-size: 11px; min-width: 28px; text-align: right; }
+
 @media (max-width: 900px) {
   .main-grid { grid-template-columns: 1fr; }
   .col-left, .col-right { border: none; }

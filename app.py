@@ -8,6 +8,7 @@ import time
 from config import Config
 from trader import Trader
 from ton_tracker import TONTracker
+from coin_info import coin_info
 
 
 class NumpyJSONProvider(DefaultJSONProvider):
@@ -147,6 +148,16 @@ def api_ton():
 def api_ton_refresh():
     ton.refresh()
     return jsonify(ton.get_data())
+
+@app.route("/api/coin")
+def api_coin():
+    base = Config.SYMBOL.split("/")[0].upper()
+    return jsonify(coin_info.market(base) or {})
+
+@app.route("/api/coin/trades")
+def api_coin_trades():
+    base = Config.SYMBOL.split("/")[0].upper()
+    return jsonify(coin_info.trades(base, limit=25))
 
 @app.route("/api/config", methods=["GET"])
 def api_config_get():

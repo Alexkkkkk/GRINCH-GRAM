@@ -45,6 +45,29 @@
         </div>
       </div>
 
+      <!-- Карточка монеты (рыночная статистика) -->
+      <div class="card coin-card">
+        <div class="card-title">📊 О монете
+          <span id="coin-source" class="coin-source"></span>
+        </div>
+        <div class="coin-head">
+          <img id="coin-img" class="coin-img" alt="" style="display:none">
+          <div>
+            <div class="coin-name" id="coin-name">—</div>
+            <div class="coin-sym" id="coin-sym">—</div>
+          </div>
+          <a id="coin-link" class="coin-link" href="#" target="_blank" rel="noopener" style="display:none">↗</a>
+        </div>
+        <div class="coin-stats">
+          <div class="coin-stat"><div class="cs-label">Цена</div><div class="cs-val" id="coin-price">—</div></div>
+          <div class="coin-stat"><div class="cs-label">24ч</div><div class="cs-val" id="coin-change">—</div></div>
+          <div class="coin-stat"><div class="cs-label">Объём 24ч</div><div class="cs-val" id="coin-vol">—</div></div>
+          <div class="coin-stat"><div class="cs-label">Ликвидность</div><div class="cs-val" id="coin-liq">—</div></div>
+          <div class="coin-stat"><div class="cs-label">Капитализация</div><div class="cs-val" id="coin-mcap">—</div></div>
+          <div class="coin-stat"><div class="cs-label">Сделки 24ч</div><div class="cs-val" id="coin-txns">—</div></div>
+        </div>
+      </div>
+
       <!-- AI Brain блок -->
       <div class="card ai-card">
         <div class="card-title">🧠 AI Мозг
@@ -131,6 +154,16 @@
           <div class="ind-item"><span class="ind-label">EMA Slow</span><span class="ind-value" id="ema-slow">—</span></div>
           <div class="ind-item"><span class="ind-label">BB Upper</span><span class="ind-value" id="bb-upper">—</span></div>
           <div class="ind-item"><span class="ind-label">BB Lower</span><span class="ind-value" id="bb-lower">—</span></div>
+        </div>
+      </div>
+
+      <!-- Лента сделок на DEX -->
+      <div class="card">
+        <div class="card-title">💱 Сделки на DEX
+          <span id="trades-note" class="coin-source"></span>
+        </div>
+        <div id="dex-trades" class="dex-trades">
+          <div class="empty-msg">Загрузка…</div>
         </div>
       </div>
 
