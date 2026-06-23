@@ -276,4 +276,60 @@ async function copyTon() {
   setTimeout(() => { c.style.display = "none"; }, 1800);
 }
 
+function renderTon(d) {
+  document.getElementById("ton-balance").textContent  = (d.balance ?? 0).toFixed(4) + " TON";
+  document.getElementById("ton-received").textContent = (d.total_received ?? 0).toFixed(4) + " TON";
+
+  const errEl = document.getElementById("ton-error");
+  if (d.last_error) {
+    errEl.style.display = "";
+    errEl.textContent = "⚠ " + d.last_error;
+  } else {
+    errEl.style.display = "none";
+  }
+
+  const box = document.getElementById("ton-deposits");
+  if (!d.deposits || d.deposits.length === 0) {
+    box.innerHTML = '<div class="ton-empty">Поступлений пока нет</div>';
+    return;
+  }
+  box.innerHTML = d.deposits.map(dep => {
+    const dt = dep.time ? new Date(dep.time * 1000).toLocaleString("ru-RU", {day:"2-digit",month:"2-digit",hour:"2-digit",minute:"2-digit"}) : "";
+    const cm = dep.comment ? `<div class="ton-dep-comment">💬 ${escapeHtml(dep.comment)}</div>` : "";
+    return `<div class="ton-dep">
+      <div class="ton-dep-top">
+        <span class="ton-dep-amount">+${dep.amount} TON</span>
+        <span class="ton-dep-time">${dt}</span>
+      </div>
+      <div class="ton-dep-from">от ${escapeHtml(dep.from_short || "")}</div>
+      ${cm}
+    </div>`;
+  }).join("");
+}
+
+function escapeHtml(s) {
+  const d = document.createElement("div");
+  d.textContent = s;
+  return d.innerHTML;
+}
+
+async function loadTon() {
+  try {
+    const r = await fetch("/api/ton");
+    renderTon(await r.json());
+  } catch (e) { /* silent */ }
+}
+
+async function refreshTon() {
+  const btn = document.querySelector(".btn-ton-refresh");
+  if (btn) btn.classList.add("spin");
+  try {
+    const r = await fetch("/api/ton/refresh", { method: "POST" });
+    renderTon(await r.json());
+  } catch (e) { /* silent */ }
+  if (btn) setTimeout(() => btn.classList.remove("spin"), 600);
+}
+
 loadConfig();
+loadTon();
+setInterval(loadTon, 30000);

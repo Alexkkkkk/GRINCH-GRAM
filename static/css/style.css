@@ -145,6 +145,27 @@ body { background: var(--bg); color: var(--text); font-family: 'Segoe UI', syste
 }
 .btn-ton-copy:hover { opacity: .85; }
 .ton-copied { font-size: 11px; color: var(--green); margin-top: 6px; text-align: center; font-weight: 600; }
+.btn-ton-refresh {
+  float: right; background: transparent; border: none; color: #0098ea;
+  font-size: 16px; cursor: pointer; padding: 0; line-height: 1;
+}
+.btn-ton-refresh:hover { color: #33b5ff; }
+.btn-ton-refresh.spin { animation: tonspin .6s linear; }
+@keyframes tonspin { from { transform: rotate(0); } to { transform: rotate(360deg); } }
+.ton-stats { display: flex; gap: 8px; margin-bottom: 10px; }
+.ton-stat { flex: 1; background: var(--bg3); border-radius: 6px; padding: 8px; text-align: center; }
+.ton-stat-label { font-size: 10px; color: var(--text2); margin-bottom: 3px; }
+.ton-stat-value { font-size: 13px; font-weight: 700; color: #0098ea; }
+.ton-deposits-title { font-size: 11px; color: var(--text2); margin: 12px 0 6px; font-weight: 600; }
+.ton-deposits { display: flex; flex-direction: column; gap: 6px; max-height: 220px; overflow-y: auto; }
+.ton-empty { font-size: 11px; color: var(--text2); text-align: center; padding: 10px; }
+.ton-dep { background: var(--bg3); border-radius: 6px; padding: 7px 9px; border-left: 2px solid #0098ea; }
+.ton-dep-top { display: flex; justify-content: space-between; align-items: center; }
+.ton-dep-amount { font-size: 13px; font-weight: 700; color: var(--green); }
+.ton-dep-time { font-size: 10px; color: var(--text2); }
+.ton-dep-from { font-size: 10px; color: var(--text2); font-family: monospace; margin-top: 2px; }
+.ton-dep-comment { font-size: 10px; color: var(--text); margin-top: 3px; }
+.ton-error { font-size: 10px; color: var(--red); margin-top: 8px; word-break: break-word; }
 
 /* ─── Настройки ─── */
 .settings-form { display: flex; flex-direction: column; gap: 9px; }

@@ -173,13 +173,32 @@
       <div class="card ton-card">
         <div class="card-title">💎 TON Кошелёк
           <span class="badge" style="background:#0a2540;color:#0098ea;font-size:10px;margin-left:6px">TON</span>
+          <button class="btn-ton-refresh" onclick="refreshTon()" title="Обновить">⟳</button>
         </div>
+
+        <div class="ton-stats">
+          <div class="ton-stat">
+            <div class="ton-stat-label">Баланс</div>
+            <div class="ton-stat-value" id="ton-balance">—</div>
+          </div>
+          <div class="ton-stat">
+            <div class="ton-stat-label">Поступило</div>
+            <div class="ton-stat-value" id="ton-received">—</div>
+          </div>
+        </div>
+
         <div class="ton-desc">Пополни бота, отправив TON на адрес:</div>
         <div class="ton-addr-row">
           <code id="ton-addr" class="ton-addr">—</code>
           <button class="btn-ton-copy" onclick="copyTon()">📋</button>
         </div>
         <div id="ton-copied" class="ton-copied" style="display:none">✓ Скопировано!</div>
+
+        <div class="ton-deposits-title">Последние поступления</div>
+        <div id="ton-deposits" class="ton-deposits">
+          <div class="ton-empty">Загрузка…</div>
+        </div>
+        <div id="ton-error" class="ton-error" style="display:none"></div>
       </div>
 
       <!-- Настройки -->

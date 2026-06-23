@@ -7,6 +7,7 @@ import threading
 import time
 from config import Config
 from trader import Trader
+from ton_tracker import TONTracker
 
 
 class NumpyJSONProvider(DefaultJSONProvider):
@@ -47,6 +48,7 @@ socketio = SocketIO(app, cors_allowed_origins="*", async_mode="threading",
                     json=type("_J", (), {"dumps": staticmethod(_safe_dumps), "loads": staticmethod(json.loads)})())
 
 trader = Trader()
+ton = TONTracker(Config.TON_WALLET)
 
 
 def _safe_status():
@@ -74,6 +76,24 @@ def push_updates():
         time.sleep(5)
 
 
+_bg_started = False
+_bg_lock = threading.Lock()
+
+def start_background():
+    """Запуск фоновых потоков (один раз на процесс, совместимо с gunicorn)."""
+    global _bg_started
+    with _bg_lock:
+        if _bg_started:
+            return
+        _bg_started = True
+        threading.Thread(target=push_updates, daemon=True).start()
+        ton.start()
+
+
+# Запуск при импорте (gunicorn выполняет app:app, не заходя в __main__)
+start_background()
+
+
 @app.route("/")
 def index():
     return render_template("index.html", symbol=Config.SYMBOL, demo=Config.DEMO_MODE)
@@ -91,6 +111,15 @@ def api_start():
 def api_stop():
     trader.stop()
     return jsonify({"ok": True, "message": "Агент остановлен"})
+
+@app.route("/api/ton")
+def api_ton():
+    return jsonify(ton.get_data())
+
+@app.route("/api/ton/refresh", methods=["POST"])
+def api_ton_refresh():
+    ton.refresh()
+    return jsonify(ton.get_data())
 
 @app.route("/api/config", methods=["GET"])
 def api_config_get():
@@ -125,6 +154,5 @@ def on_connect(auth=None):
         print(f"[on_connect] Ошибка: {e}")
 
 if __name__ == "__main__":
-    t = threading.Thread(target=push_updates, daemon=True)
-    t.start()
+    start_background()
     socketio.run(app, host="0.0.0.0", port=5000, debug=False, allow_unsafe_werkzeug=True)
