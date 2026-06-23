@@ -23,6 +23,7 @@ class CoinInfo:
         self._market_cache = {}   # base -> (data, ts)
         self._trades_cache = {}   # base -> (data, ts)
         self._pool_cache = {}     # base -> (pool_addr, ts)
+        self._exch_cache = {}     # base -> (data, ts)
 
     # ---------------- Рыночная статистика ----------------
     def market(self, base):
@@ -186,6 +187,127 @@ class CoinInfo:
             return out
         except Exception:
             return []
+
+    # ---------------- Цены на всех биржах TON ----------------
+    def exchanges(self, base):
+        base = (base or "").upper()
+        data = self._cached(self._exch_cache, base, self._fetch_exchanges, self.ttl_market)
+        return data or {"exchanges": [], "agg": None}
+
+    def _fetch_exchanges(self, base):
+        if base == "GRINCH":
+            rows = self._exchanges_dexscreener(Config.GRINCH_TOKEN_ADDRESS)
+        else:
+            cid = COINGECKO_IDS.get(base)
+            rows = self._exchanges_coingecko(cid) if cid else []
+        if not rows:
+            return None
+        return {"exchanges": rows, "agg": self._aggregate(rows)}
+
+    def _exchanges_dexscreener(self, addr):
+        try:
+            r = requests.get(
+                f"https://api.dexscreener.com/latest/dex/tokens/{addr}",
+                timeout=10,
+            )
+            r.raise_for_status()
+            want = (addr or "").lower()
+            rows = []
+            for p in (r.json().get("pairs") or []):
+                if (p.get("baseToken", {}) or {}).get("address", "").lower() != want:
+                    continue
+                price = _f(p.get("priceUsd"))
+                if not price:
+                    continue
+                rows.append({
+                    "name": (p.get("dexId") or "DEX").title(),
+                    "pair": f"{p['baseToken'].get('symbol')}/{p['quoteToken'].get('symbol')}",
+                    "kind": "DEX",
+                    "price": price,
+                    "liquidity": _f((p.get("liquidity", {}) or {}).get("usd")),
+                    "volume24h": _f((p.get("volume", {}) or {}).get("h24")),
+                    "change24h": _f((p.get("priceChange", {}) or {}).get("h24")),
+                    "url": p.get("url"),
+                })
+            rows.sort(key=lambda x: x.get("liquidity") or 0, reverse=True)
+            return rows
+        except Exception:
+            return []
+
+    def _exchanges_coingecko(self, cid):
+        try:
+            r = requests.get(
+                f"https://api.coingecko.com/api/v3/coins/{cid}/tickers",
+                timeout=12,
+            )
+            r.raise_for_status()
+            # Одна строка на биржу — выбираем тикер с наибольшим объёмом
+            best = {}
+            for t in (r.json().get("tickers") or []):
+                price = _f((t.get("converted_last") or {}).get("usd"))
+                if not price:
+                    continue
+                name = (t.get("market") or {}).get("name") or "Биржа"
+                vol = _f((t.get("converted_volume") or {}).get("usd")) or 0.0
+                row = {
+                    "name": name,
+                    "pair": f"{t.get('base')}/{t.get('target')}",
+                    "kind": "CEX",
+                    "price": price,
+                    "liquidity": None,
+                    "volume24h": vol,
+                    "change24h": None,
+                    "url": t.get("trade_url"),
+                }
+                prev = best.get(name)
+                if prev is None or vol > (prev.get("volume24h") or 0):
+                    best[name] = row
+            rows = list(best.values())
+            rows.sort(key=lambda x: x.get("volume24h") or 0, reverse=True)
+            return rows[:15]
+        except Exception:
+            return []
+
+    def _aggregate(self, rows):
+        prices = [r["price"] for r in rows if r.get("price")]
+        if not prices:
+            return None
+        # Вес — по ликвидности (DEX) или объёму (CEX); если нет, равный вес
+        wsum = num = 0.0
+        for r in rows:
+            p = r.get("price")
+            if not p:
+                continue
+            w = r.get("liquidity") or r.get("volume24h") or 1.0
+            wsum += w
+            num += p * w
+        avg = num / wsum if wsum else sum(prices) / len(prices)
+        pmin, pmax = min(prices), max(prices)
+        spread = (pmax - pmin) / pmin * 100 if pmin else 0.0
+        total_liq = sum((r.get("liquidity") or 0) for r in rows)
+        total_vol = sum((r.get("volume24h") or 0) for r in rows)
+        # Кросс-биржевой AI-сигнал
+        if spread >= 1.5:
+            signal, note = "АРБИТРАЖ", "Расхождение цен между биржами — возможен арбитраж"
+        elif spread >= 0.4:
+            signal, note = "РАСХОЖДЕНИЕ", "Небольшое расхождение цен между биржами"
+        else:
+            signal, note = "КОНСЕНСУС", "Цены на биржах согласованы"
+        best_buy = min(rows, key=lambda r: r.get("price") or 9e18)
+        best_sell = max(rows, key=lambda r: r.get("price") or 0)
+        return {
+            "avg_price": avg,
+            "min_price": pmin,
+            "max_price": pmax,
+            "spread_pct": round(spread, 3),
+            "total_liquidity": total_liq,
+            "total_volume": total_vol,
+            "count": len(prices),
+            "signal": signal,
+            "note": note,
+            "best_buy": {"name": best_buy.get("name"), "price": best_buy.get("price")},
+            "best_sell": {"name": best_sell.get("name"), "price": best_sell.get("price")},
+        }
 
     # ---------------- Общий кэш ----------------
     def _cached(self, cache, key, fetch, ttl):

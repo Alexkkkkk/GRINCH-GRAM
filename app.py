@@ -159,6 +159,11 @@ def api_coin_trades():
     base = Config.SYMBOL.split("/")[0].upper()
     return jsonify(coin_info.trades(base, limit=25))
 
+@app.route("/api/coin/exchanges")
+def api_coin_exchanges():
+    base = Config.SYMBOL.split("/")[0].upper()
+    return jsonify(coin_info.exchanges(base))
+
 @app.route("/api/config", methods=["GET"])
 def api_config_get():
     return jsonify({

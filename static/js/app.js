@@ -463,10 +463,65 @@ async function loadDexTrades() {
   } catch (e) { /* silent */ }
 }
 
+async function loadExchanges() {
+  try {
+    const r = await fetch("/api/coin/exchanges");
+    const d = await r.json();
+    const list = document.getElementById("exch-list");
+    const rows = (d && d.exchanges) || [];
+    const cnt = document.getElementById("exch-count");
+    const aiBox = document.getElementById("exch-ai");
+
+    if (rows.length === 0) {
+      list.innerHTML = '<div class="empty-msg">Нет данных</div>';
+      cnt.textContent = "";
+      aiBox.style.display = "none";
+      return;
+    }
+    cnt.textContent = "· " + rows.length + " бирж";
+
+    const agg = d.agg;
+    if (agg) {
+      aiBox.style.display = "block";
+      const sig = document.getElementById("exch-signal");
+      sig.textContent = agg.signal;
+      sig.className = "exch-ai-signal sig-" + (agg.signal === "АРБИТРАЖ" ? "arb" : (agg.signal === "РАСХОЖДЕНИЕ" ? "div" : "con"));
+      document.getElementById("exch-spread").textContent = "спред " + agg.spread_pct + "%";
+      document.getElementById("exch-note").textContent = agg.note || "";
+      document.getElementById("exch-avg").textContent = fmtPrice(agg.avg_price);
+      document.getElementById("exch-buy").textContent =
+        (agg.best_buy ? escapeHtml(agg.best_buy.name) + " " + fmtPrice(agg.best_buy.price) : "—");
+      document.getElementById("exch-sell").textContent =
+        (agg.best_sell ? escapeHtml(agg.best_sell.name) + " " + fmtPrice(agg.best_sell.price) : "—");
+    } else {
+      aiBox.style.display = "none";
+    }
+
+    list.innerHTML = rows.map(e => {
+      const chv = (e.change24h != null && isFinite(Number(e.change24h))) ? Number(e.change24h) : null;
+      const ch = chv != null
+        ? '<span class="ex-ch ' + (chv >= 0 ? "pos" : "neg") + '">' +
+            (chv >= 0 ? "+" : "") + chv.toFixed(2) + '%</span>'
+        : '<span class="ex-ch"></span>';
+      const liqOrVol = e.liquidity != null ? ("Ликв " + fmtBig(e.liquidity))
+                      : (e.volume24h != null ? ("Об " + fmtBig(e.volume24h)) : "");
+      return '<div class="ex-row">' +
+        '<span class="ex-name">' + escapeHtml(e.name) +
+          '<span class="ex-kind">' + escapeHtml(e.kind || "") + '</span></span>' +
+        '<span class="ex-price">' + fmtPrice(e.price) + '</span>' +
+        ch +
+        '<span class="ex-liq">' + escapeHtml(liqOrVol) + '</span>' +
+        '</div>';
+    }).join("");
+  } catch (e) { /* silent */ }
+}
+
 loadConfig();
 loadTon();
 loadCoin();
 loadDexTrades();
+loadExchanges();
 setInterval(loadTon, 30000);
 setInterval(loadCoin, 20000);
 setInterval(loadDexTrades, 15000);
+setInterval(loadExchanges, 20000);

@@ -68,6 +68,30 @@
         </div>
       </div>
 
+      <!-- Цены на всех биржах TON + кросс-биржевой AI -->
+      <div class="card exch-card">
+        <div class="card-title">🌐 Цены на биржах
+          <span id="exch-count" class="coin-source"></span>
+        </div>
+        <div class="exch-ai" id="exch-ai" style="display:none">
+          <div class="exch-ai-row">
+            <span class="exch-ai-signal" id="exch-signal">—</span>
+            <span class="exch-ai-spread" id="exch-spread"></span>
+          </div>
+          <div class="exch-ai-note" id="exch-note"></div>
+          <div class="exch-ai-avg">
+            <span>Средняя цена (AI): <b id="exch-avg">—</b></span>
+          </div>
+          <div class="exch-best">
+            <span class="pos">Дешевле: <b id="exch-buy">—</b></span>
+            <span class="neg">Дороже: <b id="exch-sell">—</b></span>
+          </div>
+        </div>
+        <div id="exch-list" class="exch-list">
+          <div class="empty-msg">Загрузка…</div>
+        </div>
+      </div>
+
       <!-- AI Brain блок -->
       <div class="card ai-card">
         <div class="card-title">🧠 AI Мозг

@@ -234,6 +234,39 @@ body { background: var(--bg); color: var(--text); font-family: 'Segoe UI', syste
 .dt-usd { color: var(--text2); font-variant-numeric: tabular-nums; }
 .dt-time { color: var(--text2); font-size: 11px; min-width: 28px; text-align: right; }
 
+/* Цены на биржах + кросс-биржевой AI */
+.exch-ai {
+  background: linear-gradient(135deg, rgba(0,152,234,0.10), rgba(0,212,170,0.06));
+  border: 1px solid rgba(0,152,234,0.25); border-radius: 10px;
+  padding: 10px 12px; margin-bottom: 10px;
+}
+.exch-ai-row { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; }
+.exch-ai-signal { font-weight: 800; font-size: 13px; letter-spacing: .3px; }
+.sig-arb { color: #ffb020; }
+.sig-div { color: #ffd166; }
+.sig-con { color: #00d4aa; }
+.exch-ai-spread { font-size: 11px; color: var(--text2); margin-left: auto; }
+.exch-ai-note { font-size: 11px; color: var(--text2); margin-bottom: 6px; }
+.exch-ai-avg { font-size: 13px; margin-bottom: 4px; }
+.exch-ai-avg b { color: #fff; }
+.exch-best { display: flex; justify-content: space-between; gap: 8px; font-size: 11px; }
+.exch-best b { font-weight: 700; }
+
+.exch-list { display: flex; flex-direction: column; gap: 3px; max-height: 280px; overflow-y: auto; }
+.ex-row {
+  display: grid; grid-template-columns: 1fr auto auto auto; gap: 8px;
+  align-items: center; padding: 6px 8px; border-radius: 6px;
+  background: rgba(255,255,255,0.02); font-size: 12px;
+}
+.ex-name { font-weight: 600; display: flex; align-items: center; gap: 5px; }
+.ex-kind {
+  font-size: 9px; color: var(--text2); border: 1px solid var(--border);
+  border-radius: 4px; padding: 1px 4px;
+}
+.ex-price { font-variant-numeric: tabular-nums; }
+.ex-ch { font-size: 11px; min-width: 48px; text-align: right; }
+.ex-liq { font-size: 10px; color: var(--text2); min-width: 64px; text-align: right; }
+
 @media (max-width: 900px) {
   .main-grid { grid-template-columns: 1fr; }
   .col-left, .col-right { border: none; }
