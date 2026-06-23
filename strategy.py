@@ -77,6 +77,15 @@ def get_signal(df):
         return "HOLD", strength
 
 
+def _pdigits(p):
+    """Адаптивное число знаков после запятой в зависимости от величины цены."""
+    p = abs(float(p))
+    if p >= 100:   return 2
+    if p >= 1:     return 4
+    if p >= 0.01:  return 6
+    return 8
+
+
 def analyze(ohlcv):
     df = compute_indicators(ohlcv)
     signal, strength = get_signal(df)
@@ -84,16 +93,17 @@ def analyze(ohlcv):
     candles = df[["timestamp", "open", "high", "low", "close", "volume"]].tail(50).copy()
     candles["timestamp"] = candles["timestamp"].astype(str)
 
+    d = _pdigits(last["close"])
     return {
         "signal": signal,
         "strength": round(strength * 100, 1),
-        "price": round(last["close"], 2),
+        "price": round(last["close"], d),
         "rsi": round(last["rsi"], 2),
-        "macd": round(last["macd"], 4),
-        "macd_signal": round(last["macd_signal"], 4),
-        "ema_fast": round(last["ema_fast"], 2),
-        "ema_slow": round(last["ema_slow"], 2),
-        "bb_upper": round(last["bb_upper"], 2),
-        "bb_lower": round(last["bb_lower"], 2),
+        "macd": round(last["macd"], max(4, d)),
+        "macd_signal": round(last["macd_signal"], max(4, d)),
+        "ema_fast": round(last["ema_fast"], d),
+        "ema_slow": round(last["ema_slow"], d),
+        "bb_upper": round(last["bb_upper"], d),
+        "bb_lower": round(last["bb_lower"], d),
         "candles": candles.to_dict("records"),
     }

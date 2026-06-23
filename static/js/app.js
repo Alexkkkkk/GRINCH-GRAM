@@ -5,7 +5,7 @@ socket.on("price_update", updatePrice);
 
 function fmtPrice(p) {
   p = Number(p) || 0;
-  const digits = p >= 100 ? 2 : (p >= 1 ? 4 : 6);
+  const digits = p >= 100 ? 2 : (p >= 1 ? 4 : (p >= 0.01 ? 6 : 8));
   return "$" + p.toLocaleString("en-US", { minimumFractionDigits: digits, maximumFractionDigits: digits });
 }
 

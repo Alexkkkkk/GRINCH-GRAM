@@ -1,1 +1,2 @@
 - [Gunicorn background threads](gunicorn-background-threads.md) — start pollers at module import (not __main__), or they silently never run in the deployed app.
+- [Real-time price feed](price-feed.md) — free CoinGecko/DexScreener prices; use adaptive decimals (fixed round(x,2) zeroes sub-cent coins like GRINCH).

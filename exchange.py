@@ -3,6 +3,7 @@ import random
 import time
 from config import Config
 from datetime import datetime, timedelta
+from price_feed import price_feed
 
 # Базовые ориентировочные цены монет для демо-режима (USDT)
 BASE_PRICES = {
@@ -49,6 +50,11 @@ class ExchangeClient:
         return self.symbol.split("/")[0].upper()
 
     def _base_price(self):
+        # Реальная цена через бесплатный API (с кэшем); фолбэк — статичная демо-цена
+        if self.demo_mode:
+            real = price_feed.get(self.base_currency)
+            if real and real > 0:
+                return real
         return BASE_PRICES.get(self.base_currency, DEFAULT_BASE_PRICE)
 
     def get_live_price(self):
@@ -118,7 +124,10 @@ class ExchangeClient:
     def _round(self, p):
         # Меньше цена — больше знаков после запятой
         bp = self._base_price()
-        digits = 2 if bp >= 100 else (4 if bp >= 1 else 6)
+        if bp >= 100:   digits = 2
+        elif bp >= 1:   digits = 4
+        elif bp >= 0.01: digits = 6
+        else:           digits = 8
         return round(p, digits)
 
     def _fake_ticker(self):
