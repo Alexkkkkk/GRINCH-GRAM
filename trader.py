@@ -107,17 +107,29 @@ class Trader:
 
         blocked = None
         if final_signal == "BUY":
-            hard_override = conf >= Config.AI_HARD_OVERRIDE_CONFIDENCE
-            if Config.TREND_FILTER and regime_name == "DOWNTREND":
-                # DOWNTREND блокирует всегда — не воевать с макро-трендом
-                blocked = "нисходящий тренд"
-            elif conf < Config.MIN_AI_CONFIDENCE:
+            hard_override     = conf >= Config.AI_HARD_OVERRIDE_CONFIDENCE
+            mean_rev_override = (
+                rsi <= Config.RSI_OVERSOLD_REVERSAL and
+                conf >= Config.REVERSAL_AI_MIN
+            )
+
+            if conf < Config.MIN_AI_CONFIDENCE:
                 blocked = f"низкая уверенность AI {conf}%"
+            elif mean_rev_override:
+                # RSI < 25 + AI > 85% → Mean Reversion: отскок от дна даже в DOWNTREND
+                self.log(
+                    f"📈 Mean Reversion Override: RSI={rsi:.1f} (экстрем) + AI={conf}% "
+                    f"→ входим несмотря на {regime_name}", "INFO"
+                )
+            elif Config.TREND_FILTER and regime_name == "DOWNTREND":
+                blocked = "нисходящий тренд"
             elif hard_override:
-                # При ≥93% уверенности AI — игнорируем RSI и аномалию
-                # Для GRINCH памп = возможность, а не риск
+                # При ≥93% уверенности — игнорируем RSI и аномалию
                 if anomaly:
-                    self.log(f"🔥 Hard Override: AI {conf}% > {Config.AI_HARD_OVERRIDE_CONFIDENCE}% — входим несмотря на аномалию Z={ai['anomaly']['z_price']}", "INFO")
+                    self.log(
+                        f"🔥 Hard Override: AI={conf}% → входим несмотря на "
+                        f"аномалию Z={ai['anomaly']['z_price']}", "INFO"
+                    )
             elif rsi >= Config.RSI_OVERBOUGHT:
                 blocked = f"перекупленность RSI={rsi:.1f}"
             elif anomaly:
