@@ -52,28 +52,171 @@ body { background: var(--bg); color: var(--text); font-family: 'Segoe UI', syste
 .signal-SELL .signal-label { color: var(--red);   }
 .signal-HOLD .signal-label { color: var(--yellow);}
 
-/* ─── AI Brain ─── */
-.ai-card { border-color: #2a3a5c; background: linear-gradient(135deg, #141720 0%, #141a2e 100%); }
 
-.prob-bars { display: flex; flex-direction: column; gap: 7px; margin-bottom: 12px; }
-.prob-row  { display: flex; align-items: center; gap: 8px; }
-.prob-label { font-size: 11px; color: var(--text2); width: 65px; flex-shrink: 0; }
-.prob-bar-wrap { flex: 1; background: var(--bg3); border-radius: 3px; height: 10px; overflow: hidden; }
-.prob-bar { height: 100%; border-radius: 3px; transition: width .6s ease; }
-.pb-up   { background: var(--green); }
-.pb-hold { background: var(--yellow); }
-.pb-down { background: var(--red);   }
-.prob-val { font-size: 11px; font-family: monospace; font-weight: 700; width: 34px; text-align: right; }
+/* ═══════════════════════════════════════════════════
+   AI COMMAND CENTER
+═══════════════════════════════════════════════════ */
+.ai-command {
+  background:
+    radial-gradient(ellipse 70% 40% at 20% 25%, rgba(79,142,247,0.07) 0%, transparent 55%),
+    radial-gradient(ellipse 55% 35% at 80% 75%, rgba(167,139,250,0.05) 0%, transparent 50%),
+    linear-gradient(145deg, #0d1120 0%, #101828 40%, #0d1820 100%);
+  border: 1px solid #2a3a5c;
+}
 
-.regime-badge { font-size: 12px; font-weight: 700; padding: 5px 10px; border-radius: 6px; border: 1px solid; text-align: center; margin-top: 6px; }
+/* Шапка */
+.ai-cc-head {
+  display: flex; justify-content: space-between; align-items: flex-start;
+  margin-bottom: 14px;
+}
+.ai-cc-title { font-size: 14px; font-weight: 800; color: var(--text); letter-spacing: 0.3px; }
+.ai-cc-meta { text-align: right; }
+.ai-cc-samples { font-size: 10px; color: var(--text2); display: block; }
+.ai-cc-upd { font-size: 10px; color: #4a5568; }
 
-.anomaly-alert { margin-top: 8px; padding: 6px 10px; border-radius: 6px; background: #2e1520; border: 1px solid #ff4d6d; color: #ff4d6d; font-size: 12px; font-weight: 600; }
+/* Основной блок */
+.ai-cc-body {
+  display: flex; align-items: center; gap: 8px; margin-bottom: 14px;
+}
+
+/* ─── SVG Gauge ─── */
+.ai-gauge-panel { flex-shrink: 0; text-align: center; }
+#gauge-fill { transition: stroke-dasharray 0.9s cubic-bezier(0.4,0,0.2,1), stroke 0.4s ease; }
+#gauge-pct  { transition: fill 0.4s ease; }
+#gauge-sig  { transition: fill 0.4s ease; }
+.ai-gauge-lbl { font-size: 10px; color: var(--text2); margin-top: 2px; }
+
+/* ─── Decision Panel ─── */
+.ai-decision-panel {
+  flex: 1; display: flex; flex-direction: column;
+  align-items: center; justify-content: center; gap: 6px; min-width: 0;
+}
+.ai-decision-signal {
+  font-size: 34px; font-weight: 900; letter-spacing: 3px;
+  transition: color 0.4s ease, text-shadow 0.4s ease, transform 0.2s ease;
+  line-height: 1;
+}
+.ai-ds-BUY  { color: var(--green); text-shadow: 0 0 24px rgba(0,212,170,0.5); }
+.ai-ds-SELL { color: var(--red);   text-shadow: 0 0 24px rgba(255,77,109,0.5); }
+.ai-ds-HOLD { color: var(--yellow);text-shadow: 0 0 16px rgba(255,209,102,0.3); }
+
+.ai-decision-why {
+  font-size: 11px; color: var(--text2); text-align: center;
+  line-height: 1.5; min-height: 32px; max-width: 180px;
+}
+
+/* Thinking dots */
+.ai-thinking-dots { display: flex; gap: 4px; align-items: center; height: 14px; }
+.ai-thinking-dots span {
+  width: 5px; height: 5px; border-radius: 50%; background: var(--blue);
+  animation: thinkbounce 1.4s ease-in-out infinite;
+  flex-shrink: 0;
+}
+.ai-thinking-dots span:nth-child(1) { animation-delay: 0s; }
+.ai-thinking-dots span:nth-child(2) { animation-delay: 0.15s; }
+.ai-thinking-dots span:nth-child(3) { animation-delay: 0.30s; }
+.ai-thinking-dots span:nth-child(4) { animation-delay: 0.45s; background: var(--purple); }
+.ai-thinking-dots span:nth-child(5) { animation-delay: 0.60s; background: var(--green); }
+@keyframes thinkbounce {
+  0%, 80%, 100% { opacity: 0.15; transform: scaleY(0.6); }
+  40% { opacity: 1; transform: scaleY(1.4); }
+}
+
+.ai-regime-chip {
+  font-size: 11px; font-weight: 700; padding: 3px 12px;
+  border-radius: 20px; border: 1px solid;
+  transition: all 0.4s ease; background: transparent;
+}
+
+/* ─── Вертикальные Probability bars ─── */
+.ai-vprobs { display: flex; gap: 6px; align-items: flex-end; flex-shrink: 0; }
+.ai-vprob-col { display: flex; flex-direction: column; align-items: center; gap: 4px; width: 30px; }
+.ai-vprob-track {
+  width: 22px; height: 80px;
+  background: rgba(255,255,255,0.04); border-radius: 4px 4px 0 0;
+  overflow: hidden; display: flex; flex-direction: column; justify-content: flex-end;
+  border: 1px solid rgba(255,255,255,0.06);
+}
+.ai-vprob-bar {
+  width: 100%; border-radius: 3px 3px 0 0;
+  transition: height 0.8s cubic-bezier(0.34,1.56,0.64,1);
+  min-height: 2px;
+}
+.vp-up   { background: linear-gradient(180deg, #00d4aa 0%, rgba(0,212,170,0.3) 100%);
+           box-shadow: 0 -2px 8px rgba(0,212,170,0.4); }
+.vp-hold { background: linear-gradient(180deg, #ffd166 0%, rgba(255,209,102,0.3) 100%);
+           box-shadow: 0 -2px 8px rgba(255,209,102,0.4); }
+.vp-down { background: linear-gradient(180deg, #ff4d6d 0%, rgba(255,77,109,0.3) 100%);
+           box-shadow: 0 -2px 8px rgba(255,77,109,0.4); }
+.ai-vprob-lbl { font-size: 12px; }
+.ai-vp-up   { color: var(--green); }
+.ai-vp-hold { color: var(--yellow); }
+.ai-vp-down { color: var(--red); }
+.ai-vprob-val { font-size: 9px; font-family: monospace; font-weight: 700; color: var(--text2); }
+
+/* ─── Режим рынка баннер ─── */
+.ai-regime-banner {
+  display: flex; align-items: center; gap: 10px;
+  padding: 10px 14px; border-radius: 10px;
+  border-left: 4px solid var(--text2);
+  background: rgba(255,255,255,0.02);
+  margin-bottom: 12px;
+  transition: border-color 0.5s ease, background 0.5s ease;
+}
+.ai-rb-icon { font-size: 20px; flex-shrink: 0; }
+.ai-rb-center { flex: 1; min-width: 0; }
+.ai-rb-name { font-size: 14px; font-weight: 800; transition: color 0.4s; display: block; }
+.ai-rb-desc { font-size: 11px; color: var(--text2); display: block; }
+.ai-rb-meta { display: flex; gap: 12px; flex-shrink: 0; }
+.ai-rb-stat { text-align: center; }
+.ai-rb-stat-lbl { font-size: 9px; color: var(--text2); }
+.ai-rb-stat-val { font-size: 12px; font-weight: 700; font-family: monospace; color: var(--text); }
+
+/* ─── Sparkline ─── */
+.ai-spark-section { margin-bottom: 12px; }
+.ai-spark-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 5px; }
+.ai-spark-lbl { font-size: 10px; color: var(--text2); font-weight: 600; }
+.ai-spark-cur { font-size: 11px; font-family: monospace; font-weight: 700; color: var(--blue); }
+#ai-sparkline { width: 100%; display: block; border-radius: 4px; }
+
+/* ─── Прогноз (мини) ─── */
+.ai-forecast-row {
+  display: flex; align-items: center; gap: 8px;
+  padding: 8px 12px; background: rgba(255,255,255,0.02);
+  border-radius: 8px; border: 1px solid rgba(255,255,255,0.04);
+  margin-bottom: 10px; flex-wrap: wrap;
+}
+.ai-fc-label { font-size: 11px; color: var(--text2); font-weight: 600; flex-shrink: 0; }
+.ai-fc-items { display: flex; gap: 8px; }
+.ai-fc-item { text-align: center; }
+.ai-fc-t { font-size: 9px; color: var(--text2); }
+.ai-fc-range { font-size: 10px; color: var(--text2); margin-left: auto; }
+
+/* ─── Аномалия ─── */
+.ai-anomaly-banner {
+  display: flex; align-items: center; gap: 8px;
+  padding: 8px 12px; border-radius: 8px;
+  background: rgba(255,77,109,0.08); border: 1px solid rgba(255,77,109,0.35);
+  color: var(--red); font-size: 12px; font-weight: 600;
+  animation: anomalypulse 1.5s ease-in-out infinite;
+  position: relative; overflow: hidden;
+}
+@keyframes anomalypulse {
+  0%, 100% { border-color: rgba(255,77,109,0.35); background: rgba(255,77,109,0.08); }
+  50%       { border-color: rgba(255,77,109,0.65); background: rgba(255,77,109,0.14); }
+}
+.ai-anom-pulse {
+  width: 8px; height: 8px; border-radius: 50%;
+  background: var(--red); flex-shrink: 0;
+  animation: pulsered 1s ease-in-out infinite;
+}
+@keyframes pulsered {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(255,77,109,0.7); }
+  50%       { box-shadow: 0 0 0 6px rgba(255,77,109,0); }
+}
 
 /* ─── Прогноз ─── */
-.forecast-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; margin-bottom: 8px; }
-.fc-item   { background: var(--bg3); border-radius: 6px; padding: 8px; text-align: center; }
-.fc-label  { font-size: 10px; color: var(--text2); margin-bottom: 4px; }
-.fc-val    { font-size: 14px; font-weight: 700; font-family: monospace; color: var(--text); }
+.fc-val    { font-size: 13px; font-weight: 700; font-family: monospace; color: var(--text); }
 .fc-range  { font-size: 11px; color: var(--text2); text-align: center; }
 
 /* ─── S/R ─── */
@@ -86,7 +229,12 @@ body { background: var(--bg); color: var(--text); font-family: 'Segoe UI', syste
 
 /* ─── Паттерны ─── */
 .patterns-list { display: flex; flex-direction: column; gap: 5px; }
-.pattern-item  { font-size: 12px; padding: 6px 9px; border-radius: 5px; border-left: 3px solid; }
+.pattern-item  { font-size: 12px; padding: 6px 9px; border-radius: 5px; border-left: 3px solid;
+                 animation: slideinfade 0.4s ease; }
+@keyframes slideinfade {
+  from { opacity: 0; transform: translateX(-10px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
 .pat-bull { border-color: var(--green); background: #0d2e2215; color: var(--text); }
 .pat-bear { border-color: var(--red);   background: #2e152015; color: var(--text); }
 .pat-neut { border-color: var(--yellow);background: #3b322815; color: var(--text); }
@@ -96,7 +244,7 @@ body { background: var(--bg); color: var(--text); font-family: 'Segoe UI', syste
 .fi-row  { display: flex; align-items: center; gap: 7px; }
 .fi-name { font-size: 11px; color: var(--text2); width: 90px; flex-shrink: 0; font-family: monospace; }
 .fi-bar-wrap { flex: 1; background: var(--bg3); border-radius: 3px; height: 8px; overflow: hidden; }
-.fi-bar  { height: 100%; border-radius: 3px; background: linear-gradient(90deg, var(--purple), var(--blue)); transition: width .5s; }
+.fi-bar  { height: 100%; border-radius: 3px; background: linear-gradient(90deg, var(--purple), var(--blue)); transition: width .6s cubic-bezier(0.4,0,0.2,1); }
 .fi-val  { font-size: 11px; font-family: monospace; color: var(--purple); width: 34px; text-align: right; }
 
 /* ─── Индикаторы ─── */
@@ -160,16 +308,10 @@ body { background: var(--bg); color: var(--text); font-family: 'Segoe UI', syste
   padding: 8px 10px; font-size: 11px; font-family: monospace; color: #0098ea;
   word-break: break-all; line-height: 1.4;
 }
-.btn-ton-copy {
-  background: #0098ea; color: #fff; border: none; border-radius: 6px;
-  padding: 0 12px; cursor: pointer; font-size: 16px; flex-shrink: 0; transition: opacity .15s;
-}
+.btn-ton-copy { background: #0098ea; color: #fff; border: none; border-radius: 6px; padding: 0 12px; cursor: pointer; font-size: 16px; flex-shrink: 0; transition: opacity .15s; }
 .btn-ton-copy:hover { opacity: .85; }
 .ton-copied { font-size: 11px; color: var(--green); margin-top: 6px; text-align: center; font-weight: 600; }
-.btn-ton-refresh {
-  float: right; background: transparent; border: none; color: #0098ea;
-  font-size: 16px; cursor: pointer; padding: 0; line-height: 1;
-}
+.btn-ton-refresh { float: right; background: transparent; border: none; color: #0098ea; font-size: 16px; cursor: pointer; padding: 0; line-height: 1; }
 .btn-ton-refresh:hover { color: #33b5ff; }
 .btn-ton-refresh.spin { animation: tonspin .6s linear; }
 @keyframes tonspin { from { transform: rotate(0); } to { transform: rotate(360deg); } }
@@ -191,8 +333,11 @@ body { background: var(--bg); color: var(--text); font-family: 'Segoe UI', syste
 /* ─── Настройки ─── */
 .settings-form { display: flex; flex-direction: column; gap: 9px; }
 .settings-form label { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: var(--text2); }
-.settings-form input { background: var(--bg3); border: 1px solid var(--border); color: var(--text); border-radius: 5px; padding: 7px 9px; font-size: 13px; }
-.settings-form input:focus { outline: none; border-color: var(--blue); }
+.settings-form select, .settings-form input { background: var(--bg3); border: 1px solid var(--border); color: var(--text); border-radius: 5px; padding: 7px 9px; font-size: 13px; }
+.settings-form input:focus, .settings-form select:focus { outline: none; border-color: var(--blue); }
+.cfg-check { flex-direction: row !important; align-items: center; gap: 8px; font-size: 12px; color: var(--text2); cursor: pointer; }
+.cfg-check input { width: auto; margin: 0; }
+.cfg-note { font-size: 11px; color: var(--text2); line-height: 1.4; background: rgba(255,176,32,0.08); border: 1px solid rgba(255,176,32,0.2); border-radius: 8px; padding: 8px 10px; margin-top: 4px; }
 
 /* ─── Логи ─── */
 .log-container { height: 220px; overflow-y: auto; display: flex; flex-direction: column; gap: 3px; }
@@ -226,22 +371,14 @@ body { background: var(--bg); color: var(--text); font-family: 'Segoe UI', syste
 
 /* Лента сделок на DEX */
 .dex-trades { display: flex; flex-direction: column; gap: 4px; max-height: 320px; overflow-y: auto; }
-.dex-trade {
-  display: grid; grid-template-columns: auto 1fr auto auto; gap: 8px;
-  align-items: center; padding: 6px 8px; border-radius: 6px;
-  background: rgba(255,255,255,0.02); font-size: 12px;
-}
+.dex-trade { display: grid; grid-template-columns: auto 1fr auto auto; gap: 8px; align-items: center; padding: 6px 8px; border-radius: 6px; background: rgba(255,255,255,0.02); font-size: 12px; }
 .dt-side { font-weight: 700; font-size: 11px; }
 .dt-amt { color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .dt-usd { color: var(--text2); font-variant-numeric: tabular-nums; }
 .dt-time { color: var(--text2); font-size: 11px; min-width: 28px; text-align: right; }
 
-/* Цены на биржах + кросс-биржевой AI */
-.exch-ai {
-  background: linear-gradient(135deg, rgba(0,152,234,0.10), rgba(0,212,170,0.06));
-  border: 1px solid rgba(0,152,234,0.25); border-radius: 10px;
-  padding: 10px 12px; margin-bottom: 10px;
-}
+/* Цены на биржах */
+.exch-ai { background: linear-gradient(135deg, rgba(0,152,234,0.10), rgba(0,212,170,0.06)); border: 1px solid rgba(0,152,234,0.25); border-radius: 10px; padding: 10px 12px; margin-bottom: 10px; }
 .exch-ai-row { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; }
 .exch-ai-signal { font-weight: 800; font-size: 13px; letter-spacing: .3px; }
 .sig-arb { color: #ffb020; }
@@ -253,32 +390,13 @@ body { background: var(--bg); color: var(--text); font-family: 'Segoe UI', syste
 .exch-ai-avg b { color: #fff; }
 .exch-best { display: flex; justify-content: space-between; gap: 8px; font-size: 11px; }
 .exch-best b { font-weight: 700; }
-
 .exch-list { display: flex; flex-direction: column; gap: 3px; max-height: 280px; overflow-y: auto; }
-.ex-row {
-  display: grid; grid-template-columns: 1fr auto auto auto; gap: 8px;
-  align-items: center; padding: 6px 8px; border-radius: 6px;
-  background: rgba(255,255,255,0.02); font-size: 12px;
-}
+.ex-row { display: grid; grid-template-columns: 1fr auto auto auto; gap: 8px; align-items: center; padding: 6px 8px; border-radius: 6px; background: rgba(255,255,255,0.02); font-size: 12px; }
 .ex-name { font-weight: 600; display: flex; align-items: center; gap: 5px; }
-.ex-kind {
-  font-size: 9px; color: var(--text2); border: 1px solid var(--border);
-  border-radius: 4px; padding: 1px 4px;
-}
+.ex-kind { font-size: 9px; color: var(--text2); border: 1px solid var(--border); border-radius: 4px; padding: 1px 4px; }
 .ex-price { font-variant-numeric: tabular-nums; }
 .ex-ch { font-size: 11px; min-width: 48px; text-align: right; }
 .ex-liq { font-size: 10px; color: var(--text2); min-width: 64px; text-align: right; }
-
-.cfg-check {
-  flex-direction: row !important; align-items: center; gap: 8px;
-  font-size: 12px; color: var(--text2); cursor: pointer;
-}
-.cfg-check input { width: auto; margin: 0; }
-.cfg-note {
-  font-size: 11px; color: var(--text2); line-height: 1.4;
-  background: rgba(255,176,32,0.08); border: 1px solid rgba(255,176,32,0.2);
-  border-radius: 8px; padding: 8px 10px; margin-top: 4px;
-}
 
 @media (max-width: 900px) {
   .main-grid { grid-template-columns: 1fr; }

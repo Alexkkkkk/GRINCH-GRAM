@@ -1,3 +1,10 @@
+// Мгновенная инициализация AI из серверных данных (без ожидания REST-поллинга)
+document.addEventListener("DOMContentLoaded", () => {
+  if (window._initAI && window._initAI.ai_signal) {
+    updateAIPro(window._initAI);
+  }
+});
+
 // Немедленно загружаем данные при старте страницы (не ждём SocketIO)
 fetch("/api/status").then(r => r.json()).then(updateUI).catch(() => {});
 
@@ -12,7 +19,7 @@ socket.on("connect", () => {
 socket.on("status_update", updateUI);
 socket.on("price_update", updatePrice);
 
-// Постоянный polling: REST каждые 3 сек — гарантирует актуальный статус/цену
+// Постоянный polling: REST каждые 3 сек
 setInterval(() => {
   fetch("/api/status").then(r => r.json()).then(updateUI).catch(() => {});
 }, 3000);
@@ -29,15 +36,12 @@ function updatePrice(d) {
   if (!el) return;
   const price = Number(d.price) || 0;
   el.textContent = fmtPrice(price);
-
-  // Подсветка движения цены
   if (_lastLivePrice !== null && price !== _lastLivePrice) {
     el.classList.remove("price-up", "price-down");
     void el.offsetWidth;
     el.classList.add(price > _lastLivePrice ? "price-up" : "price-down");
   }
   _lastLivePrice = price;
-
   const ch = document.getElementById("price-change");
   if (ch) {
     const c = Number(d.change) || 0;
@@ -51,13 +55,11 @@ function updateUI(data) {
   const stats    = data.stats    || {};
   const ai       = data.ai       || {};
 
-  // Цена из анализа — всегда обновляем
+  // Цена из анализа
   const priceFromAnalysis = Number(analysis.price);
   if (priceFromAnalysis > 0) {
     const priceEl = document.getElementById("price");
-    if (priceEl) {
-      priceEl.textContent = fmtPrice(priceFromAnalysis);
-    }
+    if (priceEl) priceEl.textContent = fmtPrice(priceFromAnalysis);
   }
   document.getElementById("symbol-label").textContent = data.symbol || "GRINCH/USDT";
 
@@ -68,71 +70,62 @@ function updateUI(data) {
   document.getElementById("signal-text").textContent = sig;
   document.getElementById("signal-strength").textContent = (analysis.strength || 0) + "% Tech";
 
-  // AI сигнал
+  // AI сигнал (хедер)
   const aiSig = ai.ai_signal || "HOLD";
   const aiSb  = document.getElementById("ai-signal-block");
   aiSb.className = "signal-block signal-" + aiSig;
   document.getElementById("ai-signal-text").textContent = aiSig;
   document.getElementById("ai-confidence").textContent = "AI " + (ai.confidence || 0) + "%";
 
-  // AI обучение
+  // Совместимость: hidden legacy elements (в левой колонке, display:none)
   const trainedBadge = document.getElementById("ai-trained-badge");
-  if (ai.model_trained) {
-    trainedBadge.textContent = `✓ Обучена (${ai.samples_trained} баров)`;
-    trainedBadge.style.background = "#0d2e22";
-    trainedBadge.style.color = "#00d4aa";
-  } else {
-    trainedBadge.textContent = "обучается…";
-    trainedBadge.style.background = "#3b3228";
-    trainedBadge.style.color = "#ffd166";
+  if (trainedBadge) {
+    if (ai.model_trained) {
+      trainedBadge.textContent = "✓ Обучена";
+      trainedBadge.style.background = "#0d2e22";
+      trainedBadge.style.color = "#00d4aa";
+    } else {
+      trainedBadge.textContent = "обучается…";
+    }
   }
-
-  // Вероятности
   const pU = ai.prob_up   || 0;
   const pH = ai.prob_hold || 0;
   const pD = ai.prob_down || 0;
-  document.getElementById("bar-up").style.width   = pU + "%";
-  document.getElementById("bar-hold").style.width = pH + "%";
-  document.getElementById("bar-down").style.width = pD + "%";
-  document.getElementById("val-up").textContent   = pU + "%";
-  document.getElementById("val-hold").textContent = pH + "%";
-  document.getElementById("val-down").textContent = pD + "%";
-
-  // Режим рынка
+  const barUp = document.getElementById("bar-up");
+  if (barUp) barUp.style.width = pU + "%";
+  const barH = document.getElementById("bar-hold");
+  if (barH) barH.style.width = pH + "%";
+  const barD = document.getElementById("bar-down");
+  if (barD) barD.style.width = pD + "%";
+  const valUp = document.getElementById("val-up");
+  if (valUp) valUp.textContent = pU + "%";
+  const valH = document.getElementById("val-hold");
+  if (valH) valH.textContent = pH + "%";
+  const valD = document.getElementById("val-down");
+  if (valD) valD.textContent = pD + "%";
   const regime = ai.regime || {};
   const regimeEl = document.getElementById("regime-badge");
-  const regimeColors = { green:"#00d4aa", red:"#ff4d6d", yellow:"#ffd166", blue:"#4f8ef7", purple:"#a78bfa", grey:"#8892b0" };
-  const rc = regimeColors[regime.color] || "#8892b0";
-  regimeEl.textContent = `${regime.name || "—"} — ${regime.desc || ""}`;
-  regimeEl.style.borderColor = rc;
-  regimeEl.style.color = rc;
-
-  // Аномалия
-  const anomaly = ai.anomaly || {};
-  const anomEl  = document.getElementById("anomaly-alert");
-  if (anomaly.detected) {
-    anomEl.style.display = "";
-    document.getElementById("anomaly-desc").textContent =
-      `${anomaly.description} | Z-цена=${anomaly.z_price} | Z-объём=${anomaly.z_volume}`;
-  } else {
-    anomEl.style.display = "none";
-  }
+  if (regimeEl) regimeEl.textContent = regime.name || "—";
+  const anomaly  = ai.anomaly || {};
+  const anomEl   = document.getElementById("anomaly-alert");
+  if (anomEl) anomEl.style.display = anomaly.detected ? "" : "none";
 
   // Прогноз
   const fc = ai.forecast || {};
-  document.getElementById("fc-t1").textContent = fc.t1 ? "$" + fc.t1 : "—";
-  document.getElementById("fc-t2").textContent = fc.t2 ? "$" + fc.t2 : "—";
-  document.getElementById("fc-t3").textContent = fc.t3 ? "$" + fc.t3 : "—";
-  const fcT1El = document.getElementById("fc-t1");
-  const fcT3El = document.getElementById("fc-t3");
-  if (fc.bull !== undefined) {
-    const fc3cls = fc.bull ? "pnl-pos" : "pnl-neg";
-    fcT1El.className = "fc-val " + fc3cls;
-    fcT3El.className = "fc-val " + fc3cls;
+  const fcT1 = document.getElementById("fc-t1");
+  const fcT3 = document.getElementById("fc-t3");
+  if (fcT1) {
+    fcT1.textContent = fc.t1 ? "$" + fc.t1 : "—";
+    if (fc.bull !== undefined) fcT1.className = "fc-val " + (fc.bull ? "pnl-pos" : "pnl-neg");
   }
-  if (fc.range_up && fc.range_down) {
-    document.getElementById("fc-range").textContent =
-      `Диапазон: $${fc.range_down} – $${fc.range_up} (ATR)`;
+  if (document.getElementById("fc-t2")) document.getElementById("fc-t2").textContent = fc.t2 ? "$" + fc.t2 : "—";
+  if (fcT3) {
+    fcT3.textContent = fc.t3 ? "$" + fc.t3 : "—";
+    if (fc.bull !== undefined) fcT3.className = "fc-val " + (fc.bull ? "pnl-pos" : "pnl-neg");
+  }
+  const fcRange = document.getElementById("fc-range");
+  if (fcRange && fc.range_up && fc.range_down) {
+    fcRange.textContent = `$${fc.range_down} – $${fc.range_up}`;
   }
 
   // Уровни S/R
@@ -181,7 +174,268 @@ function updateUI(data) {
   renderOpenTrades(data.open_trades  || []);
   renderHistory(data.recent_trades || []);
   renderLogs(data.logs             || []);
+
+  // ═══ AI COMMAND CENTER ═══
+  updateAIPro(ai);
 }
+
+// ═══════════════════════════════════════════════════════
+//  AI COMMAND CENTER — всё что ниже
+// ═══════════════════════════════════════════════════════
+
+// Храним историю уверенности (последние 40 точек)
+const _sparkData = [];
+let   _lastAiSignal = null;
+
+// Цвета по сигналу
+const SIG_COLOR = { BUY: "#00d4aa", SELL: "#ff4d6d", HOLD: "#ffd166" };
+
+// Цвета режимов
+const REGIME_COLOR = {
+  green: "#00d4aa", red: "#ff4d6d", yellow: "#ffd166",
+  blue: "#4f8ef7", purple: "#a78bfa", grey: "#8892b0",
+};
+
+// Иконки режимов
+const REGIME_ICON = {
+  UPTREND: "🚀", DOWNTREND: "📉", VOLATILE: "⚡", RANGING: "↔️", TRANSITION: "🔄",
+};
+
+function updateAIPro(ai) {
+  if (!ai) return;
+
+  const signal  = ai.ai_signal  || "HOLD";
+  const conf    = Number(ai.confidence)  || 0;
+  const probUp  = Number(ai.prob_up)   || 0;
+  const probH   = Number(ai.prob_hold) || 0;
+  const probDn  = Number(ai.prob_down) || 0;
+  const regime  = ai.regime  || {};
+  const anomaly = ai.anomaly || {};
+  const color   = SIG_COLOR[signal] || SIG_COLOR.HOLD;
+
+  // 1. SVG Gauge
+  _drawGauge(conf, color, signal);
+
+  // 2. Большой сигнал + glow
+  const sigEl = document.getElementById("ai-decision-signal");
+  if (sigEl) {
+    const changed = _lastAiSignal && _lastAiSignal !== signal;
+    sigEl.textContent = signal;
+    sigEl.className = "ai-decision-signal ai-ds-" + signal;
+    if (changed) {
+      sigEl.style.transform = "scale(1.2)";
+      setTimeout(() => { sigEl.style.transform = ""; }, 350);
+    }
+  }
+  _lastAiSignal = signal;
+
+  // 3. Текст причины
+  const whyEl = document.getElementById("ai-decision-why");
+  if (whyEl) whyEl.textContent = _buildReason(ai);
+
+  // 4. Regime chip (маленький, под thinking dots)
+  const chipEl = document.getElementById("ai-regime-chip");
+  if (chipEl) {
+    const rc = REGIME_COLOR[regime.color] || "#8892b0";
+    chipEl.textContent = regime.name || "—";
+    chipEl.style.color = rc;
+    chipEl.style.borderColor = rc + "80";
+    chipEl.style.background  = rc + "18";
+  }
+
+  // 5. Вертикальные столбцы вероятностей
+  _setVbar("vpb-up",   "vpv-up",   probUp);
+  _setVbar("vpb-hold", "vpv-hold", probH);
+  _setVbar("vpb-down", "vpv-down", probDn);
+
+  // 6. Regime banner
+  _updateRegimeBanner(regime);
+
+  // 7. Sparkline — добавляем точку, перерисовываем
+  _sparkData.push(conf);
+  if (_sparkData.length > 40) _sparkData.shift();
+  _drawSparkline(conf);
+
+  // 8. Anomaly alert
+  const anomBanner = document.getElementById("ai-anomaly");
+  const anomText   = document.getElementById("ai-anomaly-text");
+  if (anomBanner) {
+    anomBanner.style.display = anomaly.detected ? "flex" : "none";
+    if (anomText && anomaly.detected) {
+      anomText.textContent = anomaly.description
+        ? `${anomaly.description} (Z-цена=${anomaly.z_price}, Z-объём=${anomaly.z_volume})`
+        : "Аномальное движение";
+    }
+  }
+
+  // 9. Training badge (в command center)
+  const tb2 = document.getElementById("ai-trained-badge2");
+  const sampEl = document.getElementById("ai-samples");
+  if (tb2) {
+    if (ai.model_trained) {
+      tb2.textContent = "✓ Обучена";
+      tb2.style.background = "#0d2e22";
+      tb2.style.color = "#00d4aa";
+    } else {
+      tb2.textContent = "обучается…";
+      tb2.style.background = "#3b3228";
+      tb2.style.color = "#ffd166";
+    }
+  }
+  if (sampEl) sampEl.textContent = ai.samples_trained || 0;
+
+  // 10. Метка времени последнего обновления
+  const updEl = document.getElementById("ai-last-update");
+  if (updEl) {
+    const now = new Date();
+    updEl.textContent = "обновлено " + now.toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+  }
+}
+
+// ─── SVG Gauge ───────────────────────────────────────
+function _drawGauge(pct, color, signal) {
+  // r=48, cx=60, cy=65 → C = 2π*48 ≈ 301.59
+  // 270° arc = 0.75 * C ≈ 226.19
+  const ARC = 226.19;
+  const filled = ARC * Math.min(100, Math.max(0, pct)) / 100;
+
+  const fill = document.getElementById("gauge-fill");
+  if (fill) {
+    fill.setAttribute("stroke-dasharray", filled.toFixed(2) + " 302");
+    fill.setAttribute("stroke", color);
+    fill.style.filter = `drop-shadow(0 0 7px ${color}aa)`;
+  }
+
+  const pctTxt = document.getElementById("gauge-pct");
+  if (pctTxt) {
+    pctTxt.textContent = Math.round(pct) + "%";
+    pctTxt.setAttribute("fill", color);
+  }
+
+  const sigTxt = document.getElementById("gauge-sig");
+  if (sigTxt) {
+    sigTxt.textContent = signal;
+    sigTxt.setAttribute("fill", color);
+  }
+}
+
+// ─── Vertical probability bar ────────────────────────
+function _setVbar(barId, valId, pct) {
+  const bar = document.getElementById(barId);
+  const val = document.getElementById(valId);
+  if (bar) bar.style.height = Math.max(2, pct) + "%";
+  if (val) val.textContent = pct + "%";
+}
+
+// ─── Regime banner ───────────────────────────────────
+function _updateRegimeBanner(regime) {
+  const banner  = document.getElementById("ai-regime-banner");
+  const iconEl  = document.getElementById("ai-rb-icon");
+  const nameEl  = document.getElementById("ai-rb-name");
+  const descEl  = document.getElementById("ai-rb-desc");
+  const atrEl   = document.getElementById("ai-rb-atr");
+  const volEl   = document.getElementById("ai-rb-vol");
+
+  if (!banner) return;
+  const rc   = REGIME_COLOR[regime.color] || "#8892b0";
+  const icon = REGIME_ICON[regime.name]   || "📊";
+
+  banner.style.borderLeftColor = rc;
+  banner.style.background      = rc + "0d";
+
+  if (iconEl)  iconEl.textContent = icon;
+  if (nameEl) { nameEl.textContent = regime.name || "—"; nameEl.style.color = rc; }
+  if (descEl)  descEl.textContent = regime.desc  || "—";
+  if (atrEl)   atrEl.textContent  = (Number(regime.atr_pct) || 0).toFixed(2) + "%";
+  if (volEl)   volEl.textContent  = (Number(regime.vol_ratio) || 1).toFixed(1) + "x";
+}
+
+// ─── Текст объяснения сигнала ─────────────────────────
+function _buildReason(ai) {
+  const sig    = ai.ai_signal  || "HOLD";
+  const conf   = Math.round(ai.confidence || 0);
+  const regime = (ai.regime || {}).name || "";
+  const pats   = (ai.patterns || []).map(p => p.name).slice(0, 2).join(", ");
+  const slope  = ((ai.forecast || {}).slope_pct || 0);
+
+  const slopeStr = slope !== 0 ? ` · тренд ${slope > 0 ? "+" : ""}${slope.toFixed(3)}%` : "";
+  const patStr   = pats ? ` · ${pats}` : "";
+
+  if (sig === "BUY")
+    return `Сильный бычий сигнал (${conf}%) · ${regime}${patStr}${slopeStr}`;
+  if (sig === "SELL")
+    return `Медвежий разворот (${conf}%) · ${regime}${patStr}${slopeStr}`;
+  return `Нейтральная зона (${conf}%) · ${regime}${patStr}${slopeStr}`;
+}
+
+// ─── Canvas Sparkline ────────────────────────────────
+function _drawSparkline(latest) {
+  const canvas = document.getElementById("ai-sparkline");
+  if (!canvas) return;
+
+  // Синхронизируем ширину
+  const W = canvas.parentElement ? canvas.parentElement.clientWidth : 200;
+  canvas.width  = W;
+  canvas.height = 40;
+
+  const ctx = canvas.getContext("2d");
+  ctx.clearRect(0, 0, W, 40);
+
+  const data = _sparkData;
+  if (data.length < 2) return;
+
+  const minV = Math.max(0,   Math.min(...data) - 5);
+  const maxV = Math.min(100, Math.max(...data) + 5);
+  const range = maxV - minV || 10;
+
+  function xOf(i) { return (i / (data.length - 1)) * W; }
+  function yOf(v) { return 36 - ((v - minV) / range) * 32; }
+
+  // Плавная кривая (Catmull-Rom-like via bezier)
+  ctx.beginPath();
+  for (let i = 0; i < data.length; i++) {
+    const x = xOf(i), y = yOf(data[i]);
+    if (i === 0) { ctx.moveTo(x, y); continue; }
+    const px = xOf(i - 1), py = yOf(data[i - 1]);
+    ctx.bezierCurveTo(px + (x - px) / 2, py, x - (x - px) / 2, y, x, y);
+  }
+
+  // Градиент заливки
+  const grad = ctx.createLinearGradient(0, 0, 0, 40);
+  grad.addColorStop(0, "rgba(79,142,247,0.35)");
+  grad.addColorStop(1, "rgba(79,142,247,0)");
+  ctx.lineTo(W, 40); ctx.lineTo(0, 40); ctx.closePath();
+  ctx.fillStyle = grad;
+  ctx.fill();
+
+  // Линия
+  ctx.beginPath();
+  for (let i = 0; i < data.length; i++) {
+    const x = xOf(i), y = yOf(data[i]);
+    if (i === 0) { ctx.moveTo(x, y); continue; }
+    const px = xOf(i - 1), py = yOf(data[i - 1]);
+    ctx.bezierCurveTo(px + (x - px) / 2, py, x - (x - px) / 2, y, x, y);
+  }
+  ctx.strokeStyle = "#4f8ef7";
+  ctx.lineWidth   = 1.8;
+  ctx.stroke();
+
+  // Пульсирующая точка — последнее значение
+  const lx = xOf(data.length - 1);
+  const ly = yOf(data[data.length - 1]);
+  ctx.beginPath(); ctx.arc(lx, ly, 3.5, 0, Math.PI * 2);
+  ctx.fillStyle = "#4f8ef7"; ctx.fill();
+  ctx.beginPath(); ctx.arc(lx, ly, 5.5, 0, Math.PI * 2);
+  ctx.strokeStyle = "rgba(79,142,247,0.4)"; ctx.lineWidth = 1.5; ctx.stroke();
+
+  // Метка текущего значения
+  const sparkCur = document.getElementById("ai-spark-last");
+  if (sparkCur) sparkCur.textContent = (latest || 0).toFixed(1) + "%";
+}
+
+// ════════════════════════════════════════════════════
+//  Рендеры (патерны, FI, сделки, логи, S/R)
+// ════════════════════════════════════════════════════
 
 function renderSR(sr) {
   const res = sr.resistance || [];
@@ -201,7 +455,7 @@ function renderPatterns(patterns) {
     return;
   }
   el.innerHTML = patterns.map(p => {
-    const cls = p.type === "bullish" ? "pat-bull" : p.type === "bearish" ? "pat-bear" : "pat-neut";
+    const cls  = p.type === "bullish" ? "pat-bull" : p.type === "bearish" ? "pat-bear" : "pat-neut";
     const icon = p.type === "bullish" ? "🟢" : p.type === "bearish" ? "🔴" : "🟡";
     return `<div class="pattern-item ${cls}">${icon} <b>${p.name}</b> — <span>${p.desc}</span></div>`;
   }).join("");
@@ -211,13 +465,20 @@ function renderFeatureImportance(fi) {
   const el = document.getElementById("fi-list");
   if (!fi.length) { el.innerHTML = '<div class="empty-msg">Нет данных</div>'; return; }
   const max = fi[0].importance;
-  el.innerHTML = fi.map(f => `
+  el.innerHTML = fi.map((f, idx) => {
+    const w = (f.importance / max * 100).toFixed(0);
+    // цвет по рангу
+    const hue = Math.round(270 - idx * 22);
+    const barColor = `hsl(${hue},80%,60%)`;
+    return `
     <div class="fi-row">
       <span class="fi-name">${f.feature}</span>
-      <div class="fi-bar-wrap"><div class="fi-bar" style="width:${(f.importance/max*100).toFixed(0)}%"></div></div>
-      <span class="fi-val">${f.importance}%</span>
-    </div>`
-  ).join("");
+      <div class="fi-bar-wrap">
+        <div class="fi-bar" style="width:${w}%;background:linear-gradient(90deg,${barColor},${barColor}88)"></div>
+      </div>
+      <span class="fi-val" style="color:${barColor}">${f.importance}%</span>
+    </div>`;
+  }).join("");
 }
 
 function renderOpenTrades(trades) {
@@ -238,8 +499,7 @@ function renderOpenTrades(trades) {
         <span style="color:#00d4aa">TP: $${t.take_profit}</span>
       </div>
       ${t.ai_confidence ? `<div class="trade-row"><span style="color:#a78bfa;font-size:10px">AI уверенность: ${t.ai_confidence}%</span></div>` : ""}
-    </div>`
-  ).join("");
+    </div>`).join("");
 }
 
 function renderHistory(trades) {
@@ -276,7 +536,11 @@ function renderLogs(logs) {
 }
 
 function clearLogs() { document.getElementById("log-container").innerHTML = ""; }
-function escHtml(s)   { return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;"); }
+function escHtml(s)  { return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;"); }
+
+// ════════════════════════════════════════════════════
+//  Управление (кнопки, настройки)
+// ════════════════════════════════════════════════════
 
 async function startAgent() {
   await fetch("/api/start", {method:"POST"});
@@ -291,12 +555,7 @@ async function switchPair(symbol) {
     body: JSON.stringify({ symbol }),
   });
   const d = await r.json();
-  if (!d.ok) {
-    alert(d.message);
-    loadConfig();           // вернуть прежнюю пару в списке
-    return;
-  }
-  // Сброс живой цены, чтобы изменение % не переносилось со старой монеты
+  if (!d.ok) { alert(d.message); loadConfig(); return; }
   _lastLivePrice = null;
   document.getElementById("symbol-label").textContent = symbol;
   document.getElementById("price").textContent = "…";
@@ -305,21 +564,22 @@ async function switchPair(symbol) {
 
 async function saveConfig() {
   const cfg = {
-    symbol: document.getElementById("cfg-symbol").value,
-    trade_amount: document.getElementById("cfg-amount").value,
-    stop_loss_pct: document.getElementById("cfg-sl").value,
-    take_profit_pct: document.getElementById("cfg-tp").value,
-    trailing_stop_pct: document.getElementById("cfg-trail").value,
-    fee_pct: document.getElementById("cfg-fee").value,
-    min_ai_confidence: document.getElementById("cfg-minconf").value,
-    max_open_trades: document.getElementById("cfg-max").value,
-    use_dynamic_targets: document.getElementById("cfg-dyn").checked,
-    trend_filter: document.getElementById("cfg-trend").checked,
+    symbol:             document.getElementById("cfg-symbol").value,
+    trade_amount:       document.getElementById("cfg-amount").value,
+    stop_loss_pct:      document.getElementById("cfg-sl").value,
+    take_profit_pct:    document.getElementById("cfg-tp").value,
+    trailing_stop_pct:  document.getElementById("cfg-trail").value,
+    fee_pct:            document.getElementById("cfg-fee").value,
+    min_ai_confidence:  document.getElementById("cfg-minconf").value,
+    max_open_trades:    document.getElementById("cfg-max").value,
+    use_dynamic_targets:document.getElementById("cfg-dyn").checked,
+    trend_filter:       document.getElementById("cfg-trend").checked,
   };
   const r = await fetch("/api/config", {method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify(cfg)});
   const d = await r.json();
   alert(d.message);
 }
+
 async function loadConfig() {
   const r   = await fetch("/api/config");
   const cfg = await r.json();
@@ -357,15 +617,9 @@ async function copyTon() {
 function renderTon(d) {
   document.getElementById("ton-balance").textContent  = (d.balance ?? 0).toFixed(4) + " TON";
   document.getElementById("ton-received").textContent = (d.total_received ?? 0).toFixed(4) + " TON";
-
   const errEl = document.getElementById("ton-error");
-  if (d.last_error) {
-    errEl.style.display = "";
-    errEl.textContent = "⚠ " + d.last_error;
-  } else {
-    errEl.style.display = "none";
-  }
-
+  if (d.last_error) { errEl.style.display = ""; errEl.textContent = "⚠ " + d.last_error; }
+  else { errEl.style.display = "none"; }
   const box = document.getElementById("ton-deposits");
   if (!d.deposits || d.deposits.length === 0) {
     box.innerHTML = '<div class="ton-empty">Поступлений пока нет</div>';
@@ -386,25 +640,16 @@ function renderTon(d) {
 }
 
 function escapeHtml(s) {
-  const d = document.createElement("div");
-  d.textContent = s;
-  return d.innerHTML;
+  const d = document.createElement("div"); d.textContent = s; return d.innerHTML;
 }
 
 async function loadTon() {
-  try {
-    const r = await fetch("/api/ton");
-    renderTon(await r.json());
-  } catch (e) { /* silent */ }
+  try { const r = await fetch("/api/ton"); renderTon(await r.json()); } catch (e) {}
 }
-
 async function refreshTon() {
   const btn = document.querySelector(".btn-ton-refresh");
   if (btn) btn.classList.add("spin");
-  try {
-    const r = await fetch("/api/ton/refresh", { method: "POST" });
-    renderTon(await r.json());
-  } catch (e) { /* silent */ }
+  try { const r = await fetch("/api/ton/refresh", { method: "POST" }); renderTon(await r.json()); } catch (e) {}
   if (btn) setTimeout(() => btn.classList.remove("spin"), 600);
 }
 
@@ -436,45 +681,38 @@ async function loadCoin() {
     const d = await r.json();
     if (!d || !d.symbol) return;
     const img = document.getElementById("coin-img");
-    if (d.image) { img.src = d.image; img.style.display = "block"; }
-    else { img.style.display = "none"; }
+    if (d.image) { img.src = d.image; img.style.display = "block"; } else { img.style.display = "none"; }
     document.getElementById("coin-name").textContent = d.name || d.symbol;
-    document.getElementById("coin-sym").textContent = d.symbol || "—";
+    document.getElementById("coin-sym").textContent  = d.symbol || "—";
     document.getElementById("coin-source").textContent = d.source ? "· " + d.source : "";
-    document.getElementById("coin-price").textContent = d.price_usd != null ? fmtPrice(d.price_usd) : "—";
-
+    document.getElementById("coin-price").textContent  = d.price_usd != null ? fmtPrice(d.price_usd) : "—";
     const ch = document.getElementById("coin-change");
     if (d.change_h24 != null) {
       const up = d.change_h24 >= 0;
       ch.textContent = (up ? "+" : "") + d.change_h24.toFixed(2) + "%";
       ch.className = "cs-val " + (up ? "pos" : "neg");
     } else { ch.textContent = "—"; ch.className = "cs-val"; }
-
-    document.getElementById("coin-vol").textContent = d.volume_h24 != null ? fmtBig(d.volume_h24) : "—";
-    document.getElementById("coin-liq").textContent = d.liquidity != null ? fmtBig(d.liquidity) : "—";
+    document.getElementById("coin-vol").textContent  = d.volume_h24 != null ? fmtBig(d.volume_h24) : "—";
+    document.getElementById("coin-liq").textContent  = d.liquidity  != null ? fmtBig(d.liquidity)  : "—";
     document.getElementById("coin-mcap").textContent = d.market_cap != null ? fmtBig(d.market_cap) : "—";
-
     const tx = document.getElementById("coin-txns");
     if (d.buys_h24 != null || d.sells_h24 != null) {
-      tx.innerHTML = '<span class="pos">' + (Number(d.buys_h24) || 0) + '↑</span> / <span class="neg">' + (Number(d.sells_h24) || 0) + '↓</span>';
+      tx.innerHTML = '<span class="pos">' + (Number(d.buys_h24)||0) + '↑</span> / <span class="neg">' + (Number(d.sells_h24)||0) + '↓</span>';
     } else { tx.textContent = "—"; }
-
     const link = document.getElementById("coin-link");
-    if (d.url) { link.href = d.url; link.style.display = "inline"; }
-    else { link.style.display = "none"; }
-  } catch (e) { /* silent */ }
+    if (d.url) { link.href = d.url; link.style.display = "inline"; } else { link.style.display = "none"; }
+  } catch (e) {}
 }
 
 async function loadDexTrades() {
   try {
-    const r = await fetch("/api/coin/trades");
+    const r   = await fetch("/api/coin/trades");
     const arr = await r.json();
-    const box = document.getElementById("dex-trades");
+    const box  = document.getElementById("dex-trades");
     const note = document.getElementById("trades-note");
     if (!Array.isArray(arr) || arr.length === 0) {
       box.innerHTML = '<div class="empty-msg">Лента доступна для GRINCH</div>';
-      note.textContent = "";
-      return;
+      note.textContent = ""; return;
     }
     note.textContent = "· DEX";
     box.innerHTML = arr.map(t => {
@@ -487,26 +725,22 @@ async function loadDexTrades() {
         '<span class="dt-time">' + timeAgo(t.ts) + '</span>' +
         '</div>';
     }).join("");
-  } catch (e) { /* silent */ }
+  } catch (e) {}
 }
 
 async function loadExchanges() {
   try {
-    const r = await fetch("/api/coin/exchanges");
-    const d = await r.json();
+    const r    = await fetch("/api/coin/exchanges");
+    const d    = await r.json();
     const list = document.getElementById("exch-list");
     const rows = (d && d.exchanges) || [];
-    const cnt = document.getElementById("exch-count");
+    const cnt  = document.getElementById("exch-count");
     const aiBox = document.getElementById("exch-ai");
-
     if (rows.length === 0) {
       list.innerHTML = '<div class="empty-msg">Нет данных</div>';
-      cnt.textContent = "";
-      aiBox.style.display = "none";
-      return;
+      cnt.textContent = ""; aiBox.style.display = "none"; return;
     }
     cnt.textContent = "· " + rows.length + " бирж";
-
     const agg = d.agg;
     if (agg) {
       aiBox.style.display = "block";
@@ -514,33 +748,24 @@ async function loadExchanges() {
       sig.textContent = agg.signal;
       sig.className = "exch-ai-signal sig-" + (agg.signal === "АРБИТРАЖ" ? "arb" : (agg.signal === "РАСХОЖДЕНИЕ" ? "div" : "con"));
       document.getElementById("exch-spread").textContent = "спред " + agg.spread_pct + "%";
-      document.getElementById("exch-note").textContent = agg.note || "";
-      document.getElementById("exch-avg").textContent = fmtPrice(agg.avg_price);
-      document.getElementById("exch-buy").textContent =
-        (agg.best_buy ? escapeHtml(agg.best_buy.name) + " " + fmtPrice(agg.best_buy.price) : "—");
-      document.getElementById("exch-sell").textContent =
-        (agg.best_sell ? escapeHtml(agg.best_sell.name) + " " + fmtPrice(agg.best_sell.price) : "—");
-    } else {
-      aiBox.style.display = "none";
-    }
-
+      document.getElementById("exch-note").textContent   = agg.note || "";
+      document.getElementById("exch-avg").textContent    = fmtPrice(agg.avg_price);
+      document.getElementById("exch-buy").textContent  = agg.best_buy  ? escapeHtml(agg.best_buy.name)  + " " + fmtPrice(agg.best_buy.price)  : "—";
+      document.getElementById("exch-sell").textContent = agg.best_sell ? escapeHtml(agg.best_sell.name) + " " + fmtPrice(agg.best_sell.price) : "—";
+    } else { aiBox.style.display = "none"; }
     list.innerHTML = rows.map(e => {
       const chv = (e.change24h != null && isFinite(Number(e.change24h))) ? Number(e.change24h) : null;
-      const ch = chv != null
-        ? '<span class="ex-ch ' + (chv >= 0 ? "pos" : "neg") + '">' +
-            (chv >= 0 ? "+" : "") + chv.toFixed(2) + '%</span>'
+      const ch  = chv != null
+        ? '<span class="ex-ch ' + (chv >= 0 ? "pos" : "neg") + '">' + (chv >= 0 ? "+" : "") + chv.toFixed(2) + '%</span>'
         : '<span class="ex-ch"></span>';
-      const liqOrVol = e.liquidity != null ? ("Ликв " + fmtBig(e.liquidity))
-                      : (e.volume24h != null ? ("Об " + fmtBig(e.volume24h)) : "");
+      const liqOrVol = e.liquidity != null ? ("Ликв " + fmtBig(e.liquidity)) : (e.volume24h != null ? ("Об " + fmtBig(e.volume24h)) : "");
       return '<div class="ex-row">' +
-        '<span class="ex-name">' + escapeHtml(e.name) +
-          '<span class="ex-kind">' + escapeHtml(e.kind || "") + '</span></span>' +
-        '<span class="ex-price">' + fmtPrice(e.price) + '</span>' +
-        ch +
+        '<span class="ex-name">' + escapeHtml(e.name) + '<span class="ex-kind">' + escapeHtml(e.kind || "") + '</span></span>' +
+        '<span class="ex-price">' + fmtPrice(e.price) + '</span>' + ch +
         '<span class="ex-liq">' + escapeHtml(liqOrVol) + '</span>' +
         '</div>';
     }).join("");
-  } catch (e) { /* silent */ }
+  } catch (e) {}
 }
 
 loadConfig();

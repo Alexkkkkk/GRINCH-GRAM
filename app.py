@@ -128,13 +128,15 @@ start_background()
 @app.route("/")
 def index():
     try:
-        status = _safe_status()
+        status       = _safe_status()
         init_price   = status.get("analysis", {}).get("price", 0)
         init_running = status.get("running", False)
+        init_ai      = status.get("ai", {})
     except Exception:
-        init_price, init_running = 0, False
+        init_price, init_running, init_ai = 0, False, {}
     return render_template("index.html", symbol=Config.SYMBOL, demo=Config.DEMO_MODE,
-                           init_price=init_price, init_running=init_running)
+                           init_price=init_price, init_running=init_running,
+                           init_ai=init_ai)
 
 @app.route("/api/status")
 def api_status():

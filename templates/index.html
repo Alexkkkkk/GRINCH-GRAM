@@ -45,7 +45,7 @@
         </div>
       </div>
 
-      <!-- Карточка монеты (рыночная статистика) -->
+      <!-- Карточка монеты -->
       <div class="card coin-card">
         <div class="card-title">📊 О монете
           <span id="coin-source" class="coin-source"></span>
@@ -68,7 +68,7 @@
         </div>
       </div>
 
-      <!-- Цены на всех биржах TON + кросс-биржевой AI -->
+      <!-- Цены на биржах -->
       <div class="card exch-card">
         <div class="card-title">🌐 Цены на биржах
           <span id="exch-count" class="coin-source"></span>
@@ -92,54 +92,9 @@
         </div>
       </div>
 
-      <!-- AI Brain блок -->
-      <div class="card ai-card">
-        <div class="card-title">🧠 AI Мозг
-          <span id="ai-trained-badge" class="badge" style="background:#0d2e22;color:#00d4aa;font-size:10px;margin-left:6px">обучается…</span>
-        </div>
-
-        <!-- Вероятности направления -->
-        <div class="prob-bars">
-          <div class="prob-row">
-            <span class="prob-label">▲ Рост</span>
-            <div class="prob-bar-wrap"><div class="prob-bar pb-up" id="bar-up"></div></div>
-            <span class="prob-val" id="val-up">0%</span>
-          </div>
-          <div class="prob-row">
-            <span class="prob-label">◆ Боковик</span>
-            <div class="prob-bar-wrap"><div class="prob-bar pb-hold" id="bar-hold"></div></div>
-            <span class="prob-val" id="val-hold">0%</span>
-          </div>
-          <div class="prob-row">
-            <span class="prob-label">▼ Падение</span>
-            <div class="prob-bar-wrap"><div class="prob-bar pb-down" id="bar-down"></div></div>
-            <span class="prob-val" id="val-down">0%</span>
-          </div>
-        </div>
-
-        <!-- Режим рынка -->
-        <div id="regime-badge" class="regime-badge">— Нет данных</div>
-
-        <!-- Аномалия -->
-        <div id="anomaly-alert" class="anomaly-alert" style="display:none">
-          ⚡ АНОМАЛИЯ: <span id="anomaly-desc"></span>
-        </div>
-      </div>
-
-      <!-- Прогноз -->
+      <!-- Уровни S/R -->
       <div class="card">
-        <div class="card-title">🔮 Прогноз цены (AI)</div>
-        <div class="forecast-grid">
-          <div class="fc-item"><div class="fc-label">+1 свеча</div><div class="fc-val" id="fc-t1">—</div></div>
-          <div class="fc-item"><div class="fc-label">+2 свечи</div><div class="fc-val" id="fc-t2">—</div></div>
-          <div class="fc-item"><div class="fc-label">+3 свечи</div><div class="fc-val" id="fc-t3">—</div></div>
-        </div>
-        <div class="fc-range" id="fc-range">Диапазон: — – —</div>
-      </div>
-
-      <!-- Поддержка / Сопротивление -->
-      <div class="card">
-        <div class="card-title">📐 Уровни</div>
+        <div class="card-title">📐 Уровни поддержки / сопротивления</div>
         <div class="sr-grid">
           <div>
             <div class="sr-label" style="color:#ff4d6d">🔴 Сопротивление</div>
@@ -151,11 +106,158 @@
           </div>
         </div>
       </div>
+
+      <!-- Скрытые элементы для совместимости JS (не видны) -->
+      <div style="display:none">
+        <span id="ai-trained-badge"></span>
+        <div id="bar-up"></div><div id="bar-hold"></div><div id="bar-down"></div>
+        <span id="val-up"></span><span id="val-hold"></span><span id="val-down"></span>
+        <div id="regime-badge"></div>
+        <div id="anomaly-alert"><span id="anomaly-desc"></span></div>
+      </div>
     </div>
 
     <!-- Средняя колонка -->
     <div class="col-mid">
-      <!-- AI Паттерны + Важность признаков -->
+
+      <!-- ═══════════ AI COMMAND CENTER ═══════════ -->
+      <div class="card ai-command">
+
+        <!-- Шапка -->
+        <div class="ai-cc-head">
+          <div style="display:flex;align-items:center;gap:8px">
+            <span class="ai-cc-title">🧠 AI Command Center</span>
+            <span id="ai-trained-badge2" class="badge" style="font-size:10px;background:#3b3228;color:#ffd166">обучается…</span>
+          </div>
+          <div class="ai-cc-meta">
+            <span class="ai-cc-samples"><span id="ai-samples">0</span> баров обучения</span>
+            <span id="ai-last-update" class="ai-cc-upd">—</span>
+          </div>
+        </div>
+
+        <!-- Основной блок: Gauge | Decision | VProbs -->
+        <div class="ai-cc-body">
+
+          <!-- SVG Gauge уверенности -->
+          <div class="ai-gauge-panel">
+            <svg id="ai-gauge" viewBox="0 0 120 110" width="120" height="110">
+              <!-- Задний фон дуги -->
+              <circle cx="60" cy="65" r="48"
+                fill="none" stroke="#1c2030" stroke-width="10"
+                stroke-dasharray="226 302" stroke-linecap="round"
+                transform="rotate(-225 60 65)"/>
+              <!-- Цветная дуга значения -->
+              <circle id="gauge-fill" cx="60" cy="65" r="48"
+                fill="none" stroke="#ffd166" stroke-width="10"
+                stroke-dasharray="0 302" stroke-linecap="round"
+                transform="rotate(-225 60 65)"/>
+              <!-- Центр: процент -->
+              <text id="gauge-pct" x="60" y="60"
+                text-anchor="middle" font-size="22" font-weight="800"
+                font-family="monospace" fill="#ffd166">0%</text>
+              <!-- Центр: сигнал -->
+              <text id="gauge-sig" x="60" y="77"
+                text-anchor="middle" font-size="10" font-weight="700"
+                font-family="'Segoe UI',sans-serif" fill="#8892b0"
+                letter-spacing="1">HOLD</text>
+            </svg>
+            <div class="ai-gauge-lbl">Уверенность</div>
+          </div>
+
+          <!-- Решение и статус -->
+          <div class="ai-decision-panel">
+            <div id="ai-decision-signal" class="ai-decision-signal ai-ds-HOLD">HOLD</div>
+            <div id="ai-decision-why" class="ai-decision-why">Инициализация…</div>
+            <div class="ai-thinking-dots" id="ai-thinking">
+              <span></span><span></span><span></span><span></span><span></span>
+            </div>
+            <div id="ai-regime-chip" class="ai-regime-chip">—</div>
+          </div>
+
+          <!-- Вертикальные столбцы вероятностей -->
+          <div class="ai-vprobs">
+            <div class="ai-vprob-col">
+              <div class="ai-vprob-track">
+                <div id="vpb-up" class="ai-vprob-bar vp-up" style="height:0%"></div>
+              </div>
+              <div class="ai-vprob-lbl ai-vp-up">▲</div>
+              <div class="ai-vprob-val" id="vpv-up">0%</div>
+            </div>
+            <div class="ai-vprob-col">
+              <div class="ai-vprob-track">
+                <div id="vpb-hold" class="ai-vprob-bar vp-hold" style="height:0%"></div>
+              </div>
+              <div class="ai-vprob-lbl ai-vp-hold">◆</div>
+              <div class="ai-vprob-val" id="vpv-hold">0%</div>
+            </div>
+            <div class="ai-vprob-col">
+              <div class="ai-vprob-track">
+                <div id="vpb-down" class="ai-vprob-bar vp-down" style="height:0%"></div>
+              </div>
+              <div class="ai-vprob-lbl ai-vp-down">▼</div>
+              <div class="ai-vprob-val" id="vpv-down">0%</div>
+            </div>
+          </div>
+
+        </div><!-- /ai-cc-body -->
+
+        <!-- Режим рынка — баннер -->
+        <div id="ai-regime-banner" class="ai-regime-banner">
+          <span id="ai-rb-icon" class="ai-rb-icon">📊</span>
+          <div class="ai-rb-center">
+            <span id="ai-rb-name" class="ai-rb-name">Загрузка…</span>
+            <span id="ai-rb-desc" class="ai-rb-desc">—</span>
+          </div>
+          <div class="ai-rb-meta">
+            <div class="ai-rb-stat">
+              <div class="ai-rb-stat-lbl">ATR</div>
+              <div id="ai-rb-atr" class="ai-rb-stat-val">—%</div>
+            </div>
+            <div class="ai-rb-stat">
+              <div class="ai-rb-stat-lbl">Волатильность</div>
+              <div id="ai-rb-vol" class="ai-rb-stat-val">—x</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Sparkline истории уверенности -->
+        <div class="ai-spark-section">
+          <div class="ai-spark-header">
+            <span class="ai-spark-lbl">История уверенности AI</span>
+            <span id="ai-spark-last" class="ai-spark-cur">—</span>
+          </div>
+          <canvas id="ai-sparkline" height="40"></canvas>
+        </div>
+
+        <!-- Прогноз (мини) -->
+        <div class="ai-forecast-row">
+          <div class="ai-fc-label">🔮 Прогноз:</div>
+          <div class="ai-fc-items">
+            <div class="ai-fc-item">
+              <div class="ai-fc-t">+1</div>
+              <div id="fc-t1" class="fc-val">—</div>
+            </div>
+            <div class="ai-fc-item">
+              <div class="ai-fc-t">+2</div>
+              <div id="fc-t2" class="fc-val">—</div>
+            </div>
+            <div class="ai-fc-item">
+              <div class="ai-fc-t">+3</div>
+              <div id="fc-t3" class="fc-val">—</div>
+            </div>
+          </div>
+          <div id="fc-range" class="ai-fc-range">—</div>
+        </div>
+
+        <!-- Аномалия -->
+        <div id="ai-anomaly" class="ai-anomaly-banner" style="display:none">
+          <span class="ai-anom-pulse"></span>
+          ⚡ АНОМАЛИЯ: <span id="ai-anomaly-text">—</span>
+        </div>
+
+      </div><!-- /ai-command -->
+
+      <!-- Паттерны свечей -->
       <div class="card">
         <div class="card-title">🕯️ Паттерны свечей</div>
         <div id="patterns-list" class="patterns-list">
@@ -163,12 +265,15 @@
         </div>
       </div>
 
+      <!-- Важность признаков -->
       <div class="card">
-        <div class="card-title">🏆 Важность признаков (RF)</div>
+        <div class="card-title">🏆 Ключевые признаки модели
+          <span style="font-size:10px;color:var(--text2);font-weight:400;margin-left:4px">RF + GBoost</span>
+        </div>
         <div id="fi-list" class="fi-list"></div>
       </div>
 
-      <!-- Индикаторы -->
+      <!-- Технические индикаторы -->
       <div class="card">
         <div class="card-title">📊 Технические индикаторы</div>
         <div class="indicators-grid">
@@ -233,7 +338,6 @@
           <span class="badge" style="background:#0a2540;color:#0098ea;font-size:10px;margin-left:6px">TON</span>
           <button class="btn-ton-refresh" onclick="refreshTon()" title="Обновить">⟳</button>
         </div>
-
         <div class="ton-stats">
           <div class="ton-stat">
             <div class="ton-stat-label">Баланс</div>
@@ -244,14 +348,12 @@
             <div class="ton-stat-value" id="ton-received">—</div>
           </div>
         </div>
-
         <div class="ton-desc">Пополни бота, отправив TON на адрес:</div>
         <div class="ton-addr-row">
           <code id="ton-addr" class="ton-addr">—</code>
           <button class="btn-ton-copy" onclick="copyTon()">📋</button>
         </div>
         <div id="ton-copied" class="ton-copied" style="display:none">✓ Скопировано!</div>
-
         <div class="ton-deposits-title">Последние поступления</div>
         <div id="ton-deposits" class="ton-deposits">
           <div class="ton-empty">Загрузка…</div>
@@ -269,17 +371,17 @@
               <option value="TON/USDT">TON/USDT 💎</option>
             </select>
           </label>
-          <label>Сумма сделки (USDT)<input type="number" id="cfg-amount" value="100" min="10"></label>
+          <label>Сумма сделки (TON)<input type="number" id="cfg-amount" value="2" min="0.1" step="0.1"></label>
           <label>Стоп-лосс (%)<input type="number" id="cfg-sl" value="2.0" step="0.1" min="0.1"></label>
           <label>Тейк-профит (%)<input type="number" id="cfg-tp" value="4.0" step="0.1" min="0.1"></label>
           <label>Трейлинг-стоп (%)<input type="number" id="cfg-trail" value="1.5" step="0.1" min="0"></label>
-          <label>Комиссия (%)<input type="number" id="cfg-fee" value="0.2" step="0.05" min="0"></label>
+          <label>Комиссия (%)<input type="number" id="cfg-fee" value="0.3" step="0.05" min="0"></label>
           <label>Мин. уверенность AI (%)<input type="number" id="cfg-minconf" value="55" step="1" min="0" max="100"></label>
           <label>Макс. открытых сделок<input type="number" id="cfg-max" value="3" min="1" max="10"></label>
           <label class="cfg-check"><input type="checkbox" id="cfg-dyn" checked> Динамические цели по ATR</label>
           <label class="cfg-check"><input type="checkbox" id="cfg-trend" checked> Не покупать в нисходящем тренде</label>
           <button class="btn btn-blue" onclick="saveConfig()">💾 Сохранить</button>
-          <div class="cfg-note">⚠️ Демо-режим: цены — синтетический случайный процесс, поэтому прибыль здесь не прогноз реальной торговли. Риск-настройки ограничивают убытки, но не гарантируют доход.</div>
+          <div class="cfg-note">⚠️ Реальный DEX: каждая сделка — реальная транзакция в блокчейне TON. Комиссия DeDust ~0.3% за своп.</div>
         </div>
       </div>
 
@@ -294,9 +396,10 @@
 
 <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
 <script>
-  // В Replit WebSocket должен подключаться к текущему хосту, а не к localhost
   window._socketio_path = "/socket.io";
   window._socketio_url  = window.location.origin;
+  // Серверные данные для мгновенной инициализации AI (до первого REST-поллинга)
+  window._initAI = {{ init_ai | tojson | safe }};
 </script>
 <script src="/static/js/app.js?v={{ range(1,9999)|random }}"></script>
 </body>
