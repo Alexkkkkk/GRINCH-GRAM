@@ -35,3 +35,8 @@ class Config:
     TON_WALLET = os.getenv("TON_WALLET", "EQA6G0uVERDZTkLNa0drWBna1F5TSbogy7UXEWU5ERHz4uJL")
     # Адрес контракта токена GRINCH (TON-джеттон) для получения реальной цены через DexScreener
     GRINCH_TOKEN_ADDRESS = os.getenv("GRINCH_TOKEN_ADDRESS", "EQA6G0uVERDZTkLNa0drWBna1F5TSbogy7UXEWU5ERHz4uJL")
+    # Мнемоника TON-кошелька (24 слова через пробел) — для реальной торговли через DeDust
+    # Хранить только в секретах Replit, никогда в коде!
+    TON_MNEMONIC = os.getenv("TON_MNEMONIC", "")
+    # Режим торговли: "demo" | "dedust"
+    TRADE_MODE = os.getenv("TRADE_MODE", "demo")

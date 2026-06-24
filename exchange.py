@@ -2,14 +2,13 @@ import ccxt
 import random
 import time
 from config import Config
-from datetime import datetime, timedelta
+from datetime import datetime
 from price_feed import price_feed
 
 # Базовые ориентировочные цены экосистемы TON для демо-режима (USDT).
-# Используются только как фолбэк, если реальный API недоступен.
 BASE_PRICES = {
-    "GRINCH": 0.00027,   # GRINCH-джеттон в сети TON
-    "TON": 1.55,         # The Open Network
+    "GRINCH": 0.00027,
+    "TON":    1.55,
 }
 DEFAULT_BASE_PRICE = 1.0
 
@@ -17,15 +16,31 @@ DEFAULT_BASE_PRICE = 1.0
 class ExchangeClient:
     def __init__(self):
         self.demo_mode = Config.DEMO_MODE
-        self._exchange = None
-        self._live_price = None
+        self._exchange    = None
+        self._live_price  = None
         self._live_symbol = None
+        self._dedust      = None
+
+        # ── Режим DeDust (реальный DEX на TON) ──────────────────────────
+        if Config.TRADE_MODE == "dedust":
+            from dedust_client import dedust_client
+            self._dedust   = dedust_client
+            self.demo_mode = False
+            if not dedust_client.ready:
+                print(f"[Exchange] DeDust недоступен: {dedust_client.error}. Переходим в демо-режим.")
+                self._dedust   = None
+                self.demo_mode = True
+            else:
+                print("[Exchange] DeDust-режим активен ✓")
+            return
+
+        # ── Режим реального CEX через CCXT ──────────────────────────────
         if not self.demo_mode and Config.API_KEY:
             try:
                 exchange_class = getattr(ccxt, Config.EXCHANGE)
                 self._exchange = exchange_class({
-                    "apiKey": Config.API_KEY,
-                    "secret": Config.API_SECRET,
+                    "apiKey":         Config.API_KEY,
+                    "secret":         Config.API_SECRET,
                     "enableRateLimit": True,
                 })
             except Exception as e:
@@ -33,41 +48,82 @@ class ExchangeClient:
                 self.demo_mode = True
 
     @property
+    def mode(self) -> str:
+        if self._dedust:
+            return "dedust"
+        if self._exchange:
+            return "cex"
+        return "demo"
+
+    @property
     def symbol(self):
-        # Читаем динамически — пара может меняться через настройки
         return Config.SYMBOL
 
     @property
     def base_currency(self):
         return self.symbol.split("/")[0].upper()
 
+    # ──────────────────────────── price helpers ──────────────────────────
+
     def _base_price(self):
-        # Реальная цена через бесплатный API (с кэшем); фолбэк — статичная демо-цена
-        if self.demo_mode:
-            real = price_feed.get(self.base_currency)
-            if real and real > 0:
-                return real
+        real = price_feed.get(self.base_currency)
+        if real and real > 0:
+            return real
+        # DeDust: пробуем получить цену прямо из пула
+        if self._dedust:
+            p = self._dedust.get_price_ton_per_grinch()
+            if p and p > 0:
+                return p
         return BASE_PRICES.get(self.base_currency, DEFAULT_BASE_PRICE)
 
+    def _round(self, p):
+        bp = self._base_price()
+        if   bp >= 100:  digits = 2
+        elif bp >= 1:    digits = 4
+        elif bp >= 0.01: digits = 6
+        else:            digits = 8
+        return round(p, digits)
+
+    # ──────────────────────────── public API ────────────────────────────
+
     def get_live_price(self):
-        """Живая цена в реальном времени (плавный random walk вокруг базовой)."""
-        if not self.demo_mode:
+        """Текущая цена актива (реальная или симулированная)."""
+        # DeDust: цена из пула резервов
+        if self._dedust:
+            try:
+                p = self._dedust.get_price_ton_per_grinch()
+                if p and p > 0:
+                    return self._round(p)
+            except Exception:
+                pass
+
+        # CEX через CCXT
+        if not self.demo_mode and self._exchange:
             try:
                 return self.get_ticker()["price"]
             except Exception:
                 pass
+
+        # Демо: плавный random-walk вокруг реальной цены
         bp = self._base_price()
-        # Сброс при смене пары или первом запуске
         if self._live_price is None or self._live_symbol != self.symbol:
-            self._live_price = bp
+            self._live_price  = bp
             self._live_symbol = self.symbol
-        # Небольшой случайный шаг + лёгкий возврат к базовой цене
         step = self._live_price * random.uniform(-0.0035, 0.0035)
         pull = (bp - self._live_price) * 0.02
         self._live_price = max(self._live_price + step + pull, bp * 0.3)
         return self._round(self._live_price)
 
     def get_ticker(self):
+        if self._dedust:
+            p = self.get_live_price()
+            sp = p * 0.0002
+            return {
+                "price":  p,
+                "bid":    self._round(p - sp),
+                "ask":    self._round(p + sp),
+                "volume": 0.0,
+            }
         if self.demo_mode:
             return self._fake_ticker()
         try:
@@ -78,10 +134,13 @@ class ExchangeClient:
             return self._fake_ticker()
 
     def get_ohlcv(self, timeframe=None, limit=100):
+        # DeDust не предоставляет OHLCV — используем симуляцию с реальной ценой
+        if self._dedust:
+            return self._fake_ohlcv(limit)
         if self.demo_mode:
             return self._fake_ohlcv(limit)
         try:
-            tf = timeframe or Config.TIMEFRAME
+            tf   = timeframe or Config.TIMEFRAME
             bars = self._exchange.fetch_ohlcv(self.symbol, tf, limit=limit)
             return bars
         except Exception as e:
@@ -89,8 +148,14 @@ class ExchangeClient:
             return self._fake_ohlcv(limit)
 
     def get_balance(self):
+        if self._dedust:
+            try:
+                return self._dedust.get_balance()
+            except Exception as e:
+                print(f"[Exchange] dedust balance error: {e}")
+                return {"TON": 0.0, "GRINCH": 0.0}
         if self.demo_mode:
-            base = self.base_currency
+            base    = self.base_currency
             holding = round(500.0 / self._base_price(), 6)
             return {"USDT": 10000.0, base: holding}
         try:
@@ -101,6 +166,12 @@ class ExchangeClient:
             return {"USDT": 0.0}
 
     def place_order(self, side, amount, price=None):
+        """
+        side: "buy" | "sell"
+        amount: количество базового актива (GRINCH)
+        """
+        if self._dedust:
+            return self._dedust_order(side, amount, price)
         if self.demo_mode:
             return self._fake_order(side, amount, price)
         try:
@@ -113,52 +184,74 @@ class ExchangeClient:
             print(f"[Exchange] place_order error: {e}")
             return None
 
-    def _round(self, p):
-        # Меньше цена — больше знаков после запятой
-        bp = self._base_price()
-        if bp >= 100:   digits = 2
-        elif bp >= 1:   digits = 4
-        elif bp >= 0.01: digits = 6
-        else:           digits = 8
-        return round(p, digits)
+    # ──────────────────────────── DeDust order ──────────────────────────
+
+    def _dedust_order(self, side, amount, price=None):
+        """Реальный своп через DeDust DEX."""
+        fill_price = price or self.get_live_price()
+        try:
+            if side == "buy":
+                ton_amount = amount * fill_price
+                result = self._dedust.buy(ton_amount)
+            else:
+                result = self._dedust.sell(amount)
+
+            if not result.get("ok"):
+                print(f"[DeDust] Ошибка ордера: {result.get('error')}")
+                return None
+
+            return {
+                "id":       f"dedust_{int(time.time())}",
+                "side":     side,
+                "amount":   amount,
+                "price":    fill_price,
+                "status":   "closed",
+                "datetime": datetime.utcnow().isoformat(),
+                "info":     result,
+            }
+        except Exception as e:
+            print(f"[Exchange] _dedust_order error: {e}")
+            return None
+
+    # ──────────────────────────── demo helpers ──────────────────────────
 
     def _fake_ticker(self):
-        bp = self._base_price()
-        base = bp + random.uniform(-bp * 0.008, bp * 0.008)
+        bp     = self._base_price()
+        base   = bp + random.uniform(-bp * 0.008, bp * 0.008)
         spread = bp * 0.0002
         return {
-            "price": self._round(base),
-            "bid": self._round(base - spread),
-            "ask": self._round(base + spread),
+            "price":  self._round(base),
+            "bid":    self._round(base - spread),
+            "ask":    self._round(base + spread),
             "volume": round(random.uniform(1000, 5000), 2),
         }
 
     def _fake_ohlcv(self, limit=100):
-        bars = []
-        now = int(time.time() * 1000)
+        bars     = []
+        now      = int(time.time() * 1000)
         interval = 3600 * 1000
-        bp = self._base_price()
-        price = bp
-        vol = bp * 0.005  # масштаб волатильности относительно цены
+        bp       = self._base_price()
+        price    = bp
+        vol      = bp * 0.005
         for i in range(limit):
             ts = now - (limit - i) * interval
-            o = price
-            h = o + random.uniform(0, vol)
-            l = o - random.uniform(0, vol)
-            c = l + random.uniform(0, h - l)
-            v = random.uniform(100, 500)
+            o  = price
+            h  = o + random.uniform(0, vol)
+            l  = o - random.uniform(0, vol)
+            c  = l + random.uniform(0, h - l)
+            v  = random.uniform(100, 500)
             bars.append([ts, self._round(o), self._round(h), self._round(l), self._round(c), round(v, 2)])
             price = c
         return bars
 
     def _fake_order(self, side, amount, price=None):
-        ticker = self._fake_ticker()
+        ticker     = self._fake_ticker()
         fill_price = price or ticker["price"]
         return {
-            "id": f"demo_{int(time.time())}",
-            "side": side,
-            "amount": amount,
-            "price": fill_price,
-            "status": "closed",
+            "id":       f"demo_{int(time.time())}",
+            "side":     side,
+            "amount":   amount,
+            "price":    fill_price,
+            "status":   "closed",
             "datetime": datetime.utcnow().isoformat(),
         }
