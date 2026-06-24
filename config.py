@@ -9,7 +9,7 @@ class Config:
     API_SECRET = os.getenv("API_SECRET", "")
     SYMBOL = os.getenv("SYMBOL", "GRINCH/USDT")
     TIMEFRAME = os.getenv("TIMEFRAME", "1h")
-    TRADE_AMOUNT = float(os.getenv("TRADE_AMOUNT", "100"))
+    TRADE_AMOUNT = float(os.getenv("TRADE_AMOUNT", "3"))
     MAX_OPEN_TRADES = int(os.getenv("MAX_OPEN_TRADES", "3"))
     STOP_LOSS_PCT = float(os.getenv("STOP_LOSS_PCT", "2.0"))
     TAKE_PROFIT_PCT = float(os.getenv("TAKE_PROFIT_PCT", "4.0"))
@@ -30,7 +30,7 @@ class Config:
     MIN_AI_CONFIDENCE = float(os.getenv("MIN_AI_CONFIDENCE", "55"))     # мин. уверенность AI для входа
     AI_OVERRIDE_CONFIDENCE = float(os.getenv("AI_OVERRIDE_CONFIDENCE", "65"))  # AI один может открыть сделку
 
-    DEMO_MODE = os.getenv("DEMO_MODE", "true").lower() == "true"
+    DEMO_MODE = os.getenv("DEMO_MODE", "false").lower() == "true"
     SECRET_KEY = os.getenv("SECRET_KEY", "grinch-gram-secret-2024")
     # EQ-адрес выводится из TON_MNEMONIC (WalletV5R1 / W5 - кошелёк TonKeeper)
     TON_WALLET = os.getenv("TON_WALLET", "EQDDgb2BTM-KCjntOoUg6uHllvnu3KGqEquKw6IySVP3hGXJ")
@@ -40,4 +40,4 @@ class Config:
     # Хранить только в секретах Replit, никогда в коде!
     TON_MNEMONIC = os.getenv("TON_MNEMONIC", "")
     # Режим торговли: "demo" | "dedust"
-    TRADE_MODE = os.getenv("TRADE_MODE", "demo")
+    TRADE_MODE = os.getenv("TRADE_MODE", "dedust")
