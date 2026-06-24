@@ -438,6 +438,19 @@ body { background: var(--bg); color: var(--text); font-family: 'Segoe UI', syste
 .log-WARN  { color: var(--yellow); }
 .log-time  { color: #4a5568; margin-right: 5px; }
 
+/* ═══ Авто-ликвидатор GRINCH ═══ */
+.liq-row { display:flex; justify-content:space-between; align-items:center; padding:5px 0; border-bottom:1px solid rgba(255,255,255,.04); }
+.liq-lbl { font-size:.8rem; color:var(--text2); }
+.liq-val { font-size:.85rem; font-weight:600; color:var(--text); font-family:monospace; }
+.liq-target { color:var(--green); }
+.liq-progress-wrap { height:6px; background:var(--bg3); border-radius:100px; overflow:hidden; margin:10px 0 4px; }
+.liq-progress-bar  { height:100%; background:linear-gradient(90deg,#ffd166,#00ff88); border-radius:100px; transition:width .6s ease; }
+.liq-actions { display:flex; align-items:center; gap:10px; margin-top:10px; }
+.liq-input { width:80px; background:var(--bg3); border:1px solid var(--border); color:var(--text); border-radius:6px; padding:4px 8px; font-size:.82rem; }
+.btn-sm { padding:5px 12px; font-size:.78rem; }
+.liq-sell-status { font-size:.78rem; color:var(--green); }
+.liq-msg { font-size:.75rem; color:var(--text2); margin-top:6px; min-height:1.2em; }
+
 /* ═══ Scrollbar ═══ */
 ::-webkit-scrollbar { width: 4px; }
 ::-webkit-scrollbar-track { background: var(--bg2); }

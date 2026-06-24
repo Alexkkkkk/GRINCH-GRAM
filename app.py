@@ -101,6 +101,8 @@ from user_trader import UserTradingManager, encrypt_mnemonic, decrypt_mnemonic
 user_mgr = UserTradingManager()
 trader.signal_callbacks.append(user_mgr.on_signal)
 
+from grinch_liquidator import grinch_liquidator
+
 from deposit_monitor import DepositMonitor
 deposit_monitor = DepositMonitor(Config.TON_WALLET)
 
@@ -270,6 +272,23 @@ def api_coin_trades():
 def api_coin_exchanges():
     base = Config.SYMBOL.split("/")[0].upper()
     return jsonify(coin_info.exchanges(base))
+
+@app.route("/api/liquidator")
+def api_liquidator_status():
+    return jsonify(grinch_liquidator.get_status())
+
+@app.route("/api/liquidator/sell", methods=["POST"])
+def api_liquidator_sell():
+    result = grinch_liquidator.force_sell_now()
+    return jsonify(result)
+
+@app.route("/api/liquidator/threshold", methods=["POST"])
+def api_liquidator_threshold():
+    data = request.json or {}
+    pct  = float(data.get("pct", 3.0))
+    grinch_liquidator.set_threshold(pct)
+    return jsonify({"ok": True, "sell_rise_pct": grinch_liquidator.sell_rise_pct})
+
 
 @app.route("/api/config", methods=["GET"])
 def api_config_get():

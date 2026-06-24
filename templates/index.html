@@ -464,6 +464,49 @@
         <div id="ton-error" class="ton-error" style="display:none"></div>
       </div>
 
+      <!-- ── Авто-ликвидатор GRINCH ───────────────────────────────── -->
+      <div class="card" id="liquidator-card">
+        <div class="card-title">🐸 Авто-ликвидатор GRINCH</div>
+        <div id="liq-body">
+          <div class="liq-row">
+            <span class="liq-lbl">На кошельке</span>
+            <span class="liq-val" id="liq-bal">—</span>
+          </div>
+          <div class="liq-row">
+            <span class="liq-lbl">Опорная цена</span>
+            <span class="liq-val" id="liq-ref">—</span>
+          </div>
+          <div class="liq-row">
+            <span class="liq-lbl">Текущая цена</span>
+            <span class="liq-val" id="liq-cur">—</span>
+          </div>
+          <div class="liq-row">
+            <span class="liq-lbl">Цель продажи</span>
+            <span class="liq-val liq-target" id="liq-tgt">—</span>
+          </div>
+          <div class="liq-row">
+            <span class="liq-lbl">Изменение</span>
+            <span class="liq-val" id="liq-pct">—</span>
+          </div>
+          <!-- Прогресс-бар -->
+          <div class="liq-progress-wrap">
+            <div class="liq-progress-bar" id="liq-bar" style="width:0%"></div>
+          </div>
+          <div class="liq-row" style="margin-top:8px">
+            <label class="liq-lbl" for="liq-thresh">Порог (+%)</label>
+            <input type="number" id="liq-thresh" class="liq-input" value="3" min="0.5" max="200" step="0.5"
+                   onchange="setLiqThreshold(this.value)">
+          </div>
+          <div class="liq-actions">
+            <button class="btn btn-red btn-sm" onclick="forceLiqSell()" id="liq-sell-btn">
+              🔴 Продать сейчас
+            </button>
+            <span id="liq-sell-status" class="liq-sell-status"></span>
+          </div>
+          <div id="liq-msg" class="liq-msg"></div>
+        </div>
+      </div>
+
       <!-- Статистика бота -->
       <div class="card">
         <div class="card-title">📈 Статистика торговли</div>

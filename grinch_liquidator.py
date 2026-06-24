@@ -1,0 +1,254 @@
+"""
+Авто-ликвидатор накопленного GRINCH.
+
+Следит за реальным балансом GRINCH на платформенном кошельке (из Failed-транзакций).
+Как только цена поднимается на SELL_RISE_PCT% от опорной — продаёт всё автоматически.
+"""
+import threading
+import time
+import logging
+from datetime import datetime
+from config import Config
+from price_feed import price_feed
+
+log = logging.getLogger(__name__)
+
+MIN_GRINCH_TO_SELL = 0.5    # меньше этого — не стоит тратить 0.6 TON на газ
+BAL_CHECK_INTERVAL = 150    # секунд между on-chain запросами баланса
+PRICE_TICK_SECS    = 30     # секунд между проверками цены (из кэша price_feed)
+START_DELAY        = 200    # задержка запуска — не конкурируем с ton_tracker (120s) и deposit_monitor (65s)
+
+
+class GrinchLiquidator:
+    """
+    Фоновый поток: следит за накопленным GRINCH и продаёт при заданном росте цены.
+
+    Логика:
+    1. Раз в BAL_CHECK_INTERVAL проверяем on-chain GRINCH баланс.
+    2. Если баланс > MIN_GRINCH_TO_SELL → фиксируем опорную цену.
+    3. Каждые PRICE_TICK_SECS сравниваем текущую цену с опорной.
+    4. Как только цена выросла на sell_rise_pct% — продаём всё через DeDust.
+    """
+
+    def __init__(self):
+        self._lock           = threading.Lock()
+        self._running        = False
+        self._thread         = None
+        self._grinch_bal     = 0.0
+        self._ref_price      = None    # цена в момент обнаружения GRINCH
+        self._ref_time       = None
+        self._last_bal_check = 0.0
+        self._last_sell_at   = None
+        self._sell_count     = 0
+        self._logs           = []
+        # Порог роста для продажи — можно менять через API
+        self.sell_rise_pct   = 3.0    # продаём при +3% от опорной цены
+
+    # ── Логирование ─────────────────────────────────────────────────────────
+
+    def _log(self, msg: str, level: str = "INFO"):
+        entry = {"time": datetime.utcnow().strftime("%H:%M:%S"), "level": level, "msg": msg}
+        self._logs.append(entry)
+        if len(self._logs) > 150:
+            self._logs = self._logs[-150:]
+        print(f"[Liquidator] {entry['time']} [{level}] {msg}")
+
+    # ── Жизненный цикл ──────────────────────────────────────────────────────
+
+    def start(self):
+        if self._running:
+            return
+        self._running = True
+        self._thread  = threading.Thread(target=self._loop, daemon=True)
+        self._thread.start()
+        self._log("🟢 Авто-ликвидатор GRINCH запущен")
+
+    def stop(self):
+        self._running = False
+        self._log("🔴 Авто-ликвидатор остановлен", "WARN")
+
+    # ── Публичный статус (для API / UI) ─────────────────────────────────────
+
+    def get_status(self) -> dict:
+        with self._lock:
+            current = price_feed.get("GRINCH") or 0.0
+            target_price, pct_to_go, pct_now = None, None, None
+            if self._ref_price and self._ref_price > 0 and current > 0:
+                target_price = round(self._ref_price * (1 + self.sell_rise_pct / 100), 8)
+                pct_to_go    = round((target_price - current) / current * 100, 2)
+                pct_now      = round((current - self._ref_price) / self._ref_price * 100, 2)
+            return {
+                "running":        self._running,
+                "grinch_balance": round(self._grinch_bal, 4),
+                "ref_price":      self._ref_price,
+                "ref_time":       self._ref_time,
+                "current_price":  current,
+                "target_price":   target_price,
+                "pct_to_go":      pct_to_go,
+                "pct_now":        pct_now,
+                "sell_rise_pct":  self.sell_rise_pct,
+                "sell_count":     self._sell_count,
+                "last_sell_at":   self._last_sell_at,
+                "logs":           list(self._logs[-30:]),
+            }
+
+    def set_threshold(self, pct: float):
+        """Изменить порог продажи (в процентах)."""
+        pct = max(0.5, min(pct, 200.0))
+        self.sell_rise_pct = pct
+        self._log(f"⚙️ Порог продажи изменён на +{pct}%")
+
+    # ── Основной цикл ───────────────────────────────────────────────────────
+
+    def _loop(self):
+        # Стартуем позже всех чтобы не перегружать TonCenter
+        time.sleep(START_DELAY)
+        self._log(f"🔍 Начинаю мониторинг GRINCH (порог продажи: +{self.sell_rise_pct}%)")
+
+        while self._running:
+            try:
+                now = time.time()
+                # Обновляем on-chain баланс раз в BAL_CHECK_INTERVAL
+                if now - self._last_bal_check >= BAL_CHECK_INTERVAL:
+                    self._refresh_balance()
+                    self._last_bal_check = now
+
+                # Проверяем цену каждые PRICE_TICK_SECS
+                self._check_and_maybe_sell()
+
+            except Exception as e:
+                self._log(f"Ошибка цикла: {e}", "ERROR")
+
+            time.sleep(PRICE_TICK_SECS)
+
+    # ── Получение баланса ────────────────────────────────────────────────────
+
+    def _refresh_balance(self):
+        try:
+            from dedust_client import dedust_client
+            bal    = dedust_client.get_balance()
+            grinch = float(bal.get("GRINCH", 0.0))
+
+            with self._lock:
+                old = self._grinch_bal
+                self._grinch_bal = grinch
+
+                if grinch >= MIN_GRINCH_TO_SELL:
+                    if self._ref_price is None:
+                        # Первое обнаружение — фиксируем опорную цену
+                        ref = price_feed.get("GRINCH") or 0.0
+                        if ref > 0:
+                            self._ref_price = ref
+                            self._ref_time  = datetime.utcnow().isoformat()
+                            target = ref * (1 + self.sell_rise_pct / 100)
+                            self._log(
+                                f"💰 Найдено {grinch:.4f} GRINCH на кошельке | "
+                                f"Опорная цена: ${ref:.8f} | "
+                                f"Продам при: ${target:.8f} (+{self.sell_rise_pct}%)"
+                            )
+                    else:
+                        # Баланс обновился (например пришло ещё)
+                        if abs(grinch - old) > 0.01:
+                            self._log(
+                                f"🔄 Баланс GRINCH: {old:.4f} → {grinch:.4f} | "
+                                f"Опорная цена: ${self._ref_price:.8f}"
+                            )
+                elif grinch < 0.01 and old >= MIN_GRINCH_TO_SELL:
+                    # GRINCH продан / ушёл
+                    self._log(f"✅ GRINCH сброшен ({old:.4f} → {grinch:.4f})")
+                    self._ref_price = None
+                    self._ref_time  = None
+                else:
+                    self._log(
+                        f"📊 On-chain GRINCH: {grinch:.4f} "
+                        f"({'≥' if grinch >= MIN_GRINCH_TO_SELL else '<'} мин. {MIN_GRINCH_TO_SELL})"
+                    )
+
+        except Exception as e:
+            self._log(f"Ошибка получения баланса: {e}", "WARN")
+
+    # ── Проверка цены и продажа ──────────────────────────────────────────────
+
+    def _check_and_maybe_sell(self):
+        with self._lock:
+            grinch = self._grinch_bal
+            ref    = self._ref_price
+
+        if grinch < MIN_GRINCH_TO_SELL or ref is None or ref <= 0:
+            return
+
+        current = price_feed.get("GRINCH") or 0.0
+        if current <= 0:
+            return
+
+        rise_pct = (current - ref) / ref * 100
+        target   = ref * (1 + self.sell_rise_pct / 100)
+
+        if current >= target:
+            self._log(
+                f"🚀 Цена выросла на {rise_pct:+.2f}%! "
+                f"${ref:.8f} → ${current:.8f} (цель: ${target:.8f}) | "
+                f"Продаём {grinch:.4f} GRINCH...",
+                "INFO"
+            )
+            self._execute_sell(grinch, current)
+        else:
+            pct_to_go = ((target - current) / current) * 100
+            self._log(
+                f"⏳ {grinch:.4f} GRINCH | Сейчас ${current:.8f} "
+                f"({rise_pct:+.2f}%) | Цель ${target:.8f} | "
+                f"До продажи: ещё +{pct_to_go:.2f}%"
+            )
+
+    # ── Исполнение продажи ───────────────────────────────────────────────────
+
+    def _execute_sell(self, grinch_amount: float, current_price: float):
+        try:
+            from dedust_client import dedust_client
+            result = dedust_client.sell(grinch_amount)
+
+            if result and result.get("ok"):
+                est_ton = grinch_amount * current_price
+                self._log(
+                    f"✅ Продано {grinch_amount:.4f} GRINCH @ ${current_price:.8f} | "
+                    f"Ожидаемо ≈{est_ton:.4f} TON",
+                    "INFO"
+                )
+                with self._lock:
+                    self._sell_count   += 1
+                    self._last_sell_at  = datetime.utcnow().isoformat()
+                    self._grinch_bal    = 0.0
+                    self._ref_price     = None
+                    self._ref_time      = None
+                # Обновим баланс через 60 сек
+                self._last_bal_check = time.time() - BAL_CHECK_INTERVAL + 60
+            else:
+                err = (result.get("error") if result else None) or "нет ответа"
+                self._log(f"⚠️ Продажа не удалась: {err}", "WARN")
+
+        except Exception as e:
+            self._log(f"Ошибка продажи: {e}", "ERROR")
+
+    def force_sell_now(self) -> dict:
+        """Немедленная продажа (вызывается вручную через кнопку в UI)."""
+        with self._lock:
+            grinch = self._grinch_bal
+
+        if grinch < MIN_GRINCH_TO_SELL:
+            # Попробуем получить актуальный баланс
+            self._refresh_balance()
+            with self._lock:
+                grinch = self._grinch_bal
+
+        if grinch < MIN_GRINCH_TO_SELL:
+            return {"ok": False, "error": f"GRINCH баланс {grinch:.4f} < мин. {MIN_GRINCH_TO_SELL}"}
+
+        current = price_feed.get("GRINCH") or 0.0
+        self._log(f"🔴 РУЧНАЯ продажа {grinch:.4f} GRINCH @ ${current:.8f}")
+        self._execute_sell(grinch, current)
+        return {"ok": True, "grinch_sold": grinch, "price": current}
+
+
+# ── Синглтон — запускается при импорте модуля ────────────────────────────────
+grinch_liquidator = GrinchLiquidator()
+grinch_liquidator.start()

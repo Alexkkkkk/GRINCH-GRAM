@@ -895,3 +895,113 @@ function renderTrainingProgress(tp) {
     }, 2500);
   }
 }
+
+// ══════════════════════════════════════════════════════════════════
+//  Авто-ликвидатор GRINCH
+// ══════════════════════════════════════════════════════════════════
+function fmt8(v) {
+  if (v == null) return "—";
+  return "$" + Number(v).toFixed(8);
+}
+
+function updateLiquidator(d) {
+  const bal = d.grinch_balance || 0;
+
+  // Баланс
+  const balEl = document.getElementById("liq-bal");
+  if (balEl) balEl.textContent = bal > 0 ? bal.toFixed(4) + " GRINCH" : "0 GRINCH";
+
+  // Цены
+  const refEl  = document.getElementById("liq-ref");
+  const curEl  = document.getElementById("liq-cur");
+  const tgtEl  = document.getElementById("liq-tgt");
+  const pctEl  = document.getElementById("liq-pct");
+  const barEl  = document.getElementById("liq-bar");
+  const msgEl  = document.getElementById("liq-msg");
+
+  if (refEl) refEl.textContent = d.ref_price ? fmt8(d.ref_price) : "—";
+  if (curEl) curEl.textContent = d.current_price ? fmt8(d.current_price) : "—";
+  if (tgtEl) tgtEl.textContent = d.target_price  ? fmt8(d.target_price) + " (+" + d.sell_rise_pct + "%)" : "—";
+
+  // Изменение цены с опорной
+  if (pctEl) {
+    if (d.pct_now != null) {
+      const sign = d.pct_now >= 0 ? "+" : "";
+      pctEl.textContent  = sign + d.pct_now.toFixed(2) + "%";
+      pctEl.style.color  = d.pct_now >= d.sell_rise_pct ? "var(--green)" : d.pct_now >= 0 ? "#ffd166" : "var(--red)";
+    } else {
+      pctEl.textContent = "—";
+      pctEl.style.color = "";
+    }
+  }
+
+  // Прогресс-бар: 0% = нет роста, 100% = достигли цели
+  if (barEl && d.sell_rise_pct > 0 && d.pct_now != null) {
+    const prog = Math.min(100, Math.max(0, (d.pct_now / d.sell_rise_pct) * 100));
+    barEl.style.width = prog.toFixed(1) + "%";
+  } else if (barEl) {
+    barEl.style.width = "0%";
+  }
+
+  // Сообщение
+  if (msgEl) {
+    if (bal < 0.5) {
+      msgEl.textContent = "GRINCH на кошельке не обнаружен";
+    } else if (d.last_sell_at) {
+      msgEl.textContent = "Последняя продажа: " + d.last_sell_at + " (всего: " + d.sell_count + ")";
+    } else if (d.target_price) {
+      const pctLeft = d.pct_to_go != null ? d.pct_to_go.toFixed(2) + "% до цели" : "";
+      msgEl.textContent = "Жду роста +" + d.sell_rise_pct + "% | " + pctLeft;
+    } else {
+      msgEl.textContent = "Ожидание данных...";
+    }
+  }
+
+  // Подсветить карточку если баланс > 0
+  const card = document.getElementById("liquidator-card");
+  if (card) {
+    card.style.borderColor = bal >= 0.5 ? "rgba(0,255,136,0.3)" : "";
+  }
+}
+
+// Периодически обновляем статус ликвидатора
+function pollLiquidator() {
+  fetch("/api/liquidator")
+    .then(r => r.json())
+    .then(d => updateLiquidator(d))
+    .catch(() => {});
+}
+pollLiquidator();
+setInterval(pollLiquidator, 30000);
+
+// Ручная продажа
+function forceLiqSell() {
+  const btn = document.getElementById("liq-sell-btn");
+  const st  = document.getElementById("liq-sell-status");
+  if (btn) btn.disabled = true;
+  if (st)  st.textContent = "Отправляю...";
+  fetch("/api/liquidator/sell", { method: "POST" })
+    .then(r => r.json())
+    .then(d => {
+      if (d.ok) {
+        if (st) st.textContent = "✅ Продано " + (d.grinch_sold || 0).toFixed(4) + " GRINCH";
+      } else {
+        if (st) st.textContent = "⚠️ " + (d.error || "Ошибка");
+      }
+      if (btn) btn.disabled = false;
+      setTimeout(() => { if (st) st.textContent = ""; }, 8000);
+      pollLiquidator();
+    })
+    .catch(() => { if (btn) btn.disabled = false; });
+}
+
+// Изменить порог
+function setLiqThreshold(val) {
+  const pct = parseFloat(val);
+  if (isNaN(pct) || pct < 0.5) return;
+  fetch("/api/liquidator/threshold", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ pct })
+  }).then(() => pollLiquidator()).catch(() => {});
+}
