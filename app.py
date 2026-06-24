@@ -1,5 +1,6 @@
 import json
 import math
+import os
 import numpy as np
 from flask import Flask, render_template, jsonify, request
 from flask.json.provider import DefaultJSONProvider
@@ -7,6 +8,7 @@ from flask_socketio import SocketIO, emit
 import threading
 import time
 from config import Config
+from database import db
 from trader import Trader
 from ton_tracker import TONTracker
 from coin_info import coin_info
@@ -28,9 +30,21 @@ app = Flask(__name__)
 app.json_provider_class = NumpyJSONProvider
 app.json = NumpyJSONProvider(app)
 app.config["SECRET_KEY"] = Config.SECRET_KEY
+app.secret_key = Config.SECRET_KEY
 
-# Patch socketio to also use numpy-safe serialisation
-import socketio as sio_pkg
+# ── База данных ───────────────────────────────────────────────────────────────
+app.config["SQLALCHEMY_DATABASE_URI"] = os.environ.get(
+    "DATABASE_URL", "sqlite:///grinchgram.db"
+)
+app.config["SQLALCHEMY_ENGINE_OPTIONS"] = {"pool_recycle": 300, "pool_pre_ping": True}
+db.init_app(app)
+
+with app.app_context():
+    from models import UserWallet   # noqa: F401
+    db.create_all()
+
+# ── SocketIO ──────────────────────────────────────────────────────────────────
+import socketio as sio_pkg   # noqa: F811
 
 _orig_dumps = json.dumps
 def _safe_dumps(obj, **kw):
@@ -44,24 +58,31 @@ def _safe_dumps(obj, **kw):
     return _orig_dumps(obj, **kw)
 
 import flask_socketio
-flask_socketio.json = type("_J", (), {"dumps": staticmethod(_safe_dumps), "loads": staticmethod(json.loads)})()
+flask_socketio.json = type("_J", (), {
+    "dumps": staticmethod(_safe_dumps),
+    "loads": staticmethod(json.loads),
+})()
 
 socketio = SocketIO(app, cors_allowed_origins="*", async_mode="threading",
-                    allow_upgrades=True,
-                    ping_timeout=60, ping_interval=25,
-                    json=type("_J", (), {"dumps": staticmethod(_safe_dumps), "loads": staticmethod(json.loads)})())
+                    allow_upgrades=True, ping_timeout=60, ping_interval=25,
+                    json=type("_J", (), {
+                        "dumps": staticmethod(_safe_dumps),
+                        "loads": staticmethod(json.loads),
+                    })())
 
+# ── Торговые движки ───────────────────────────────────────────────────────────
 trader = Trader()
-ton = TONTracker(Config.TON_WALLET)
+ton    = TONTracker(Config.TON_WALLET)
+
+from user_trader import UserTradingManager, encrypt_mnemonic, decrypt_mnemonic
+user_mgr = UserTradingManager()
+trader.signal_callbacks.append(user_mgr.on_signal)
 
 
 def _safe_status():
-    """Return status dict with all numpy types converted to Python natives."""
     def _walk(obj):
-        if isinstance(obj, dict):
-            return {k: _walk(v) for k, v in obj.items()}
-        if isinstance(obj, (list, tuple)):
-            return [_walk(v) for v in obj]
+        if isinstance(obj, dict):   return {k: _walk(v) for k, v in obj.items()}
+        if isinstance(obj, (list, tuple)): return [_walk(v) for v in obj]
         if isinstance(obj, (np.integer,)):  return int(obj)
         if isinstance(obj, (np.floating,)): return float(obj)
         if isinstance(obj, (np.bool_,)):    return bool(obj)
@@ -70,60 +91,60 @@ def _safe_status():
     return _walk(trader.get_status())
 
 
+# ── Фоновые потоки ────────────────────────────────────────────────────────────
+
 def push_updates():
     while True:
         try:
-            status = _safe_status()
-            socketio.emit("status_update", status)
+            socketio.emit("status_update", _safe_status())
         except Exception as e:
             print(f"[Push] Ошибка: {e}")
         time.sleep(5)
 
 
 def push_price():
-    """Живая цена в реальном времени — частое обновление (каждые 2 сек)."""
     last = None
     last_symbol = None
     while True:
         try:
             symbol = Config.SYMBOL
-            # При смене пары сбрасываем базу для расчёта изменения
             if symbol != last_symbol:
                 last = None
                 last_symbol = symbol
-            price = float(trader.exchange.get_live_price())
-            change = 0.0
-            if last:
-                change = round((price - last) / last * 100, 3)
-            socketio.emit("price_update", {
-                "symbol": symbol,
-                "price": price,
-                "change": change,
-            })
+            price  = float(trader.exchange.get_live_price())
+            change = round((price - last) / last * 100, 3) if last else 0.0
+            socketio.emit("price_update", {"symbol": symbol, "price": price, "change": change})
             last = price
         except Exception as e:
             print(f"[Price] Ошибка: {e}")
         time.sleep(2)
 
 
+def _load_users_bg():
+    time.sleep(3)
+    user_mgr.load_from_db(app)
+
+
 _bg_started = False
-_bg_lock = threading.Lock()
+_bg_lock    = threading.Lock()
 
 def start_background():
-    """Запуск фоновых потоков (один раз на процесс, совместимо с gunicorn)."""
     global _bg_started
     with _bg_lock:
         if _bg_started:
             return
         _bg_started = True
         threading.Thread(target=push_updates, daemon=True).start()
-        threading.Thread(target=push_price, daemon=True).start()
+        threading.Thread(target=push_price,   daemon=True).start()
+        threading.Thread(target=_load_users_bg, daemon=True).start()
         ton.start()
 
-
-# Запуск при импорте (gunicorn выполняет app:app, не заходя в __main__)
 start_background()
 
+
+# ════════════════════════════════════════════════════════════════════════════
+#  МАРШРУТЫ — главный дашборд
+# ════════════════════════════════════════════════════════════════════════════
 
 @app.route("/")
 def index():
@@ -138,6 +159,7 @@ def index():
     return render_template("index.html", symbol=Config.SYMBOL, demo=Config.DEMO_MODE,
                            init_price=init_price, init_running=init_running,
                            init_ai=init_ai, init_balance=init_balance)
+
 
 @app.route("/api/status")
 def api_status():
@@ -167,18 +189,18 @@ def api_ton_price():
     import urllib.request, json as _json
     try:
         url = "https://api.dexscreener.com/latest/dex/pairs/ton/EQCM3B12QK1e4yZSf8GtBRT0aLMNyEsBc_9Qsof7gbCmkjvi"
-        with urllib.request.urlopen(url, timeout=5) as resp:
-            d = _json.loads(resp.read())
-            price = d.get("pair", {}).get("priceUsd") or d.get("pairs", [{}])[0].get("priceUsd", "0")
-            return jsonify({"price": float(price or 0)})
+        with urllib.request.urlopen(url, timeout=5) as r:
+            d = _json.loads(r.read())
+            p = d.get("pair", {}).get("priceUsd") or d.get("pairs", [{}])[0].get("priceUsd", "0")
+            return jsonify({"price": float(p or 0)})
     except Exception:
         pass
     try:
         url2 = "https://tonapi.io/v2/rates?tokens=ton&currencies=usd"
-        with urllib.request.urlopen(url2, timeout=5) as resp2:
-            d2 = _json.loads(resp2.read())
-            price2 = d2.get("rates", {}).get("TON", {}).get("prices", {}).get("USD", 0)
-            return jsonify({"price": float(price2 or 0)})
+        with urllib.request.urlopen(url2, timeout=5) as r2:
+            d2 = _json.loads(r2.read())
+            p2 = d2.get("rates", {}).get("TON", {}).get("prices", {}).get("USD", 0)
+            return jsonify({"price": float(p2 or 0)})
     except Exception:
         pass
     return jsonify({"price": 2.44})
@@ -201,35 +223,25 @@ def api_coin_exchanges():
 @app.route("/api/config", methods=["GET"])
 def api_config_get():
     return jsonify({
-        "symbol": Config.SYMBOL,
-        "timeframe": Config.TIMEFRAME,
-        "trade_amount": Config.TRADE_AMOUNT,
-        "max_open_trades": Config.MAX_OPEN_TRADES,
-        "stop_loss_pct": Config.STOP_LOSS_PCT,
-        "take_profit_pct": Config.TAKE_PROFIT_PCT,
-        "trailing_stop_pct": Config.TRAILING_STOP_PCT,
-        "fee_pct": Config.FEE_PCT,
-        "use_dynamic_targets": Config.USE_DYNAMIC_TARGETS,
-        "trend_filter": Config.TREND_FILTER,
-        "min_ai_confidence": Config.MIN_AI_CONFIDENCE,
-        "demo_mode": Config.DEMO_MODE,
-        "exchange": Config.EXCHANGE,
-        "ton_wallet": Config.TON_WALLET,
+        "symbol": Config.SYMBOL, "timeframe": Config.TIMEFRAME,
+        "trade_amount": Config.TRADE_AMOUNT, "max_open_trades": Config.MAX_OPEN_TRADES,
+        "stop_loss_pct": Config.STOP_LOSS_PCT, "take_profit_pct": Config.TAKE_PROFIT_PCT,
+        "trailing_stop_pct": Config.TRAILING_STOP_PCT, "fee_pct": Config.FEE_PCT,
+        "use_dynamic_targets": Config.USE_DYNAMIC_TARGETS, "trend_filter": Config.TREND_FILTER,
+        "min_ai_confidence": Config.MIN_AI_CONFIDENCE, "demo_mode": Config.DEMO_MODE,
+        "exchange": Config.EXCHANGE, "ton_wallet": Config.TON_WALLET,
     })
 
 @app.route("/api/config", methods=["POST"])
 def api_config_set():
     data = request.json or {}
     def num(key, lo, hi):
-        """Безопасно парсит число из data[key] в диапазоне [lo, hi]; иначе None."""
-        if key not in data:
-            return None
+        if key not in data: return None
         try:
             v = float(data[key])
         except (TypeError, ValueError):
             return None
-        if not math.isfinite(v):
-            return None
+        if not math.isfinite(v): return None
         return max(lo, min(hi, v))
 
     errors = []
@@ -240,38 +252,157 @@ def api_config_set():
     if errors:
         return jsonify({"ok": False, "message": "Некорректные значения: " + ", ".join(errors)}), 400
 
-    v = num("trade_amount", 1, 1e9)
-    if v is not None: Config.TRADE_AMOUNT = v
-    v = num("stop_loss_pct", 0.1, 90)
-    if v is not None: Config.STOP_LOSS_PCT = v
-    v = num("take_profit_pct", 0.1, 1000)
-    if v is not None: Config.TAKE_PROFIT_PCT = v
-    v = num("max_open_trades", 1, 50)
-    if v is not None: Config.MAX_OPEN_TRADES = int(v)
-    v = num("trailing_stop_pct", 0, 90)
-    if v is not None: Config.TRAILING_STOP_PCT = v
-    v = num("fee_pct", 0, 10)
-    if v is not None: Config.FEE_PCT = v
-    v = num("min_ai_confidence", 0, 100)
-    if v is not None: Config.MIN_AI_CONFIDENCE = v
+    if (v := num("trade_amount", 1, 1e9))      is not None: Config.TRADE_AMOUNT     = v
+    if (v := num("stop_loss_pct", 0.1, 90))    is not None: Config.STOP_LOSS_PCT    = v
+    if (v := num("take_profit_pct", 0.1, 1000))is not None: Config.TAKE_PROFIT_PCT  = v
+    if (v := num("max_open_trades", 1, 50))     is not None: Config.MAX_OPEN_TRADES  = int(v)
+    if (v := num("trailing_stop_pct", 0, 90))  is not None: Config.TRAILING_STOP_PCT= v
+    if (v := num("fee_pct", 0, 10))            is not None: Config.FEE_PCT          = v
+    if (v := num("min_ai_confidence", 0, 100)) is not None: Config.MIN_AI_CONFIDENCE= v
     if "use_dynamic_targets" in data: Config.USE_DYNAMIC_TARGETS = bool(data["use_dynamic_targets"])
-    if "trend_filter" in data: Config.TREND_FILTER = bool(data["trend_filter"])
+    if "trend_filter"        in data: Config.TREND_FILTER        = bool(data["trend_filter"])
     if "symbol" in data and data["symbol"] != Config.SYMBOL:
         if trader.open_trades:
-            return jsonify({
-                "ok": False,
-                "message": "Нельзя сменить пару при открытых сделках. Сначала закройте позиции.",
-            }), 409
+            return jsonify({"ok": False, "message": "Нельзя сменить пару при открытых сделках."}), 409
         Config.SYMBOL = data["symbol"]
     return jsonify({"ok": True, "message": "Настройки сохранены"})
+
+
+# ════════════════════════════════════════════════════════════════════════════
+#  МАРШРУТЫ — публичная платформа для пользователей
+# ════════════════════════════════════════════════════════════════════════════
+
+@app.route("/join")
+def join_page():
+    stats = {
+        "active_traders": user_mgr.count_active(),
+        "total_trades":   trader.stats.get("total_trades", 0),
+        "winrate":        0,
+    }
+    t, w = trader.stats.get("total_trades", 0), trader.stats.get("winning_trades", 0)
+    if t > 0:
+        stats["winrate"] = round(w / t * 100, 1)
+    return render_template("join.html", stats=stats)
+
+
+@app.route("/dashboard/<token>")
+def user_dashboard(token):
+    status = user_mgr.get_status(token)
+    if not status:
+        with app.app_context():
+            uw = UserWallet.query.filter_by(token=token).first()
+        if not uw:
+            return "Дашборд не найден. Зарегистрируйтесь на /join", 404
+        # Пользователь в БД но ещё не в памяти (перезапуск сервера) — загрузим
+        try:
+            mnemonic = decrypt_mnemonic(uw.encrypted_mnemonic)
+            user_mgr.register(token, mnemonic, uw.trade_amount, uw.name)
+            status = user_mgr.get_status(token)
+        except Exception as e:
+            return f"Ошибка загрузки аккаунта: {e}", 500
+    return render_template("user_dash.html", token=token, init_status=status)
+
+
+# ── API для пользовательских дашбордов ───────────────────────────────────────
+
+@app.route("/api/user/register", methods=["POST"])
+def api_user_register():
+    data = request.json or {}
+    name         = str(data.get("name", "")).strip()[:80]
+    mnemonic_raw = str(data.get("mnemonic", "")).strip()
+    try:
+        trade_amount = float(data.get("trade_amount", 1.0))
+        if trade_amount < 0.5 or trade_amount > 1000:
+            raise ValueError
+    except (TypeError, ValueError):
+        return jsonify({"ok": False, "error": "Сумма сделки: от 0.5 до 1000 TON"}), 400
+
+    words = mnemonic_raw.split()
+    if len(words) != 24:
+        return jsonify({"ok": False, "error": f"Мнемоника должна содержать 24 слова, получено: {len(words)}"}), 400
+
+    # Получить адрес кошелька из мнемоники
+    ton_address = ""
+    try:
+        from dedust_client import DedustClient
+        tmp = DedustClient(mnemonic_override=mnemonic_raw)
+        addr = tmp.get_wallet_address()
+        ton_address = addr or ""
+    except Exception:
+        ton_address = ""
+
+    # Зашифровать и сохранить
+    try:
+        enc = encrypt_mnemonic(mnemonic_raw)
+    except Exception as e:
+        return jsonify({"ok": False, "error": f"Ошибка шифрования: {e}"}), 500
+
+    import uuid
+    token = str(uuid.uuid4())
+    uw = UserWallet(
+        token=token,
+        name=name,
+        ton_address=ton_address,
+        encrypted_mnemonic=enc,
+        trade_amount=trade_amount,
+        active=True,
+    )
+    db.session.add(uw)
+    db.session.commit()
+
+    # Активировать в памяти
+    user_mgr.register(token, mnemonic_raw, trade_amount, name)
+
+    dashboard_url = f"/dashboard/{token}"
+    return jsonify({
+        "ok": True,
+        "token": token,
+        "address": ton_address,
+        "dashboard_url": dashboard_url,
+        "message": "Кошелёк подключён!",
+    })
+
+
+@app.route("/api/user/status/<token>")
+def api_user_status(token):
+    st = user_mgr.get_status(token)
+    if not st:
+        return jsonify({"ok": False, "error": "Не найдено"}), 404
+    return jsonify({"ok": True, **st})
+
+
+@app.route("/api/user/balance/<token>")
+def api_user_balance(token):
+    bal = user_mgr.get_balance(token)
+    if bal is None:
+        return jsonify({"ok": False, "error": "Не найдено"}), 404
+    return jsonify({"ok": True, **bal})
+
+
+@app.route("/api/platform/stats")
+def api_platform_stats():
+    t = trader.stats.get("total_trades", 0)
+    w = trader.stats.get("winning_trades", 0)
+    return jsonify({
+        "active_traders": user_mgr.count_active(),
+        "ai_winrate":     round(w / t * 100, 1) if t > 0 else 0,
+        "total_trades":   t,
+        "platform_fee":   9.5,
+        "owner_address":  "UQDDgb2BTM-KCjntOoUg6uHllvnu3KGqEquKw6IySVP3hDgM",
+    })
+
+
+# ════════════════════════════════════════════════════════════════════════════
+#  Socket.IO
+# ════════════════════════════════════════════════════════════════════════════
 
 @socketio.on("connect")
 def on_connect(auth=None):
     try:
-        status = _safe_status()
-        emit("status_update", status)
+        emit("status_update", _safe_status())
     except Exception as e:
         print(f"[on_connect] Ошибка: {e}")
+
 
 if __name__ == "__main__":
     start_background()

@@ -5,7 +5,7 @@ stack = "FLASK_VANILLA_JS"
 
 [nix]
 channel = "stable-25_05"
-packages = ["glibcLocales", "openssl", "postgresql"]
+packages = ["glibcLocales", "iana-etc", "openssl", "postgresql"]
 
 [workflows]
 runButton = "Project"

@@ -1,0 +1,320 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>GRINCH-GRAM — Мой дашборд</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🐸</text></svg>">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --ton: #0098EA; --grinch: #00ff88; --bg: #080d16; --card: #0e1726;
+      --card2: #131f35; --border: #1e2d4a; --text: #e8edf5; --muted: #6b82a8;
+      --red: #ff4466; --yellow: #ffd700;
+    }
+    body { background: var(--bg); color: var(--text); font-family: 'Inter', system-ui, sans-serif; min-height: 100vh; }
+
+    header {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 14px 28px; border-bottom: 1px solid var(--border);
+      background: rgba(8,13,22,.95); backdrop-filter: blur(12px);
+      position: sticky; top: 0; z-index: 100;
+    }
+    .logo { display: flex; align-items: center; gap: 10px; text-decoration: none; }
+    .logo-text { font-size: 1.1rem; font-weight: 800; background: linear-gradient(135deg, var(--ton), var(--grinch)); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+    .hdr-right { display: flex; align-items: center; gap: 12px; }
+    .status-pill { padding: 5px 12px; border-radius: 100px; font-size: .75rem; font-weight: 700; }
+    .pill-ready { background: rgba(0,255,136,.1); border: 1px solid rgba(0,255,136,.3); color: var(--grinch); }
+    .pill-err   { background: rgba(255,68,102,.1); border: 1px solid rgba(255,68,102,.3); color: var(--red); }
+
+    .main { max-width: 1100px; margin: 0 auto; padding: 28px 20px; }
+    h1 { font-size: 1.4rem; font-weight: 800; margin-bottom: 4px; }
+    .user-addr { font-size: .8rem; color: var(--muted); font-family: monospace; margin-bottom: 24px; }
+
+    .grid3 { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 16px; margin-bottom: 24px; }
+    .kpi {
+      background: var(--card); border: 1px solid var(--border); border-radius: 16px;
+      padding: 20px 24px;
+    }
+    .kpi-label { font-size: .75rem; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: .05em; margin-bottom: 6px; }
+    .kpi-val { font-size: 1.8rem; font-weight: 800; }
+    .kpi-val.blue  { color: var(--ton); }
+    .kpi-val.green { color: var(--grinch); }
+    .kpi-val.red   { color: var(--red); }
+    .kpi-sub { font-size: .78rem; color: var(--muted); margin-top: 2px; }
+
+    .section-title { font-size: 1rem; font-weight: 700; margin: 28px 0 14px; display: flex; align-items: center; gap: 8px; }
+
+    /* Open position */
+    .position-card {
+      background: var(--card); border: 1px solid rgba(0,255,136,.3); border-radius: 16px;
+      padding: 20px 24px; margin-bottom: 24px;
+    }
+    .position-card.empty { border-color: var(--border); opacity: .6; }
+    .pos-row { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px; }
+    .pos-item { }
+    .pos-label { font-size: .72rem; color: var(--muted); margin-bottom: 2px; }
+    .pos-val { font-size: 1rem; font-weight: 700; }
+
+    /* Trades table */
+    .trades-wrap { background: var(--card); border: 1px solid var(--border); border-radius: 16px; overflow: hidden; margin-bottom: 24px; }
+    table { width: 100%; border-collapse: collapse; font-size: .82rem; }
+    th { padding: 10px 16px; text-align: left; color: var(--muted); font-size: .72rem; font-weight: 600; text-transform: uppercase; letter-spacing: .04em; border-bottom: 1px solid var(--border); }
+    td { padding: 10px 16px; border-bottom: 1px solid rgba(30,45,74,.5); }
+    tr:last-child td { border-bottom: none; }
+    .pnl-pos { color: var(--grinch); font-weight: 700; }
+    .pnl-neg { color: var(--red); font-weight: 700; }
+    .no-trades { text-align: center; padding: 32px; color: var(--muted); font-size: .85rem; }
+
+    /* Logs */
+    .log-wrap { background: var(--card); border: 1px solid var(--border); border-radius: 16px; padding: 16px; max-height: 300px; overflow-y: auto; }
+    .log-entry { display: flex; gap: 10px; padding: 5px 0; border-bottom: 1px solid rgba(30,45,74,.4); font-size: .8rem; }
+    .log-entry:last-child { border-bottom: none; }
+    .log-time { color: var(--muted); font-family: monospace; flex-shrink: 0; }
+    .log-INFO  { color: var(--text); }
+    .log-BUY   { color: var(--grinch); font-weight: 700; }
+    .log-SELL  { color: var(--red); font-weight: 700; }
+    .log-WARN  { color: var(--yellow); }
+    .log-ERROR { color: var(--red); }
+
+    /* Balance */
+    .bal-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 24px; }
+    .bal-item { background: var(--card); border: 1px solid var(--border); border-radius: 14px; padding: 18px 20px; text-align: center; }
+    .bal-icon { font-size: 1.5rem; margin-bottom: 6px; }
+    .bal-val { font-size: 1.4rem; font-weight: 800; color: var(--ton); }
+    .bal-val.green { color: var(--grinch); }
+    .bal-label { font-size: .75rem; color: var(--muted); }
+
+    .refresh-btn { background: rgba(0,152,234,.1); border: 1px solid rgba(0,152,234,.3); color: var(--ton); border-radius: 8px; padding: 6px 14px; cursor: pointer; font-size: .8rem; font-weight: 600; transition: background .2s; }
+    .refresh-btn:hover { background: rgba(0,152,234,.2); }
+
+    footer { text-align: center; padding: 24px; color: var(--muted); font-size: .78rem; border-top: 1px solid var(--border); }
+    footer a { color: var(--ton); text-decoration: none; }
+
+    .warn-box { background: rgba(255,215,0,.06); border: 1px solid rgba(255,215,0,.2); border-radius: 12px; padding: 12px 16px; font-size: .82rem; color: #9a8000; margin-bottom: 20px; }
+  </style>
+</head>
+<body>
+
+<header>
+  <a class="logo" href="/">
+    <span style="font-size:1.3rem">◆×🐸</span>
+    <span class="logo-text">GRINCH-GRAM</span>
+  </a>
+  <div class="hdr-right">
+    <span id="status-pill" class="status-pill pill-ready">● АКТИВЕН</span>
+    <a href="/join" style="color:var(--muted);font-size:.82rem;text-decoration:none">+ Новый аккаунт</a>
+  </div>
+</header>
+
+<div class="main">
+  <h1 id="user-name">Загрузка...</h1>
+  <div class="user-addr" id="token-info">Токен: {{ token }}</div>
+
+  <!-- KPI row -->
+  <div class="grid3">
+    <div class="kpi">
+      <div class="kpi-label">Всего сделок</div>
+      <div class="kpi-val blue" id="kpi-trades">—</div>
+    </div>
+    <div class="kpi">
+      <div class="kpi-label">Win Rate</div>
+      <div class="kpi-val green" id="kpi-winrate">—</div>
+    </div>
+    <div class="kpi">
+      <div class="kpi-label">Общий P&L</div>
+      <div class="kpi-val" id="kpi-pnl">—</div>
+    </div>
+    <div class="kpi">
+      <div class="kpi-label">Комиссий уплачено</div>
+      <div class="kpi-val" id="kpi-fee">—</div>
+      <div class="kpi-sub">9.5% платформе</div>
+    </div>
+  </div>
+
+  <!-- Balance -->
+  <div class="section-title">
+    💎 Баланс кошелька
+    <button class="refresh-btn" onclick="loadBalance()">↻ Обновить</button>
+  </div>
+  <div class="bal-grid">
+    <div class="bal-item">
+      <div class="bal-icon">◆</div>
+      <div class="bal-val" id="bal-ton">...</div>
+      <div class="bal-label">TON</div>
+    </div>
+    <div class="bal-item">
+      <div class="bal-icon">🐸</div>
+      <div class="bal-val green" id="bal-grn">...</div>
+      <div class="bal-label">GRINCH</div>
+    </div>
+  </div>
+
+  <!-- Open position -->
+  <div class="section-title">📂 Открытая позиция</div>
+  <div id="position-card" class="position-card empty">
+    <div style="color:var(--muted);font-size:.88rem">Нет открытых позиций — ожидаем BUY сигнал от AI</div>
+  </div>
+
+  <!-- Recent trades -->
+  <div class="section-title">📈 История сделок</div>
+  <div class="trades-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Покупка</th>
+          <th>Продажа</th>
+          <th>TON потрачено</th>
+          <th>Комиссия</th>
+          <th>P&L (TON)</th>
+          <th>Время</th>
+        </tr>
+      </thead>
+      <tbody id="trades-body">
+        <tr><td colspan="6" class="no-trades">Сделок пока нет</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- Bot logs -->
+  <div class="section-title">📋 Лог бота</div>
+  <div id="log-wrap" class="log-wrap">
+    <div style="color:var(--muted);font-size:.82rem">Загрузка логов...</div>
+  </div>
+</div>
+
+<footer>
+  <p>GRINCH-GRAM · AI-трейдинг на TON &nbsp;|&nbsp; <a href="/">Главный дашборд</a> &nbsp;|&nbsp; <a href="/join">Подключить кошелёк</a></p>
+  <p style="margin-top:6px;font-size:.7rem">Храни ссылку на этот дашборд в безопасном месте.</p>
+</footer>
+
+<script>
+  const TOKEN = "{{ token }}";
+  let statusData = null;
+
+  // ── Инициальные данные из сервера ───────────────────────────────
+  const initStatus = {{ init_status | tojson | safe }};
+  if (initStatus) render(initStatus);
+
+  async function loadStatus() {
+    try {
+      const r = await fetch("/api/user/status/" + TOKEN);
+      const d = await r.json();
+      if (d.ok) {
+        statusData = d;
+        render(d);
+      }
+    } catch(e) {}
+  }
+
+  async function loadBalance() {
+    document.getElementById("bal-ton").textContent = "...";
+    document.getElementById("bal-grn").textContent = "...";
+    try {
+      const r = await fetch("/api/user/balance/" + TOKEN);
+      const d = await r.json();
+      if (d.ok) {
+        document.getElementById("bal-ton").textContent = (d.TON ?? 0).toFixed(4);
+        document.getElementById("bal-grn").textContent = (d.GRINCH ?? 0).toLocaleString("en-US", {maximumFractionDigits: 0});
+      }
+    } catch(e) {
+      document.getElementById("bal-ton").textContent = "Ошибка";
+      document.getElementById("bal-grn").textContent = "Ошибка";
+    }
+  }
+
+  function render(d) {
+    document.getElementById("user-name").textContent = d.name || "Трейдер";
+
+    // Status pill
+    const pill = document.getElementById("status-pill");
+    if (d.ready === false) {
+      pill.className = "status-pill pill-err";
+      pill.textContent = "● ОШИБКА";
+    } else {
+      pill.className = "status-pill pill-ready";
+      pill.textContent = "● АКТИВЕН";
+    }
+
+    // KPIs
+    const s = d.stats || {};
+    document.getElementById("kpi-trades").textContent  = s.total_trades ?? 0;
+    document.getElementById("kpi-winrate").textContent = (s.winrate ?? 0) + "%";
+    const pnl = s.total_pnl_ton ?? 0;
+    const pnlEl = document.getElementById("kpi-pnl");
+    pnlEl.textContent  = (pnl >= 0 ? "+" : "") + pnl.toFixed(4) + " TON";
+    pnlEl.className    = "kpi-val " + (pnl >= 0 ? "green" : "red");
+    document.getElementById("kpi-fee").textContent = (s.total_fee_paid ?? 0).toFixed(4) + " TON";
+
+    // Open position
+    const posCard = document.getElementById("position-card");
+    if (d.open_position) {
+      const pos = d.open_position;
+      const since = new Date(pos.entry_time).toLocaleString("ru-RU", {day:"2-digit",month:"2-digit",hour:"2-digit",minute:"2-digit"});
+      posCard.className = "position-card";
+      posCard.innerHTML = `
+        <div class="pos-row">
+          <div class="pos-item"><div class="pos-label">Цена входа</div><div class="pos-val" style="color:var(--grinch)">${fmtPrice(pos.entry_price)}</div></div>
+          <div class="pos-item"><div class="pos-label">TON потрачено</div><div class="pos-val">${pos.ton_spent.toFixed(4)} ◆</div></div>
+          <div class="pos-item"><div class="pos-label">~GRINCH куплено</div><div class="pos-val">~${Math.round(pos.est_grinch).toLocaleString()}</div></div>
+          <div class="pos-item"><div class="pos-label">Комиссия уплачена</div><div class="pos-val">${pos.fee_paid.toFixed(4)} TON</div></div>
+          <div class="pos-item"><div class="pos-label">AI уверенность</div><div class="pos-val">${pos.ai_confidence}%</div></div>
+          <div class="pos-item"><div class="pos-label">Открыта</div><div class="pos-val">${since}</div></div>
+        </div>`;
+    } else {
+      posCard.className = "position-card empty";
+      posCard.innerHTML = `<div style="color:var(--muted);font-size:.88rem">Нет открытых позиций — ожидаем BUY сигнал от AI</div>`;
+    }
+
+    // Trades
+    const tbody = document.getElementById("trades-body");
+    const trades = (d.recent_trades || []).slice().reverse();
+    if (trades.length === 0) {
+      tbody.innerHTML = `<tr><td colspan="6" class="no-trades">Сделок пока нет</td></tr>`;
+    } else {
+      tbody.innerHTML = trades.map(t => {
+        const cls = t.pnl_ton >= 0 ? "pnl-pos" : "pnl-neg";
+        const sign = t.pnl_ton >= 0 ? "+" : "";
+        const dt = new Date(t.time).toLocaleString("ru-RU", {day:"2-digit",month:"2-digit",hour:"2-digit",minute:"2-digit"});
+        return `<tr>
+          <td>${fmtPrice(t.buy_price)}</td>
+          <td>${fmtPrice(t.sell_price)}</td>
+          <td>${t.ton_spent.toFixed(4)}</td>
+          <td>${t.fee_paid.toFixed(4)}</td>
+          <td class="${cls}">${sign}${t.pnl_ton.toFixed(4)}</td>
+          <td style="color:var(--muted)">${dt}</td>
+        </tr>`;
+      }).join("");
+    }
+
+    // Logs
+    const logWrap = document.getElementById("log-wrap");
+    const logs = (d.logs || []).slice().reverse();
+    if (logs.length === 0) {
+      logWrap.innerHTML = `<div style="color:var(--muted);font-size:.82rem">Лог пуст</div>`;
+    } else {
+      logWrap.innerHTML = logs.map(l => `
+        <div class="log-entry">
+          <span class="log-time">${l.time}</span>
+          <span class="log-${l.level}">${l.msg}</span>
+        </div>`).join("");
+    }
+  }
+
+  function fmtPrice(p) {
+    if (!p) return "—";
+    if (p < 0.001) return "$" + p.toFixed(8);
+    if (p < 1)    return "$" + p.toFixed(6);
+    return "$" + p.toFixed(4);
+  }
+
+  // Initial balance load
+  loadBalance();
+
+  // Poll every 10 seconds
+  setInterval(loadStatus, 10000);
+  // Refresh balance every 60 seconds
+  setInterval(loadBalance, 60000);
+</script>
+</body>
+</html>

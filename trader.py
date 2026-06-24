@@ -22,6 +22,8 @@ class Trader:
             "start_balance": 10000.0,
         }
         self._thread = None
+        # Колбэки для уведомления пользовательских трейдеров о сигналах
+        self.signal_callbacks = []
 
     def log(self, msg, level="INFO"):
         entry = {"time": datetime.utcnow().strftime("%H:%M:%S"), "level": level, "msg": msg}
@@ -100,8 +102,18 @@ class Trader:
             self.log(f"⏸️ Вход отменён: {blocked}", "WARN")
         elif final_signal == "BUY" and len(self.open_trades) < Config.MAX_OPEN_TRADES:
             self._open_trade("buy", price, result, ai)
+            for cb in self.signal_callbacks:
+                try:
+                    cb("BUY", price, ai)
+                except Exception as e:
+                    self.log(f"Signal cb ошибка: {e}", "WARN")
         elif final_signal == "SELL" and self.open_trades:
             self._close_all_trades(price, result)
+            for cb in self.signal_callbacks:
+                try:
+                    cb("SELL", price, ai)
+                except Exception as e:
+                    self.log(f"Signal cb ошибка: {e}", "WARN")
 
     def _targets(self, price, ai):
         """Динамические стоп-лосс/тейк-профит по волатильности (ATR), с учётом комиссии."""

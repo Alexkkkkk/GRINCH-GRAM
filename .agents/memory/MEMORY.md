@@ -2,3 +2,4 @@
 - [Real-time price feed](price-feed.md) — free CoinGecko/DexScreener prices; use adaptive decimals (fixed round(x,2) zeroes sub-cent coins like GRINCH).
 - [Coin info + DEX trade feed](coin-info-feed.md) — DexScreener stats + GeckoTerminal trades; decide buy/sell by GRINCH token address, not the `kind` field.
 - [Profit trade engine](trading-profit-logic.md) — TON/GRINCH risk logic; FEE_PCT is per-side (charged both sides); use regime.atr_pct not atr for sub-cent coins
+- [Multi-user platform](multi-user-platform.md) — UserTradingManager: signal_callbacks on Trader, 9.5% fee via send_ton() before each BUY; flask-sqlalchemy + psycopg2-binary both needed; Fernet AES-256 for mnemonic encryption; /join + /dashboard/<token> routes

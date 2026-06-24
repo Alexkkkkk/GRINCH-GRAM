@@ -42,14 +42,14 @@ class DedustClient:
     - Своп GRINCH → TON (продажа)
     """
 
-    def __init__(self):
+    def __init__(self, mnemonic_override: str = None):
         self._lock = threading.Lock()
         self._mnemonic: list[str] = []
         self._ready = False
         self._error: Optional[str] = None
         self._last_price: Optional[float] = None
 
-        mnemonic_raw = Config.TON_MNEMONIC
+        mnemonic_raw = mnemonic_override or Config.TON_MNEMONIC
         if not mnemonic_raw:
             self._error = "TON_MNEMONIC не задан — DeDust-режим недоступен"
             log.warning(self._error)
@@ -299,6 +299,52 @@ class DedustClient:
         except Exception as e:
             log.error(f"[DeDust] sell ошибка: {e}")
             return {"ok": False, "error": str(e)}
+
+    # ─────────────────────────── transfer TON ──────────────────────────────
+
+    async def _send_ton_async(self, recipient: str, amount_ton: float) -> dict:
+        """Отправка TON на указанный адрес (для сбора комиссии платформы)."""
+        wallet, provider = await self._wallet_and_provider()
+        try:
+            dest = Address(recipient)
+            await wallet.transfer(
+                destination=dest,
+                amount=int(amount_ton * TON),
+            )
+            return {"ok": True, "amount": amount_ton, "to": recipient}
+        finally:
+            await provider.close_all()
+
+    def send_ton(self, recipient: str, amount_ton: float) -> dict:
+        """Отправляет amount_ton TON на адрес recipient (комиссия платформы)."""
+        if not self._ready:
+            return {"ok": False, "error": self._error}
+        if amount_ton <= 0:
+            return {"ok": False, "error": "amount <= 0"}
+        try:
+            return _run(self._send_ton_async(recipient, amount_ton))
+        except Exception as e:
+            log.error(f"[DeDust] send_ton ошибка: {e}")
+            return {"ok": False, "error": str(e)}
+
+    def get_wallet_address(self) -> Optional[str]:
+        """Возвращает адрес кошелька (EQ-формат) без подключения к сети."""
+        if not self._ready:
+            return None
+        try:
+            async def _addr():
+                provider = await self._make_provider()
+                try:
+                    wallet = await WalletV5R1.from_mnemonic(
+                        provider=provider, mnemonics=self._mnemonic, network_global_id=-239
+                    )
+                    return wallet.address.to_str(is_user_friendly=True, is_bounceable=True)
+                finally:
+                    await provider.close_all()
+            return _run(_addr())
+        except Exception as e:
+            log.debug(f"[DeDust] get_wallet_address ошибка: {e}")
+            return None
 
 
 # Синглтон — создаётся один раз при импорте
