@@ -9,6 +9,7 @@ import threading
 from typing import Optional
 
 from pytoniq import WalletV5R1, LiteBalancer, Address
+from pytoniq_core import Address as CoreAddress
 from dedust import Asset, Factory, PoolType, VaultNative, VaultJetton, JettonRoot, SwapParams
 
 from config import Config
@@ -126,9 +127,13 @@ class DedustClient:
 
     # ─────────────────────────── price / estimate ──────────────────────────
 
+    def _grinch_address(self) -> Address:
+        """Возвращает Address объект для GRINCH jetton master."""
+        return Address(Config.GRINCH_TOKEN_ADDRESS)
+
     async def _get_pool(self, provider):
-        ton_asset   = Asset.native()
-        grinch_asset = Asset.jetton(JettonRoot.create_from_address(Config.GRINCH_TOKEN_ADDRESS))
+        ton_asset    = Asset.native()
+        grinch_asset = Asset.jetton(self._grinch_address())
         pool = await Factory.get_pool(PoolType.VOLATILE, [ton_asset, grinch_asset], provider)
         return pool, ton_asset, grinch_asset
 
@@ -186,7 +191,7 @@ class DedustClient:
             return None
         try:
             nano = int(grinch_amount * (10 ** 9))
-            grinch_asset = Asset.jetton(JettonRoot.create_from_address(Config.GRINCH_TOKEN_ADDRESS))
+            grinch_asset = Asset.jetton(self._grinch_address())
             result = _run(self._estimate_async(grinch_asset, nano))
             return result["amount_out"] / TON
         except Exception as e:

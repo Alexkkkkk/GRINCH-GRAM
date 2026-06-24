@@ -1,120 +1,170 @@
 import os
 import time
 import threading
-import requests
+import urllib.request
+import urllib.parse
+import json
+import logging
+
+log = logging.getLogger(__name__)
 
 
 class TONTracker:
-    """Отслеживает входящие TON-транзакции на кошелёк через публичный API toncenter.com."""
+    """Отслеживает входящие TON-транзакции через публичный TonCenter API.
 
-    API_BASE = "https://toncenter.com/api/v2"
+    Без API-ключа TonCenter допускает ~1 req/s. Два запроса на каждый цикл —
+    баланс + транзакции. Интервал 120s даёт большой запас.
+    """
 
-    def __init__(self, address: str, poll_interval: int = 30):
-        self.address = address
-        self.poll_interval = poll_interval
-        self.api_key = os.getenv("TONCENTER_API_KEY", "")
-        self._lock = threading.Lock()
-        self._deposits = []          # список входящих переводов
-        self._total_received = 0.0   # сумма всех входящих в TON
-        self._balance = 0.0          # текущий баланс кошелька в TON
-        self._last_error = None
+    API_BASE     = "https://toncenter.com/api/v2"
+    POLL_DEFAULT = 120   # секунд между циклами (без API-ключа)
+    POLL_MIN     = 60    # минимум при наличии ключа
+    BACKOFF_MAX  = 600   # максимальный backoff при 429 (10 мин)
+
+    def __init__(self, address: str):
+        self.address      = address
+        self.api_key      = os.getenv("TONCENTER_API_KEY", "")
+        self.poll_interval= self.POLL_MIN if self.api_key else self.POLL_DEFAULT
+
+        self._lock        = threading.Lock()
+        self._deposits    : list = []
+        self._total_received = 0.0
+        self._balance     = 0.0
+        self._last_error  = None
         self._last_update = 0
-        self._running = False
-        self._thread = None
+        self._running     = False
+        self._thread      = None
+        self._backoff     = 0       # текущий backoff в секундах (при 429)
 
-    # ── Публичные методы ──────────────────────────────────────────
+    # ── Публичные методы ──────────────────────────────────────────────────
+
     def start(self):
         if self._running:
             return
         self._running = True
-        self._thread = threading.Thread(target=self._loop, daemon=True)
+        self._thread  = threading.Thread(target=self._loop, daemon=True)
         self._thread.start()
 
     def stop(self):
         self._running = False
 
-    def get_data(self):
+    def get_data(self) -> dict:
         with self._lock:
             return {
-                "address": self.address,
-                "balance": round(self._balance, 4),
+                "address":       self.address,
+                "balance":       round(self._balance, 4),
                 "total_received": round(self._total_received, 4),
-                "deposits": list(self._deposits),
+                "deposits":      list(self._deposits),
                 "deposit_count": len(self._deposits),
-                "last_update": self._last_update,
-                "last_error": self._last_error,
-                "configured": bool(self.address),
+                "last_update":   self._last_update,
+                "last_error":    self._last_error,
+                "configured":    bool(self.address),
             }
 
-    # ── Внутреннее ────────────────────────────────────────────────
-    def _headers(self):
+    def refresh(self):
+        """Принудительное обновление (с уважением к backoff)."""
+        if self._backoff > 0:
+            log.debug(f"[TONTracker] backoff активен ({self._backoff}s) — пропускаем refresh")
+            return
+        self._do_refresh()
+
+    # ── Внутреннее ────────────────────────────────────────────────────────
+
+    def _headers(self) -> dict:
         return {"X-API-Key": self.api_key} if self.api_key else {}
 
-    def _nano_to_ton(self, nano):
+    def _get(self, path: str, params: dict) -> dict | None:
+        """HTTP GET с обработкой 429 и общих ошибок."""
+        qs  = urllib.parse.urlencode(params)
+        url = f"{self.API_BASE}/{path}?{qs}"
+        req = urllib.request.Request(url, headers=self._headers())
         try:
-            return int(nano) / 1e9
+            with urllib.request.urlopen(req, timeout=12) as r:
+                self._backoff = 0   # успех — сбрасываем
+                return json.loads(r.read())
+        except urllib.error.HTTPError as e:
+            if e.code == 429:
+                # Exponential backoff: 60 → 120 → 240 → 480 → 600
+                self._backoff = min(max(self._backoff * 2, 60), self.BACKOFF_MAX)
+                log.warning(f"[TONTracker] 429 Rate limit — ждём {self._backoff}s")
+                with self._lock:
+                    self._last_error = f"TonCenter rate limit (429) — пауза {self._backoff}s"
+            else:
+                log.warning(f"[TONTracker] HTTP {e.code}: {e}")
+                with self._lock:
+                    self._last_error = f"HTTP {e.code}"
+            return None
+        except Exception as e:
+            log.debug(f"[TONTracker] Ошибка: {e}")
+            with self._lock:
+                self._last_error = str(e)
+            return None
+
+    def _nano_to_ton(self, nano) -> float:
+        try:
+            return int(nano) / 1_000_000_000
         except (ValueError, TypeError):
             return 0.0
 
-    def refresh(self):
-        """Один цикл опроса: баланс + последние входящие транзакции."""
-        try:
-            # Баланс кошелька
-            br = requests.get(
-                f"{self.API_BASE}/getAddressBalance",
-                params={"address": self.address},
-                headers=self._headers(),
-                timeout=15,
-            )
-            br.raise_for_status()
-            bjson = br.json()
-            balance = self._nano_to_ton(bjson.get("result", 0))
+    def _do_refresh(self):
+        """Один цикл: баланс + транзакции (2 запроса, пауза между ними)."""
+        # Запрос 1: баланс
+        bdata = self._get("getAddressBalance", {"address": self.address})
+        if bdata is None:
+            return
+        balance = self._nano_to_ton(bdata.get("result", 0))
 
-            # Последние транзакции
-            tr = requests.get(
-                f"{self.API_BASE}/getTransactions",
-                params={"address": self.address, "limit": 25},
-                headers=self._headers(),
-                timeout=15,
-            )
-            tr.raise_for_status()
-            txs = tr.json().get("result", [])
+        # Пауза между запросами — вежливость к API
+        time.sleep(1.2)
 
-            deposits = []
-            total = 0.0
-            for tx in txs:
-                in_msg = tx.get("in_msg", {}) or {}
-                value = self._nano_to_ton(in_msg.get("value", 0))
-                source = in_msg.get("source", "")
-                # Только значимые входящие переводы (отфильтровываем dust/спам < 0.001 TON)
-                if value >= 0.001 and source:
-                    comment = ""
-                    msg_data = in_msg.get("message", "")
-                    if isinstance(msg_data, str):
-                        comment = msg_data
-                    deposits.append({
-                        "amount": round(value, 4),
-                        "from": source,
-                        "from_short": source[:6] + "..." + source[-4:] if len(source) > 12 else source,
-                        "comment": comment,
-                        "time": int(tx.get("utime", 0)),
-                        "hash": (tx.get("transaction_id", {}) or {}).get("hash", ""),
-                    })
-                    total += value
+        # Запрос 2: транзакции
+        tdata = self._get("getTransactions", {"address": self.address, "limit": 20})
+        if tdata is None:
+            return
 
-            with self._lock:
-                self._balance = balance
-                self._deposits = deposits
-                self._total_received = total
-                self._last_update = int(time.time())
-                self._last_error = None
-        except Exception as e:
-            with self._lock:
-                self._last_error = str(e)
-                self._last_update = int(time.time())
+        txs      = tdata.get("result", [])
+        deposits = []
+        total    = 0.0
+
+        for tx in txs:
+            in_msg = tx.get("in_msg", {}) or {}
+            value  = self._nano_to_ton(in_msg.get("value", 0))
+            source = in_msg.get("source", "")
+            if value >= 0.001 and source:
+                comment = in_msg.get("message") or in_msg.get("comment") or ""
+                ts      = int(tx.get("utime", 0))
+                # Человеко-читаемое время
+                try:
+                    import datetime as _dt
+                    dt_str = _dt.datetime.utcfromtimestamp(ts).strftime("%d.%m, %H:%M")
+                except Exception:
+                    dt_str = ""
+                deposits.append({
+                    "amount":     round(value, 4),
+                    "from":       source,
+                    "from_short": source[:6] + "…" + source[-4:] if len(source) > 12 else source,
+                    "comment":    comment[:40],
+                    "time":       ts,
+                    "time_str":   dt_str,
+                    "hash":       (tx.get("transaction_id", {}) or {}).get("hash", ""),
+                })
+                total += value
+
+        with self._lock:
+            self._balance        = balance
+            self._deposits       = deposits
+            self._total_received = total
+            self._last_update    = int(time.time())
+            self._last_error     = None
 
     def _loop(self):
+        # Первый запрос — с небольшой задержкой чтобы не конкурировать со стартом
+        time.sleep(5)
         while self._running:
             if self.address:
-                self.refresh()
+                if self._backoff > 0:
+                    time.sleep(self._backoff)
+                    self._backoff = 0
+                else:
+                    self._do_refresh()
             time.sleep(self.poll_interval)
