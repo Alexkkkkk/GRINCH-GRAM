@@ -8,7 +8,7 @@ import time
 import threading
 from typing import Optional
 
-from pytoniq import WalletV4R2, LiteBalancer, Address
+from pytoniq import WalletV5R1, LiteBalancer, Address
 from dedust import Asset, Factory, PoolType, VaultNative, VaultJetton, JettonRoot, SwapParams
 
 from config import Config
@@ -82,7 +82,8 @@ class DedustClient:
 
     async def _wallet_and_provider(self):
         provider = await self._make_provider()
-        wallet = await WalletV4R2.from_mnemonic(provider=provider, mnemonics=self._mnemonic)
+        # WalletV5R1 (W5) — версия кошелька TonKeeper пользователя; mainnet global_id = -239
+        wallet = await WalletV5R1.from_mnemonic(provider=provider, mnemonics=self._mnemonic, network_global_id=-239)
         return wallet, provider
 
     # ─────────────────────────── balance ───────────────────────────────────
@@ -90,7 +91,7 @@ class DedustClient:
     async def _get_balance_async(self) -> dict:
         provider = await self._make_provider()
         try:
-            wallet = await WalletV4R2.from_mnemonic(provider=provider, mnemonics=self._mnemonic)
+            wallet = await WalletV5R1.from_mnemonic(provider=provider, mnemonics=self._mnemonic, network_global_id=-239)
             wallet_addr = wallet.address
 
             # TON баланс
