@@ -5,9 +5,119 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>GRINCH-GRAM — TON × GRINCH Торговый агент</title>
 <link rel="stylesheet" href="/static/css/style.css?v={{ range(1,9999)|random }}">
+<style>
+/* ─── Шкала обучения AI ──────────────────────────────────────────────── */
+#training-banner {
+  position: relative;
+  background: linear-gradient(135deg, rgba(8,13,22,.98) 0%, rgba(14,23,38,.98) 100%);
+  border-bottom: 1px solid rgba(0,152,234,.35);
+  padding: 0;
+  overflow: hidden;
+  z-index: 90;
+}
+.tb-inner {
+  max-width: 1200px; margin: 0 auto; padding: 18px 28px;
+  display: flex; flex-direction: column; gap: 10px;
+}
+.tb-head {
+  display: flex; align-items: center; justify-content: space-between; gap: 16px;
+}
+.tb-title {
+  display: flex; align-items: center; gap: 10px;
+}
+.tb-icon { font-size: 1.3rem; animation: tb-pulse 1.4s ease-in-out infinite; }
+@keyframes tb-pulse { 0%,100%{opacity:1;transform:scale(1)} 50%{opacity:.7;transform:scale(.9)} }
+.tb-name { font-size: 1rem; font-weight: 800; color: #e8edf5; letter-spacing: .02em; }
+.tb-pct  { font-size: 1.4rem; font-weight: 900; color: #0098ea; font-family: monospace; min-width: 54px; text-align: right; }
+.tb-label { font-size: .82rem; color: #6b82a8; min-height: 1.2em; }
+.tb-meta  { display: flex; gap: 24px; }
+.tb-meta-item { font-size: .75rem; color: #4a607e; }
+.tb-meta-item strong { color: #7eb8f0; }
+
+/* Track */
+.tb-track {
+  height: 8px; background: #111c2e; border-radius: 100px; overflow: hidden;
+  position: relative;
+}
+.tb-fill {
+  height: 100%; border-radius: 100px;
+  background: linear-gradient(90deg, #0098ea, #00ff88);
+  transition: width .6s cubic-bezier(.4,0,.2,1);
+  position: relative;
+}
+.tb-fill::after {
+  content: '';
+  position: absolute; top: 0; right: 0; bottom: 0; width: 60px;
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,.35));
+  animation: tb-shine 1.2s linear infinite;
+}
+@keyframes tb-shine { from{opacity:0} 50%{opacity:1} to{opacity:0} }
+
+/* Stages row */
+.tb-stages {
+  display: flex; gap: 6px; flex-wrap: wrap;
+}
+.tb-stage {
+  font-size: .68rem; padding: 3px 9px; border-radius: 100px; font-weight: 600;
+  border: 1px solid transparent;
+  transition: all .3s;
+}
+.tb-stage.done    { background: rgba(0,255,136,.12); border-color: rgba(0,255,136,.3); color: #00ff88; }
+.tb-stage.active  { background: rgba(0,152,234,.18); border-color: rgba(0,152,234,.5); color: #5bc8ff;
+                    box-shadow: 0 0 8px rgba(0,152,234,.3); }
+.tb-stage.pending { background: rgba(255,255,255,.03); border-color: rgba(255,255,255,.07); color: #3a4f6a; }
+
+/* Scan line animation */
+#training-banner::before {
+  content: '';
+  position: absolute; inset: 0;
+  background: linear-gradient(0deg, transparent 45%, rgba(0,152,234,.03) 50%, transparent 55%);
+  animation: tb-scan 2.8s linear infinite;
+  pointer-events: none;
+}
+@keyframes tb-scan { from{background-position-y:0%} to{background-position-y:200%} }
+
+/* Ready state */
+.tb-fill.ready { background: linear-gradient(90deg, #00d4aa, #00ff88); }
+</style>
 </head>
 <body>
 <div class="app">
+
+  <!-- ═══════════ ШКАЛА ОБУЧЕНИЯ AI (скрыта после обучения) ═══════════ -->
+  <div id="training-banner" style="display:none">
+    <div class="tb-inner">
+      <div class="tb-head">
+        <div class="tb-title">
+          <span class="tb-icon" id="tb-icon">🧠</span>
+          <span class="tb-name">AI Обучение</span>
+        </div>
+        <div style="flex:1;padding:0 20px">
+          <div class="tb-label" id="tb-label">Инициализация…</div>
+        </div>
+        <div class="tb-pct" id="tb-pct">0%</div>
+      </div>
+
+      <div class="tb-track">
+        <div class="tb-fill" id="tb-fill" style="width:0%"></div>
+      </div>
+
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap">
+        <div class="tb-stages">
+          <span class="tb-stage pending" data-stage="collecting" id="ts-collecting">📡 Данные</span>
+          <span class="tb-stage pending" data-stage="features"   id="ts-features"  >🔬 Признаки</span>
+          <span class="tb-stage pending" data-stage="rf"         id="ts-rf"         >🌲 RandomForest</span>
+          <span class="tb-stage pending" data-stage="gb"         id="ts-gb"         >🚀 GradientBoost</span>
+          <span class="tb-stage pending" data-stage="validate"   id="ts-validate"   >🔎 Валидация</span>
+          <span class="tb-stage pending" data-stage="ready"      id="ts-ready"      >✅ Готово</span>
+        </div>
+        <div class="tb-meta">
+          <div class="tb-meta-item">Баров: <strong id="tb-samples">—</strong></div>
+          <div class="tb-meta-item">RandomForest + GradientBoosting</div>
+        </div>
+      </div>
+    </div>
+  </div>
 
   <!-- ═══════════════════════════ HEADER ═══════════════════════════ -->
   <header class="header">

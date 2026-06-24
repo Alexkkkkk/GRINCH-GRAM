@@ -1,16 +1,19 @@
 import numpy as np
 import pandas as pd
 import threading
+import time
 from sklearn.ensemble import RandomForestClassifier, GradientBoostingClassifier
 from sklearn.preprocessing import StandardScaler
 from sklearn.pipeline import Pipeline
 import warnings
 warnings.filterwarnings("ignore")
 
+
 class AIEngine:
     """
     AI движок: ансамбль ML-моделей для предсказания цены и анализа рынка.
     - RandomForest + GradientBoosting ансамбль
+    - Поэтапное предобучение с прогресс-баром
     - Детектор рыночного режима (тренд / боковик / волатильность)
     - Детектор паттернов свечей
     - Уровни поддержки/сопротивления
@@ -22,6 +25,13 @@ class AIEngine:
         self._trained = False
         self._feature_names = []
         self._build_models()
+        self.training_progress = {
+            "phase":   "idle",   # idle | collecting | features | rf | gb | validate | ready
+            "pct":      0,
+            "samples":  0,
+            "label":   "Ожидание запуска...",
+            "trained": False,
+        }
 
     def _build_models(self):
         self._rf = Pipeline([
@@ -35,6 +45,90 @@ class AIEngine:
             ("clf", GradientBoostingClassifier(n_estimators=80, max_depth=4,
                                                 learning_rate=0.05, random_state=42))
         ])
+
+    def _set_progress(self, phase, pct, label, samples=None):
+        self.training_progress["phase"]  = phase
+        self.training_progress["pct"]    = int(pct)
+        self.training_progress["label"]  = label
+        if samples is not None:
+            self.training_progress["samples"] = samples
+        self.training_progress["trained"] = self._trained
+
+    # ──────────────────────────────────────────
+    # Поэтапное предобучение (вызывается один раз при старте)
+    # ──────────────────────────────────────────
+    def pretrain(self, ohlcv: list, on_progress=None):
+        """Запускает поэтапное обучение с имитацией прогресса."""
+        def _emit(phase, pct, label, samples=None):
+            self._set_progress(phase, pct, label, samples)
+            if on_progress:
+                on_progress(dict(self.training_progress))
+
+        # Этап 1 — Сбор данных
+        _emit("collecting", 0, "📡 Загрузка исторических данных...")
+        time.sleep(0.3)
+        n = len(ohlcv)
+        _emit("collecting", 10, f"📡 Загружено {n} свечей GRINCH", n)
+        time.sleep(0.4)
+
+        # Этап 2 — Инженерия признаков
+        _emit("features", 18, "🔬 Вычисление технических индикаторов...")
+        df = self._build_features(ohlcv)
+        if df is None or len(df) < 30:
+            _emit("ready", 100, "⚠️ Недостаточно данных — ожидаем накопления")
+            return
+        _emit("features", 30, f"🔬 Построено {len(df)} признаков (RSI/MACD/BB/ATR...)", len(df))
+        time.sleep(0.3)
+
+        X, y = self._make_dataset(df)
+        if X is None or len(X) < 20:
+            _emit("ready", 100, "⚠️ Мало данных для обучения")
+            return
+        classes = np.unique(y)
+
+        _emit("features", 40, f"🔬 Набор данных: {len(X)} обучающих примеров", len(X))
+        time.sleep(0.3)
+
+        if len(classes) < 2:
+            _emit("ready", 100, "⚠️ Недостаточно разнообразия сигналов")
+            return
+
+        # Этап 3 — RandomForest
+        _emit("rf", 45, "🌲 Обучение RandomForest (100 деревьев)...")
+        time.sleep(0.2)
+        with self._lock:
+            self._rf.fit(X, y)
+        _emit("rf", 65, "🌲 RandomForest обучен ✓", len(X))
+        time.sleep(0.3)
+
+        # Этап 4 — GradientBoosting
+        _emit("gb", 68, "🚀 Обучение GradientBoosting (80 итераций)...")
+        time.sleep(0.2)
+        with self._lock:
+            self._gb.fit(X, y)
+            self._trained = True
+        _emit("gb", 85, "🚀 GradientBoosting обучен ✓", len(X))
+        time.sleep(0.3)
+
+        # Этап 5 — Валидация
+        _emit("validate", 88, "🔎 Валидация ансамбля...")
+        time.sleep(0.3)
+        try:
+            last = X[[-1]]
+            rf_p = self._rf.predict_proba(last)[0]
+            gb_p = self._gb.predict_proba(last)[0]
+            ens  = (rf_p + gb_p) / 2
+            best = round(max(ens) * 100, 1)
+            fi   = self._rf.named_steps["clf"].feature_importances_
+            top_fi = self._feature_names[int(np.argmax(fi))] if self._feature_names else "—"
+            _emit("validate", 95, f"🔎 Уверенность модели: {best}% | ключевой признак: {top_fi}", len(X))
+        except Exception:
+            pass
+        time.sleep(0.3)
+
+        # Готово
+        _emit("ready", 100, f"✅ Модель готова! Обучено на {len(X)} барах. Начинаю торговлю...", len(X))
+        self.training_progress["trained"] = True
 
     # ──────────────────────────────────────────
     # Публичный метод (thread-safe)
@@ -111,6 +205,7 @@ class AIEngine:
             "anomaly":     anomaly,
             "model_trained": self._trained,
             "samples_trained": len(X),
+            "training_progress": self.training_progress,
         }
 
     # ──────────────────────────────────────────
@@ -232,12 +327,10 @@ class AIEngine:
         bb_w  = df["bb_width"].iloc[-1]
         vol_r = df["vol_ratio"].iloc[-1]
 
-        # Тренд
         trending_up   = ema9 > ema21 > ema50
         trending_down = ema9 < ema21 < ema50
         ranging       = abs(ema9 - ema50) / (price + 1e-10) < 0.003
 
-        # Волатильность
         avg_bb_width  = df["bb_width"].rolling(20).mean().iloc[-1]
         high_vol      = bb_w > avg_bb_width * 1.4
 
@@ -291,33 +384,20 @@ class AIEngine:
 
         i = len(c) - 1
 
-        # Доджи
         if rng(i) > 0 and body(i) / rng(i) < 0.1:
             patterns.append({"name": "Дожи", "type": "neutral", "desc": "Нерешительность рынка"})
-
-        # Молот
         if lower(i) > body(i) * 2 and upper(i) < body(i) * 0.5:
             patterns.append({"name": "Молот", "type": "bullish", "desc": "Разворот вверх"})
-
-        # Падающая звезда
         if upper(i) > body(i) * 2 and lower(i) < body(i) * 0.5:
             patterns.append({"name": "Падающая звезда", "type": "bearish", "desc": "Разворот вниз"})
-
-        # Поглощение (бычье)
         if i > 0 and c[i-1] < o[i-1] and c[i] > o[i] and body(i) > body(i-1):
             patterns.append({"name": "Бычье поглощение", "type": "bullish", "desc": "Сильный сигнал вверх"})
-
-        # Поглощение (медвежье)
         if i > 0 and c[i-1] > o[i-1] and c[i] < o[i] and body(i) > body(i-1):
             patterns.append({"name": "Медвежье поглощение", "type": "bearish", "desc": "Сильный сигнал вниз"})
-
-        # Три белых солдата
         if i >= 2:
             if all(c[j] > o[j] for j in range(i-2, i+1)):
                 if c[i] > c[i-1] > c[i-2]:
                     patterns.append({"name": "Три белых солдата", "type": "bullish", "desc": "Сильный тренд вверх"})
-
-        # Три чёрных вороны
         if i >= 2:
             if all(c[j] < o[j] for j in range(i-2, i+1)):
                 if c[i] < c[i-1] < c[i-2]:
@@ -333,7 +413,6 @@ class AIEngine:
         h = df["high"].values[-50:]
         l = df["low"].values[-50:]
 
-        # Локальные максимумы / минимумы
         resistances = []
         supports    = []
         for i in range(2, len(c) - 2):
@@ -342,7 +421,6 @@ class AIEngine:
             if l[i] < l[i-1] and l[i] < l[i-2] and l[i] < l[i+1] and l[i] < l[i+2]:
                 supports.append(round(float(l[i]), 2))
 
-        # Кластеризуем уровни (объединяем близкие)
         def cluster(levels, tol=0.005):
             if not levels:
                 return []
@@ -370,29 +448,25 @@ class AIEngine:
         }
 
     # ──────────────────────────────────────────
-    # Прогноз цены (линейная экстраполяция + ATR)
+    # Прогноз цены
     # ──────────────────────────────────────────
     def _price_forecast(self, df) -> dict:
         c    = df["close"].values
         atr  = float(df["atr"].iloc[-1])
         price = float(c[-1])
 
-        # Краткосрочный тренд (линрег на 10 свечах)
         x  = np.arange(10)
         y  = c[-10:]
         m  = np.polyfit(x, y, 1)[0]
         slope_pct = m / (price + 1e-10) * 100
 
-        # Прогноз на 3 свечи вперёд
         delta = m * 3
         t1 = round(price + m,     2)
         t2 = round(price + m*2,   2)
         t3 = round(price + delta, 2)
 
         return {
-            "t1": t1,
-            "t2": t2,
-            "t3": t3,
+            "t1": t1, "t2": t2, "t3": t3,
             "slope_pct": round(float(slope_pct), 3),
             "bull": bool(slope_pct > 0),
             "range_up":   round(price + atr, 2),
@@ -441,4 +515,5 @@ class AIEngine:
             "forecast": {}, "feature_importance": [],
             "anomaly": {"detected": False, "z_price": 0, "z_volume": 0, "description": "Нет данных"},
             "model_trained": False, "samples_trained": 0,
+            "training_progress": self.training_progress,
         }

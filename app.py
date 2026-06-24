@@ -154,12 +154,23 @@ def _load_users_bg():
 _bg_started = False
 _bg_lock    = threading.Lock()
 
+def push_training_progress(progress):
+    """Вызывается AI-движком на каждом шаге обучения."""
+    try:
+        socketio.emit("training_progress", progress)
+    except Exception:
+        pass
+
 def start_background():
     global _bg_started
     with _bg_lock:
         if _bg_started:
             return
         _bg_started = True
+        # Устанавливаем колбэк прогресса обучения
+        trader.on_training_progress = push_training_progress
+        # Авто-старт торговли (обучение → торговля)
+        trader.start()
         threading.Thread(target=push_updates,    daemon=True).start()
         threading.Thread(target=push_price,      daemon=True).start()
         threading.Thread(target=_load_users_bg,  daemon=True).start()

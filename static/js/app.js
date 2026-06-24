@@ -208,6 +208,9 @@ function updateUI(data) {
 
   // ═══ AI COMMAND CENTER ═══
   updateAIPro(ai);
+
+  // Шкала обучения (берём из статуса если нет отдельного event)
+  if (data.training_progress) renderTrainingProgress(data.training_progress);
 }
 
 // ═══════════════════════════════════════════════════════
@@ -827,3 +830,68 @@ setInterval(loadTon, 30000);
 setInterval(loadCoin, 20000);
 setInterval(loadDexTrades, 15000);
 setInterval(loadExchanges, 20000);
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  ШКАЛА ОБУЧЕНИЯ AI
+// ═══════════════════════════════════════════════════════════════════════════
+
+const TB_STAGE_ORDER = ["collecting", "features", "rf", "gb", "validate", "ready"];
+let _tbDismissTimer = null;
+
+// Прогресс приходит двумя путями:
+// 1) SocketIO event "training_progress" (в реальном времени)
+// 2) поле training_progress в updateUI (polling fallback, уже встроен выше)
+socket.on("training_progress", renderTrainingProgress);
+
+function renderTrainingProgress(tp) {
+  if (!tp) return;
+  const banner = document.getElementById("training-banner");
+  if (!banner) return;
+
+  const phase   = tp.phase   || "idle";
+  const pct     = Math.min(100, Math.max(0, Number(tp.pct) || 0));
+  const label   = tp.label   || "";
+  const samples = tp.samples || 0;
+  const isDone  = phase === "ready" && pct >= 100;
+
+  banner.style.display    = "block";
+  banner.style.opacity    = "1";
+  banner.style.maxHeight  = "";
+  banner.style.transition = "";
+
+  const fill  = document.getElementById("tb-fill");
+  const pctEl = document.getElementById("tb-pct");
+  const lbl   = document.getElementById("tb-label");
+  const samp  = document.getElementById("tb-samples");
+  const icon  = document.getElementById("tb-icon");
+
+  if (fill) {
+    fill.style.width = pct + "%";
+    isDone ? fill.classList.add("ready") : fill.classList.remove("ready");
+  }
+  if (pctEl) pctEl.textContent = pct + "%";
+  if (lbl)   lbl.textContent   = label;
+  if (samp && samples > 0) samp.textContent = samples.toLocaleString("ru-RU");
+
+  const ICONS = { idle:"🧠", collecting:"📡", features:"🔬", rf:"🌲", gb:"🚀", validate:"🔎", ready:"✅" };
+  if (icon) icon.textContent = ICONS[phase] || "🧠";
+
+  const phaseIdx = TB_STAGE_ORDER.indexOf(phase);
+  TB_STAGE_ORDER.forEach((s, i) => {
+    const el = document.getElementById("ts-" + s);
+    if (!el) return;
+    el.className = "tb-stage " + (i < phaseIdx ? "done" : i === phaseIdx ? "active" : "pending");
+  });
+
+  // Авто-скрытие через 2.5с после завершения
+  if (isDone) {
+    clearTimeout(_tbDismissTimer);
+    _tbDismissTimer = setTimeout(() => {
+      if (!banner) return;
+      banner.style.transition = "opacity .8s ease, max-height .8s ease";
+      banner.style.opacity    = "0";
+      banner.style.maxHeight  = "0";
+      setTimeout(() => { banner.style.display = "none"; }, 850);
+    }, 2500);
+  }
+}
