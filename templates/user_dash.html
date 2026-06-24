@@ -20,56 +20,76 @@
       background: rgba(8,13,22,.95); backdrop-filter: blur(12px);
       position: sticky; top: 0; z-index: 100;
     }
-    .logo { display: flex; align-items: center; gap: 10px; text-decoration: none; }
-    .logo-text { font-size: 1.1rem; font-weight: 800; background: linear-gradient(135deg, var(--ton), var(--grinch)); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
-    .hdr-right { display: flex; align-items: center; gap: 12px; }
-    .status-pill { padding: 5px 12px; border-radius: 100px; font-size: .75rem; font-weight: 700; }
-    .pill-ready { background: rgba(0,255,136,.1); border: 1px solid rgba(0,255,136,.3); color: var(--grinch); }
-    .pill-err   { background: rgba(255,68,102,.1); border: 1px solid rgba(255,68,102,.3); color: var(--red); }
+    .logo { display: flex; align-items: center; gap: 9px; text-decoration: none; }
+    .logo-text { font-size: 1.05rem; font-weight: 800; background: linear-gradient(135deg, var(--ton), var(--grinch)); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+    .hdr-right { display: flex; align-items: center; gap: 10px; }
+    .pill { padding: 5px 12px; border-radius: 100px; font-size: .73rem; font-weight: 700; }
+    .pill-ok  { background: rgba(0,255,136,.1); border: 1px solid rgba(0,255,136,.3); color: var(--grinch); }
+    .pill-off { background: rgba(255,68,102,.1); border: 1px solid rgba(255,68,102,.3); color: var(--red); }
 
-    .main { max-width: 1100px; margin: 0 auto; padding: 28px 20px; }
-    h1 { font-size: 1.4rem; font-weight: 800; margin-bottom: 4px; }
-    .user-addr { font-size: .8rem; color: var(--muted); font-family: monospace; margin-bottom: 24px; }
+    .main { max-width: 1080px; margin: 0 auto; padding: 24px 18px 60px; }
+    h1 { font-size: 1.35rem; font-weight: 800; margin-bottom: 4px; }
+    .user-sub { font-size: .8rem; color: var(--muted); font-family: monospace; margin-bottom: 20px; }
 
-    .grid3 { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 16px; margin-bottom: 24px; }
-    .kpi {
-      background: var(--card); border: 1px solid var(--border); border-radius: 16px;
-      padding: 20px 24px;
+    /* Deposit CTA (shown when balance is 0) */
+    .deposit-cta {
+      background: linear-gradient(135deg, rgba(0,152,234,.12), rgba(0,255,136,.06));
+      border: 1px solid rgba(0,152,234,.3); border-radius: 20px; padding: 24px 28px;
+      margin-bottom: 24px;
     }
-    .kpi-label { font-size: .75rem; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: .05em; margin-bottom: 6px; }
-    .kpi-val { font-size: 1.8rem; font-weight: 800; }
+    .deposit-cta h2 { font-size: 1.1rem; font-weight: 800; margin-bottom: 6px; }
+    .deposit-cta p { color: var(--muted); font-size: .85rem; margin-bottom: 16px; }
+    .dep-row { display: grid; grid-template-columns: 1fr auto; gap: 12px; align-items: start; margin-bottom: 12px; }
+    .dep-block { background: var(--card2); border: 1px solid var(--border); border-radius: 12px; padding: 12px 16px; }
+    .dep-lbl { font-size: .72rem; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; margin-bottom: 4px; }
+    .dep-val { font-family: monospace; font-size: .85rem; word-break: break-all; }
+    .dep-code-big { font-family: monospace; font-size: 1.15rem; font-weight: 700; color: var(--grinch); letter-spacing: .08em; }
+    .copy-btn { background: none; border: 1px solid var(--border); color: var(--muted); border-radius: 8px; padding: 6px 12px; font-size: .75rem; cursor: pointer; white-space: nowrap; }
+    .copy-btn:hover { border-color: var(--ton); color: var(--ton); }
+
+    /* KPIs */
+    .grid4 { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 14px; margin-bottom: 20px; }
+    .kpi { background: var(--card); border: 1px solid var(--border); border-radius: 16px; padding: 18px 22px; }
+    .kpi-lbl { font-size: .72rem; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: .05em; margin-bottom: 5px; }
+    .kpi-val { font-size: 1.7rem; font-weight: 800; }
     .kpi-val.blue  { color: var(--ton); }
     .kpi-val.green { color: var(--grinch); }
     .kpi-val.red   { color: var(--red); }
-    .kpi-sub { font-size: .78rem; color: var(--muted); margin-top: 2px; }
+    .kpi-sub { font-size: .75rem; color: var(--muted); margin-top: 2px; }
 
-    .section-title { font-size: 1rem; font-weight: 700; margin: 28px 0 14px; display: flex; align-items: center; gap: 8px; }
+    .sec-title { font-size: .95rem; font-weight: 700; margin: 22px 0 12px; display: flex; align-items: center; gap: 8px; }
+
+    /* Withdrawal */
+    .withdraw-bar { display: flex; gap: 10px; align-items: center; margin-bottom: 22px; }
+    .wd-input { background: var(--card2); border: 1px solid var(--border); color: var(--text); border-radius: 10px; padding: 10px 14px; font-size: .9rem; width: 140px; outline: none; }
+    .wd-input:focus { border-color: var(--ton); }
+    .wd-btn { background: var(--ton); color: #fff; border: none; border-radius: 10px; padding: 10px 18px; font-size: .88rem; font-weight: 700; cursor: pointer; }
+    .wd-btn:hover { opacity: .85; }
+    .wd-result { font-size: .82rem; margin-left: 4px; }
 
     /* Open position */
-    .position-card {
-      background: var(--card); border: 1px solid rgba(0,255,136,.3); border-radius: 16px;
-      padding: 20px 24px; margin-bottom: 24px;
-    }
-    .position-card.empty { border-color: var(--border); opacity: .6; }
-    .pos-row { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px; }
-    .pos-item { }
-    .pos-label { font-size: .72rem; color: var(--muted); margin-bottom: 2px; }
-    .pos-val { font-size: 1rem; font-weight: 700; }
+    .pos-card { background: var(--card); border: 1px solid rgba(0,255,136,.3); border-radius: 16px; padding: 18px 22px; margin-bottom: 20px; }
+    .pos-card.empty { border-color: var(--border); opacity: .55; }
+    .pos-row { display: flex; flex-wrap: wrap; gap: 20px; align-items: center; }
+    .pos-item .pi-lbl { font-size: .7rem; color: var(--muted); margin-bottom: 2px; }
+    .pos-item .pi-val { font-size: 1rem; font-weight: 700; }
 
     /* Trades table */
-    .trades-wrap { background: var(--card); border: 1px solid var(--border); border-radius: 16px; overflow: hidden; margin-bottom: 24px; }
-    table { width: 100%; border-collapse: collapse; font-size: .82rem; }
-    th { padding: 10px 16px; text-align: left; color: var(--muted); font-size: .72rem; font-weight: 600; text-transform: uppercase; letter-spacing: .04em; border-bottom: 1px solid var(--border); }
-    td { padding: 10px 16px; border-bottom: 1px solid rgba(30,45,74,.5); }
+    .table-wrap { background: var(--card); border: 1px solid var(--border); border-radius: 16px; overflow: hidden; margin-bottom: 20px; }
+    table { width: 100%; border-collapse: collapse; font-size: .8rem; }
+    th { padding: 10px 14px; text-align: left; color: var(--muted); font-size: .7rem; font-weight: 600; text-transform: uppercase; letter-spacing: .04em; border-bottom: 1px solid var(--border); }
+    td { padding: 10px 14px; border-bottom: 1px solid rgba(30,45,74,.4); }
     tr:last-child td { border-bottom: none; }
     .pnl-pos { color: var(--grinch); font-weight: 700; }
     .pnl-neg { color: var(--red); font-weight: 700; }
-    .no-trades { text-align: center; padding: 32px; color: var(--muted); font-size: .85rem; }
+    .empty-row { text-align: center; padding: 32px; color: var(--muted); }
+    .badge-buy  { background: rgba(0,255,136,.1); color: var(--grinch); padding: 2px 8px; border-radius: 6px; font-size: .72rem; font-weight: 700; }
+    .badge-sell { background: rgba(255,68,102,.1); color: var(--red);   padding: 2px 8px; border-radius: 6px; font-size: .72rem; font-weight: 700; }
 
     /* Logs */
-    .log-wrap { background: var(--card); border: 1px solid var(--border); border-radius: 16px; padding: 16px; max-height: 300px; overflow-y: auto; }
-    .log-entry { display: flex; gap: 10px; padding: 5px 0; border-bottom: 1px solid rgba(30,45,74,.4); font-size: .8rem; }
-    .log-entry:last-child { border-bottom: none; }
+    .log-wrap { background: var(--card); border: 1px solid var(--border); border-radius: 16px; padding: 14px; max-height: 280px; overflow-y: auto; }
+    .log-line { display: flex; gap: 10px; padding: 4px 0; border-bottom: 1px solid rgba(30,45,74,.35); font-size: .79rem; }
+    .log-line:last-child { border-bottom: none; }
     .log-time { color: var(--muted); font-family: monospace; flex-shrink: 0; }
     .log-INFO  { color: var(--text); }
     .log-BUY   { color: var(--grinch); font-weight: 700; }
@@ -77,244 +97,267 @@
     .log-WARN  { color: var(--yellow); }
     .log-ERROR { color: var(--red); }
 
-    /* Balance */
-    .bal-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 24px; }
-    .bal-item { background: var(--card); border: 1px solid var(--border); border-radius: 14px; padding: 18px 20px; text-align: center; }
-    .bal-icon { font-size: 1.5rem; margin-bottom: 6px; }
-    .bal-val { font-size: 1.4rem; font-weight: 800; color: var(--ton); }
-    .bal-val.green { color: var(--grinch); }
-    .bal-label { font-size: .75rem; color: var(--muted); }
-
-    .refresh-btn { background: rgba(0,152,234,.1); border: 1px solid rgba(0,152,234,.3); color: var(--ton); border-radius: 8px; padding: 6px 14px; cursor: pointer; font-size: .8rem; font-weight: 600; transition: background .2s; }
-    .refresh-btn:hover { background: rgba(0,152,234,.2); }
-
-    footer { text-align: center; padding: 24px; color: var(--muted); font-size: .78rem; border-top: 1px solid var(--border); }
+    footer { text-align: center; padding: 20px; color: var(--muted); font-size: .76rem; border-top: 1px solid var(--border); }
     footer a { color: var(--ton); text-decoration: none; }
-
-    .warn-box { background: rgba(255,215,0,.06); border: 1px solid rgba(255,215,0,.2); border-radius: 12px; padding: 12px 16px; font-size: .82rem; color: #9a8000; margin-bottom: 20px; }
   </style>
 </head>
 <body>
 
 <header>
   <a class="logo" href="/">
-    <span style="font-size:1.3rem">◆×🐸</span>
+    <span style="font-size:1.25rem">◆×🐸</span>
     <span class="logo-text">GRINCH-GRAM</span>
   </a>
   <div class="hdr-right">
-    <span id="status-pill" class="status-pill pill-ready">● АКТИВЕН</span>
-    <a href="/join" style="color:var(--muted);font-size:.82rem;text-decoration:none">+ Новый аккаунт</a>
+    <span id="status-pill" class="pill pill-ok">● АКТИВЕН</span>
+    <a href="/join" style="color:var(--muted);font-size:.8rem;text-decoration:none">+ Новый аккаунт</a>
   </div>
 </header>
 
 <div class="main">
-  <h1 id="user-name">Загрузка...</h1>
-  <div class="user-addr" id="token-info">Токен: {{ token }}</div>
 
-  <!-- KPI row -->
-  <div class="grid3">
+  <h1 id="user-name">Загрузка...</h1>
+  <div class="user-sub" id="user-addr">{{ init_status.ton_address if init_status else '' }}</div>
+
+  <!-- Deposit CTA -->
+  <div id="deposit-cta" class="deposit-cta" style="display:none">
+    <h2>💰 Пополни баланс для начала торговли</h2>
+    <p>Отправь TON на адрес ниже с обязательным комментарием-кодом. Баланс зачислится автоматически.</p>
+    <div class="dep-row">
+      <div class="dep-block">
+        <div class="dep-lbl">Адрес платформы</div>
+        <div class="dep-val" id="dep-addr">{{ platform_wallet }}</div>
+      </div>
+      <button class="copy-btn" onclick="copyEl('dep-addr', this)">Копировать адрес</button>
+    </div>
+    <div class="dep-row">
+      <div class="dep-block">
+        <div class="dep-lbl">Комментарий к переводу (обязательно!)</div>
+        <div class="dep-code-big" id="dep-code-display">{{ deposit_code }}</div>
+      </div>
+      <button class="copy-btn" onclick="copyEl('dep-code-display', this)">Копировать код</button>
+    </div>
+    <div style="font-size:.78rem;color:var(--muted);margin-top:4px">
+      Депозит зачислится в течение 1–2 минут после подтверждения транзакции.
+      Всего пополнено: <strong style="color:var(--text)">{{ '%.4f'|format(total_deposited) }} TON</strong>
+    </div>
+  </div>
+
+  <!-- KPIs -->
+  <div class="grid4">
     <div class="kpi">
-      <div class="kpi-label">Всего сделок</div>
-      <div class="kpi-val blue" id="kpi-trades">—</div>
+      <div class="kpi-lbl">Баланс TON</div>
+      <div class="kpi-val blue" id="kpi-balance">—</div>
+      <div class="kpi-sub">виртуальный</div>
     </div>
     <div class="kpi">
-      <div class="kpi-label">Win Rate</div>
-      <div class="kpi-val green" id="kpi-winrate">—</div>
+      <div class="kpi-lbl">GRINCH в позиции</div>
+      <div class="kpi-val green" id="kpi-grinch">—</div>
     </div>
     <div class="kpi">
-      <div class="kpi-label">Общий P&L</div>
+      <div class="kpi-lbl">Общий P&L</div>
       <div class="kpi-val" id="kpi-pnl">—</div>
     </div>
     <div class="kpi">
-      <div class="kpi-label">Комиссий уплачено</div>
-      <div class="kpi-val" id="kpi-fee">—</div>
-      <div class="kpi-sub">9.5% платформе</div>
+      <div class="kpi-lbl">Win rate / Сделок</div>
+      <div class="kpi-val blue" id="kpi-wr">—</div>
     </div>
   </div>
 
-  <!-- Balance -->
-  <div class="section-title">
-    💎 Баланс кошелька
-    <button class="refresh-btn" onclick="loadBalance()">↻ Обновить</button>
-  </div>
-  <div class="bal-grid">
-    <div class="bal-item">
-      <div class="bal-icon">◆</div>
-      <div class="bal-val" id="bal-ton">...</div>
-      <div class="bal-label">TON</div>
-    </div>
-    <div class="bal-item">
-      <div class="bal-icon">🐸</div>
-      <div class="bal-val green" id="bal-grn">...</div>
-      <div class="bal-label">GRINCH</div>
-    </div>
+  <!-- Withdrawal -->
+  <div class="sec-title">📤 Вывод средств</div>
+  <div class="withdraw-bar">
+    <input class="wd-input" type="number" id="wd-amount" placeholder="TON" min="0.1" step="0.1">
+    <button class="wd-btn" onclick="doWithdraw()">Вывести TON</button>
+    <span class="wd-result" id="wd-result"></span>
   </div>
 
   <!-- Open position -->
-  <div class="section-title">📂 Открытая позиция</div>
-  <div id="position-card" class="position-card empty">
-    <div style="color:var(--muted);font-size:.88rem">Нет открытых позиций — ожидаем BUY сигнал от AI</div>
+  <div class="sec-title">📂 Открытая позиция</div>
+  <div id="pos-card" class="pos-card empty">
+    <span style="color:var(--muted);font-size:.86rem">Нет открытых позиций — ожидаем BUY сигнал</span>
   </div>
 
-  <!-- Recent trades -->
-  <div class="section-title">📈 История сделок</div>
-  <div class="trades-wrap">
+  <!-- Trade history -->
+  <div class="sec-title">📈 История сделок</div>
+  <div class="table-wrap">
     <table>
-      <thead>
-        <tr>
-          <th>Покупка</th>
-          <th>Продажа</th>
-          <th>TON потрачено</th>
-          <th>Комиссия</th>
-          <th>P&L (TON)</th>
-          <th>Время</th>
-        </tr>
-      </thead>
+      <thead><tr>
+        <th>Тип</th><th>Цена</th><th>TON</th><th>P&L</th><th>Время</th>
+      </tr></thead>
       <tbody id="trades-body">
-        <tr><td colspan="6" class="no-trades">Сделок пока нет</td></tr>
+        <tr><td colspan="5" class="empty-row">Сделок пока нет</td></tr>
       </tbody>
     </table>
   </div>
 
   <!-- Bot logs -->
-  <div class="section-title">📋 Лог бота</div>
+  <div class="sec-title">📋 Лог бота</div>
   <div id="log-wrap" class="log-wrap">
-    <div style="color:var(--muted);font-size:.82rem">Загрузка логов...</div>
+    <div style="color:var(--muted);font-size:.8rem">Загрузка...</div>
   </div>
+
+  <!-- Deposit instructions (collapsible) -->
+  <div class="sec-title" style="margin-top:28px;cursor:pointer" onclick="toggleDep()">
+    ➕ Пополнить баланс <span id="dep-arrow" style="color:var(--muted);font-size:.8rem">▼</span>
+  </div>
+  <div id="dep-section" style="display:none">
+    <div class="deposit-cta" style="margin-bottom:0">
+      <div class="dep-row">
+        <div class="dep-block"><div class="dep-lbl">Адрес платформы</div><div class="dep-val" id="dep-addr2">{{ platform_wallet }}</div></div>
+        <button class="copy-btn" onclick="copyEl('dep-addr2', this)">Копировать</button>
+      </div>
+      <div class="dep-row" style="margin-bottom:0">
+        <div class="dep-block"><div class="dep-lbl">Комментарий к переводу</div><div class="dep-code-big">{{ deposit_code }}</div></div>
+        <button class="copy-btn" onclick="copyText('{{ deposit_code }}', this)">Копировать</button>
+      </div>
+    </div>
+  </div>
+
 </div>
 
 <footer>
-  <p>GRINCH-GRAM · AI-трейдинг на TON &nbsp;|&nbsp; <a href="/">Главный дашборд</a> &nbsp;|&nbsp; <a href="/join">Подключить кошелёк</a></p>
-  <p style="margin-top:6px;font-size:.7rem">Храни ссылку на этот дашборд в безопасном месте.</p>
+  <p>GRINCH-GRAM · <a href="/">Главный дашборд</a> &nbsp;|&nbsp; <a href="/join">Подключить кошелёк</a></p>
 </footer>
 
 <script>
   const TOKEN = "{{ token }}";
-  let statusData = null;
+  const PLATFORM_WALLET = "{{ platform_wallet }}";
 
-  // ── Инициальные данные из сервера ───────────────────────────────
+  // Init from server-rendered data
   const initStatus = {{ init_status | tojson | safe }};
   if (initStatus) render(initStatus);
 
   async function loadStatus() {
     try {
-      const r = await fetch("/api/user/status/" + TOKEN);
+      const r = await fetch('/api/user/status/' + TOKEN);
       const d = await r.json();
-      if (d.ok) {
-        statusData = d;
-        render(d);
-      }
+      if (d.ok) render(d);
     } catch(e) {}
   }
 
-  async function loadBalance() {
-    document.getElementById("bal-ton").textContent = "...";
-    document.getElementById("bal-grn").textContent = "...";
-    try {
-      const r = await fetch("/api/user/balance/" + TOKEN);
-      const d = await r.json();
-      if (d.ok) {
-        document.getElementById("bal-ton").textContent = (d.TON ?? 0).toFixed(4);
-        document.getElementById("bal-grn").textContent = (d.GRINCH ?? 0).toLocaleString("en-US", {maximumFractionDigits: 0});
-      }
-    } catch(e) {
-      document.getElementById("bal-ton").textContent = "Ошибка";
-      document.getElementById("bal-grn").textContent = "Ошибка";
-    }
-  }
-
   function render(d) {
-    document.getElementById("user-name").textContent = d.name || "Трейдер";
+    document.getElementById('user-name').textContent = d.name || 'Трейдер';
+    if (d.ton_address) document.getElementById('user-addr').textContent = d.ton_address;
 
-    // Status pill
-    const pill = document.getElementById("status-pill");
-    if (d.ready === false) {
-      pill.className = "status-pill pill-err";
-      pill.textContent = "● ОШИБКА";
-    } else {
-      pill.className = "status-pill pill-ready";
-      pill.textContent = "● АКТИВЕН";
-    }
+    // Deposit CTA
+    const bal = d.balance_ton ?? 0;
+    document.getElementById('deposit-cta').style.display = bal < 0.01 ? 'block' : 'none';
 
     // KPIs
-    const s = d.stats || {};
-    document.getElementById("kpi-trades").textContent  = s.total_trades ?? 0;
-    document.getElementById("kpi-winrate").textContent = (s.winrate ?? 0) + "%";
-    const pnl = s.total_pnl_ton ?? 0;
-    const pnlEl = document.getElementById("kpi-pnl");
-    pnlEl.textContent  = (pnl >= 0 ? "+" : "") + pnl.toFixed(4) + " TON";
-    pnlEl.className    = "kpi-val " + (pnl >= 0 ? "green" : "red");
-    document.getElementById("kpi-fee").textContent = (s.total_fee_paid ?? 0).toFixed(4) + " TON";
+    document.getElementById('kpi-balance').textContent = bal.toFixed(4) + ' TON';
+    const grn = d.grinch_held ?? 0;
+    document.getElementById('kpi-grinch').textContent = grn > 0 ? '~' + Math.round(grn).toLocaleString() : '—';
+
+    const pnl = d.stats?.total_pnl_ton ?? 0;
+    const pnlEl = document.getElementById('kpi-pnl');
+    pnlEl.textContent = (pnl >= 0 ? '+' : '') + pnl.toFixed(4) + ' TON';
+    pnlEl.className   = 'kpi-val ' + (pnl >= 0 ? 'green' : 'red');
+
+    const tt = d.stats?.total_trades ?? 0;
+    document.getElementById('kpi-wr').textContent = `${d.stats?.winrate ?? 0}% / ${tt}`;
+
+    // Status pill
+    const pill = document.getElementById('status-pill');
+    pill.className   = 'pill pill-ok';
+    pill.textContent = '● АКТИВЕН';
 
     // Open position
-    const posCard = document.getElementById("position-card");
-    if (d.open_position) {
-      const pos = d.open_position;
-      const since = new Date(pos.entry_time).toLocaleString("ru-RU", {day:"2-digit",month:"2-digit",hour:"2-digit",minute:"2-digit"});
-      posCard.className = "position-card";
-      posCard.innerHTML = `
-        <div class="pos-row">
-          <div class="pos-item"><div class="pos-label">Цена входа</div><div class="pos-val" style="color:var(--grinch)">${fmtPrice(pos.entry_price)}</div></div>
-          <div class="pos-item"><div class="pos-label">TON потрачено</div><div class="pos-val">${pos.ton_spent.toFixed(4)} ◆</div></div>
-          <div class="pos-item"><div class="pos-label">~GRINCH куплено</div><div class="pos-val">~${Math.round(pos.est_grinch).toLocaleString()}</div></div>
-          <div class="pos-item"><div class="pos-label">Комиссия уплачена</div><div class="pos-val">${pos.fee_paid.toFixed(4)} TON</div></div>
-          <div class="pos-item"><div class="pos-label">AI уверенность</div><div class="pos-val">${pos.ai_confidence}%</div></div>
-          <div class="pos-item"><div class="pos-label">Открыта</div><div class="pos-val">${since}</div></div>
-        </div>`;
+    const posCard = document.getElementById('pos-card');
+    if (grn > 0 && d.entry_price) {
+      posCard.className = 'pos-card';
+      posCard.innerHTML = `<div class="pos-row">
+        <div class="pos-item"><div class="pi-lbl">Вход (цена)</div><div class="pi-val" style="color:var(--grinch)">${fmtPrice(d.entry_price)}</div></div>
+        <div class="pos-item"><div class="pi-lbl">GRINCH</div><div class="pi-val">~${Math.round(grn).toLocaleString()}</div></div>
+        <div class="pos-item"><div class="pi-lbl">Последний сигнал</div><div class="pi-val">${d.last_signal || 'HOLD'}</div></div>
+      </div>`;
     } else {
-      posCard.className = "position-card empty";
-      posCard.innerHTML = `<div style="color:var(--muted);font-size:.88rem">Нет открытых позиций — ожидаем BUY сигнал от AI</div>`;
+      posCard.className = 'pos-card empty';
+      posCard.innerHTML = `<span style="color:var(--muted);font-size:.86rem">Нет открытых позиций — ожидаем BUY сигнал</span>`;
     }
 
     // Trades
-    const tbody = document.getElementById("trades-body");
+    const tbody  = document.getElementById('trades-body');
     const trades = (d.recent_trades || []).slice().reverse();
-    if (trades.length === 0) {
-      tbody.innerHTML = `<tr><td colspan="6" class="no-trades">Сделок пока нет</td></tr>`;
+    if (!trades.length) {
+      tbody.innerHTML = `<tr><td colspan="5" class="empty-row">Сделок пока нет</td></tr>`;
     } else {
       tbody.innerHTML = trades.map(t => {
-        const cls = t.pnl_ton >= 0 ? "pnl-pos" : "pnl-neg";
-        const sign = t.pnl_ton >= 0 ? "+" : "";
-        const dt = new Date(t.time).toLocaleString("ru-RU", {day:"2-digit",month:"2-digit",hour:"2-digit",minute:"2-digit"});
-        return `<tr>
-          <td>${fmtPrice(t.buy_price)}</td>
-          <td>${fmtPrice(t.sell_price)}</td>
-          <td>${t.ton_spent.toFixed(4)}</td>
-          <td>${t.fee_paid.toFixed(4)}</td>
-          <td class="${cls}">${sign}${t.pnl_ton.toFixed(4)}</td>
-          <td style="color:var(--muted)">${dt}</td>
-        </tr>`;
-      }).join("");
+        const isBuy  = t.type === 'buy';
+        const badge  = isBuy ? '<span class="badge-buy">BUY</span>' : '<span class="badge-sell">SELL</span>';
+        const price  = fmtPrice(t.price);
+        const ton    = isBuy ? (t.ton_spent ?? 0).toFixed(4) : (t.received ?? 0).toFixed(4);
+        const pnl    = isBuy ? '—' : pnlCell(t.pnl_ton);
+        const dt     = fmtTime(t.time);
+        return `<tr><td>${badge}</td><td>${price}</td><td>${ton}</td><td>${pnl}</td><td style="color:var(--muted)">${dt}</td></tr>`;
+      }).join('');
     }
 
     // Logs
-    const logWrap = document.getElementById("log-wrap");
-    const logs = (d.logs || []).slice().reverse();
-    if (logs.length === 0) {
-      logWrap.innerHTML = `<div style="color:var(--muted);font-size:.82rem">Лог пуст</div>`;
+    const logWrap = document.getElementById('log-wrap');
+    const logs    = (d.logs || []).slice().reverse();
+    if (!logs.length) {
+      logWrap.innerHTML = `<div style="color:var(--muted);font-size:.8rem">Лог пуст</div>`;
     } else {
-      logWrap.innerHTML = logs.map(l => `
-        <div class="log-entry">
-          <span class="log-time">${l.time}</span>
-          <span class="log-${l.level}">${l.msg}</span>
-        </div>`).join("");
+      logWrap.innerHTML = logs.map(l =>
+        `<div class="log-line"><span class="log-time">${l.time}</span><span class="log-${l.level}">${l.msg}</span></div>`
+      ).join('');
     }
   }
 
-  function fmtPrice(p) {
-    if (!p) return "—";
-    if (p < 0.001) return "$" + p.toFixed(8);
-    if (p < 1)    return "$" + p.toFixed(6);
-    return "$" + p.toFixed(4);
+  // ── Withdrawal ─────────────────────────────────────────────────────────────
+  async function doWithdraw() {
+    const amount = parseFloat(document.getElementById('wd-amount').value);
+    const res = document.getElementById('wd-result');
+    if (isNaN(amount) || amount < 0.1) { res.textContent = '⚠️ Мин. 0.1 TON'; res.style.color = 'var(--yellow)'; return; }
+    res.textContent = 'Отправляем...'; res.style.color = 'var(--muted)';
+    try {
+      const r = await fetch('/api/user/withdraw', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ token: TOKEN, amount }),
+      });
+      const d = await r.json();
+      if (d.ok) { res.textContent = `✅ ${amount} TON выведено`; res.style.color = 'var(--grinch)'; loadStatus(); }
+      else       { res.textContent = `❌ ${d.error}`;             res.style.color = 'var(--red)'; }
+    } catch(e) { res.textContent = '❌ Ошибка сети'; res.style.color = 'var(--red)'; }
   }
 
-  // Initial balance load
-  loadBalance();
+  // ── Helpers ────────────────────────────────────────────────────────────────
+  function fmtPrice(p) {
+    if (!p) return '—';
+    if (p < 0.001) return p.toFixed(8);
+    if (p < 1)     return p.toFixed(6);
+    return p.toFixed(4);
+  }
+  function pnlCell(pnl) {
+    if (pnl == null) return '—';
+    const s = pnl >= 0 ? '+' : '';
+    const c = pnl >= 0 ? 'pnl-pos' : 'pnl-neg';
+    return `<span class="${c}">${s}${pnl.toFixed(4)} TON</span>`;
+  }
+  function fmtTime(iso) {
+    if (!iso) return '—';
+    const d = new Date(iso);
+    return d.toLocaleString('ru-RU', {day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'});
+  }
+  function copyEl(elId, btn) {
+    copyText(document.getElementById(elId).textContent.trim(), btn);
+  }
+  function copyText(text, btn) {
+    navigator.clipboard.writeText(text).then(() => {
+      if (btn) { btn.textContent = '✓ Скопировано'; setTimeout(() => btn.textContent = 'Копировать', 2000); }
+    });
+  }
+  function toggleDep() {
+    const s = document.getElementById('dep-section');
+    const a = document.getElementById('dep-arrow');
+    s.style.display = s.style.display === 'none' ? 'block' : 'none';
+    a.textContent   = s.style.display === 'none' ? '▼' : '▲';
+  }
 
-  // Poll every 10 seconds
+  // Poll every 10 sec
   setInterval(loadStatus, 10000);
-  // Refresh balance every 60 seconds
-  setInterval(loadBalance, 60000);
 </script>
 </body>
 </html>

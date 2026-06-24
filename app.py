@@ -7,11 +7,14 @@ from flask.json.provider import DefaultJSONProvider
 from flask_socketio import SocketIO, emit
 import threading
 import time
+import logging
 from config import Config
 from database import db
 from trader import Trader
 from ton_tracker import TONTracker
 from coin_info import coin_info
+
+log = logging.getLogger(__name__)
 
 
 class NumpyJSONProvider(DefaultJSONProvider):
@@ -42,10 +45,30 @@ db.init_app(app)
 with app.app_context():
     from models import UserWallet   # noqa: F401
     db.create_all()
+    # Безопасная миграция — добавляем колонки если их нет (PostgreSQL)
+    _new_cols = [
+        ("virtual_ton_balance", "FLOAT DEFAULT 0"),
+        ("virtual_grinch_held", "FLOAT DEFAULT 0"),
+        ("entry_price_ton",     "FLOAT"),
+        ("total_deposited",     "FLOAT DEFAULT 0"),
+        ("total_withdrawn",     "FLOAT DEFAULT 0"),
+        ("last_deposit_at",     "TIMESTAMP"),
+        ("last_checked_lt",     "BIGINT DEFAULT 0"),
+    ]
+    from sqlalchemy import text
+    for _col, _ctype in _new_cols:
+        try:
+            db.session.execute(text(
+                f"ALTER TABLE user_wallets ADD COLUMN IF NOT EXISTS {_col} {_ctype}"
+            ))
+        except Exception:
+            pass
+    try:
+        db.session.commit()
+    except Exception:
+        db.session.rollback()
 
 # ── SocketIO ──────────────────────────────────────────────────────────────────
-import socketio as sio_pkg   # noqa: F811
-
 _orig_dumps = json.dumps
 def _safe_dumps(obj, **kw):
     def _default(o):
@@ -78,15 +101,18 @@ from user_trader import UserTradingManager, encrypt_mnemonic, decrypt_mnemonic
 user_mgr = UserTradingManager()
 trader.signal_callbacks.append(user_mgr.on_signal)
 
+from deposit_monitor import DepositMonitor
+deposit_monitor = DepositMonitor(Config.TON_WALLET)
+
 
 def _safe_status():
     def _walk(obj):
-        if isinstance(obj, dict):   return {k: _walk(v) for k, v in obj.items()}
-        if isinstance(obj, (list, tuple)): return [_walk(v) for v in obj]
-        if isinstance(obj, (np.integer,)):  return int(obj)
-        if isinstance(obj, (np.floating,)): return float(obj)
-        if isinstance(obj, (np.bool_,)):    return bool(obj)
-        if isinstance(obj, np.ndarray):     return obj.tolist()
+        if isinstance(obj, dict):             return {k: _walk(v) for k, v in obj.items()}
+        if isinstance(obj, (list, tuple)):    return [_walk(v) for v in obj]
+        if isinstance(obj, (np.integer,)):    return int(obj)
+        if isinstance(obj, (np.floating,)):   return float(obj)
+        if isinstance(obj, (np.bool_,)):      return bool(obj)
+        if isinstance(obj, np.ndarray):       return obj.tolist()
         return obj
     return _walk(trader.get_status())
 
@@ -103,8 +129,7 @@ def push_updates():
 
 
 def push_price():
-    last = None
-    last_symbol = None
+    last, last_symbol = None, None
     while True:
         try:
             symbol = Config.SYMBOL
@@ -123,6 +148,7 @@ def push_price():
 def _load_users_bg():
     time.sleep(3)
     user_mgr.load_from_db(app)
+    deposit_monitor.start(app, user_mgr)
 
 
 _bg_started = False
@@ -134,16 +160,30 @@ def start_background():
         if _bg_started:
             return
         _bg_started = True
-        threading.Thread(target=push_updates, daemon=True).start()
-        threading.Thread(target=push_price,   daemon=True).start()
-        threading.Thread(target=_load_users_bg, daemon=True).start()
+        threading.Thread(target=push_updates,    daemon=True).start()
+        threading.Thread(target=push_price,      daemon=True).start()
+        threading.Thread(target=_load_users_bg,  daemon=True).start()
         ton.start()
 
 start_background()
 
 
 # ════════════════════════════════════════════════════════════════════════════
-#  МАРШРУТЫ — главный дашборд
+#  TonConnect manifest
+# ════════════════════════════════════════════════════════════════════════════
+
+@app.route("/tonconnect-manifest.json")
+def tonconnect_manifest():
+    base = request.host_url.rstrip("/")
+    return jsonify({
+        "url":     base,
+        "name":    "GRINCH-GRAM",
+        "iconUrl": f"{base}/static/img/grinch-icon.svg",
+    })
+
+
+# ════════════════════════════════════════════════════════════════════════════
+#  Главный дашборд
 # ════════════════════════════════════════════════════════════════════════════
 
 @app.route("/")
@@ -269,20 +309,20 @@ def api_config_set():
 
 
 # ════════════════════════════════════════════════════════════════════════════
-#  МАРШРУТЫ — публичная платформа для пользователей
+#  Публичная платформа — TonConnect модель (без мнемоники)
 # ════════════════════════════════════════════════════════════════════════════
 
 @app.route("/join")
 def join_page():
+    t, w = trader.stats.get("total_trades", 0), trader.stats.get("winning_trades", 0)
     stats = {
         "active_traders": user_mgr.count_active(),
-        "total_trades":   trader.stats.get("total_trades", 0),
-        "winrate":        0,
+        "total_trades":   t,
+        "winrate":        round(w / t * 100, 1) if t > 0 else 0,
     }
-    t, w = trader.stats.get("total_trades", 0), trader.stats.get("winning_trades", 0)
-    if t > 0:
-        stats["winrate"] = round(w / t * 100, 1)
-    return render_template("join.html", stats=stats)
+    return render_template("join.html",
+                           stats=stats,
+                           platform_wallet=Config.TON_WALLET)
 
 
 @app.route("/dashboard/<token>")
@@ -292,24 +332,39 @@ def user_dashboard(token):
         with app.app_context():
             uw = UserWallet.query.filter_by(token=token).first()
         if not uw:
-            return "Дашборд не найден. Зарегистрируйтесь на /join", 404
-        # Пользователь в БД но ещё не в памяти (перезапуск сервера) — загрузим
+            return render_template("404.html"), 404
         try:
-            mnemonic = decrypt_mnemonic(uw.encrypted_mnemonic)
-            user_mgr.register(token, mnemonic, uw.trade_amount, uw.name)
+            user_mgr.register(token, uw.ton_address, uw.trade_amount, uw.name)
+            # restore virtual balances from DB
+            with app.app_context():
+                uw2 = UserWallet.query.filter_by(token=token).first()
+                user_mgr._restore(uw2)
             status = user_mgr.get_status(token)
         except Exception as e:
             return f"Ошибка загрузки аккаунта: {e}", 500
-    return render_template("user_dash.html", token=token, init_status=status)
+
+    with app.app_context():
+        uw = UserWallet.query.filter_by(token=token).first()
+        deposit_code = f"GG-{token[:8]}"
+        deposited    = uw.total_deposited if uw else 0
+        withdrawn    = uw.total_withdrawn if uw else 0
+
+    return render_template("user_dash.html",
+                           token=token,
+                           init_status=status,
+                           platform_wallet=Config.TON_WALLET,
+                           deposit_code=deposit_code,
+                           total_deposited=deposited,
+                           total_withdrawn=withdrawn)
 
 
-# ── API для пользовательских дашбордов ───────────────────────────────────────
+# ── API пользователей ──────────────────────────────────────────────────────
 
 @app.route("/api/user/register", methods=["POST"])
 def api_user_register():
-    data = request.json or {}
+    data         = request.json or {}
     name         = str(data.get("name", "")).strip()[:80]
-    mnemonic_raw = str(data.get("mnemonic", "")).strip()
+    ton_address  = str(data.get("ton_address", "")).strip()
     try:
         trade_amount = float(data.get("trade_amount", 1.0))
         if trade_amount < 0.5 or trade_amount > 1000:
@@ -317,25 +372,8 @@ def api_user_register():
     except (TypeError, ValueError):
         return jsonify({"ok": False, "error": "Сумма сделки: от 0.5 до 1000 TON"}), 400
 
-    words = mnemonic_raw.split()
-    if len(words) != 24:
-        return jsonify({"ok": False, "error": f"Мнемоника должна содержать 24 слова, получено: {len(words)}"}), 400
-
-    # Получить адрес кошелька из мнемоники
-    ton_address = ""
-    try:
-        from dedust_client import DedustClient
-        tmp = DedustClient(mnemonic_override=mnemonic_raw)
-        addr = tmp.get_wallet_address()
-        ton_address = addr or ""
-    except Exception:
-        ton_address = ""
-
-    # Зашифровать и сохранить
-    try:
-        enc = encrypt_mnemonic(mnemonic_raw)
-    except Exception as e:
-        return jsonify({"ok": False, "error": f"Ошибка шифрования: {e}"}), 500
+    if not ton_address:
+        return jsonify({"ok": False, "error": "Адрес кошелька не указан"}), 400
 
     import uuid
     token = str(uuid.uuid4())
@@ -343,23 +381,23 @@ def api_user_register():
         token=token,
         name=name,
         ton_address=ton_address,
-        encrypted_mnemonic=enc,
+        encrypted_mnemonic=None,
         trade_amount=trade_amount,
         active=True,
     )
     db.session.add(uw)
     db.session.commit()
 
-    # Активировать в памяти
-    user_mgr.register(token, mnemonic_raw, trade_amount, name)
+    user_mgr.register(token, ton_address, trade_amount, name)
 
+    deposit_code  = f"GG-{token[:8]}"
     dashboard_url = f"/dashboard/{token}"
     return jsonify({
-        "ok": True,
-        "token": token,
-        "address": ton_address,
+        "ok":           True,
+        "token":        token,
+        "deposit_code": deposit_code,
         "dashboard_url": dashboard_url,
-        "message": "Кошелёк подключён!",
+        "platform_wallet": Config.TON_WALLET,
     })
 
 
@@ -371,12 +409,35 @@ def api_user_status(token):
     return jsonify({"ok": True, **st})
 
 
-@app.route("/api/user/balance/<token>")
-def api_user_balance(token):
-    bal = user_mgr.get_balance(token)
-    if bal is None:
-        return jsonify({"ok": False, "error": "Не найдено"}), 404
-    return jsonify({"ok": True, **bal})
+@app.route("/api/user/deposit", methods=["POST"])
+def api_user_deposit_manual():
+    """Ручное зачисление депозита (для тестирования / после ручной проверки)."""
+    data   = request.json or {}
+    token  = str(data.get("token", ""))
+    amount = float(data.get("amount", 0))
+    if amount <= 0:
+        return jsonify({"ok": False, "error": "Сумма должна быть > 0"}), 400
+    ok = user_mgr.credit_deposit(token, amount, app)
+    if not ok:
+        return jsonify({"ok": False, "error": "Пользователь не найден"}), 404
+
+    with app.app_context():
+        uw = UserWallet.query.filter_by(token=token).first()
+        if uw:
+            uw.total_deposited = (uw.total_deposited or 0) + amount
+            db.session.commit()
+    return jsonify({"ok": True, "credited": amount})
+
+
+@app.route("/api/user/withdraw", methods=["POST"])
+def api_user_withdraw():
+    data   = request.json or {}
+    token  = str(data.get("token", ""))
+    amount = float(data.get("amount", 0))
+    if amount < 0.1:
+        return jsonify({"ok": False, "error": "Минимальный вывод 0.1 TON"}), 400
+    result = user_mgr.withdraw(token, amount, app)
+    return jsonify(result), 200 if result.get("ok") else 400
 
 
 @app.route("/api/platform/stats")
@@ -384,11 +445,12 @@ def api_platform_stats():
     t = trader.stats.get("total_trades", 0)
     w = trader.stats.get("winning_trades", 0)
     return jsonify({
-        "active_traders": user_mgr.count_active(),
-        "ai_winrate":     round(w / t * 100, 1) if t > 0 else 0,
-        "total_trades":   t,
-        "platform_fee":   9.5,
-        "owner_address":  "UQDDgb2BTM-KCjntOoUg6uHllvnu3KGqEquKw6IySVP3hDgM",
+        "active_traders":  user_mgr.count_active(),
+        "ai_winrate":      round(w / t * 100, 1) if t > 0 else 0,
+        "total_trades":    t,
+        "platform_fee":    9.5,
+        "platform_wallet": Config.TON_WALLET,
+        "owner_address":   "UQDDgb2BTM-KCjntOoUg6uHllvnu3KGqEquKw6IySVP3hDgM",
     })
 
 

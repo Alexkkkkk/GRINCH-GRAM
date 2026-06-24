@@ -5,121 +5,107 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>GRINCH-GRAM — Подключить кошелёк</title>
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🐸</text></svg>">
+  <script src="https://unpkg.com/@tonconnect/ui@latest/dist/tonconnect-ui.min.js" crossorigin="anonymous"></script>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     :root {
-      --ton: #0098EA;
-      --grinch: #00ff88;
-      --bg: #080d16;
-      --card: #0e1726;
-      --card2: #131f35;
-      --border: #1e2d4a;
-      --text: #e8edf5;
-      --muted: #6b82a8;
-      --red: #ff4466;
-      --yellow: #ffd700;
+      --ton: #0098EA; --grinch: #00ff88; --bg: #080d16; --card: #0e1726;
+      --card2: #131f35; --border: #1e2d4a; --text: #e8edf5; --muted: #6b82a8;
+      --red: #ff4466; --yellow: #ffd700;
     }
     body { background: var(--bg); color: var(--text); font-family: 'Inter', system-ui, sans-serif; min-height: 100vh; }
 
-    /* ── Header ── */
     header {
       display: flex; align-items: center; justify-content: space-between;
       padding: 16px 32px; border-bottom: 1px solid var(--border);
       background: rgba(8,13,22,.95); backdrop-filter: blur(12px);
-      position: sticky; top: 0; z-index: 100;
+      position: sticky; top: 0; z-index: 200;
     }
     .logo { display: flex; align-items: center; gap: 10px; text-decoration: none; }
-    .logo-text { font-size: 1.25rem; font-weight: 800; background: linear-gradient(135deg, var(--ton), var(--grinch)); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
-    .hdr-link { color: var(--muted); font-size: .9rem; text-decoration: none; transition: color .2s; }
+    .logo-text { font-size: 1.2rem; font-weight: 800; background: linear-gradient(135deg, var(--ton), var(--grinch)); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+    .hdr-link { color: var(--muted); font-size: .88rem; text-decoration: none; }
     .hdr-link:hover { color: var(--ton); }
 
-    /* ── Hero ── */
-    .hero {
-      text-align: center; padding: 72px 24px 48px;
-      background: radial-gradient(ellipse 80% 60% at 50% -10%, rgba(0,152,234,.12), transparent);
-    }
-    .hero-badge {
-      display: inline-flex; align-items: center; gap: 6px;
-      background: rgba(0,255,136,.08); border: 1px solid rgba(0,255,136,.25);
-      color: var(--grinch); font-size: .8rem; font-weight: 600; letter-spacing: .06em;
-      padding: 6px 14px; border-radius: 100px; margin-bottom: 24px;
-    }
-    .hero h1 { font-size: clamp(2rem,5vw,3.2rem); font-weight: 900; line-height: 1.15; margin-bottom: 16px; }
+    /* Hero */
+    .hero { text-align: center; padding: 64px 24px 40px; background: radial-gradient(ellipse 80% 60% at 50% -10%, rgba(0,152,234,.12), transparent); }
+    .badge { display: inline-flex; align-items: center; gap: 6px; background: rgba(0,255,136,.08); border: 1px solid rgba(0,255,136,.25); color: var(--grinch); font-size: .8rem; font-weight: 600; padding: 6px 14px; border-radius: 100px; margin-bottom: 24px; }
+    .hero h1 { font-size: clamp(1.8rem,5vw,3rem); font-weight: 900; line-height: 1.15; margin-bottom: 14px; }
     .hero h1 span { background: linear-gradient(135deg, var(--ton), var(--grinch)); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
-    .hero p { color: var(--muted); font-size: 1.1rem; max-width: 560px; margin: 0 auto 40px; line-height: 1.7; }
+    .hero p { color: var(--muted); font-size: 1.05rem; max-width: 520px; margin: 0 auto 36px; line-height: 1.7; }
 
-    /* ── Stats row ── */
-    .stats-row { display: flex; justify-content: center; gap: 32px; flex-wrap: wrap; margin-bottom: 56px; }
+    .stats-row { display: flex; justify-content: center; gap: 40px; flex-wrap: wrap; margin-bottom: 48px; }
     .stat-item { text-align: center; }
     .stat-val { font-size: 2rem; font-weight: 800; color: var(--ton); }
-    .stat-val.green { color: var(--grinch); }
-    .stat-label { font-size: .8rem; color: var(--muted); margin-top: 2px; }
+    .stat-val.g { color: var(--grinch); }
+    .stat-label { font-size: .78rem; color: var(--muted); margin-top: 2px; }
 
-    /* ── How it works ── */
-    .how { max-width: 860px; margin: 0 auto 60px; padding: 0 24px; }
-    .how h2 { text-align: center; font-size: 1.5rem; font-weight: 800; margin-bottom: 32px; }
-    .steps { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 20px; }
-    .step {
-      background: var(--card); border: 1px solid var(--border); border-radius: 16px;
-      padding: 24px; text-align: center;
+    /* Steps */
+    .how { max-width: 900px; margin: 0 auto 56px; padding: 0 24px; }
+    .how h2 { text-align: center; font-size: 1.4rem; font-weight: 800; margin-bottom: 28px; }
+    .steps { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 16px; }
+    .step { background: var(--card); border: 1px solid var(--border); border-radius: 16px; padding: 22px; text-align: center; }
+    .step-num { width: 34px; height: 34px; border-radius: 50%; background: linear-gradient(135deg, var(--ton), var(--grinch)); color: #000; font-weight: 800; font-size: .9rem; display: flex; align-items: center; justify-content: center; margin: 0 auto 10px; }
+    .step h3 { font-size: .9rem; font-weight: 700; margin-bottom: 5px; }
+    .step p  { font-size: .8rem; color: var(--muted); line-height: 1.5; }
+
+    /* Registration card */
+    .reg-wrap { max-width: 520px; margin: 0 auto 80px; padding: 0 24px; }
+    .reg-card { background: var(--card); border: 1px solid var(--border); border-radius: 24px; padding: 32px; box-shadow: 0 24px 64px rgba(0,0,0,.5); }
+    .reg-card h2 { font-size: 1.3rem; font-weight: 800; margin-bottom: 5px; }
+    .reg-card .sub { color: var(--muted); font-size: .85rem; margin-bottom: 24px; }
+
+    /* TonConnect button wrapper */
+    .tc-btn-wrap {
+      margin-bottom: 20px;
     }
-    .step-num { width: 36px; height: 36px; border-radius: 50%; background: linear-gradient(135deg, var(--ton), var(--grinch)); color: #000; font-weight: 800; font-size: .95rem; display: flex; align-items: center; justify-content: center; margin: 0 auto 12px; }
-    .step h3 { font-size: .95rem; font-weight: 700; margin-bottom: 6px; }
-    .step p { font-size: .82rem; color: var(--muted); line-height: 1.5; }
-
-    /* ── Registration card ── */
-    .reg-wrap { max-width: 560px; margin: 0 auto 80px; padding: 0 24px; }
-    .reg-card {
-      background: var(--card); border: 1px solid var(--border); border-radius: 24px;
-      padding: 36px; box-shadow: 0 24px 64px rgba(0,0,0,.5);
+    /* Override TonConnect button to full width */
+    #ton-connect-button { display: block; }
+    #ton-connect-button > button,
+    #ton-connect-button tc-button,
+    #ton-connect-button [data-tc-button] {
+      width: 100% !important;
+      justify-content: center !important;
     }
-    .reg-card h2 { font-size: 1.35rem; font-weight: 800; margin-bottom: 6px; }
-    .reg-card .sub { color: var(--muted); font-size: .88rem; margin-bottom: 28px; }
 
-    label { display: block; font-size: .8rem; font-weight: 600; color: var(--muted); margin-bottom: 6px; text-transform: uppercase; letter-spacing: .04em; }
-    .field { margin-bottom: 20px; }
-    input[type=text], input[type=number], textarea {
-      width: 100%; background: var(--card2); border: 1px solid var(--border);
-      color: var(--text); border-radius: 12px; padding: 12px 16px; font-size: .92rem;
-      outline: none; transition: border-color .2s;
-      font-family: inherit;
+    .wallet-connected-box {
+      background: rgba(0,255,136,.07); border: 1px solid rgba(0,255,136,.25);
+      border-radius: 14px; padding: 16px 18px; margin-bottom: 20px; display: none;
     }
-    input:focus, textarea:focus { border-color: var(--ton); }
-    textarea { height: 100px; resize: vertical; font-size: .85rem; }
-    .input-hint { font-size: .75rem; color: var(--muted); margin-top: 5px; }
+    .wc-label { font-size: .72rem; color: var(--grinch); font-weight: 700; text-transform: uppercase; letter-spacing: .05em; margin-bottom: 5px; }
+    .wc-addr  { font-family: monospace; font-size: .82rem; color: var(--text); word-break: break-all; }
 
-    .amount-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
-
-    .fee-notice {
-      background: rgba(0,152,234,.08); border: 1px solid rgba(0,152,234,.2);
-      border-radius: 12px; padding: 14px 16px; margin-bottom: 24px; font-size: .83rem; color: var(--muted); line-height: 1.6;
+    label { display: block; font-size: .78rem; font-weight: 600; color: var(--muted); margin-bottom: 5px; text-transform: uppercase; letter-spacing: .04em; }
+    .field { margin-bottom: 18px; }
+    input[type=text], input[type=number] {
+      width: 100%; background: var(--card2); border: 1px solid var(--border); color: var(--text);
+      border-radius: 12px; padding: 12px 16px; font-size: .92rem; outline: none;
+      transition: border-color .2s; font-family: inherit;
     }
+    input:focus { border-color: var(--ton); }
+    .input-hint { font-size: .74rem; color: var(--muted); margin-top: 4px; }
+
+    .fee-notice { background: rgba(0,152,234,.08); border: 1px solid rgba(0,152,234,.2); border-radius: 12px; padding: 13px 16px; margin-bottom: 20px; font-size: .82rem; color: var(--muted); line-height: 1.6; }
     .fee-notice strong { color: var(--ton); }
 
-    .warn-notice {
-      background: rgba(255,215,0,.06); border: 1px solid rgba(255,215,0,.2);
-      border-radius: 12px; padding: 14px 16px; margin-bottom: 24px; font-size: .83rem; color: #b89a00; line-height: 1.6;
-    }
-    .warn-notice strong { color: var(--yellow); }
-
-    .btn-submit {
-      width: 100%; background: linear-gradient(135deg, var(--ton), #006db3);
-      color: #fff; border: none; border-radius: 14px; padding: 16px;
-      font-size: 1rem; font-weight: 700; cursor: pointer; transition: opacity .2s, transform .1s;
-    }
+    .btn-submit { width: 100%; background: linear-gradient(135deg, var(--ton), #006db3); color: #fff; border: none; border-radius: 14px; padding: 15px; font-size: .98rem; font-weight: 700; cursor: pointer; transition: opacity .2s; }
     .btn-submit:hover:not(:disabled) { opacity: .88; }
-    .btn-submit:active { transform: scale(.98); }
-    .btn-submit:disabled { opacity: .5; cursor: not-allowed; }
+    .btn-submit:disabled { opacity: .45; cursor: not-allowed; }
 
-    .error-msg { background: rgba(255,68,102,.1); border: 1px solid rgba(255,68,102,.3); border-radius: 10px; padding: 12px 16px; color: var(--red); font-size: .85rem; margin-bottom: 16px; display: none; }
-    .success-box { background: rgba(0,255,136,.08); border: 1px solid rgba(0,255,136,.25); border-radius: 16px; padding: 24px; display: none; text-align: center; }
-    .success-box h3 { color: var(--grinch); font-size: 1.2rem; margin-bottom: 8px; }
-    .success-box p { color: var(--muted); font-size: .88rem; margin-bottom: 16px; }
-    .dash-link { display: inline-block; background: linear-gradient(135deg, var(--grinch), #00c96a); color: #000; font-weight: 800; font-size: .95rem; padding: 14px 28px; border-radius: 12px; text-decoration: none; }
-    .token-box { background: var(--card2); border: 1px solid var(--border); border-radius: 10px; padding: 10px 14px; font-size: .78rem; color: var(--muted); word-break: break-all; margin-top: 14px; text-align: left; }
-    .token-box strong { color: var(--text); }
+    .error-msg  { background: rgba(255,68,102,.1); border: 1px solid rgba(255,68,102,.3); border-radius: 10px; padding: 11px 16px; color: var(--red); font-size: .83rem; margin-bottom: 14px; display: none; }
 
-    footer { text-align: center; padding: 32px; color: var(--muted); font-size: .8rem; border-top: 1px solid var(--border); }
+    /* Success */
+    .success-box { display: none; }
+    .dep-card { background: var(--card2); border: 1px solid var(--border); border-radius: 16px; padding: 20px; margin-bottom: 18px; }
+    .dep-title { font-size: .78rem; color: var(--muted); font-weight: 600; text-transform: uppercase; letter-spacing: .05em; margin-bottom: 10px; }
+    .dep-addr  { font-family: monospace; font-size: .88rem; word-break: break-all; margin-bottom: 8px; }
+    .dep-code  { display: inline-block; background: rgba(0,255,136,.1); border: 1px solid rgba(0,255,136,.3); color: var(--grinch); font-family: monospace; font-size: 1.1rem; font-weight: 700; padding: 8px 16px; border-radius: 8px; letter-spacing: .08em; }
+    .copy-btn  { background: none; border: 1px solid var(--border); color: var(--muted); border-radius: 8px; padding: 5px 10px; font-size: .75rem; cursor: pointer; margin-left: 8px; }
+    .copy-btn:hover { border-color: var(--ton); color: var(--ton); }
+    .dash-link-btn { display: block; text-align: center; background: linear-gradient(135deg, var(--grinch), #00c96a); color: #000; font-weight: 800; font-size: .95rem; padding: 14px; border-radius: 12px; text-decoration: none; margin-top: 16px; }
+    .notice-box { background: rgba(255,215,0,.06); border: 1px solid rgba(255,215,0,.2); border-radius: 12px; padding: 12px 16px; font-size: .8rem; color: #9a8000; margin-bottom: 14px; }
+    .notice-box strong { color: var(--yellow); }
+
+    footer { text-align: center; padding: 28px; color: var(--muted); font-size: .78rem; border-top: 1px solid var(--border); }
     footer a { color: var(--ton); text-decoration: none; }
   </style>
 </head>
@@ -127,7 +113,7 @@
 
 <header>
   <a class="logo" href="/">
-    <span style="font-size:1.4rem">◆×🐸</span>
+    <span style="font-size:1.3rem">◆×🐸</span>
     <span class="logo-text">GRINCH-GRAM</span>
   </a>
   <a class="hdr-link" href="/">← Главный дашборд</a>
@@ -135,186 +121,186 @@
 
 <!-- Hero -->
 <section class="hero">
-  <div class="hero-badge">🤖 AI-трейдинг · TON блокчейн</div>
+  <div class="badge">🤖 AI-трейдинг · TON блокчейн · без мнемоники</div>
   <h1>Торгуй <span>GRINCH</span> с помощью ИИ</h1>
-  <p>Подключи свой TON кошелёк — AI-бот торгует автоматически на DeDust DEX, пока ты занимаешься другими делами.</p>
-
+  <p>Подключи любой TON кошелёк — бот торгует автоматически. Никакой мнемоники: ты депонируешь TON, мы торгуем.</p>
   <div class="stats-row">
-    <div class="stat-item">
-      <div class="stat-val" id="stat-traders">{{ stats.active_traders }}</div>
-      <div class="stat-label">Активных трейдеров</div>
-    </div>
-    <div class="stat-item">
-      <div class="stat-val green" id="stat-winrate">{{ stats.winrate }}%</div>
-      <div class="stat-label">Win rate AI</div>
-    </div>
-    <div class="stat-item">
-      <div class="stat-val" id="stat-trades">{{ stats.total_trades }}</div>
-      <div class="stat-label">Всего сделок</div>
-    </div>
-    <div class="stat-item">
-      <div class="stat-val green">9.5%</div>
-      <div class="stat-label">Комиссия платформы</div>
-    </div>
+    <div class="stat-item"><div class="stat-val" id="s-traders">{{ stats.active_traders }}</div><div class="stat-label">Активных трейдеров</div></div>
+    <div class="stat-item"><div class="stat-val g" id="s-winrate">{{ stats.winrate }}%</div><div class="stat-label">Win rate AI</div></div>
+    <div class="stat-item"><div class="stat-val" id="s-trades">{{ stats.total_trades }}</div><div class="stat-label">Всего сделок</div></div>
+    <div class="stat-item"><div class="stat-val g">9.5%</div><div class="stat-label">Комиссия платформы</div></div>
   </div>
 </section>
 
-<!-- How it works -->
+<!-- Steps -->
 <div class="how">
   <h2>Как это работает</h2>
   <div class="steps">
-    <div class="step">
-      <div class="step-num">1</div>
-      <h3>Подключи кошелёк</h3>
-      <p>Введи мнемонику своего TON кошелька (W5). Данные шифруются и хранятся безопасно.</p>
-    </div>
-    <div class="step">
-      <div class="step-num">2</div>
-      <h3>AI анализирует рынок</h3>
-      <p>RandomForest + GradientBoosting анализируют 20 индикаторов каждые 30 секунд.</p>
-    </div>
-    <div class="step">
-      <div class="step-num">3</div>
-      <h3>Автоматическая торговля</h3>
-      <p>При сигнале BUY — бот покупает GRINCH. При SELL — продаёт. Всё на твоём кошельке.</p>
-    </div>
-    <div class="step">
-      <div class="step-num">4</div>
-      <h3>Следи за результатом</h3>
-      <p>Личный дашборд показывает баланс, сделки и P&L в реальном времени.</p>
-    </div>
+    <div class="step"><div class="step-num">1</div><h3>Подключи кошелёк</h3><p>Используй TonKeeper, MyTonWallet или любой TonConnect-кошелёк. Мнемоника не нужна.</p></div>
+    <div class="step"><div class="step-num">2</div><h3>Депонируй TON</h3><p>Отправь TON на платформенный кошелёк с уникальным кодом — баланс зачислится автоматически.</p></div>
+    <div class="step"><div class="step-num">3</div><h3>AI торгует</h3><p>RandomForest + GradientBoosting анализируют рынок. При сигнале — автоматическая покупка GRINCH.</p></div>
+    <div class="step"><div class="step-num">4</div><h3>Выводи прибыль</h3><p>В любой момент выведи TON обратно на свой кошелёк прямо из дашборда.</p></div>
   </div>
 </div>
 
-<!-- Registration form -->
+<!-- Registration -->
 <div class="reg-wrap">
   <div class="reg-card">
-    <h2>Подключить кошелёк</h2>
-    <div class="sub">Начни торговать через AI-бот уже сейчас</div>
+    <h2>Начать торговать</h2>
+    <div class="sub">Подключи кошелёк — мнемоника не требуется</div>
 
     <div id="error-msg" class="error-msg"></div>
 
-    <form id="join-form">
-      <div class="field">
-        <label>Имя (необязательно)</label>
-        <input type="text" id="inp-name" placeholder="Например: Александр" maxlength="80">
+    <!-- Step 1: Connect wallet -->
+    <div id="step-connect">
+      <div class="tc-btn-wrap">
+        <div id="ton-connect-button"></div>
       </div>
 
-      <div class="field">
-        <label>Мнемоника кошелька (24 слова)</label>
-        <textarea id="inp-mnemonic" placeholder="word1 word2 word3 ... word24&#10;Вставьте все 24 слова через пробел"></textarea>
-        <div class="input-hint">⚠️ Используй отдельный кошелёк для торговли — не основной!</div>
+      <div id="wallet-connected-box" class="wallet-connected-box">
+        <div class="wc-label">✅ Кошелёк подключён</div>
+        <div class="wc-addr" id="wc-addr-display">—</div>
       </div>
 
-      <div class="amount-row">
+      <!-- Form: visible only after wallet connect -->
+      <div id="form-fields" style="display:none">
+        <div class="field">
+          <label>Имя (необязательно)</label>
+          <input type="text" id="inp-name" placeholder="Например: Александр" maxlength="80">
+        </div>
         <div class="field">
           <label>Сумма одной сделки (TON)</label>
           <input type="number" id="inp-amount" value="1" min="0.5" max="1000" step="0.1">
-          <div class="input-hint">Мин. 0.5 TON</div>
+          <div class="input-hint">Минимум 0.5 TON</div>
         </div>
+        <div class="fee-notice">
+          <strong>💎 Комиссия 9.5% с каждой покупки.</strong> При сделке на 1 TON — 0.095 TON идёт платформе, 0.905 TON покупает GRINCH.
+        </div>
+        <button class="btn-submit" id="btn-start" onclick="doRegister()">Создать аккаунт →</button>
       </div>
+    </div>
 
-      <div class="fee-notice">
-        <strong>💎 Комиссия платформы: 9.5% с каждой покупки</strong><br>
-        При каждой BUY сделке на <strong>1 TON</strong> — 0.095 TON идёт платформе, 0.905 TON покупает GRINCH. Комиссия за продажу не берётся.
-      </div>
-
-      <div class="warn-notice">
-        <strong>🔐 Безопасность мнемоники</strong><br>
-        Мнемоника шифруется AES-256 и хранится на сервере. Никогда не используй свой главный кошелёк. Бот может потерять средства при неблагоприятном рынке.
-      </div>
-
-      <button type="submit" class="btn-submit" id="btn-submit">
-        Подключить кошелёк →
-      </button>
-    </form>
-
+    <!-- Step 2: Deposit instructions (after registration) -->
     <div id="success-box" class="success-box">
-      <h3>✅ Кошелёк подключён!</h3>
-      <p>Сохрани ссылку на свой дашборд — это единственный способ получить к нему доступ.</p>
-      <a id="dash-link" class="dash-link" href="#" target="_blank">Открыть мой дашборд →</a>
-      <div class="token-box">
-        <strong>Адрес кошелька:</strong><br>
-        <span id="wallet-addr">—</span><br><br>
-        <strong>Ссылка дашборда:</strong><br>
-        <span id="dash-url-text"></span>
+      <div class="notice-box"><strong>📋 Сохрани ссылку на дашборд</strong> — это единственный способ получить к нему доступ.</div>
+      <div class="dep-card">
+        <div class="dep-title">Шаг 1 — Адрес платформы (куда отправлять TON)</div>
+        <div class="dep-addr" id="dep-platform-addr">{{ platform_wallet }}</div>
+        <button class="copy-btn" onclick="copyText('dep-platform-addr', this)">Копировать</button>
       </div>
+      <div class="dep-card">
+        <div class="dep-title">Шаг 2 — Твой уникальный код (обязательный комментарий к переводу)</div>
+        <div>
+          <span class="dep-code" id="dep-code">—</span>
+          <button class="copy-btn" onclick="copyText('dep-code', this)">Копировать</button>
+        </div>
+        <div style="margin-top:10px;font-size:.78rem;color:var(--muted)">Укажи этот код в поле «Комментарий» при отправке TON — иначе депозит не будет зачислен.</div>
+      </div>
+      <a id="dash-link" class="dash-link-btn" href="#" target="_blank">Открыть мой дашборд →</a>
     </div>
   </div>
 </div>
 
 <footer>
-  <p>GRINCH-GRAM &mdash; AI-трейдинг на TON блокчейне &nbsp;|&nbsp; <a href="/">Главный дашборд</a></p>
-  <p style="margin-top:8px;font-size:.72rem">Торговля криптовалютой сопряжена с риском потери средств. Не инвестируй больше, чем готов потерять.</p>
+  <p>GRINCH-GRAM · AI-трейдинг TON/GRINCH &nbsp;|&nbsp; <a href="/">Главный дашборд</a></p>
+  <p style="margin-top:6px;font-size:.7rem">Торговля криптовалютой сопряжена с риском. Не инвестируй больше, чем готов потерять.</p>
 </footer>
 
 <script>
-  const form = document.getElementById("join-form");
-  const errEl = document.getElementById("error-msg");
-  const sucEl = document.getElementById("success-box");
-  const btnEl = document.getElementById("btn-submit");
+// ─── TonConnect ─────────────────────────────────────────────────────────────
+let connectedAddress = null;
 
-  form.addEventListener("submit", async e => {
-    e.preventDefault();
-    errEl.style.display = "none";
-    sucEl.style.display = "none";
-    btnEl.disabled = true;
-    btnEl.textContent = "Подключаем...";
+const tonConnectUI = new TON_CONNECT_UI.TonConnectUI({
+  manifestUrl: window.location.origin + '/tonconnect-manifest.json',
+  buttonRootId: 'ton-connect-button',
+});
 
-    const name     = document.getElementById("inp-name").value.trim();
-    const mnemonic = document.getElementById("inp-mnemonic").value.trim();
-    const amount   = parseFloat(document.getElementById("inp-amount").value);
+tonConnectUI.onStatusChange(wallet => {
+  if (wallet) {
+    // Convert raw address to user-friendly form
+    const rawAddr = wallet.account.address;
+    connectedAddress = rawAddr;
+    document.getElementById('wallet-connected-box').style.display = 'block';
+    document.getElementById('wc-addr-display').textContent = formatAddr(rawAddr);
+    document.getElementById('form-fields').style.display = 'block';
+    document.getElementById('error-msg').style.display = 'none';
+  } else {
+    connectedAddress = null;
+    document.getElementById('wallet-connected-box').style.display = 'none';
+    document.getElementById('form-fields').style.display = 'none';
+  }
+});
 
-    const words = mnemonic.split(/\s+/).filter(Boolean);
-    if (words.length !== 24) {
-      showErr(`Мнемоника должна содержать 24 слова, введено: ${words.length}`);
-      return;
-    }
-    if (isNaN(amount) || amount < 0.5) {
-      showErr("Минимальная сумма сделки: 0.5 TON");
-      return;
-    }
+function formatAddr(addr) {
+  if (!addr) return '—';
+  if (addr.length > 30) return addr.slice(0, 16) + '...' + addr.slice(-10);
+  return addr;
+}
 
-    try {
-      const resp = await fetch("/api/user/register", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name, mnemonic: words.join(" "), trade_amount: amount }),
-      });
-      const data = await resp.json();
-      if (!data.ok) {
-        showErr(data.error || "Ошибка регистрации");
-        return;
-      }
-      const dashUrl = window.location.origin + data.dashboard_url;
-      document.getElementById("dash-link").href = dashUrl;
-      document.getElementById("dash-url-text").textContent = dashUrl;
-      document.getElementById("wallet-addr").textContent = data.address || "определяется...";
-      form.style.display = "none";
-      sucEl.style.display = "block";
-    } catch(e) {
-      showErr("Ошибка соединения: " + e.message);
-    }
+// ─── Registration ────────────────────────────────────────────────────────────
+async function doRegister() {
+  if (!connectedAddress) {
+    showErr('Сначала подключи кошелёк');
+    return;
+  }
+  const name   = document.getElementById('inp-name').value.trim();
+  const amount = parseFloat(document.getElementById('inp-amount').value);
+  if (isNaN(amount) || amount < 0.5) { showErr('Минимальная сумма 0.5 TON'); return; }
+
+  document.getElementById('btn-start').disabled = true;
+  document.getElementById('btn-start').textContent = 'Создаём...';
+
+  try {
+    const resp = await fetch('/api/user/register', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name, ton_address: connectedAddress, trade_amount: amount }),
+    });
+    const d = await resp.json();
+    if (!d.ok) { showErr(d.error || 'Ошибка регистрации'); return; }
+
+    // Show success
+    document.getElementById('dep-code').textContent = d.deposit_code;
+    document.getElementById('dep-platform-addr').textContent = d.platform_wallet;
+    document.getElementById('dash-link').href = window.location.origin + d.dashboard_url;
+
+    document.getElementById('step-connect').style.display = 'none';
+    document.getElementById('success-box').style.display  = 'block';
+  } catch(e) {
+    showErr('Ошибка соединения: ' + e.message);
+  } finally {
+    document.getElementById('btn-start').disabled = false;
+    document.getElementById('btn-start').textContent = 'Создать аккаунт →';
+  }
+}
+
+function showErr(msg) {
+  const el = document.getElementById('error-msg');
+  el.textContent = msg;
+  el.style.display = 'block';
+  document.getElementById('btn-start').disabled = false;
+  document.getElementById('btn-start').textContent = 'Создать аккаунт →';
+}
+
+function copyText(elId, btn) {
+  const text = document.getElementById(elId).textContent.trim();
+  navigator.clipboard.writeText(text).then(() => {
+    btn.textContent = '✓ Скопировано';
+    setTimeout(() => btn.textContent = 'Копировать', 2000);
   });
+}
 
-  function showErr(msg) {
-    errEl.textContent = msg;
-    errEl.style.display = "block";
-    btnEl.disabled = false;
-    btnEl.textContent = "Подключить кошелёк →";
-  }
-
-  // Refresh stats
-  async function refreshStats() {
-    try {
-      const r = await fetch("/api/platform/stats");
-      const d = await r.json();
-      document.getElementById("stat-traders").textContent = d.active_traders ?? "—";
-      document.getElementById("stat-winrate").textContent = (d.ai_winrate ?? 0) + "%";
-      document.getElementById("stat-trades").textContent  = d.total_trades  ?? "—";
-    } catch(e) {}
-  }
-  setInterval(refreshStats, 15000);
+// Stats refresh
+async function refreshStats() {
+  try {
+    const r = await fetch('/api/platform/stats');
+    const d = await r.json();
+    document.getElementById('s-traders').textContent = d.active_traders ?? '—';
+    document.getElementById('s-winrate').textContent = (d.ai_winrate ?? 0) + '%';
+    document.getElementById('s-trades').textContent  = d.total_trades  ?? '—';
+  } catch(e) {}
+}
+setInterval(refreshStats, 15000);
 </script>
 </body>
 </html>
