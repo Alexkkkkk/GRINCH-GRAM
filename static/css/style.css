@@ -438,6 +438,12 @@ body { background: var(--bg); color: var(--text); font-family: 'Segoe UI', syste
 .log-WARN  { color: var(--yellow); }
 .log-time  { color: #4a5568; margin-right: 5px; }
 
+/* ═══ Открытые сделки — ожидают продажи ═══ */
+.trade-card.waiting-sell { border-left:3px solid #ffd166; }
+.ot-prog-wrap { height:6px; background:var(--bg3); border-radius:100px; overflow:hidden; margin:8px 0; }
+.ot-prog-bar  { height:100%; border-radius:100px; transition:width .6s ease; }
+.ot-wait { font-size:11px; font-weight:600; }
+
 /* ═══ Авто-ликвидатор GRINCH ═══ */
 .liq-row { display:flex; justify-content:space-between; align-items:center; padding:5px 0; border-bottom:1px solid rgba(255,255,255,.04); }
 .liq-lbl { font-size:.8rem; color:var(--text2); }

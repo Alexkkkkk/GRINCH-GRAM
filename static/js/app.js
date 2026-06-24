@@ -202,7 +202,7 @@ function updateUI(data) {
     if (wbGrnUsd) wbGrnUsd.textContent = "≈ $" + grnUsd.toFixed(4);
   }
 
-  renderOpenTrades(data.open_trades  || []);
+  renderOpenTrades(data.open_trades  || [], Number(data.analysis?.price) || 0);
   renderHistory(data.recent_trades || []);
   renderLogs(data.logs             || []);
 
@@ -515,25 +515,67 @@ function renderFeatureImportance(fi) {
   }).join("");
 }
 
-function renderOpenTrades(trades) {
+function renderOpenTrades(trades, curPrice) {
   const el = document.getElementById("open-trades-list");
-  if (!trades.length) { el.innerHTML = '<div class="empty-msg">Нет открытых сделок</div>'; return; }
-  el.innerHTML = trades.map(t => `
-    <div class="trade-card buy">
+  if (!trades.length) {
+    el.innerHTML = '<div class="empty-msg">Нет позиций, ожидающих продажи</div>';
+    return;
+  }
+  el.innerHTML = trades.map(t => {
+    const entry = Number(t.entry_price) || 0;
+    const tp    = Number(t.take_profit) || 0;
+    const sl    = Number(t.stop_loss)   || 0;
+    const cur   = curPrice > 0 ? curPrice : entry;
+
+    // Live P&L % (комиссия 0.3% за сторону на обе стороны, как в trader.py)
+    const grossPct = entry > 0 ? (cur - entry) / entry * 100 : 0;
+    const feePct   = entry > 0 ? (1 + cur / entry) * 0.3 : 0.6;
+    const netPct   = grossPct - feePct;
+    const pnlCls   = netPct >= 0 ? "pnl-pos" : "pnl-neg";
+    const pnlSign  = netPct >= 0 ? "+" : "";
+
+    // Прогресс от входа к тейк-профиту (0..100%)
+    let progress = 0;
+    if (tp > entry) progress = Math.min(100, Math.max(0, (cur - entry) / (tp - entry) * 100));
+    const barColor = netPct >= 0 ? "linear-gradient(90deg,#ffd166,#00ff88)" : "linear-gradient(90deg,#ff4d6d,#ffd166)";
+
+    // Сколько ещё % до цели продажи
+    const toTpPct = (tp > 0 && cur > 0) ? (tp - cur) / cur * 100 : 0;
+
+    // Статус ожидания
+    let waitLabel, waitColor;
+    if (cur >= tp)      { waitLabel = "🎯 Достигнут TP — продаём"; waitColor = "#00ff88"; }
+    else if (cur <= sl) { waitLabel = "🛑 Достигнут SL — продаём"; waitColor = "#ff4d6d"; }
+    else if (sl > entry){ waitLabel = "🔒 Прибыль защищена (трейлинг)"; waitColor = "#00d4aa"; }
+    else                { waitLabel = `⏳ Ждём роста ещё +${toTpPct.toFixed(1)}%`; waitColor = "#ffd166"; }
+
+    return `
+    <div class="trade-card buy waiting-sell">
       <div class="trade-row">
-        <span class="trade-side buy">BUY</span>
-        <span style="color:#8892b0;font-size:11px">${t.opened_at?.slice(11,19) || ""}</span>
+        <span class="trade-side buy">⏳ ОЖИДАЕТ ПРОДАЖИ</span>
+        <span class="${pnlCls}" style="font-weight:700">${pnlSign}${netPct.toFixed(2)}%</span>
+      </div>
+      <div class="trade-row" style="font-size:11px;color:#8892b0">
+        <span>Вход: <b style="color:#e2e8f0">$${entry}</b></span>
+        <span>Сейчас: <b style="color:#e2e8f0">$${cur}</b></span>
+      </div>
+      <!-- Прогресс-бар к тейк-профиту -->
+      <div class="ot-prog-wrap" title="Прогресс к тейк-профиту">
+        <div class="ot-prog-bar" style="width:${progress.toFixed(1)}%;background:${barColor}"></div>
+      </div>
+      <div class="trade-row" style="font-size:10px">
+        <span style="color:#ff4d6d">SL $${sl}</span>
+        <span style="color:#00d4aa">TP $${tp}</span>
       </div>
       <div class="trade-row">
-        <span>Вход: <b>$${t.entry_price}</b></span>
-        <span>Кол-во: ${t.amount}</span>
+        <span class="ot-wait" style="color:${waitColor}">${waitLabel}</span>
       </div>
-      <div class="trade-row">
-        <span style="color:#ff4d6d">SL: $${t.stop_loss}</span>
-        <span style="color:#00d4aa">TP: $${t.take_profit}</span>
+      <div class="trade-row" style="font-size:10px;color:#4a5568">
+        <span>Кол-во: ${t.amount} GRINCH</span>
+        ${t.ai_confidence ? `<span style="color:#a78bfa">AI ${t.ai_confidence}%</span>` : ""}
       </div>
-      ${t.ai_confidence ? `<div class="trade-row"><span style="color:#a78bfa;font-size:10px">AI уверенность: ${t.ai_confidence}%</span></div>` : ""}
-    </div>`).join("");
+    </div>`;
+  }).join("");
 }
 
 function renderHistory(trades) {
