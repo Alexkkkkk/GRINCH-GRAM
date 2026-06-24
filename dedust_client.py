@@ -249,7 +249,11 @@ class DedustClient:
     # ─────────────────────────── swap: sell ────────────────────────────────
 
     async def _sell_async(self, grinch_amount: float) -> dict:
-        """GRINCH → TON: переводим GRINCH-жеттон в JettonVault с payload свопа."""
+        """GRINCH → TON: переводим GRINCH-жеттон в JettonVault с payload свопа.
+
+        Газ: 0.6 TON total (DeDust рекомендует ≥ 0.5 TON для jetton swap).
+        Forward: 0.35 TON — достаточно для исполнения свопа внутри vault.
+        """
         wallet, provider = await self._wallet_and_provider()
         try:
             pool, _, grinch_asset = await self._get_pool(provider)
@@ -259,11 +263,12 @@ class DedustClient:
             grinch_wallet = await grinch_root.get_wallet(wallet.address, provider)
 
             amount_nano = int(grinch_amount * (10 ** 9))
-            gas_nano    = int(0.3 * TON)
-            fwd_nano    = int(0.25 * TON)
+            # Увеличены газ и forward: 0.6 TON total, 0.35 TON forwarded
+            gas_nano = int(0.6 * TON)
+            fwd_nano = int(0.35 * TON)
 
             swap_params = SwapParams(
-                deadline=int(time.time()) + 300,
+                deadline=int(time.time()) + 600,   # 10 мин (было 5)
                 recipient_address=wallet.address,
             )
 
