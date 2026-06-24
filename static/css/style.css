@@ -39,9 +39,11 @@ body { background: var(--bg); color: var(--text); font-family: 'Segoe UI', syste
 .card-title { font-weight: 700; font-size: 13px; color: var(--text2); margin-bottom: 10px; display: flex; align-items: center; }
 
 /* ─── Цена + сигнал ─── */
-.price-row { display: flex; justify-content: space-between; align-items: center; }
+.price-row { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.price-row > div:first-child { flex: 1; min-width: 0; }
+.price-row > div:last-child { flex-shrink: 0; }
 .label { font-size: 11px; color: var(--text2); margin-bottom: 3px; }
-.price { font-size: 26px; font-weight: 800; color: var(--green); font-family: monospace; }
+.price { font-size: 20px; font-weight: 800; color: var(--green); font-family: monospace; white-space: nowrap; }
 
 .signal-block { text-align: center; padding: 6px 12px; border-radius: 8px; background: var(--bg3); min-width: 80px; }
 .signal-label { font-size: 16px; font-weight: 800; }

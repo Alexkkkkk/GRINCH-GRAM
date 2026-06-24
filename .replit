@@ -28,7 +28,7 @@ outputType = "webview"
 
 [[workflows.workflow.tasks]]
 task = "shell.exec"
-args = "gunicorn --bind 0.0.0.0:5000 --reuse-port --worker-class gthread -w 1 --threads 4 main:app"
+args = "python app.py"
 waitForPort = 5000
 
 [[ports]]
@@ -38,3 +38,9 @@ externalPort = 80
 [deployment]
 deploymentTarget = "autoscale"
 run = ["gunicorn", "--bind", "0.0.0.0:5000", "main:app"]
+
+[userenv]
+
+[userenv.shared]
+TRADE_MODE = "dedust"
+DEMO_MODE = "false"

@@ -66,14 +66,10 @@ class ExchangeClient:
     # ──────────────────────────── price helpers ──────────────────────────
 
     def _base_price(self):
+        # DexScreener/CoinGecko — быстрый кэшированный источник
         real = price_feed.get(self.base_currency)
         if real and real > 0:
             return real
-        # DeDust: пробуем получить цену прямо из пула
-        if self._dedust:
-            p = self._dedust.get_price_ton_per_grinch()
-            if p and p > 0:
-                return p
         return BASE_PRICES.get(self.base_currency, DEFAULT_BASE_PRICE)
 
     def _round(self, p):
@@ -88,14 +84,11 @@ class ExchangeClient:
 
     def get_live_price(self):
         """Текущая цена актива (реальная или симулированная)."""
-        # DeDust: цена из пула резервов
+        # DeDust-режим: цена из DexScreener (быстро), DeDust-пул только для ордеров
         if self._dedust:
-            try:
-                p = self._dedust.get_price_ton_per_grinch()
-                if p and p > 0:
-                    return self._round(p)
-            except Exception:
-                pass
+            p = self._base_price()
+            if p and p > 0:
+                return self._round(p)
 
         # CEX через CCXT
         if not self.demo_mode and self._exchange:

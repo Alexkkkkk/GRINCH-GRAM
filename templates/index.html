@@ -29,7 +29,7 @@
         <div class="price-row">
           <div>
             <div class="label">Цена <span class="live-dot" title="В реальном времени"></span></div>
-            <div class="price" id="price">$0.00</div>
+            <div class="price" id="price">{% if init_price and init_price > 0 %}{{ "${:,.8f}".format(init_price).rstrip('0').rstrip('.') }}{% else %}$0.00{% endif %}</div>
             <div class="price-change" id="price-change">0.00%</div>
           </div>
           <div style="display:flex;flex-direction:column;gap:6px;align-items:flex-end">
@@ -293,6 +293,11 @@
 </div>
 
 <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
+<script>
+  // В Replit WebSocket должен подключаться к текущему хосту, а не к localhost
+  window._socketio_path = "/socket.io";
+  window._socketio_url  = window.location.origin;
+</script>
 <script src="/static/js/app.js"></script>
 </body>
 </html>

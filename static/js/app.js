@@ -1,7 +1,25 @@
-const socket = io();
-socket.on("connect", () => console.log("Connected"));
+// Немедленно загружаем данные при старте страницы (не ждём SocketIO)
+fetch("/api/status").then(r => r.json()).then(updateUI).catch(() => {});
+
+const socket = io({
+  path: "/socket.io",
+  transports: ["polling", "websocket"],
+});
+socket.on("connect", () => {
+  console.log("Connected");
+  fetch("/api/status").then(r => r.json()).then(updateUI).catch(() => {});
+});
 socket.on("status_update", updateUI);
 socket.on("price_update", updatePrice);
+
+// Polling-резерв: обновляем данные каждые 5 сек через REST если SocketIO не работает
+let _lastSocketUpdate = 0;
+socket.on("status_update", () => { _lastSocketUpdate = Date.now(); });
+setInterval(() => {
+  if (Date.now() - _lastSocketUpdate > 8000) {
+    fetch("/api/status").then(r => r.json()).then(updateUI).catch(() => {});
+  }
+}, 5000);
 
 function fmtPrice(p) {
   p = Number(p) || 0;
@@ -37,10 +55,13 @@ function updateUI(data) {
   const stats    = data.stats    || {};
   const ai       = data.ai       || {};
 
-  // Цена обновляется отдельным живым тикером (updatePrice).
-  // Здесь — фолбэк, если живая цена ещё не пришла.
-  if (_lastLivePrice === null) {
-    document.getElementById("price").textContent = fmtPrice(analysis.price || 0);
+  // Цена из анализа — всегда обновляем
+  const priceFromAnalysis = Number(analysis.price);
+  if (priceFromAnalysis > 0) {
+    const priceEl = document.getElementById("price");
+    if (priceEl) {
+      priceEl.textContent = fmtPrice(priceFromAnalysis);
+    }
   }
   document.getElementById("symbol-label").textContent = data.symbol || "GRINCH/USDT";
 

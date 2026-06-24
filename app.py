@@ -47,6 +47,8 @@ import flask_socketio
 flask_socketio.json = type("_J", (), {"dumps": staticmethod(_safe_dumps), "loads": staticmethod(json.loads)})()
 
 socketio = SocketIO(app, cors_allowed_origins="*", async_mode="threading",
+                    allow_upgrades=True,
+                    ping_timeout=60, ping_interval=25,
                     json=type("_J", (), {"dumps": staticmethod(_safe_dumps), "loads": staticmethod(json.loads)})())
 
 trader = Trader()
@@ -125,7 +127,12 @@ start_background()
 
 @app.route("/")
 def index():
-    return render_template("index.html", symbol=Config.SYMBOL, demo=Config.DEMO_MODE)
+    try:
+        status = _safe_status()
+        init_price = status.get("analysis", {}).get("price", 0)
+    except Exception:
+        init_price = 0
+    return render_template("index.html", symbol=Config.SYMBOL, demo=Config.DEMO_MODE, init_price=init_price)
 
 @app.route("/api/status")
 def api_status():
