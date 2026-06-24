@@ -227,15 +227,15 @@ class Trader:
     def _close_trade(self, trade, price, reason):
         gross = (price - trade["entry_price"]) * trade["amount"]
         fee   = (trade["entry_price"] + price) * trade["amount"] * Config.FEE_PCT / 100
-        pnl   = round(gross - fee, 2)
+        pnl   = round(gross - fee, 6)
         trade["pnl"]          = pnl
-        trade["fee"]          = round(fee, 2)
+        trade["fee"]          = round(fee, 6)
         trade["exit_price"]   = price
         trade["closed_at"]    = datetime.utcnow().isoformat()
         trade["close_reason"] = reason
         trade["status"]       = "closed"
 
-        self.stats["total_pnl"] = round(self.stats["total_pnl"] + pnl, 2)
+        self.stats["total_pnl"] = round(self.stats["total_pnl"] + pnl, 6)
         if pnl > 0:
             self.stats["winning_trades"] += 1
 
@@ -245,8 +245,16 @@ class Trader:
                 t.update(trade)
                 break
 
+        # ── Обратная связь AI: самообучение от результата сделки ──────────
+        try:
+            outcome = "win" if pnl > 0 else "loss"
+            self.ai.feedback(outcome=outcome, pnl=float(pnl))
+            self.log(f"🧠 AI feedback: {outcome} PNL={pnl:.6f} TON → модели обновлены", "INFO")
+        except Exception as e:
+            self.log(f"AI feedback ошибка: {e}", "WARN")
+
         level = "SELL" if pnl >= 0 else "ERROR"
-        self.log(f"🔴 Закрыто @ {price} | PNL={pnl:.4f} | {reason}", level)
+        self.log(f"🔴 Закрыто @ {price} | PNL={pnl:.6f} | {reason}", level)
 
     # ──────────────────────────────────────────
     # Статус
