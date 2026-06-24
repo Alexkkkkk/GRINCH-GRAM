@@ -121,8 +121,16 @@ class Trader:
         # Размер позиции масштабируется уверенностью AI (0.5×…1.0× от суммы)
         conf_factor = 0.5 + min(max((ai_conf - 50) / 50.0, 0.0), 1.0) * 0.5
         stake  = Config.TRADE_AMOUNT * conf_factor
-        amount = stake / price
-        order  = self.exchange.place_order(side, amount)
+
+        # В DeDust-режиме TRADE_AMOUNT = TON. Для записи переводим в кол-во GRINCH.
+        ton_stake = None
+        if self.exchange.mode == "dedust":
+            ton_stake = stake                # сколько TON тратим
+            amount    = stake / price        # ~кол-во GRINCH (приблизительно, для журнала)
+        else:
+            amount = stake / price
+
+        order = self.exchange.place_order(side, amount, ton_stake=ton_stake)
         if not order:
             return
 

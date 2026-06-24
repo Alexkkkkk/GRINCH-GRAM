@@ -4,20 +4,20 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>GRINCH-GRAM — Торговый агент</title>
-<link rel="stylesheet" href="/static/css/style.css">
+<link rel="stylesheet" href="/static/css/style.css?v={{ range(1,9999)|random }}">
 </head>
 <body>
 <div class="app">
   <header class="header">
     <div class="header-left">
       <span class="logo">🤖 GRINCH-GRAM</span>
-      <span id="demo-badge" class="badge badge-demo">ДЕМО</span>
-      <span id="status-badge" class="badge badge-stopped">ОСТАНОВЛЕН</span>
+      <span id="demo-badge" class="badge badge-demo" {% if not demo %}style="display:none"{% endif %}>ДЕМО</span>
+      <span id="status-badge" class="badge {{ 'badge-running' if init_running else 'badge-stopped' }}">{{ 'РАБОТАЕТ' if init_running else 'ОСТАНОВЛЕН' }}</span>
     </div>
     <div class="header-right">
       <span class="symbol-label" id="symbol-label">BTC/USDT</span>
-      <button id="btn-start" class="btn btn-green" onclick="startAgent()">▶ Запустить</button>
-      <button id="btn-stop" class="btn btn-red" onclick="stopAgent()" style="display:none">⏹ Остановить</button>
+      <button id="btn-start" class="btn btn-green" onclick="startAgent()" {% if init_running %}style="display:none"{% endif %}>▶ Запустить</button>
+      <button id="btn-stop" class="btn btn-red" onclick="stopAgent()" {% if not init_running %}style="display:none"{% endif %}>⏹ Остановить</button>
     </div>
   </header>
 
@@ -298,6 +298,6 @@
   window._socketio_path = "/socket.io";
   window._socketio_url  = window.location.origin;
 </script>
-<script src="/static/js/app.js"></script>
+<script src="/static/js/app.js?v={{ range(1,9999)|random }}"></script>
 </body>
 </html>

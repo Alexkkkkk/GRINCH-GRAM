@@ -158,13 +158,14 @@ class ExchangeClient:
             print(f"[Exchange] get_balance error: {e}")
             return {"USDT": 0.0}
 
-    def place_order(self, side, amount, price=None):
+    def place_order(self, side, amount, price=None, ton_stake=None):
         """
         side: "buy" | "sell"
         amount: количество базового актива (GRINCH)
+        ton_stake: для DeDust-режима — сколько TON тратим на покупку (опционально)
         """
         if self._dedust:
-            return self._dedust_order(side, amount, price)
+            return self._dedust_order(side, amount, price, ton_stake=ton_stake)
         if self.demo_mode:
             return self._fake_order(side, amount, price)
         try:
@@ -179,12 +180,13 @@ class ExchangeClient:
 
     # ──────────────────────────── DeDust order ──────────────────────────
 
-    def _dedust_order(self, side, amount, price=None):
+    def _dedust_order(self, side, amount, price=None, ton_stake=None):
         """Реальный своп через DeDust DEX."""
         fill_price = price or self.get_live_price()
         try:
             if side == "buy":
-                ton_amount = amount * fill_price
+                # ton_stake передаётся из trader напрямую (TON), иначе конвертируем
+                ton_amount = ton_stake if ton_stake is not None else amount * fill_price
                 result = self._dedust.buy(ton_amount)
             else:
                 result = self._dedust.sell(amount)

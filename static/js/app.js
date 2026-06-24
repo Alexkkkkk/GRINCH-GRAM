@@ -12,14 +12,10 @@ socket.on("connect", () => {
 socket.on("status_update", updateUI);
 socket.on("price_update", updatePrice);
 
-// Polling-резерв: обновляем данные каждые 5 сек через REST если SocketIO не работает
-let _lastSocketUpdate = 0;
-socket.on("status_update", () => { _lastSocketUpdate = Date.now(); });
+// Постоянный polling: REST каждые 3 сек — гарантирует актуальный статус/цену
 setInterval(() => {
-  if (Date.now() - _lastSocketUpdate > 8000) {
-    fetch("/api/status").then(r => r.json()).then(updateUI).catch(() => {});
-  }
-}, 5000);
+  fetch("/api/status").then(r => r.json()).then(updateUI).catch(() => {});
+}, 3000);
 
 function fmtPrice(p) {
   p = Number(p) || 0;
