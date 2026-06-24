@@ -177,12 +177,15 @@ class Trader:
         atr_pct = (ai.get("regime", {}) or {}).get("atr_pct", 0) / 100.0 if ai else 0.0
         if Config.USE_DYNAMIC_TARGETS and atr_pct > 0:
             sl_pct = max(atr_pct * Config.ATR_SL_MULT * 100, Config.STOP_LOSS_PCT)
+            # ATR × 8 используется только если ОН ВЫШЕ минимального нетто-таргета
             tp_pct = max(atr_pct * Config.ATR_TP_MULT * 100, Config.TAKE_PROFIT_PCT)
         else:
             sl_pct, tp_pct = Config.STOP_LOSS_PCT, Config.TAKE_PROFIT_PCT
-        # TP должен перекрывать: DeDust buy fee + sell fee + запас 0.5%
-        min_tp = Config.FEE_PCT * 2 + 0.5
-        tp_pct = max(tp_pct, min_tp)
+
+        # Жёсткий минимум TP = нетто 20% + обе стороны комиссии DeDust (0.6%)
+        # Никогда не закрываемся дешевле чем на +20% нетто
+        min_gross_tp = Config.TARGET_NET_PCT + Config.FEE_ROUND_TRIP
+        tp_pct = max(tp_pct, min_gross_tp)
         return sl_pct, tp_pct
 
     def _open_trade(self, side, price, analysis, ai=None):
@@ -243,17 +246,55 @@ class Trader:
             if trade.get("symbol", Config.SYMBOL) != Config.SYMBOL:
                 continue
 
-            # Трейлинг-стоп: поднимаем стоп за ценой
-            trail = trade.get("trail_pct", 0)
-            if trail and price > trade.get("high_water", trade["entry_price"]):
-                trade["high_water"] = price
-                new_sl = self.exchange._round(price * (1 - trail / 100))
-                if new_sl > trade["stop_loss"] and new_sl > trade["entry_price"]:
-                    trade["stop_loss"] = new_sl
-                    self.log(f"🔼 Трейлинг-стоп → {new_sl}", "INFO")
+            entry      = trade["entry_price"]
+            profit_pct = (price - entry) / entry * 100
 
+            # ── Прогрессивный трейлинг-стоп ────────────────────────────────
+            # Этапы активируются по мере роста прибыли:
+            #   >20% → трейл 2%  (фиксируем ≥18% нетто)
+            #   >15% → трейл 4%  (фиксируем ≥11% нетто)
+            #   >10% → трейл 6%  (фиксируем ≥4% нетто)
+            #   >5%  → стоп в безубыток (не теряем деньги)
+            if profit_pct >= Config.TRAIL_STAGE4_AT:
+                trail_pct = Config.TRAIL_STAGE4_PCT
+            elif profit_pct >= Config.TRAIL_STAGE3_AT:
+                trail_pct = Config.TRAIL_STAGE3_PCT
+            elif profit_pct >= Config.TRAIL_STAGE2_AT:
+                trail_pct = Config.TRAIL_STAGE2_PCT
+            else:
+                trail_pct = Config.TRAILING_STOP_PCT   # начальный (7%)
+
+            # Обновляем high_water и стоп
+            if price > trade.get("high_water", entry):
+                trade["high_water"] = price
+
+            high_water = trade.get("high_water", entry)
+            new_sl     = self.exchange._round(high_water * (1 - trail_pct / 100))
+
+            # Безубыток: если прибыль > TRAIL_BREAKEVEN_AT → стоп не ниже цены входа
+            if profit_pct >= Config.TRAIL_BREAKEVEN_AT:
+                breakeven_sl = self.exchange._round(entry * 1.002)  # чуть выше входа (покрывает комиссию)
+                new_sl = max(new_sl, breakeven_sl)
+
+            # Поднимаем стоп только вверх (никогда не опускаем)
+            if new_sl > trade["stop_loss"]:
+                old_sl = trade["stop_loss"]
+                trade["stop_loss"] = new_sl
+                stage_label = (
+                    f"≥{Config.TRAIL_STAGE4_AT:.0f}% (trail {trail_pct}%)" if profit_pct >= Config.TRAIL_STAGE4_AT else
+                    f"≥{Config.TRAIL_STAGE3_AT:.0f}% (trail {trail_pct}%)" if profit_pct >= Config.TRAIL_STAGE3_AT else
+                    f"≥{Config.TRAIL_STAGE2_AT:.0f}% (trail {trail_pct}%)" if profit_pct >= Config.TRAIL_STAGE2_AT else
+                    f"≥{Config.TRAIL_BREAKEVEN_AT:.0f}% → безубыток" if profit_pct >= Config.TRAIL_BREAKEVEN_AT else
+                    f"trail {trail_pct}%"
+                )
+                self.log(
+                    f"🔼 Стоп: {old_sl} → {new_sl} | "
+                    f"прибыль {profit_pct:+.1f}% | {stage_label}", "INFO"
+                )
+
+            # ── Проверка условий закрытия ───────────────────────────────────
             if price <= trade["stop_loss"]:
-                reason = "trailing_stop" if trade["stop_loss"] > trade["entry_price"] else "stop_loss"
+                reason = "trailing_stop" if trade["stop_loss"] > entry else "stop_loss"
                 self._close_trade(trade, price, reason)
             elif price >= trade["take_profit"]:
                 self._close_trade(trade, price, "take_profit")

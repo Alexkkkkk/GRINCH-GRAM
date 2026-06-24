@@ -15,24 +15,38 @@ class Config:
     # С 5.95 TON и торговлей по 3 TON — концентрируемся на одном лучшем входе
     MAX_OPEN_TRADES = int(os.getenv("MAX_OPEN_TRADES", "1"))
 
-    # ── Фиксированные цели (резерв если ATR отключён) ──
-    STOP_LOSS_PCT   = float(os.getenv("STOP_LOSS_PCT",   "3.0"))
-    TAKE_PROFIT_PCT = float(os.getenv("TAKE_PROFIT_PCT", "7.0"))
-
-    # ── Реальная комиссия DeDust DEX — 0.3% за своп с каждой стороны ──
-    # При полном цикле: вход 0.3% + выход 0.3% = 0.6% минимальная прибыль для безубытка
+    # ── Комиссия DeDust DEX ──
+    # 0.3% за каждую сторону: вход 0.3% + выход 0.3% = 0.6% суммарно
     FEE_PCT = float(os.getenv("FEE_PCT", "0.3"))
+    FEE_ROUND_TRIP = FEE_PCT * 2   # = 0.6%
 
-    # ── Трейлинг-стоп: широкий для волатильного GRINCH ──
-    # 2.5% от максимума — фиксирует прибыль, не срабатывает от шума
-    TRAILING_STOP_PCT = float(os.getenv("TRAILING_STOP_PCT", "2.5"))
+    # ── Цели: +20% НЕТТО (после всех комиссий) ──────────────────────────
+    # Gross TP = 20% + 0.6% комиссии = 20.6% от цены входа
+    # Пример: вход 0.000380 TON → выход при 0.000458 TON → чистая прибыль +20%
+    TARGET_NET_PCT  = float(os.getenv("TARGET_NET_PCT",  "20.0"))  # желаемая прибыль
+    TAKE_PROFIT_PCT = float(os.getenv("TAKE_PROFIT_PCT", "20.6"))  # gross = net + fees
+    STOP_LOSS_PCT   = float(os.getenv("STOP_LOSS_PCT",   "5.0"))   # стоп шире → даём дышать до 20%
 
-    # ── ATR-цели: динамические, на основе реальной волатильности ──
+    # ── Прогрессивный трейлинг-стоп (защита прибыли на пути к 20%) ──────
+    # Этап 1 (прибыль > 5%):  поднимаем стоп на уровень безубытка
+    # Этап 2 (прибыль > 10%): трейлинг 6% от максимума → защита минимум +4%
+    # Этап 3 (прибыль > 15%): трейлинг 4% от максимума → защита минимум +11%
+    # Этап 4 (прибыль > 20%): трейлинг 2% от максимума → фиксируем ≥18% нетто
+    TRAIL_BREAKEVEN_AT  = float(os.getenv("TRAIL_BREAKEVEN_AT",  "5.0"))   # % прибыли → стоп в безубыток
+    TRAIL_STAGE2_AT     = float(os.getenv("TRAIL_STAGE2_AT",    "10.0"))   # % → трейлинг 6%
+    TRAIL_STAGE2_PCT    = float(os.getenv("TRAIL_STAGE2_PCT",    "6.0"))
+    TRAIL_STAGE3_AT     = float(os.getenv("TRAIL_STAGE3_AT",    "15.0"))   # % → трейлинг 4%
+    TRAIL_STAGE3_PCT    = float(os.getenv("TRAIL_STAGE3_PCT",    "4.0"))
+    TRAIL_STAGE4_AT     = float(os.getenv("TRAIL_STAGE4_AT",    "20.0"))   # % → трейлинг 2%
+    TRAIL_STAGE4_PCT    = float(os.getenv("TRAIL_STAGE4_PCT",    "2.0"))
+    TRAILING_STOP_PCT   = float(os.getenv("TRAILING_STOP_PCT",   "7.0"))   # начальный трейлинг (до 5%)
+
+    # ── ATR-цели: динамические ────────────────────────────────────────────
     USE_DYNAMIC_TARGETS = os.getenv("USE_DYNAMIC_TARGETS", "true").lower() == "true"
-    # Стоп = 2×ATR — даёт сделке дышать при высокой волатильности GRINCH
-    ATR_SL_MULT = float(os.getenv("ATR_SL_MULT", "2.0"))
-    # Тейк = 4×ATR — соотношение R:R = 1:2 после вычета комиссий
-    ATR_TP_MULT = float(os.getenv("ATR_TP_MULT", "4.0"))
+    # Стоп = 2.5×ATR — шире чем раньше, чтобы сделка дышала до 20%
+    ATR_SL_MULT = float(os.getenv("ATR_SL_MULT", "2.5"))
+    # Тейк = мин 20.6% — ATR×multiplier используется только если он ВЫШЕ 20.6%
+    ATR_TP_MULT = float(os.getenv("ATR_TP_MULT", "8.0"))
 
     # ── Фильтры качества входа ──
     # Не покупать в нисходящем тренде
