@@ -132,11 +132,12 @@ def index():
         init_price   = status.get("analysis", {}).get("price", 0)
         init_running = status.get("running", False)
         init_ai      = status.get("ai", {})
+        init_balance = status.get("balance", {})
     except Exception:
-        init_price, init_running, init_ai = 0, False, {}
+        init_price, init_running, init_ai, init_balance = 0, False, {}, {}
     return render_template("index.html", symbol=Config.SYMBOL, demo=Config.DEMO_MODE,
                            init_price=init_price, init_running=init_running,
-                           init_ai=init_ai)
+                           init_ai=init_ai, init_balance=init_balance)
 
 @app.route("/api/status")
 def api_status():
@@ -160,6 +161,27 @@ def api_ton():
 def api_ton_refresh():
     ton.refresh()
     return jsonify(ton.get_data())
+
+@app.route("/api/ton/price")
+def api_ton_price():
+    import urllib.request, json as _json
+    try:
+        url = "https://api.dexscreener.com/latest/dex/pairs/ton/EQCM3B12QK1e4yZSf8GtBRT0aLMNyEsBc_9Qsof7gbCmkjvi"
+        with urllib.request.urlopen(url, timeout=5) as resp:
+            d = _json.loads(resp.read())
+            price = d.get("pair", {}).get("priceUsd") or d.get("pairs", [{}])[0].get("priceUsd", "0")
+            return jsonify({"price": float(price or 0)})
+    except Exception:
+        pass
+    try:
+        url2 = "https://tonapi.io/v2/rates?tokens=ton&currencies=usd"
+        with urllib.request.urlopen(url2, timeout=5) as resp2:
+            d2 = _json.loads(resp2.read())
+            price2 = d2.get("rates", {}).get("TON", {}).get("prices", {}).get("USD", 0)
+            return jsonify({"price": float(price2 or 0)})
+    except Exception:
+        pass
+    return jsonify({"price": 2.44})
 
 @app.route("/api/coin")
 def api_coin():

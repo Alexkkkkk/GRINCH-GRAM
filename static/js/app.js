@@ -60,8 +60,15 @@ function updateUI(data) {
   if (priceFromAnalysis > 0) {
     const priceEl = document.getElementById("price");
     if (priceEl) priceEl.textContent = fmtPrice(priceFromAnalysis);
+    // Цена в TON (GRINCH/TON)
+    const pitEl = document.getElementById("price-in-ton");
+    if (pitEl && window._tonPriceUsd && window._tonPriceUsd > 0) {
+      const priceTon = priceFromAnalysis / window._tonPriceUsd;
+      pitEl.textContent = priceTon.toFixed(8) + " TON";
+    }
   }
-  document.getElementById("symbol-label").textContent = data.symbol || "GRINCH/USDT";
+  const symLabel = document.getElementById("symbol-label");
+  if (symLabel) symLabel.textContent = data.symbol || "GRINCH/USDT";
 
   // Технический сигнал
   const sig = analysis.signal || "HOLD";
@@ -163,13 +170,37 @@ function updateUI(data) {
   pnlEl.className = "stat-value " + (pnl >= 0 ? "pnl-pos" : "pnl-neg");
   document.getElementById("stat-open").textContent = (data.open_trades || []).length;
 
-  // Баланс
+  // Баланс бота (TON + GRINCH с иконками)
   const bal     = data.balance || {};
   const balList = document.getElementById("balance-list");
-  balList.innerHTML = Object.entries(bal).map(([k, v]) =>
-    `<div class="balance-item"><span class="balance-asset">${k}</span>
-     <span class="balance-amount">${Number(v).toFixed(4)}</span></div>`
-  ).join("") || '<div class="empty-msg">Нет данных</div>';
+  const ASSET_META = {
+    TON:   { cls: "balance-ton", icon: "◆", aCls: "balance-asset-ton" },
+    GRINCH:{ cls: "balance-grn", icon: "🐸", aCls: "balance-asset-grn" },
+  };
+  balList.innerHTML = Object.entries(bal).map(([k, v]) => {
+    const m = ASSET_META[k] || { cls: "", icon: "", aCls: "" };
+    return `<div class="balance-item ${m.cls}">
+      <span class="balance-asset ${m.aCls}">${m.icon} ${k}</span>
+      <span class="balance-amount">${Number(v).toFixed(4)}</span>
+    </div>`;
+  }).join("") || '<div class="empty-msg">Нет данных</div>';
+
+  // Хедер GRINCH баланс (из бота) — хедер TON обновляется через renderTon (трекер)
+  const hdrGrn = document.getElementById("hdr-grn-bal");
+  if (hdrGrn && bal.GRINCH != null) {
+    const grn = Number(bal.GRINCH);
+    hdrGrn.textContent = grn >= 1000 ? (grn/1000).toFixed(1) + "K" : grn.toFixed(0);
+  }
+
+  // wallet card GRINCH баланс (бот)
+  const wbGrn    = document.getElementById("wb-grn-bal");
+  const wbGrnUsd = document.getElementById("wb-grn-usd");
+  if (wbGrn && bal.GRINCH != null) {
+    const grnAmt = Number(bal.GRINCH);
+    wbGrn.textContent = grnAmt.toLocaleString("en-US", {maximumFractionDigits: 0});
+    const grnUsd = grnAmt * (Number(data.analysis?.price) || 0);
+    if (wbGrnUsd) wbGrnUsd.textContent = "≈ $" + grnUsd.toFixed(4);
+  }
 
   renderOpenTrades(data.open_trades  || []);
   renderHistory(data.recent_trades || []);
@@ -187,8 +218,8 @@ function updateUI(data) {
 const _sparkData = [];
 let   _lastAiSignal = null;
 
-// Цвета по сигналу
-const SIG_COLOR = { BUY: "#00d4aa", SELL: "#ff4d6d", HOLD: "#ffd166" };
+// Цвета по сигналу (GRINCH green для BUY)
+const SIG_COLOR = { BUY: "#00ff88", SELL: "#ff4d6d", HOLD: "#ffd166" };
 
 // Цвета режимов
 const REGIME_COLOR = {
@@ -615,8 +646,18 @@ async function copyTon() {
 }
 
 function renderTon(d) {
-  document.getElementById("ton-balance").textContent  = (d.balance ?? 0).toFixed(4) + " TON";
-  document.getElementById("ton-received").textContent = (d.total_received ?? 0).toFixed(4) + " TON";
+  // Обновляем wallet card балансы из трекера
+  const wbTon = document.getElementById("wb-ton-bal");
+  const wbTonUsd = document.getElementById("wb-ton-usd");
+  const hdrTon = document.getElementById("hdr-ton-bal");
+  if (d.balance != null) {
+    const tonBal = Number(d.balance);
+    if (wbTon) wbTon.textContent = tonBal.toFixed(4);
+    if (hdrTon) hdrTon.textContent = tonBal.toFixed(2);
+    if (wbTonUsd && window._tonPriceUsd) {
+      wbTonUsd.textContent = "≈ $" + (tonBal * window._tonPriceUsd).toFixed(2);
+    }
+  }
   const errEl = document.getElementById("ton-error");
   if (d.last_error) { errEl.style.display = ""; errEl.textContent = "⚠ " + d.last_error; }
   else { errEl.style.display = "none"; }
@@ -625,16 +666,14 @@ function renderTon(d) {
     box.innerHTML = '<div class="ton-empty">Поступлений пока нет</div>';
     return;
   }
-  box.innerHTML = d.deposits.map(dep => {
+  box.innerHTML = d.deposits.slice(0, 15).map(dep => {
     const dt = dep.time ? new Date(dep.time * 1000).toLocaleString("ru-RU", {day:"2-digit",month:"2-digit",hour:"2-digit",minute:"2-digit"}) : "";
-    const cm = dep.comment ? `<div class="ton-dep-comment">💬 ${escapeHtml(dep.comment)}</div>` : "";
     return `<div class="ton-dep">
       <div class="ton-dep-top">
         <span class="ton-dep-amount">+${dep.amount} TON</span>
         <span class="ton-dep-time">${dt}</span>
       </div>
       <div class="ton-dep-from">от ${escapeHtml(dep.from_short || "")}</div>
-      ${cm}
     </div>`;
   }).join("");
 }
@@ -647,10 +686,19 @@ async function loadTon() {
   try { const r = await fetch("/api/ton"); renderTon(await r.json()); } catch (e) {}
 }
 async function refreshTon() {
-  const btn = document.querySelector(".btn-ton-refresh");
+  const btn = document.querySelector(".btn-wallet-refresh");
   if (btn) btn.classList.add("spin");
   try { const r = await fetch("/api/ton/refresh", { method: "POST" }); renderTon(await r.json()); } catch (e) {}
   if (btn) setTimeout(() => btn.classList.remove("spin"), 600);
+}
+// Загружаем цену TON/USDT через серверный прокси (без CORS)
+async function loadTonPrice() {
+  try {
+    const r = await fetch("/api/ton/price");
+    const d = await r.json();
+    if (d?.price > 0) { window._tonPriceUsd = d.price; return; }
+  } catch (_) {}
+  window._tonPriceUsd = window._tonPriceUsd || 2.44;
 }
 
 function fmtBig(n) {
@@ -768,11 +816,13 @@ async function loadExchanges() {
   } catch (e) {}
 }
 
+// Сначала цена TON, затем wallet (чтобы USD значения показались сразу)
+loadTonPrice().then(() => loadTon());
 loadConfig();
-loadTon();
 loadCoin();
 loadDexTrades();
 loadExchanges();
+setInterval(() => loadTonPrice().then(() => loadTon()), 120000);
 setInterval(loadTon, 30000);
 setInterval(loadCoin, 20000);
 setInterval(loadDexTrades, 15000);

@@ -3,33 +3,64 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>GRINCH-GRAM — Торговый агент</title>
+<title>GRINCH-GRAM — TON × GRINCH Торговый агент</title>
 <link rel="stylesheet" href="/static/css/style.css?v={{ range(1,9999)|random }}">
 </head>
 <body>
 <div class="app">
+
+  <!-- ═══════════════════════════ HEADER ═══════════════════════════ -->
   <header class="header">
     <div class="header-left">
-      <span class="logo">🤖 GRINCH-GRAM</span>
+      <!-- Логотип -->
+      <div class="logo">
+        <span class="logo-ton">◆</span>
+        <span class="logo-x">×</span>
+        <span class="logo-grn">🐸</span>
+        <span class="logo-txt">GRINCH-GRAM</span>
+      </div>
       <span id="demo-badge" class="badge badge-demo" {% if not demo %}style="display:none"{% endif %}>ДЕМО</span>
-      <span id="status-badge" class="badge {{ 'badge-running' if init_running else 'badge-stopped' }}">{{ 'РАБОТАЕТ' if init_running else 'ОСТАНОВЛЕН' }}</span>
+      <span id="status-badge" class="badge {{ 'badge-running' if init_running else 'badge-stopped' }}">
+        {{ 'РАБОТАЕТ' if init_running else 'ОСТАНОВЛЕН' }}
+      </span>
     </div>
+
+    <!-- Живые балансы в центре хедера -->
+    <div class="header-mid">
+      <div class="hdr-bal hdr-bal-ton">
+        <span class="hdr-bal-icon">◆</span>
+        <span class="hdr-bal-val" id="hdr-ton-bal">{{ "%.2f"|format(init_balance.get('TON', 0)) if init_balance.get('TON') else '—' }}</span>
+        <span class="hdr-bal-sym">TON</span>
+      </div>
+      <div class="hdr-bal hdr-bal-grn">
+        <span class="hdr-bal-icon">🐸</span>
+        <span class="hdr-bal-val" id="hdr-grn-bal">{{ "%.0f"|format(init_balance.get('GRINCH', 0)) if init_balance.get('GRINCH') is not none else '0' }}</span>
+        <span class="hdr-bal-sym">GRINCH</span>
+      </div>
+      <div class="symbol-label" id="symbol-label">TON/GRINCH</div>
+    </div>
+
     <div class="header-right">
-      <span class="symbol-label" id="symbol-label">BTC/USDT</span>
       <button id="btn-start" class="btn btn-green" onclick="startAgent()" {% if init_running %}style="display:none"{% endif %}>▶ Запустить</button>
-      <button id="btn-stop" class="btn btn-red" onclick="stopAgent()" {% if not init_running %}style="display:none"{% endif %}>⏹ Остановить</button>
+      <button id="btn-stop"  class="btn btn-red"   onclick="stopAgent()"  {% if not init_running %}style="display:none"{% endif %}>⏹ Остановить</button>
     </div>
   </header>
 
   <div class="main-grid">
-    <!-- Левая колонка -->
+
+    <!-- ═══════════════════════════ ЛЕВАЯ КОЛОНКА ═══════════════════════════ -->
     <div class="col-left">
-      <!-- Цена + сигналы -->
-      <div class="card">
+
+      <!-- GRINCH Цена hero -->
+      <div class="card grinch-hero">
         <div class="price-row">
           <div>
-            <div class="label">Цена <span class="live-dot" title="В реальном времени"></span></div>
+            <div class="label">
+              <span class="live-dot" title="В реальном времени"></span>
+              Цена GRINCH
+            </div>
             <div class="price" id="price">{% if init_price and init_price > 0 %}{{ "${:,.8f}".format(init_price).rstrip('0').rstrip('.') }}{% else %}$0.00{% endif %}</div>
+            <div class="price-in-ton" id="price-in-ton">— TON</div>
             <div class="price-change" id="price-change">0.00%</div>
           </div>
           <div style="display:flex;flex-direction:column;gap:6px;align-items:flex-end">
@@ -45,22 +76,22 @@
         </div>
       </div>
 
-      <!-- Карточка монеты -->
+      <!-- GRINCH токен — детали -->
       <div class="card coin-card">
-        <div class="card-title">📊 О монете
+        <div class="card-title">🐸 GRINCH Токен
           <span id="coin-source" class="coin-source"></span>
+          <a id="coin-link" class="coin-link" href="#" target="_blank" rel="noopener" style="display:none;margin-left:auto">↗</a>
         </div>
         <div class="coin-head">
           <img id="coin-img" class="coin-img" alt="" style="display:none">
           <div>
-            <div class="coin-name" id="coin-name">—</div>
-            <div class="coin-sym" id="coin-sym">—</div>
+            <div class="coin-name" id="coin-name">Pepe Grinch</div>
+            <div class="coin-sym" id="coin-sym">GRINCH</div>
           </div>
-          <a id="coin-link" class="coin-link" href="#" target="_blank" rel="noopener" style="display:none">↗</a>
         </div>
         <div class="coin-stats">
-          <div class="coin-stat"><div class="cs-label">Цена</div><div class="cs-val" id="coin-price">—</div></div>
-          <div class="coin-stat"><div class="cs-label">24ч</div><div class="cs-val" id="coin-change">—</div></div>
+          <div class="coin-stat"><div class="cs-label">Цена USDT</div><div class="cs-val" id="coin-price">—</div></div>
+          <div class="coin-stat"><div class="cs-label">24ч изм.</div><div class="cs-val" id="coin-change">—</div></div>
           <div class="coin-stat"><div class="cs-label">Объём 24ч</div><div class="cs-val" id="coin-vol">—</div></div>
           <div class="coin-stat"><div class="cs-label">Ликвидность</div><div class="cs-val" id="coin-liq">—</div></div>
           <div class="coin-stat"><div class="cs-label">Капитализация</div><div class="cs-val" id="coin-mcap">—</div></div>
@@ -68,9 +99,9 @@
         </div>
       </div>
 
-      <!-- Цены на биржах -->
+      <!-- Цены на биржах (DEX/CEX) -->
       <div class="card exch-card">
-        <div class="card-title">🌐 Цены на биржах
+        <div class="card-title">◆ TON DEX / Биржи
           <span id="exch-count" class="coin-source"></span>
         </div>
         <div class="exch-ai" id="exch-ai" style="display:none">
@@ -80,7 +111,7 @@
           </div>
           <div class="exch-ai-note" id="exch-note"></div>
           <div class="exch-ai-avg">
-            <span>Средняя цена (AI): <b id="exch-avg">—</b></span>
+            <span>Средняя цена: <b id="exch-avg">—</b></span>
           </div>
           <div class="exch-best">
             <span class="pos">Дешевле: <b id="exch-buy">—</b></span>
@@ -92,7 +123,7 @@
         </div>
       </div>
 
-      <!-- Уровни S/R -->
+      <!-- S/R Уровни -->
       <div class="card">
         <div class="card-title">📐 Уровни поддержки / сопротивления</div>
         <div class="sr-grid">
@@ -101,13 +132,13 @@
             <div id="sr-res" class="sr-list"></div>
           </div>
           <div>
-            <div class="sr-label" style="color:#00d4aa">🟢 Поддержка</div>
+            <div class="sr-label" style="color:#00ff88">🟢 Поддержка</div>
             <div id="sr-sup" class="sr-list"></div>
           </div>
         </div>
       </div>
 
-      <!-- Скрытые элементы для совместимости JS (не видны) -->
+      <!-- Скрытые элементы совместимости -->
       <div style="display:none">
         <span id="ai-trained-badge"></span>
         <div id="bar-up"></div><div id="bar-hold"></div><div id="bar-down"></div>
@@ -117,13 +148,11 @@
       </div>
     </div>
 
-    <!-- Средняя колонка -->
+    <!-- ═══════════════════════════ СРЕДНЯЯ КОЛОНКА ═══════════════════════════ -->
     <div class="col-mid">
 
-      <!-- ═══════════ AI COMMAND CENTER ═══════════ -->
+      <!-- AI COMMAND CENTER -->
       <div class="card ai-command">
-
-        <!-- Шапка -->
         <div class="ai-cc-head">
           <div style="display:flex;align-items:center;gap:8px">
             <span class="ai-cc-title">🧠 AI Command Center</span>
@@ -135,36 +164,23 @@
           </div>
         </div>
 
-        <!-- Основной блок: Gauge | Decision | VProbs -->
         <div class="ai-cc-body">
-
-          <!-- SVG Gauge уверенности -->
+          <!-- SVG Gauge -->
           <div class="ai-gauge-panel">
             <svg id="ai-gauge" viewBox="0 0 120 110" width="120" height="110">
-              <!-- Задний фон дуги -->
-              <circle cx="60" cy="65" r="48"
-                fill="none" stroke="#1c2030" stroke-width="10"
-                stroke-dasharray="226 302" stroke-linecap="round"
-                transform="rotate(-225 60 65)"/>
-              <!-- Цветная дуга значения -->
-              <circle id="gauge-fill" cx="60" cy="65" r="48"
-                fill="none" stroke="#ffd166" stroke-width="10"
-                stroke-dasharray="0 302" stroke-linecap="round"
-                transform="rotate(-225 60 65)"/>
-              <!-- Центр: процент -->
-              <text id="gauge-pct" x="60" y="60"
-                text-anchor="middle" font-size="22" font-weight="800"
+              <circle cx="60" cy="65" r="48" fill="none" stroke="#1c2030" stroke-width="10"
+                stroke-dasharray="226 302" stroke-linecap="round" transform="rotate(-225 60 65)"/>
+              <circle id="gauge-fill" cx="60" cy="65" r="48" fill="none" stroke="#ffd166" stroke-width="10"
+                stroke-dasharray="0 302" stroke-linecap="round" transform="rotate(-225 60 65)"/>
+              <text id="gauge-pct" x="60" y="60" text-anchor="middle" font-size="22" font-weight="800"
                 font-family="monospace" fill="#ffd166">0%</text>
-              <!-- Центр: сигнал -->
-              <text id="gauge-sig" x="60" y="77"
-                text-anchor="middle" font-size="10" font-weight="700"
-                font-family="'Segoe UI',sans-serif" fill="#8892b0"
-                letter-spacing="1">HOLD</text>
+              <text id="gauge-sig" x="60" y="77" text-anchor="middle" font-size="10" font-weight="700"
+                font-family="'Segoe UI',sans-serif" fill="#7888a8" letter-spacing="1">HOLD</text>
             </svg>
             <div class="ai-gauge-lbl">Уверенность</div>
           </div>
 
-          <!-- Решение и статус -->
+          <!-- Решение -->
           <div class="ai-decision-panel">
             <div id="ai-decision-signal" class="ai-decision-signal ai-ds-HOLD">HOLD</div>
             <div id="ai-decision-why" class="ai-decision-why">Инициализация…</div>
@@ -174,34 +190,27 @@
             <div id="ai-regime-chip" class="ai-regime-chip">—</div>
           </div>
 
-          <!-- Вертикальные столбцы вероятностей -->
+          <!-- Вертикальные вероятности -->
           <div class="ai-vprobs">
             <div class="ai-vprob-col">
-              <div class="ai-vprob-track">
-                <div id="vpb-up" class="ai-vprob-bar vp-up" style="height:0%"></div>
-              </div>
+              <div class="ai-vprob-track"><div id="vpb-up" class="ai-vprob-bar vp-up" style="height:0%"></div></div>
               <div class="ai-vprob-lbl ai-vp-up">▲</div>
               <div class="ai-vprob-val" id="vpv-up">0%</div>
             </div>
             <div class="ai-vprob-col">
-              <div class="ai-vprob-track">
-                <div id="vpb-hold" class="ai-vprob-bar vp-hold" style="height:0%"></div>
-              </div>
+              <div class="ai-vprob-track"><div id="vpb-hold" class="ai-vprob-bar vp-hold" style="height:0%"></div></div>
               <div class="ai-vprob-lbl ai-vp-hold">◆</div>
               <div class="ai-vprob-val" id="vpv-hold">0%</div>
             </div>
             <div class="ai-vprob-col">
-              <div class="ai-vprob-track">
-                <div id="vpb-down" class="ai-vprob-bar vp-down" style="height:0%"></div>
-              </div>
+              <div class="ai-vprob-track"><div id="vpb-down" class="ai-vprob-bar vp-down" style="height:0%"></div></div>
               <div class="ai-vprob-lbl ai-vp-down">▼</div>
               <div class="ai-vprob-val" id="vpv-down">0%</div>
             </div>
           </div>
+        </div>
 
-        </div><!-- /ai-cc-body -->
-
-        <!-- Режим рынка — баннер -->
+        <!-- Режим рынка -->
         <div id="ai-regime-banner" class="ai-regime-banner">
           <span id="ai-rb-icon" class="ai-rb-icon">📊</span>
           <div class="ai-rb-center">
@@ -220,7 +229,7 @@
           </div>
         </div>
 
-        <!-- Sparkline истории уверенности -->
+        <!-- Sparkline -->
         <div class="ai-spark-section">
           <div class="ai-spark-header">
             <span class="ai-spark-lbl">История уверенности AI</span>
@@ -229,22 +238,13 @@
           <canvas id="ai-sparkline" height="40"></canvas>
         </div>
 
-        <!-- Прогноз (мини) -->
+        <!-- Прогноз -->
         <div class="ai-forecast-row">
           <div class="ai-fc-label">🔮 Прогноз:</div>
           <div class="ai-fc-items">
-            <div class="ai-fc-item">
-              <div class="ai-fc-t">+1</div>
-              <div id="fc-t1" class="fc-val">—</div>
-            </div>
-            <div class="ai-fc-item">
-              <div class="ai-fc-t">+2</div>
-              <div id="fc-t2" class="fc-val">—</div>
-            </div>
-            <div class="ai-fc-item">
-              <div class="ai-fc-t">+3</div>
-              <div id="fc-t3" class="fc-val">—</div>
-            </div>
+            <div class="ai-fc-item"><div class="ai-fc-t">+1</div><div id="fc-t1" class="fc-val">—</div></div>
+            <div class="ai-fc-item"><div class="ai-fc-t">+2</div><div id="fc-t2" class="fc-val">—</div></div>
+            <div class="ai-fc-item"><div class="ai-fc-t">+3</div><div id="fc-t3" class="fc-val">—</div></div>
           </div>
           <div id="fc-range" class="ai-fc-range">—</div>
         </div>
@@ -254,12 +254,11 @@
           <span class="ai-anom-pulse"></span>
           ⚡ АНОМАЛИЯ: <span id="ai-anomaly-text">—</span>
         </div>
+      </div>
 
-      </div><!-- /ai-command -->
-
-      <!-- Паттерны свечей -->
+      <!-- Паттерны -->
       <div class="card">
-        <div class="card-title">🕯️ Паттерны свечей</div>
+        <div class="card-title">🕯️ Паттерны свечей GRINCH</div>
         <div id="patterns-list" class="patterns-list">
           <div class="empty-msg">Паттерны не обнаружены</div>
         </div>
@@ -286,9 +285,9 @@
         </div>
       </div>
 
-      <!-- Лента сделок на DEX -->
+      <!-- DEX сделки -->
       <div class="card">
-        <div class="card-title">💱 Сделки на DEX
+        <div class="card-title">💱 Сделки GRINCH на DeDust
           <span id="trades-note" class="coin-source"></span>
         </div>
         <div id="dex-trades" class="dex-trades">
@@ -298,7 +297,7 @@
 
       <!-- Открытые сделки -->
       <div class="card">
-        <div class="card-title">🟢 Открытые сделки</div>
+        <div class="card-title">🟢 Открытые сделки TON↔GRINCH</div>
         <div id="open-trades-list" class="trades-list">
           <div class="empty-msg">Нет открытых сделок</div>
         </div>
@@ -313,11 +312,51 @@
       </div>
     </div>
 
-    <!-- Правая колонка -->
+    <!-- ═══════════════════════════ ПРАВАЯ КОЛОНКА ═══════════════════════════ -->
     <div class="col-right">
-      <!-- Статистика -->
+
+      <!-- ═══ TON + GRINCH КОШЕЛЁК (главная карта) ═══ -->
+      <div class="card wallet-card">
+        <div class="wallet-title">
+          ◆ TON × 🐸 GRINCH Кошелёк
+          <button class="btn-wallet-refresh" onclick="refreshTon()" title="Обновить">⟳</button>
+        </div>
+
+        <!-- Балансы -->
+        <div class="wallet-balances">
+          <div class="wb-item wb-ton">
+            <div class="wb-icon">◆</div>
+            <div class="wb-label">TON</div>
+            <div class="wb-amount" id="wb-ton-bal">—</div>
+            <div class="wb-usd" id="wb-ton-usd">≈ $—</div>
+          </div>
+          <div class="wb-item wb-grn">
+            <div class="wb-icon">🐸</div>
+            <div class="wb-label">GRINCH</div>
+            <div class="wb-amount" id="wb-grn-bal">—</div>
+            <div class="wb-usd" id="wb-grn-usd">≈ $—</div>
+          </div>
+        </div>
+
+        <!-- Адрес -->
+        <div class="wallet-section-lbl">◆ Адрес TON кошелька</div>
+        <div class="wallet-addr-row">
+          <code id="ton-addr" class="wallet-addr">—</code>
+          <button class="btn-wallet-copy" onclick="copyTon()">📋</button>
+        </div>
+        <div id="ton-copied" class="wallet-copied" style="display:none">✓ Скопировано!</div>
+
+        <!-- Поступления -->
+        <div class="ton-deposits-title">◆ Последние поступления TON</div>
+        <div id="ton-deposits" class="ton-deposits">
+          <div class="ton-empty">Загрузка…</div>
+        </div>
+        <div id="ton-error" class="ton-error" style="display:none"></div>
+      </div>
+
+      <!-- Статистика бота -->
       <div class="card">
-        <div class="card-title">📈 Статистика</div>
+        <div class="card-title">📈 Статистика торговли</div>
         <div class="stats-grid">
           <div class="stat-item"><div class="stat-label">Всего сделок</div><div class="stat-value" id="stat-total">0</div></div>
           <div class="stat-item"><div class="stat-label">Winrate</div><div class="stat-value" id="stat-winrate">0%</div></div>
@@ -326,49 +365,20 @@
         </div>
       </div>
 
-      <!-- Баланс -->
+      <!-- Баланс бота (TON/GRINCH) -->
       <div class="card">
-        <div class="card-title">💰 Баланс</div>
+        <div class="card-title">💰 Баланс бота</div>
         <div id="balance-list" class="balance-list"></div>
-      </div>
-
-      <!-- TON Кошелёк -->
-      <div class="card ton-card">
-        <div class="card-title">💎 TON Кошелёк
-          <span class="badge" style="background:#0a2540;color:#0098ea;font-size:10px;margin-left:6px">TON</span>
-          <button class="btn-ton-refresh" onclick="refreshTon()" title="Обновить">⟳</button>
-        </div>
-        <div class="ton-stats">
-          <div class="ton-stat">
-            <div class="ton-stat-label">Баланс</div>
-            <div class="ton-stat-value" id="ton-balance">—</div>
-          </div>
-          <div class="ton-stat">
-            <div class="ton-stat-label">Поступило</div>
-            <div class="ton-stat-value" id="ton-received">—</div>
-          </div>
-        </div>
-        <div class="ton-desc">Пополни бота, отправив TON на адрес:</div>
-        <div class="ton-addr-row">
-          <code id="ton-addr" class="ton-addr">—</code>
-          <button class="btn-ton-copy" onclick="copyTon()">📋</button>
-        </div>
-        <div id="ton-copied" class="ton-copied" style="display:none">✓ Скопировано!</div>
-        <div class="ton-deposits-title">Последние поступления</div>
-        <div id="ton-deposits" class="ton-deposits">
-          <div class="ton-empty">Загрузка…</div>
-        </div>
-        <div id="ton-error" class="ton-error" style="display:none"></div>
       </div>
 
       <!-- Настройки -->
       <div class="card">
-        <div class="card-title">⚙️ Настройки</div>
+        <div class="card-title">⚙️ Настройки торговли</div>
         <div class="settings-form">
           <label>Пара
             <select id="cfg-symbol" onchange="switchPair(this.value)">
-              <option value="GRINCH/USDT">GRINCH/USDT 🎄</option>
-              <option value="TON/USDT">TON/USDT 💎</option>
+              <option value="GRINCH/USDT">GRINCH/USDT 🐸</option>
+              <option value="TON/USDT">TON/USDT ◆</option>
             </select>
           </label>
           <label>Сумма сделки (TON)<input type="number" id="cfg-amount" value="2" min="0.1" step="0.1"></label>
@@ -381,13 +391,13 @@
           <label class="cfg-check"><input type="checkbox" id="cfg-dyn" checked> Динамические цели по ATR</label>
           <label class="cfg-check"><input type="checkbox" id="cfg-trend" checked> Не покупать в нисходящем тренде</label>
           <button class="btn btn-blue" onclick="saveConfig()">💾 Сохранить</button>
-          <div class="cfg-note">⚠️ Реальный DEX: каждая сделка — реальная транзакция в блокчейне TON. Комиссия DeDust ~0.3% за своп.</div>
+          <div class="cfg-note">◆ Реальный DEX DeDust: каждая сделка — реальная транзакция в блокчейне TON. Комиссия ~0.3% за своп TON↔GRINCH.</div>
         </div>
       </div>
 
       <!-- Логи -->
       <div class="card">
-        <div class="card-title">📝 Логи <button class="btn-tiny" onclick="clearLogs()">Очистить</button></div>
+        <div class="card-title">📝 Логи бота <button class="btn-tiny" onclick="clearLogs()">Очистить</button></div>
         <div id="log-container" class="log-container"></div>
       </div>
     </div>
@@ -398,7 +408,6 @@
 <script>
   window._socketio_path = "/socket.io";
   window._socketio_url  = window.location.origin;
-  // Серверные данные для мгновенной инициализации AI (до первого REST-поллинга)
   window._initAI = {{ init_ai | tojson | safe }};
 </script>
 <script src="/static/js/app.js?v={{ range(1,9999)|random }}"></script>
