@@ -107,14 +107,21 @@ class Trader:
 
         blocked = None
         if final_signal == "BUY":
+            hard_override = conf >= Config.AI_HARD_OVERRIDE_CONFIDENCE
             if Config.TREND_FILTER and regime_name == "DOWNTREND":
+                # DOWNTREND блокирует всегда — не воевать с макро-трендом
                 blocked = "нисходящий тренд"
-            elif rsi >= Config.RSI_OVERBOUGHT:
-                blocked = f"перекупленность RSI={rsi}"
             elif conf < Config.MIN_AI_CONFIDENCE:
                 blocked = f"низкая уверенность AI {conf}%"
+            elif hard_override:
+                # При ≥93% уверенности AI — игнорируем RSI и аномалию
+                # Для GRINCH памп = возможность, а не риск
+                if anomaly:
+                    self.log(f"🔥 Hard Override: AI {conf}% > {Config.AI_HARD_OVERRIDE_CONFIDENCE}% — входим несмотря на аномалию Z={ai['anomaly']['z_price']}", "INFO")
+            elif rsi >= Config.RSI_OVERBOUGHT:
+                blocked = f"перекупленность RSI={rsi:.1f}"
             elif anomaly:
-                blocked = "рыночная аномалия"
+                blocked = f"рыночная аномалия Z={ai['anomaly']['z_price']:.2f}"
 
         self.log(
             f"📊 RSI={rsi} | {regime_name} | "

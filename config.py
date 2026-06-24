@@ -37,12 +37,14 @@ class Config:
     # ── Фильтры качества входа ──
     # Не покупать в нисходящем тренде
     TREND_FILTER = os.getenv("TREND_FILTER", "true").lower() == "true"
-    # RSI 68 — не покупать у перегрева (строже чем 72)
-    RSI_OVERBOUGHT = float(os.getenv("RSI_OVERBOUGHT", "68"))
+    # RSI 78 — для мем-монеты GRINCH RSI 68-75 это норма в памп; блокируем только экстремум
+    RSI_OVERBOUGHT = float(os.getenv("RSI_OVERBOUGHT", "78"))
     # AI уверенность мин 62% — только высококонвикционные сигналы
     MIN_AI_CONFIDENCE = float(os.getenv("MIN_AI_CONFIDENCE", "62"))
     # AI-овверрайд только при 78%+ — очень сильный сигнал против тренда
     AI_OVERRIDE_CONFIDENCE = float(os.getenv("AI_OVERRIDE_CONFIDENCE", "78"))
+    # AI жёсткий овверрайд: при ≥93% уверенности игнорируем RSI/аномалию (только DOWNTREND блокирует)
+    AI_HARD_OVERRIDE_CONFIDENCE = float(os.getenv("AI_HARD_OVERRIDE_CONFIDENCE", "93"))
 
     DEMO_MODE  = os.getenv("DEMO_MODE",  "false").lower() == "true"
     SECRET_KEY = os.getenv("SECRET_KEY", "grinch-gram-secret-2024")
