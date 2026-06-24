@@ -7,11 +7,30 @@
 import threading
 import time
 import logging
+import urllib.parse
 from datetime import datetime
 from config import Config
 from price_feed import price_feed
 
 log = logging.getLogger(__name__)
+
+
+def _addresses_match(a: str, b: str) -> bool:
+    """
+    Сравниваем два TON-адреса нечувствительно к формату (EQ/UQ/raw 0:...).
+    TonAPI возвращает raw-формат (0:abc...), Config хранит EQ-формат.
+    Достаточно сравнить hex-часть (после ':') нижним регистром.
+    """
+    def _hex(addr: str) -> str:
+        addr = addr.strip()
+        if ":" in addr:
+            return addr.split(":", 1)[1].lower()
+        # EQ/UQ base64url → просто нормализуем
+        return addr.lower().replace("-", "+").replace("_", "/")
+    try:
+        return _hex(a) == _hex(b)
+    except Exception:
+        return a.strip().lower() == b.strip().lower()
 
 MIN_GRINCH_TO_SELL = 0.5    # меньше этого — не стоит тратить 0.6 TON на газ
 BAL_CHECK_INTERVAL = 150    # секунд между on-chain запросами баланса
@@ -123,11 +142,52 @@ class GrinchLiquidator:
 
     # ── Получение баланса ────────────────────────────────────────────────────
 
+    def _fetch_grinch_balance_http(self) -> float:
+        """
+        Получаем GRINCH баланс через TonAPI HTTP (без pytoniq/liteserver).
+        Надёжнее — не зависит от liteserver sync, нет ошибок 651.
+        """
+        import urllib.request, json as _json
+        wallet = Config.TON_WALLET
+        token  = Config.GRINCH_TOKEN_ADDRESS
+        # TonAPI v2: все жеттоны аккаунта
+        url = f"https://tonapi.io/v2/accounts/{wallet}/jettons"
+        try:
+            req = urllib.request.Request(url, headers={"Accept": "application/json"})
+            with urllib.request.urlopen(req, timeout=10) as r:
+                data = _json.loads(r.read())
+            balances = data.get("balances", [])
+            for item in balances:
+                master = (item.get("jetton", {}) or {}).get("address", "")
+                # TonAPI возвращает адрес в raw (0:...) или friendly форме
+                # GRINCH_TOKEN_ADDRESS начинается с EQ — конвертируем для сравнения
+                if _addresses_match(master, token):
+                    raw = item.get("balance", "0")
+                    return float(raw) / (10 ** 9)
+        except Exception as e:
+            self._log(f"TonAPI jetton balance ошибка: {e}", "WARN")
+
+        # Запасной вариант: TonCenter v3
+        try:
+            url2 = (
+                f"https://toncenter.com/api/v3/jetton/wallets"
+                f"?owner_address={urllib.parse.quote(wallet)}"
+                f"&jetton_address={urllib.parse.quote(token)}&limit=1"
+            )
+            req2 = urllib.request.Request(url2, headers={"Accept": "application/json"})
+            with urllib.request.urlopen(req2, timeout=10) as r2:
+                d2 = _json.loads(r2.read())
+            wallets = d2.get("jetton_wallets", [])
+            if wallets:
+                return float(wallets[0].get("balance", 0)) / (10 ** 9)
+        except Exception as e2:
+            self._log(f"TonCenter v3 jetton balance ошибка: {e2}", "WARN")
+
+        return 0.0
+
     def _refresh_balance(self):
         try:
-            from dedust_client import dedust_client
-            bal    = dedust_client.get_balance()
-            grinch = float(bal.get("GRINCH", 0.0))
+            grinch = self._fetch_grinch_balance_http()
 
             with self._lock:
                 old = self._grinch_bal
@@ -135,37 +195,30 @@ class GrinchLiquidator:
 
                 if grinch >= MIN_GRINCH_TO_SELL:
                     if self._ref_price is None:
-                        # Первое обнаружение — фиксируем опорную цену
                         ref = price_feed.get("GRINCH") or 0.0
                         if ref > 0:
                             self._ref_price = ref
                             self._ref_time  = datetime.utcnow().isoformat()
                             target = ref * (1 + self.sell_rise_pct / 100)
                             self._log(
-                                f"💰 Найдено {grinch:.4f} GRINCH на кошельке | "
-                                f"Опорная цена: ${ref:.8f} | "
-                                f"Продам при: ${target:.8f} (+{self.sell_rise_pct}%)"
+                                f"💰 Найдено {grinch:.4f} GRINCH | "
+                                f"Опорная: ${ref:.8f} | "
+                                f"Цель: ${target:.8f} (+{self.sell_rise_pct}%)"
                             )
-                    else:
-                        # Баланс обновился (например пришло ещё)
-                        if abs(grinch - old) > 0.01:
-                            self._log(
-                                f"🔄 Баланс GRINCH: {old:.4f} → {grinch:.4f} | "
-                                f"Опорная цена: ${self._ref_price:.8f}"
-                            )
+                    elif abs(grinch - old) > 0.01:
+                        self._log(
+                            f"🔄 Баланс: {old:.4f} → {grinch:.4f} GRINCH | "
+                            f"Опорная: ${self._ref_price:.8f}"
+                        )
                 elif grinch < 0.01 and old >= MIN_GRINCH_TO_SELL:
-                    # GRINCH продан / ушёл
-                    self._log(f"✅ GRINCH сброшен ({old:.4f} → {grinch:.4f})")
+                    self._log(f"✅ GRINCH продан ({old:.4f} → {grinch:.4f})")
                     self._ref_price = None
                     self._ref_time  = None
                 else:
-                    self._log(
-                        f"📊 On-chain GRINCH: {grinch:.4f} "
-                        f"({'≥' if grinch >= MIN_GRINCH_TO_SELL else '<'} мин. {MIN_GRINCH_TO_SELL})"
-                    )
+                    self._log(f"📊 GRINCH on-chain: {grinch:.4f}")
 
         except Exception as e:
-            self._log(f"Ошибка получения баланса: {e}", "WARN")
+            self._log(f"Ошибка обновления баланса: {e}", "WARN")
 
     # ── Проверка цены и продажа ──────────────────────────────────────────────
 
