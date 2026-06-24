@@ -267,6 +267,26 @@ class DedustClient:
             gas_nano = int(0.6 * TON)
             fwd_nano = int(0.35 * TON)
 
+            # ── Preflight: хватает ли TON на газ? ──────────────────────────
+            # Своп-сообщение несёт gas_nano TON и форвардит fwd_nano в vault.
+            # Если на кошельке меньше газа, транзакция уйдёт, но своп внутри
+            # vault упадёт (нечем оплатить forward) → GRINCH вернётся, газ сгорит.
+            state = await provider.get_account_state(wallet.address)
+            ton_nano = getattr(state, "balance", 0) or 0
+            needed_nano = gas_nano + int(0.05 * TON)  # газ + запас на комиссии сети
+            if ton_nano < needed_nano:
+                return {
+                    "ok": False,
+                    "side": "sell",
+                    "error": (
+                        f"Недостаточно TON для газа: на кошельке "
+                        f"{ton_nano / TON:.3f} TON, нужно ≥ {needed_nano / TON:.2f} TON. "
+                        f"Пополните кошелёк TON, чтобы продать GRINCH."
+                    ),
+                    "need_ton": round(needed_nano / TON, 2),
+                    "have_ton": round(ton_nano / TON, 3),
+                }
+
             swap_params = SwapParams(
                 deadline=int(time.time()) + 600,   # 10 мин (было 5)
                 recipient_address=wallet.address,
