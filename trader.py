@@ -314,6 +314,12 @@ class Trader:
         self.open_trades.append(trade)
         self.trades.append(dict(trade))
         self.stats["total_trades"] += 1
+        # АВТО-СОХРАНЕНИЕ: цена покупки + цель продажи на диск, чтобы после
+        # перезапуска бот знал почём купил и не продал дешевле.
+        try:
+            self.exp.save_open_trades(self.open_trades)
+        except Exception as e:  # noqa: BLE001
+            self.log(f"Сохранение позиции: {e}", "WARN")
         self.log(
             f"🟢 BUY @ {price} | {stake:.3f} TON | SL={sl}(-{sl_pct:.1f}%) | "
             f"TP={tp}(+{tp_pct:.1f}%) | AI={ai_conf}%", "BUY"
@@ -523,6 +529,7 @@ class Trader:
 
         # ── 4. Память + само-управление ИИ ───────────────────────────────
         try:
+            self.exp.save_open_trades(self.open_trades)   # позиция закрыта → обновляем диск
             self.exp.record_trade(trade, self.stats, self.ai)
             from price_feed import price_feed
             self.exp.record_balance(

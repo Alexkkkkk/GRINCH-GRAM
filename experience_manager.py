@@ -51,11 +51,12 @@ class ExperienceManager:
         self.data = {
             "version": 1,
             "created": datetime.utcnow().isoformat(),
-            "trades":  [],   # журнал закрытых сделок
-            "equity":  [],   # снимки капитала
-            "stats":   {},   # последняя статистика трейдера
-            "ai":      {},   # экспорт опыта ИИ
-            "control": self._default_control(),
+            "trades":      [],   # журнал закрытых сделок
+            "open_trades": [],   # ОТКРЫТЫЕ позиции: цена покупки + цель продажи
+            "equity":      [],   # снимки капитала
+            "stats":       {},   # последняя статистика трейдера
+            "ai":          {},   # экспорт опыта ИИ
+            "control":     self._default_control(),
         }
         self._load()
 
@@ -81,7 +82,7 @@ class ExperienceManager:
                 return
             with open(self.path, "r", encoding="utf-8") as f:
                 disk = json.load(f)
-            for k in ("trades", "equity", "stats", "ai", "control", "created"):
+            for k in ("trades", "open_trades", "equity", "stats", "ai", "control", "created"):
                 if k in disk and disk[k] is not None:
                     self.data[k] = disk[k]
             # гарантируем все ключи управления
@@ -117,17 +118,57 @@ class ExperienceManager:
                 for k in ("total_trades", "winning_trades", "total_pnl"):
                     if k in stats:
                         trader.stats[k] = stats[k]
+            # ВОССТАНАВЛИВАЕМ открытые позиции: цена покупки + цель продажи —
+            # чтобы после перезапуска бот знал почём купил и НЕ продал дешевле.
+            open_trades = [dict(t) for t in (self.data.get("open_trades") or [])]
             self._apply_control_to_config()
             ctrl = self.data["control"]
+        if open_trades:
+            trader.open_trades = open_trades
+            # Чтобы открытые позиции были видны в истории и корректно
+            # обновились при закрытии (поиск по id).
+            existing_ids = {t.get("id") for t in trader.trades}
+            for t in open_trades:
+                if t.get("id") not in existing_ids:
+                    trader.trades.append(dict(t))
         try:
-            trader.log(
-                f"🧠 Память загружена: {len(self.data['trades'])} сделок | "
-                f"порог={ctrl['min_conf']:.0f}% ставка={ctrl['trade_amount']:.3f} | "
-                f"{'⏸️ ПАУЗА' if ctrl['paused'] else '▶️ активна'}",
-                "INFO",
+            note = (
+                f"🧠 Память загружена: {len(self.data['trades'])} сделок"
+                + (f" | ⏳ {len(open_trades)} открытых позиций восстановлено"
+                   if open_trades else "")
+                + f" | порог={ctrl['min_conf']:.0f}% ставка={ctrl['trade_amount']:.3f} | "
+                f"{'⏸️ ПАУЗА' if ctrl['paused'] else '▶️ активна'}"
             )
+            trader.log(note, "INFO")
+            for t in open_trades:
+                trader.log(
+                    f"   ↩️ Позиция: куплено {t.get('amount')} @ {t.get('entry_price')} "
+                    f"→ продать не дешевле цели TP={t.get('take_profit')}",
+                    "INFO",
+                )
         except Exception:  # noqa: BLE001
             pass
+
+    def save_open_trades(self, open_trades):
+        """АВТО-СОХРАНЕНИЕ открытых позиций при КАЖДОЙ сделке (открытие/закрытие).
+        Хранит цену покупки и цель продажи, чтобы пережить перезапуск."""
+        with self._lock:
+            self.data["open_trades"] = [dict(t) for t in (open_trades or [])]
+            self._save_locked()
+
+    def get_cost_basis(self) -> float | None:
+        """Средневзвешенная цена покупки открытых позиций (None если нет).
+        Ликвидатор использует её как ОПОРНУЮ, чтобы не продать дешевле покупки."""
+        with self._lock:
+            ots = self.data.get("open_trades") or []
+        total_amt  = sum(float(t.get("amount", 0) or 0) for t in ots)
+        if total_amt <= 0:
+            return None
+        total_cost = sum(
+            float(t.get("entry_price", 0) or 0) * float(t.get("amount", 0) or 0)
+            for t in ots
+        )
+        return total_cost / total_amt if total_cost > 0 else None
 
     def restore_ai(self, ai):
         """Отдаёт сохранённый опыт обратно в ИИ (после pretrain)."""

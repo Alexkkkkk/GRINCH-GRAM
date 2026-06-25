@@ -249,6 +249,20 @@ class GrinchLiquidator:
                 if grinch >= MIN_GRINCH_TO_SELL:
                     if self._ref_price is None:
                         ref = price_feed.get("GRINCH") or 0.0
+                        # Опорная = РЕАЛЬНАЯ цена покупки (если сохранена), а не
+                        # текущая цена. Так после перезапуска цель = покупка×(+%),
+                        # и мы НИКОГДА не продаём дешевле, чем купили.
+                        try:
+                            from experience_manager import experience_manager
+                            cb = experience_manager.get_cost_basis()
+                            if cb and cb > 0:
+                                ref = cb
+                                self._log(
+                                    f"📌 Опорная взята из памяти (цена покупки): ${cb:.8f}",
+                                    "INFO"
+                                )
+                        except Exception as e:  # noqa: BLE001
+                            self._log(f"Не удалось прочитать цену покупки: {e}", "WARN")
                         if ref > 0:
                             self._ref_price = ref
                             self._ref_time  = datetime.utcnow().isoformat()

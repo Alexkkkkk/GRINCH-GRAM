@@ -32,3 +32,15 @@ gives the requested "self-management" safely.
   fabricating a huge drawdown and a false trading pause.
 
 Read-only state exposed at `GET /api/experience`.
+
+## Open positions persistence (don't sell cheaper after restart)
+`open_trades` are also persisted to `experience.json` and auto-saved on EVERY
+open/close (`exp.save_open_trades(self.open_trades)` in `_open_trade` and
+`_close_trade`). On boot `restore_trader` reloads them into `trader.open_trades`
++ `trader.trades` so the take-profit floor (`entry × (1+net)`) keeps the real
+entry price across restarts.
+**Why:** open trades were in-memory only; after restart the bot forgot its buy
+price and the liquidator re-anchored its ref to the *current* price, so it could
+sell below cost. `experience_manager.get_cost_basis()` returns the weighted-avg
+entry of open trades; the liquidator uses it as its reference instead of the live
+price → target = buy×(1+sell_rise_pct), never sells cheaper than bought.
