@@ -32,6 +32,14 @@ but if a buy bounces, suspect **min-out feed-vs-pool skew first**, not gas/decim
 **How to apply:** any min-out for a specific pool must use that pool's native ratio;
 never cross-multiply prices from two different USD feeds for execution limits.
 
+**Routing note (verified on-chain):** a successful GRINCH BUY (1.7 TON → 11574.09
+GRINCH, decimals=9) sent native TON **directly to the pool** with op `0xa5a7cbf8`
+(no native vault). Our bot uses the canonical SDK flow TON→**native vault** op
+`0xea06185d`→pool — that ALSO reaches the pool (failing buys reverted at the pool on
+min-out, not on routing; a UTYA buy via the same vault succeeded). So both routings
+are valid; don't switch to the direct-pool op — the vault flow is documented/SDK-backed
+and the only real bug was min-out.
+
 ## "ok" must mean settled, not broadcast
 `wallet.transfer` only **broadcasts**; the swap can still bounce afterward. Returning
 `ok:True` right after transfer (and `force_sell_now` returning `ok:True`
