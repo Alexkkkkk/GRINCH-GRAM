@@ -445,6 +445,8 @@ body { background: var(--bg); color: var(--text); font-family: 'Segoe UI', syste
 .ot-wait { font-size:11px; font-weight:600; }
 
 /* ═══ Авто-ликвидатор GRINCH ═══ */
+.liq-gas-warn { background:rgba(255,77,109,.12); border:1px solid rgba(255,77,109,.4); color:#ff8aa0; font-size:11px; padding:7px 9px; border-radius:6px; margin:6px 0; line-height:1.4; }
+
 .liq-row { display:flex; justify-content:space-between; align-items:center; padding:5px 0; border-bottom:1px solid rgba(255,255,255,.04); }
 .liq-lbl { font-size:.8rem; color:var(--text2); }
 .liq-val { font-size:.85rem; font-weight:600; color:var(--text); font-family:monospace; }

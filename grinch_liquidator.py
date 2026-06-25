@@ -9,6 +9,7 @@ import time
 import logging
 import urllib.parse
 from datetime import datetime
+from typing import Optional
 from config import Config
 from price_feed import price_feed
 
@@ -36,6 +37,7 @@ MIN_GRINCH_TO_SELL = 0.5    # меньше этого — не стоит тра
 BAL_CHECK_INTERVAL = 150    # секунд между on-chain запросами баланса
 PRICE_TICK_SECS    = 30     # секунд между проверками цены (из кэша price_feed)
 START_DELAY        = 200    # задержка запуска — не конкурируем с ton_tracker (120s) и deposit_monitor (65s)
+GAS_NEEDED_TON     = 0.65   # газ на DeDust-своп GRINCH→TON (0.6 газ + 0.05 запас); меньше — своп отскочит (Bounce)
 
 
 class GrinchLiquidator:
@@ -54,6 +56,7 @@ class GrinchLiquidator:
         self._running        = False
         self._thread         = None
         self._grinch_bal     = 0.0
+        self._ton_bal        = None    # баланс TON кошелька (для проверки газа)
         self._ref_price      = None    # цена в момент обнаружения GRINCH
         self._ref_time       = None
         self._last_bal_check = 0.0
@@ -96,9 +99,14 @@ class GrinchLiquidator:
                 target_price = round(self._ref_price * (1 + self.sell_rise_pct / 100), 8)
                 pct_to_go    = round((target_price - current) / current * 100, 2)
                 pct_now      = round((current - self._ref_price) / self._ref_price * 100, 2)
+            # Хватает ли TON на газ для свопа GRINCH→TON
+            gas_ok = None if self._ton_bal is None else (self._ton_bal >= GAS_NEEDED_TON)
             return {
                 "running":        self._running,
                 "grinch_balance": round(self._grinch_bal, 4),
+                "ton_balance":    None if self._ton_bal is None else round(self._ton_bal, 3),
+                "gas_needed":     GAS_NEEDED_TON,
+                "gas_ok":         gas_ok,
                 "ref_price":      self._ref_price,
                 "ref_time":       self._ref_time,
                 "current_price":  current,
@@ -185,13 +193,38 @@ class GrinchLiquidator:
 
         return 0.0
 
+    def _fetch_ton_balance_http(self) -> Optional[float]:
+        """Баланс TON кошелька через TonAPI HTTP (без pytoniq/liteserver)."""
+        import urllib.request, json as _json
+        url = f"https://tonapi.io/v2/accounts/{Config.TON_WALLET}"
+        try:
+            req = urllib.request.Request(url, headers={"Accept": "application/json"})
+            with urllib.request.urlopen(req, timeout=10) as r:
+                data = _json.loads(r.read())
+            return float(data.get("balance", 0)) / (10 ** 9)
+        except Exception as e:
+            self._log(f"TonAPI TON balance ошибка: {e}", "WARN")
+            return None
+
     def _refresh_balance(self):
         try:
             grinch = self._fetch_grinch_balance_http()
+            ton    = self._fetch_ton_balance_http()
 
             with self._lock:
                 old = self._grinch_bal
                 self._grinch_bal = grinch
+                if ton is not None:
+                    self._ton_bal = ton
+
+                # Предупреждаем, если есть GRINCH на продажу, но мало TON на газ
+                if grinch >= MIN_GRINCH_TO_SELL and ton is not None and ton < GAS_NEEDED_TON:
+                    self._log(
+                        f"⛽ Мало TON для газа: {ton:.3f} TON на кошельке, "
+                        f"нужно ≥ {GAS_NEEDED_TON} TON. Своп GRINCH отскочит (Bounce) — "
+                        f"пополните кошелёк TON.",
+                        "WARN"
+                    )
 
                 if grinch >= MIN_GRINCH_TO_SELL:
                     if self._ref_price is None:

@@ -953,6 +953,20 @@ function updateLiquidator(d) {
   const balEl = document.getElementById("liq-bal");
   if (balEl) balEl.textContent = bal > 0 ? bal.toFixed(4) + " GRINCH" : "0 GRINCH";
 
+  // TON для газа + предупреждение
+  const tonEl  = document.getElementById("liq-ton");
+  const warnEl = document.getElementById("liq-gas-warn");
+  if (tonEl) {
+    if (d.ton_balance != null) {
+      tonEl.textContent = d.ton_balance.toFixed(3) + " TON";
+      tonEl.style.color = d.gas_ok === false ? "var(--red)" : "var(--green)";
+    } else {
+      tonEl.textContent = "—";
+      tonEl.style.color = "";
+    }
+  }
+  if (warnEl) warnEl.style.display = (d.gas_ok === false) ? "block" : "none";
+
   // Цены
   const refEl  = document.getElementById("liq-ref");
   const curEl  = document.getElementById("liq-cur");
