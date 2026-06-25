@@ -28,6 +28,10 @@ class Trader:
         self.on_training_progress = None
         # Счётчик подтверждений BUY-сигнала (требуем 2 последовательных)
         self._buy_confirm_count = 0
+        # Кеш баланса: не долбим блокчейн при каждом /api/status (TTL 30 сек)
+        self._balance_cache     = {}
+        self._balance_cache_ts  = 0
+        self._balance_cache_ttl = 30  # секунд
 
     def log(self, msg, level="INFO"):
         entry = {"time": datetime.utcnow().strftime("%H:%M:%S"), "level": level, "msg": msg}
@@ -451,11 +455,22 @@ class Trader:
     # ──────────────────────────────────────────
     # Статус
     # ──────────────────────────────────────────
+    def _get_balance_cached(self) -> dict:
+        """Возвращает кешированный баланс (TTL 30 сек) — не тратим RTT к блокчейну на каждый poll."""
+        now = time.time()
+        if now - self._balance_cache_ts < self._balance_cache_ttl and self._balance_cache:
+            return self._balance_cache
+        bal = self.exchange.get_balance()
+        if bal and not bal.get("error"):
+            self._balance_cache    = bal
+            self._balance_cache_ts = now
+        return bal
+
     def get_status(self):
         ohlcv    = self.exchange.get_ohlcv(limit=100)
         analysis = analyze(ohlcv)
         ai       = self.last_ai if self.last_ai else self.ai.analyze(ohlcv)
-        balance  = self.exchange.get_balance()
+        balance  = self._get_balance_cached()
         winrate  = 0
         if self.stats["total_trades"] > 0:
             winrate = round(self.stats["winning_trades"] / self.stats["total_trades"] * 100, 1)
