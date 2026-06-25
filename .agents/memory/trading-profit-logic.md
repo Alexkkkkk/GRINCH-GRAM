@@ -18,6 +18,11 @@ Ensemble: strategy+AI must agree, OR AI alone if `conf >= AI_OVERRIDE_CONFIDENCE
 **Why:** `_close_trade` computes `fee = (entry+exit)*amount*FEE_PCT/100` (both sides), and `_targets` floors TP at `2×FEE_PCT+0.5`. These are only self-consistent under the per-side reading. An earlier comment wrongly called it "full cycle", which would have double-counted.
 **How to apply:** if you ever change the fee model, update BOTH `_close_trade` and `_targets` together, and the config comment.
 
+## Profit target & trailing-stop coupling — IMPORTANT
+**Rule:** the progressive trailing-stop stage thresholds (`TRAIL_BREAKEVEN_AT`/`STAGE2_AT`/`STAGE3_AT`/`STAGE4_AT` in config) must be scaled together with `TARGET_NET_PCT`, keeping them a monotonic ladder strictly below the TP floor (`TARGET_NET_PCT + FEE_ROUND_TRIP`).
+**Why:** `_targets` floors gross TP at `TARGET_NET_PCT + 0.6%`, but the trailing stages tighten to 2% once profit passes STAGE4_AT. If the stages stay low (e.g. STAGE4_AT=20) while the target is raised (e.g. 50), any pullback near +20–25% snaps the position shut and it can never reach the new target — raising TARGET_NET_PCT alone is silently ineffective.
+**How to apply:** when changing the profit target, rescale all four TRAIL_*_AT thresholds proportionally (default ladder was 5/10/15/20 for a 20% target → 12.5/25/37.5/45 for 50%).
+
 ## Demo profitability honesty
 `exchange._fake_ohlcv()` is a pure random walk — no structural alpha, so positive expectancy cannot be guaranteed in demo. Risk controls limit losses only. The settings card carries a `.cfg-note` stating this; don't claim guaranteed profit.
 
