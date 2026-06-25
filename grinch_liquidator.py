@@ -20,23 +20,28 @@ def _addresses_match(a: str, b: str) -> bool:
     """
     Сравниваем два TON-адреса нечувствительно к формату (EQ/UQ/raw 0:...).
     TonAPI возвращает raw-формат (0:abc...), Config хранит EQ-формат.
-    Достаточно сравнить hex-часть (после ':') нижним регистром.
+    Нормализуем оба к raw-hex через Address — base64 (EQ/UQ) нельзя сравнивать
+    с raw побайтово напрямую, иначе совпадения никогда не будет.
     """
-    def _hex(addr: str) -> str:
-        addr = addr.strip()
-        if ":" in addr:
-            return addr.split(":", 1)[1].lower()
-        # EQ/UQ base64url → просто нормализуем
-        return addr.lower().replace("-", "+").replace("_", "/")
+    def _norm(addr: str) -> str:
+        addr = (addr or "").strip()
+        try:
+            from pytoniq_core import Address
+            return Address(addr).to_str(is_user_friendly=False).lower()
+        except Exception:
+            # запасной вариант: hex-часть после ':'
+            if ":" in addr:
+                return addr.split(":", 1)[1].lower()
+            return addr.lower()
     try:
-        return _hex(a) == _hex(b)
+        return _norm(a) == _norm(b)
     except Exception:
         return a.strip().lower() == b.strip().lower()
 
 MIN_GRINCH_TO_SELL = 0.5    # меньше этого — не стоит тратить 0.6 TON на газ
 BAL_CHECK_INTERVAL = 150    # секунд между on-chain запросами баланса
 PRICE_TICK_SECS    = 30     # секунд между проверками цены (из кэша price_feed)
-START_DELAY        = 200    # задержка запуска — не конкурируем с ton_tracker (120s) и deposit_monitor (65s)
+START_DELAY        = 20     # задержка запуска — баланс берём из TonAPI (jettons), не конкурирует с TonCenter-поллерами
 GAS_NEEDED_TON     = 0.65   # газ на DeDust-своп GRINCH→TON (0.6 газ + 0.05 запас); меньше — своп отскочит (Bounce)
 
 
