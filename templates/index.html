@@ -5,7 +5,12 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>GRINCH-GRAM — TON × GRINCH Торговый агент</title>
 <link rel="stylesheet" href="/static/css/style.css?v={{ range(1,9999)|random }}">
+<script src="https://unpkg.com/@tonconnect/ui@latest/dist/tonconnect-ui.min.js" crossorigin="anonymous"></script>
 <style>
+/* ─── Кнопка TonConnect в шапке ───────────────────────────────────────── */
+.hdr-tc-btn { display: inline-flex; align-items: center; }
+.hdr-tc-btn > * { vertical-align: middle; }
+
 /* ─── Шкала обучения AI ──────────────────────────────────────────────── */
 #training-banner {
   position: relative;
@@ -151,6 +156,7 @@
     </div>
 
     <div class="header-right">
+      <div id="ton-connect-button" class="hdr-tc-btn"></div>
       <button id="btn-start" class="btn btn-green" onclick="startAgent()" {% if init_running %}style="display:none"{% endif %}>▶ Запустить</button>
       <button id="btn-stop"  class="btn btn-red"   onclick="stopAgent()"  {% if not init_running %}style="display:none"{% endif %}>⏹ Остановить</button>
     </div>
@@ -570,6 +576,37 @@
   window._socketio_url  = window.location.origin;
   window._initAI = {{ init_ai | tojson | safe }};
 </script>
+
+<!-- ─── TonConnect: подключение кошелька с дашборда ──────────────────────── -->
+<script>
+(function initTonConnect() {
+  if (window.tonConnectUI) return;  // уже инициализировано — не дублируем
+  if (typeof TON_CONNECT_UI === "undefined") {
+    // Библиотека ещё не загрузилась — пробуем чуть позже
+    return setTimeout(initTonConnect, 300);
+  }
+  try {
+    const tonConnectUI = new TON_CONNECT_UI.TonConnectUI({
+      manifestUrl: window.location.origin + "/tonconnect-manifest.json",
+      buttonRootId: "ton-connect-button",
+    });
+    window.tonConnectUI = tonConnectUI;
+
+    tonConnectUI.onStatusChange((wallet) => {
+      if (wallet && wallet.account) {
+        window._connectedWallet = wallet.account.address;
+        console.log("[TonConnect] Кошелёк подключён:", wallet.account.address);
+      } else {
+        window._connectedWallet = null;
+        console.log("[TonConnect] Кошелёк отключён");
+      }
+    });
+  } catch (e) {
+    console.error("[TonConnect] Ошибка инициализации:", e);
+  }
+})();
+</script>
+
 <script src="/static/js/app.js?v={{ range(1,9999)|random }}"></script>
 </body>
 </html>
