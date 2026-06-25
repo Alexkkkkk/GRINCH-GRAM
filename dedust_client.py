@@ -278,6 +278,26 @@ class DedustClient:
             amount_nano = int(ton_amount * TON)
             gas_nano    = int(0.25 * TON)
 
+            # ── Preflight: хватает ли TON на сумму свопа + газ? ──────────────
+            # Покупка отправляет amount_nano (на своп) + gas_nano (газ/комиссии).
+            # Если на кошельке меньше — НЕ отправляем операцию вовсе, чтобы не
+            # сжечь газ на заведомо неисполнимой транзакции.
+            state = await provider.get_account_state(wallet.address)
+            ton_nano = getattr(state, "balance", 0) or 0
+            needed_nano = amount_nano + gas_nano + int(0.05 * TON)  # +запас на комиссии сети
+            if ton_nano < needed_nano:
+                return {
+                    "ok": False,
+                    "side": "buy",
+                    "error": (
+                        f"Недостаточно TON на кошельке платформы: есть "
+                        f"{ton_nano / TON:.3f} TON, нужно ≥ {needed_nano / TON:.2f} TON "
+                        f"(своп {ton_amount:.3f} + газ). Покупка отклонена."
+                    ),
+                    "need_ton": round(needed_nano / TON, 2),
+                    "have_ton": round(ton_nano / TON, 3),
+                }
+
             swap_params = SwapParams(
                 deadline=int(time.time()) + 300,
                 recipient_address=wallet.address,
