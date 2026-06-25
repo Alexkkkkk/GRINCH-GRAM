@@ -1,25 +1,39 @@
 ---
 name: DeDust pool address mismatch (GRINCH)
-description: The bot's SDK resolves a non-existent TON/GRINCH pool; real liquidity is in a different pool the current factory does not return.
+description: The DeDust factory computes a non-existent TON/GRINCH pool address; real liquidity lives in a pool with a non-standard 1% fee that must be pinned by address.
 ---
 
-# DeDust pool mismatch — swaps target an empty pool
+# DeDust pool mismatch — factory returns an empty pool, real pool must be pinned
 
-The bot resolves the swap pool via `Factory.get_pool(PoolType.VOLATILE, [native, jetton(GRINCH)])`,
-which asks the **current** DeDust mainnet factory `EQBfBWT7X2BHg9tXAxzhz2aKiNTU1tpt5NsiK0uSDW_YAJ67`
-its `get_pool_address` get-method.
+The bot used to resolve the swap pool via `Factory.get_pool(PoolType.VOLATILE, [native, jetton(GRINCH)])`
+against the mainnet factory `EQBfBWT7X2BHg9tXAxzhz2aKiNTU1tpt5NsiK0uSDW_YAJ67`. That returns the **canonical**
+pool address for the standard fee tier, which is `nonexist` on-chain (0 balance) — so swaps silently bounced.
 
-On-chain facts (verified June 2026 via liteserver + TonCenter HTTP + TonAPI):
-- Canonical [TON, GRINCH] VOLATILE pool = `EQAWWVObmIiaTfzF3tBeKg2IzCkCsLm6xh7N27dlqWuvSO2q` → **`nonexist`** on-chain, 0 balance. STABLE = `EQAn1Bxi...` (also empty). **There is NO TON/GRINCH pool with liquidity.**
-- The only "liquid" GRINCH pool `EQDpVwTQr...` does NOT pair GRINCH with native TON. Its actual jetton reserves (TonAPI /accounts/{pool}/jettons) are: GRINCH + **"GRAM AT GRAMEVENT.ORG" / "GRAM AIRDROP"** scam jetton at `EQATJHRV_GEHvn0VPXn5v31CLQpixUnBxWrMTdEEoJzGNtcT` (raw `0:13247455...`). The ~10751 TON on the pool account is just gas/storage, NOT a reserve. DexScreener mislabels the quote as zero-address "GRAM".
-- That GRAM AIRDROP jetton has **0 pairs, 0 liquidity, 0 TON exit** — worthless. The GRINCH/GRAM "33k liq / 62k vol" is wash-trading in scam jettons.
+**The real pool is `EQDpVwTQr53cwgaT_VCFsmrleg5fBvStTjMrvyvprF_ROC9Z`.** It was created with a **non-standard 1% fee
+(CPMM v2)**, so its address does NOT match what the factory computes for the default tier. Fix: pin it via
+`Config.GRINCH_POOL_ADDRESS` and build `Pool.create_from_address(CoreAddress(addr))` in `_get_pool` instead of
+`Factory.get_pool`.
 
-**Conclusion:** GRINCH has NO real TON on/off ramp. You cannot buy GRINCH with TON or sell GRINCH back to
-TON on any DEX. A TON-in/TON-out profit bot for GRINCH is not viable. Repointing swaps to the GRINCH/GRAM
-pool would convert real GRINCH into a worthless untradeable airdrop jetton = total loss. **Do not do it.**
+## The pool IS GRINCH / native-TON (despite the "GRAM" label)
 
-**Why:** verified the pool's real jetton balances and the second asset's (non-existent) markets directly.
+The counter-asset's on-chain address is `EQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAM9c` — the all-zeroes
+**native-TON sentinel** DeDust uses for Toncoin. Confirmed identical across two independent indexers (June 2026):
+GeckoTerminal labels it `TON / Toncoin`; DexScreener labels it `GRAM / Gram`; the DeDust web UI shows `GRINCH/GRAM`.
+**Same zero-address, different display names** — the asset is native TON. Price math agrees: ~10.62K units ×
+~$1.585 = ~$16.8K ≈ TON price. The earlier "GRAM is a scam jetton / 100-token dust" conclusion was WRONG and is retracted.
 
-**How to apply:** treat GRINCH as illiquid vs TON. Do not pin/trade the GRINCH/GRAM pool with real funds.
-If a real TON/GRINCH market ever appears, its address must equal the current factory's get_pool_address
-output and be `active` on-chain before trading.
+**Why this matters for routing:** because the counter-asset is native TON, swaps route through the **native vault**
+(buy: TON→native vault→pool) and the **GRINCH jetton vault** (sell: GRINCH→jetton vault→pool). The current code is correct.
+
+## SDK get-methods fail (exit 11) on this pool — expected, not a blocker
+
+The installed `dedust` SDK is older than this CPMM-v2 1%-fee contract, so typed get-methods
+(`get_assets`/`get_reserves`/`estimate_swap_out`) return exit code 11 on-chain (confirmed via liteserver, TonCenter,
+TonAPI — don't keep retrying them). Swap **execution** does not need them; price comes from the external feed
+(CoinGecko/DexScreener/GeckoTerminal). **Caveat:** with no working on-chain estimate there is no slippage/min-out
+(`limit=0`) — the vaults' `create_swap_payload` supports a `limit` param, so min-out should be computed from the
+external price before trading large sums.
+
+**How to apply:** keep the pool pinned by address; trust the zero-address = native TON; use native vault for buys,
+GRINCH jetton vault for sells; ignore exit-11 get-method failures; validate end-to-end with a small (1 TON) test trade
+(a misrouted native swap bounces back, so it's safe to probe).
