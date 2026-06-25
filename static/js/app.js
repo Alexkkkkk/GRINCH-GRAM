@@ -166,7 +166,7 @@ function updateUI(data) {
   document.getElementById("stat-winrate").textContent = (stats.winrate || 0) + "%";
   const pnl   = stats.total_pnl || 0;
   const pnlEl = document.getElementById("stat-pnl");
-  pnlEl.textContent = (pnl >= 0 ? "+" : "") + "$" + pnl.toFixed(2);
+  pnlEl.textContent = (pnl >= 0 ? "+" : "") + pnl.toFixed(4) + " TON";
   pnlEl.className = "stat-value " + (pnl >= 0 ? "pnl-pos" : "pnl-neg");
   document.getElementById("stat-open").textContent = (data.open_trades || []).length;
 
@@ -590,7 +590,7 @@ function renderHistory(trades) {
       <div class="trade-card ${cls}">
         <div class="trade-row">
           <span class="trade-side ${t.side}">${t.side?.toUpperCase()}</span>
-          <span class="${pnlCls}">${pnl >= 0 ? "+" : ""}$${pnl.toFixed(2)}</span>
+          <span class="${pnlCls}">${pnl >= 0 ? "+" : ""}${pnl.toFixed(4)} TON</span>
         </div>
         <div class="trade-row">
           <span style="color:#8892b0">Вход: $${t.entry_price}</span>

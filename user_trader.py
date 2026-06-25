@@ -214,7 +214,16 @@ class UserTradingManager:
 
         fee_ton = round(trade_amount * PLATFORM_FEE_PCT / 100, 6)
         net_ton = round(trade_amount - fee_ton, 6)
-        est_grinch = net_ton / price if price else 0
+
+        # Используем реальный курс пула TON→GRINCH, а не перекрёстный USD-курс
+        from price_feed import price_feed
+        ton_per_grinch = price_feed.get_grinch_ton_price()
+        if ton_per_grinch and ton_per_grinch > 0:
+            est_grinch = net_ton / ton_per_grinch
+        else:
+            # Фоллбэк: пересчёт через USD-цены
+            ton_usd = price_feed.get("TON") or 2.44
+            est_grinch = (net_ton * ton_usd / price) if price and price > 0 else 0
 
         user["balance_ton"]  = round(user.get("balance_ton", 0) - trade_amount, 6)
         user["grinch_held"]  = est_grinch
@@ -246,7 +255,16 @@ class UserTradingManager:
         if not grinch:
             return
 
-        received_ton = grinch * price
+        # Конвертируем GRINCH обратно в TON по курсу пула, а не USD-цене
+        from price_feed import price_feed
+        ton_per_grinch = price_feed.get_grinch_ton_price()
+        if ton_per_grinch and ton_per_grinch > 0:
+            received_ton = grinch * ton_per_grinch
+        else:
+            # Фоллбэк: конвертация через USD-цены
+            ton_usd = price_feed.get("TON") or 2.44
+            received_ton = (grinch * price / ton_usd) if ton_usd > 0 else grinch * price * 0.41
+
         entry = user.get("entry_price") or price
         pnl   = round(received_ton - (grinch * entry) - user["stats"].get("last_buy_fee", 0), 6)
 

@@ -245,6 +245,17 @@ class Trader:
             self.log("⚠️ BUY ордер не исполнен — пропускаем", "WARN")
             return False
 
+        # В DeDust-режиме используем реальное кол-во GRINCH из подтверждённого свопа,
+        # а не расчётное (stake_ton / usd_price), которое даёт неверные единицы измерения.
+        if self.exchange.mode == "dedust":
+            actual_grinch = (order.get("info") or {}).get("grinch_received", 0)
+            if actual_grinch and actual_grinch > 0:
+                self.log(
+                    f"✅ Реальный GRINCH получен: {actual_grinch:.4f} "
+                    f"(расч. по USD-цене было бы {stake / price:.4f})", "INFO"
+                )
+                amount = actual_grinch
+
         sl_pct, tp_pct = self._targets(price, ai)
         sl = self.exchange._round(price * (1 - sl_pct / 100))
         tp = self.exchange._round(price * (1 + tp_pct / 100))
@@ -395,7 +406,15 @@ class Trader:
         gross = (price - trade["entry_price"]) * trade["amount"]
         # Обе стороны DeDust: 0.3% вход + 0.3% выход
         fee   = (trade["entry_price"] + price) * trade["amount"] * Config.FEE_PCT / 100
-        pnl   = round(gross - fee, 6)
+        pnl_raw = gross - fee
+
+        # В DeDust-режиме цены в USD → конвертируем P&L в TON для корректного отображения
+        if self.exchange.mode == "dedust":
+            from price_feed import price_feed
+            ton_usd = price_feed.get("TON") or 2.44
+            pnl = round(pnl_raw / ton_usd, 6)
+        else:
+            pnl = round(pnl_raw, 6)
 
         trade["pnl"]          = pnl
         trade["fee"]          = round(fee, 6)
