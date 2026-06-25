@@ -5,3 +5,5 @@
 - [DeDust pool mismatch](dedust-pool-mismatch.md) — factory computes an EMPTY pool; real GRINCH/TON pool is EQDpVwTQr (1%-fee CPMM v2) — pin it. Counter-asset = native-TON zero-address (shown as "GRAM"); use native vault. SDK get-methods exit 11 (expected)
 - [DeDust sell gas](dedust-sell-gas.md) — jetton sells need gas 0.6/fwd 0.35 TON; preflight wallet TON ≥ gas or the swap bounces "Sent…Failed" and burns gas
 - [Multi-user platform](multi-user-platform.md) — TonConnect UI (CDN) on /join; no mnemonic; custodial fund model: users deposit TON with memo "GG-XXXXXXXX", virtual accounting in UserTradingManager; deposit_monitor.py polls TonCenter API; withdrawal via platform dedust_client.send_ton()
+- [TonConnect manifest HTTPS](tonconnect-manifest-https.md) — Replit proxy omits X-Forwarded-Proto; force https in manifest url from request.host or TonKeeper silently won't connect.
+- [Custodial sync invariant](custodial-sync-invariant.md) — virtual user updates must follow CONFIRMED real on-chain execution; deposits oldest-first; gate BUY/SELL callbacks on real fills; never SELL+BUY same tick.

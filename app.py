@@ -187,7 +187,15 @@ start_background()
 
 @app.route("/tonconnect-manifest.json")
 def tonconnect_manifest():
-    base = request.host_url.rstrip("/")
+    # TonConnect требует, чтобы манифест отдавался по HTTPS и поле url совпадало
+    # с origin страницы (TonKeeper открывает манифест на телефоне пользователя).
+    # Прокси Replit терминирует TLS и НЕ всегда проставляет X-Forwarded-Proto,
+    # поэтому request.host_url может вернуть http:// — принудительно ставим https
+    # для всех публичных хостов (кроме локальной разработки).
+    host = request.host  # домен без схемы, с учётом ProxyFix x_host
+    is_local = host.startswith("127.0.0.1") or host.startswith("localhost")
+    scheme = "http" if is_local else "https"
+    base = f"{scheme}://{host}"
     return jsonify({
         "url":     base,
         "name":    "GRINCH-GRAM",

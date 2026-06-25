@@ -76,6 +76,12 @@ class DepositMonitor:
         if not txs:
             return
 
+        # TonCenter отдаёт транзакции новейшими первыми. Обрабатываем по
+        # возрастанию lt, чтобы несколько депозитов одного пользователя в одном
+        # окне опроса зачислились ВСЕ по порядку: last_checked_lt растёт
+        # монотонно и не «перепрыгивает» старые валидные депозиты.
+        txs = sorted(txs, key=lambda t: int(t.get("transaction_id", {}).get("lt", 0)))
+
         with self._app.app_context():
             for tx in txs:
                 try:

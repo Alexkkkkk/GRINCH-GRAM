@@ -95,7 +95,11 @@ class Trader:
         regime_name = regime.get("name", "?")
         anomaly     = ai.get("anomaly", {}).get("detected", False)
 
-        self._check_stop_loss_take_profit(price)
+        # Если SL/TP закрыл все позиции и разослал SELL — завершаем тик,
+        # чтобы в этом же тике не открыть BUY поверх ещё не сведённого
+        # пользовательского состояния (гонка SELL→BUY в одном окне).
+        if self._check_stop_loss_take_profit(price):
+            return
 
         # ── Формируем итоговый сигнал ──────────────────────────────────
         final_signal = "HOLD"
@@ -159,16 +163,32 @@ class Trader:
         if final_signal == "BUY" and blocked:
             self.log(f"⏸️ Вход отменён: {blocked}", "WARN")
         elif final_signal == "BUY" and len(self.open_trades) < Config.MAX_OPEN_TRADES:
-            self._open_trade("buy", price, result, ai)
-            self._buy_confirm_count = 0   # сбрасываем после входа
-            for cb in self.signal_callbacks:
-                try:   cb("BUY", price, ai)
-                except Exception as e: self.log(f"Signal cb ошибка: {e}", "WARN")
+            opened = self._open_trade("buy", price, result, ai)
+            # Сигнал пользователям шлём ТОЛЬКО если реальный ордер исполнился —
+            # иначе у юзеров спишется виртуальный TON и откроется позиция без
+            # реальной сделки (рассинхрон балансов, блокировка вывода).
+            if opened:
+                self._buy_confirm_count = 0   # сбрасываем после входа
+                self._emit_signal("BUY", price, ai)
         elif final_signal == "SELL" and self.open_trades:
-            self._close_all_trades(price, result)
-            for cb in self.signal_callbacks:
-                try:   cb("SELL", price, ai)
-                except Exception as e: self.log(f"Signal cb ошибка: {e}", "WARN")
+            closed = self._close_all_trades(price, result)
+            # Сигнал SELL юзерам шлём ТОЛЬКО если реальная продажа прошла —
+            # иначе у юзеров обнулится grinch_held и разблокируется вывод TON,
+            # которого на самом деле нет (реальный GRINCH не продан).
+            if closed:
+                self._emit_signal("SELL", price, ai)
+
+    def _emit_signal(self, signal, price, ai=None):
+        """Шлёт сигнал BUY/SELL всем подписчикам (UserTradingManager и т.п.).
+        Вызывать ТОЛЬКО после подтверждённого реального исполнения сделки —
+        иначе виртуальное состояние юзеров рассинхронизируется с реальными активами."""
+        for cb in self.signal_callbacks:
+            try:   cb(signal, price, ai)
+            except Exception as e: self.log(f"Signal cb ошибка: {e}", "WARN")
+
+    def _relevant_open(self):
+        return [t for t in self.open_trades
+                if t.get("symbol", Config.SYMBOL) == Config.SYMBOL]
 
     # ──────────────────────────────────────────
     # Торговые операции
@@ -205,7 +225,7 @@ class Trader:
         order = self.exchange.place_order(side, amount, ton_stake=ton_stake)
         if not order:
             self.log("⚠️ BUY ордер не исполнен — пропускаем", "WARN")
-            return
+            return False
 
         sl_pct, tp_pct = self._targets(price, ai)
         sl = self.exchange._round(price * (1 - sl_pct / 100))
@@ -234,14 +254,20 @@ class Trader:
             f"🟢 BUY @ {price} | {stake:.3f} TON | SL={sl}(-{sl_pct:.1f}%) | "
             f"TP={tp}(+{tp_pct:.1f}%) | AI={ai_conf}%", "BUY"
         )
+        return True
 
     def _close_all_trades(self, price, analysis):
-        for trade in list(self.open_trades):
-            if trade.get("symbol", Config.SYMBOL) != Config.SYMBOL:
-                continue
+        relevant_before = self._relevant_open()
+        for trade in list(relevant_before):
             self._close_trade(trade, price, "signal")
+        # Сигнал SELL юзерам безопасен ТОЛЬКО когда были позиции и ВСЕ они
+        # реально закрылись. При частичном закрытии (одна продажа прошла, другая
+        # нет) grinch_held обнулять нельзя — часть реального GRINCH ещё не продана.
+        return bool(relevant_before) and not self._relevant_open()
 
     def _check_stop_loss_take_profit(self, price):
+        had_relevant = bool(self._relevant_open())
+        closed_any   = False
         for trade in list(self.open_trades):
             if trade.get("symbol", Config.SYMBOL) != Config.SYMBOL:
                 continue
@@ -295,9 +321,19 @@ class Trader:
             # ── Проверка условий закрытия ───────────────────────────────────
             if price <= trade["stop_loss"]:
                 reason = "trailing_stop" if trade["stop_loss"] > entry else "stop_loss"
-                self._close_trade(trade, price, reason)
+                if self._close_trade(trade, price, reason):
+                    closed_any = True
             elif price >= trade["take_profit"]:
-                self._close_trade(trade, price, "take_profit")
+                if self._close_trade(trade, price, "take_profit"):
+                    closed_any = True
+
+        # Если SL/TP реально закрыл позиции и больше открытых нет — сводим
+        # виртуальное состояние юзеров (обнуляем grinch_held, разблокируем вывод).
+        # Только при полном закрытии: частичное оставляет реальный GRINCH в рынке.
+        if closed_any and had_relevant and not self._relevant_open():
+            self._emit_signal("SELL", price, self.last_ai)
+            return True
+        return False
 
     def _close_trade(self, trade, price, reason):
         """
@@ -314,9 +350,11 @@ class Trader:
                     f"💸 Продаём {grinch_amount:.6f} GRINCH на DeDust "
                     f"(причина: {reason})...", "INFO"
                 )
+                sell_ok = False
                 try:
                     sell_result = self.exchange.place_order("sell", grinch_amount)
                     if sell_result and not sell_result.get("error"):
+                        sell_ok = True
                         self.log(
                             f"✅ Продажа GRINCH → TON исполнена | "
                             f"id={sell_result.get('id', '—')}", "INFO"
@@ -326,6 +364,14 @@ class Trader:
                         self.log(f"⚠️ Продажа не исполнена: {err}", "WARN")
                 except Exception as e:
                     self.log(f"⚠️ Ошибка продажи GRINCH: {e}", "WARN")
+
+                if not sell_ok:
+                    # Реальная продажа не прошла — НЕ закрываем позицию виртуально.
+                    # Оставляем её открытой и повторим продажу на следующем тике.
+                    # Так виртуальное состояние юзеров остаётся синхронным с реальными
+                    # активами (grinch_held>0 → вывод заблокирован, пока не продадим).
+                    self.log("⏳ Позиция остаётся открытой — повтор продажи позже", "WARN")
+                    return False
 
         # ── 2. Виртуальный P&L ───────────────────────────────────────────
         gross = (price - trade["entry_price"]) * trade["amount"]
@@ -363,6 +409,7 @@ class Trader:
             f"{emoji} Закрыто @ {price} | PNL={pnl:+.6f} TON | {reason}", 
             "SELL" if pnl >= 0 else "ERROR"
         )
+        return True
 
     # ──────────────────────────────────────────
     # Статус
