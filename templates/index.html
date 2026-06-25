@@ -382,7 +382,7 @@
       <!-- График свечей GRINCH -->
       <div class="card">
         <div class="card-title">📈 График GRINCH
-          <span class="chart-pair">USD / TON</span>
+          <span class="chart-pair">GRINCH / GRAM</span>
           <span class="chart-tf">1ч</span>
           <span class="chart-last" id="chart-last-price">—</span>
         </div>
@@ -668,7 +668,7 @@
 
   function fmtPrice(p) {
     if (p == null) return "—";
-    return "$" + Number(p).toFixed(8).replace(/0+$/, "").replace(/\.$/, "");
+    return Number(p).toFixed(8).replace(/0+$/, "").replace(/\.$/, "") + " GRAM";
   }
 
   function toEpoch(ts) {

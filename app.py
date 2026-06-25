@@ -229,7 +229,10 @@ def api_status():
 @app.route("/api/candles")
 def api_candles():
     from strategy import analyze
-    ohlcv = trader.exchange.get_ohlcv(limit=100)
+    # Реальные свечи пары GRINCH/GRAM (цена GRINCH в GRAM/Toncoin) с GeckoTerminal
+    ohlcv = trader.exchange.get_real_ohlcv(limit=100, currency="token", token="base")
+    if not ohlcv:
+        ohlcv = trader.exchange.get_ohlcv(limit=100)
     analysis = analyze(ohlcv)
     def _walk(obj):
         if isinstance(obj, dict):          return {k: _walk(v) for k, v in obj.items()}

@@ -1,6 +1,10 @@
 import ccxt
+import json
+import os
 import random
+import threading
 import time
+import urllib.request
 from config import Config
 from datetime import datetime
 from price_feed import price_feed
@@ -126,8 +130,109 @@ class ExchangeClient:
             print(f"[Exchange] get_ticker error: {e}")
             return self._fake_ticker()
 
+    # Кэш реальных свечей GeckoTerminal: ключ (currency, token, tf) ->
+    #   {"ts": время успеха, "bars": свечи, "fail_ts": время последней ошибки}
+    _ohlcv_cache = {}
+    _ohlcv_lock     = threading.Lock()
+    _OHLCV_TTL      = 180  # сек — свечи часовые, обновлять раз в ~3 мин достаточно
+    _OHLCV_BACKOFF  = 120  # сек — после ошибки не долбить API (отдаём устаревшие данные)
+
+    def get_real_ohlcv(self, limit=100, currency="usd", token="base", tf="hour"):
+        """Реальные свечи пула GRINCH/GRAM (Toncoin) с GeckoTerminal.
+        currency="usd" — цена в USD; currency="token", token="base" — цена GRINCH в GRAM (TON).
+        Возвращает [[ts_ms, o, h, l, c, v], ...] от старых к новым, либо None при ошибке.
+        Кэширует успех на _OHLCV_TTL и при ошибке отдаёт устаревшие данные (backoff),
+        чтобы не упереться в rate limit бесплатного GeckoTerminal."""
+        pool = getattr(Config, "GRINCH_POOL_ADDRESS", None)
+        if not pool:
+            return None
+        key = (currency, token, tf)
+
+        # Быстрый путь без блокировки: свежий кэш в памяти
+        entry = ExchangeClient._ohlcv_cache.get(key)
+        if entry and entry.get("bars") and (time.time() - entry.get("ts", 0)) < self._OHLCV_TTL:
+            return entry["bars"][-limit:]
+
+        # Медленный путь: одна загрузка за раз (singleflight) под блокировкой
+        with ExchangeClient._ohlcv_lock:
+            now   = time.time()
+            entry = ExchangeClient._ohlcv_cache.get(key, {})
+            # После перезапуска память пуста — пробуем дисковый кэш
+            if not entry.get("bars"):
+                disk = self._load_disk_ohlcv(key)
+                if disk:
+                    entry = disk
+                    ExchangeClient._ohlcv_cache[key] = entry
+            bars = entry.get("bars")
+
+            # Другой поток мог уже обновить кэш, пока мы ждали блокировку
+            if bars and (now - entry.get("ts", 0)) < self._OHLCV_TTL:
+                return bars[-limit:]
+            # Недавняя ошибка — не штурмуем API, отдаём устаревшие данные (если есть)
+            if (now - entry.get("fail_ts", 0)) < self._OHLCV_BACKOFF:
+                return bars[-limit:] if bars else None
+
+            try:
+                url = (
+                    f"https://api.geckoterminal.com/api/v2/networks/ton/pools/{pool}"
+                    f"/ohlcv/{tf}?aggregate=1&limit={max(limit, 100)}"
+                    f"&currency={currency}&token={token}"
+                )
+                req = urllib.request.Request(url, headers={
+                    "Accept": "application/json",
+                    # GeckoTerminal/Cloudflare блокирует дефолтный UA urllib (403)
+                    "User-Agent": "Mozilla/5.0 (compatible; GrinchGram/1.0)",
+                })
+                with urllib.request.urlopen(req, timeout=8) as r:
+                    data = json.loads(r.read())
+                raw = data["data"]["attributes"]["ohlcv_list"]  # newest-first, ts в секундах
+                fresh = [
+                    [int(ts) * 1000, float(o), float(h), float(l), float(c), float(v)]
+                    for ts, o, h, l, c, v in reversed(raw)
+                ]
+                if not fresh:
+                    return bars[-limit:] if bars else None
+                new_entry = {"ts": now, "bars": fresh, "fail_ts": 0}
+                ExchangeClient._ohlcv_cache[key] = new_entry
+                self._save_disk_ohlcv(key, new_entry)
+                return fresh[-limit:]
+            except Exception as e:
+                print(f"[Exchange] get_real_ohlcv error: {e}")
+                entry["fail_ts"] = now
+                ExchangeClient._ohlcv_cache[key] = entry
+                return bars[-limit:] if bars else None
+
+    @staticmethod
+    def _disk_ohlcv_path(key):
+        return f"/tmp/grinch_ohlcv_{key[0]}_{key[1]}_{key[2]}.json"
+
+    def _load_disk_ohlcv(self, key):
+        try:
+            path = self._disk_ohlcv_path(key)
+            if not os.path.exists(path):
+                return None
+            with open(path) as f:
+                d = json.load(f)
+            if d.get("bars"):
+                return {"ts": d.get("ts", 0), "bars": d["bars"], "fail_ts": 0}
+        except Exception:
+            pass
+        return None
+
+    def _save_disk_ohlcv(self, key, entry):
+        try:
+            path = self._disk_ohlcv_path(key)
+            tmp  = f"{path}.{os.getpid()}.tmp"
+            with open(tmp, "w") as f:
+                json.dump({"ts": entry["ts"], "bars": entry["bars"]}, f)
+            os.replace(tmp, path)   # атомарная замена — без частичных записей
+        except Exception:
+            pass
+
     def get_ohlcv(self, timeframe=None, limit=100):
-        # DeDust не предоставляет OHLCV — используем симуляцию с реальной ценой
+        # DeDust не предоставляет OHLCV — для торгового движка используем симуляцию
+        # (реальные свечи GeckoTerminal идут только в график через get_real_ohlcv,
+        #  чтобы не упираться в rate limit бесплатного API).
         if self._dedust:
             return self._fake_ohlcv(limit)
         if self.demo_mode:
