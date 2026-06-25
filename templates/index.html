@@ -6,10 +6,17 @@
 <title>GRINCH-GRAM — TON × GRINCH Торговый агент</title>
 <link rel="stylesheet" href="/static/css/style.css?v={{ range(1,9999)|random }}">
 <script src="https://unpkg.com/@tonconnect/ui@latest/dist/tonconnect-ui.min.js" crossorigin="anonymous"></script>
+<script src="/static/js/lightweight-charts.standalone.production.js"></script>
 <style>
 /* ─── Кнопка TonConnect в шапке ───────────────────────────────────────── */
 .hdr-tc-btn { display: inline-flex; align-items: center; }
 .hdr-tc-btn > * { vertical-align: middle; }
+
+/* ─── График свечей GRINCH ────────────────────────────────────────────── */
+.grinch-chart { width: 100%; height: 320px; position: relative; }
+.chart-pair { font-size: 11px; font-weight: 600; color: #ff7a45; margin-left: 8px; letter-spacing: .03em; }
+.chart-tf   { font-size: 11px; font-weight: 600; color: var(--text2, #6b82a8); margin-left: 6px; }
+.chart-last { float: right; font-size: 13px; font-weight: 800; color: #00d18f; font-family: monospace; }
 
 /* ─── Шкала обучения AI ──────────────────────────────────────────────── */
 #training-banner {
@@ -372,6 +379,16 @@
         </div>
       </div>
 
+      <!-- График свечей GRINCH -->
+      <div class="card">
+        <div class="card-title">📈 График GRINCH
+          <span class="chart-pair">USD / TON</span>
+          <span class="chart-tf">1ч</span>
+          <span class="chart-last" id="chart-last-price">—</span>
+        </div>
+        <div id="grinch-chart" class="grinch-chart"></div>
+      </div>
+
       <!-- Паттерны -->
       <div class="card">
         <div class="card-title">🕯️ Паттерны свечей GRINCH</div>
@@ -604,6 +621,105 @@
   } catch (e) {
     console.error("[TonConnect] Ошибка инициализации:", e);
   }
+})();
+</script>
+
+<!-- ─── График свечей GRINCH (lightweight-charts) ────────────────────────── -->
+<script>
+(function initGrinchChart() {
+  if (typeof LightweightCharts === "undefined") {
+    return setTimeout(initGrinchChart, 300);   // библиотека ещё грузится
+  }
+  const el = document.getElementById("grinch-chart");
+  if (!el) return;
+
+  const chart = LightweightCharts.createChart(el, {
+    layout: {
+      background: { type: "solid", color: "transparent" },
+      textColor: "#8aa0c0",
+      fontFamily: "Inter, system-ui, sans-serif",
+    },
+    grid: {
+      vertLines: { color: "rgba(30,45,74,.4)" },
+      horzLines: { color: "rgba(30,45,74,.4)" },
+    },
+    rightPriceScale: { borderColor: "rgba(30,45,74,.6)" },
+    timeScale: { borderColor: "rgba(30,45,74,.6)", timeVisible: true, secondsVisible: false },
+    crosshair: { mode: LightweightCharts.CrosshairMode.Normal },
+    autoSize: true,
+  });
+
+  const candleSeries = chart.addCandlestickSeries({
+    upColor: "#26a69a", downColor: "#ef5350",
+    wickUpColor: "#26a69a", wickDownColor: "#ef5350",
+    borderVisible: false,
+    priceFormat: { type: "price", precision: 8, minMove: 0.00000001 },
+  });
+
+  const volumeSeries = chart.addHistogramSeries({
+    priceFormat: { type: "volume" },
+    priceScaleId: "vol",
+  });
+  chart.priceScale("vol").applyOptions({
+    scaleMargins: { top: 0.8, bottom: 0 },   // объём занимает нижние 20%
+  });
+
+  const lastEl = document.getElementById("chart-last-price");
+
+  function fmtPrice(p) {
+    if (p == null) return "—";
+    return "$" + Number(p).toFixed(8).replace(/0+$/, "").replace(/\.$/, "");
+  }
+
+  function toEpoch(ts) {
+    // "2026-06-23 11:27:39.206" → секунды UTC
+    const iso = String(ts).replace(" ", "T") + "Z";
+    const ms = Date.parse(iso);
+    return isNaN(ms) ? null : Math.floor(ms / 1000);
+  }
+
+  async function refresh() {
+    try {
+      const r = await fetch("/api/candles");
+      if (!r.ok) throw new Error("HTTP " + r.status);
+      const d = await r.json();
+      const candles = d.candles || [];
+      if (!candles.length) return;
+
+      // Дедуп по времени (lightweight-charts требует возрастающие уникальные t)
+      const byTime = new Map();
+      for (const c of candles) {
+        const t = toEpoch(c.timestamp);
+        if (t == null) continue;
+        byTime.set(t, c);
+      }
+      const sorted = [...byTime.entries()].sort((a, b) => a[0] - b[0]);
+
+      const cData = sorted.map(([t, c]) => ({
+        time: t, open: c.open, high: c.high, low: c.low, close: c.close,
+      }));
+      const vData = sorted.map(([t, c]) => ({
+        time: t, value: c.volume || 0,
+        color: c.close >= c.open ? "rgba(38,166,154,.5)" : "rgba(239,83,80,.5)",
+      }));
+
+      if (!sorted.length) return;
+      candleSeries.setData(cData);
+      volumeSeries.setData(vData);
+
+      const last = sorted[sorted.length - 1][1];
+      if (lastEl) {
+        lastEl.textContent = fmtPrice(last.close);
+        lastEl.style.color = last.close >= last.open ? "#00d18f" : "#ff5a78";
+      }
+    } catch (e) {
+      console.warn("[GrinchChart] обновление не удалось:", e);
+    }
+  }
+
+  refresh();
+  setInterval(refresh, 10000);
+  window.addEventListener("resize", () => chart.timeScale().fitContent());
 })();
 </script>
 

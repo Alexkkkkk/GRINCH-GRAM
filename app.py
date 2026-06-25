@@ -226,6 +226,24 @@ def index():
 def api_status():
     return jsonify(_safe_status())
 
+@app.route("/api/candles")
+def api_candles():
+    from strategy import analyze
+    ohlcv = trader.exchange.get_ohlcv(limit=100)
+    analysis = analyze(ohlcv)
+    def _walk(obj):
+        if isinstance(obj, dict):          return {k: _walk(v) for k, v in obj.items()}
+        if isinstance(obj, (list, tuple)): return [_walk(v) for v in obj]
+        if isinstance(obj, (np.integer,)): return int(obj)
+        if isinstance(obj, (np.floating,)):return float(obj)
+        if isinstance(obj, (np.bool_,)):   return bool(obj)
+        if isinstance(obj, np.ndarray):    return obj.tolist()
+        return obj
+    return jsonify({
+        "candles": _walk(analysis.get("candles", [])),
+        "price":   _walk(analysis.get("price", 0)),
+    })
+
 @app.route("/api/start", methods=["POST"])
 def api_start():
     trader.start()
