@@ -15,33 +15,68 @@ class Config:
     # Торговля по 1 TON на сделку — концентрируемся на одном лучшем входе
     MAX_OPEN_TRADES = int(os.getenv("MAX_OPEN_TRADES", "1"))
 
-    # ── Комиссия DeDust DEX ──
-    # 0.3% за каждую сторону: вход 0.3% + выход 0.3% = 0.6% суммарно
-    FEE_PCT = float(os.getenv("FEE_PCT", "0.3"))
-    FEE_ROUND_TRIP = FEE_PCT * 2   # = 0.6%
+    # ── Комиссия DEX (реальный пул GRINCH/TON — 1% за сторону) ──
+    # Пул GRINCH/TON на DeDust имеет нестандартную комиссию 1% за каждый своп:
+    # вход 1% + выход 1% = 2% за полный цикл. Считаем по реальной комиссии,
+    # чтобы «нетто 20%» было честным после всех издержек.
+    FEE_PCT = float(os.getenv("FEE_PCT", "1.0"))
+    FEE_ROUND_TRIP = FEE_PCT * 2   # = 2.0%
 
-    # ── Цели: +50% НЕТТО (после всех комиссий) ──────────────────────────
-    # Gross TP = 50% + 0.6% комиссии = 50.6% от цены входа
-    # Пример: вход 0.000380 TON → выход при 0.000572 TON → чистая прибыль +50%
-    TARGET_NET_PCT  = float(os.getenv("TARGET_NET_PCT",  "50.0"))  # желаемая прибыль
-    TAKE_PROFIT_PCT = float(os.getenv("TAKE_PROFIT_PCT", "50.6"))  # gross = net + fees
-    STOP_LOSS_PCT   = float(os.getenv("STOP_LOSS_PCT",   "5.0"))   # стоп шире → даём дышать до 50%
+    # ── Цели: +20% НЕТТО минимум (после всех комиссий) ──────────────────
+    # Gross TP = 20% + 2% комиссии (1%+1%) = 22% от цены входа.
+    # Никогда не фиксируем прибыль меньше +20% нетто.
+    TARGET_NET_PCT  = float(os.getenv("TARGET_NET_PCT",  "20.0"))  # минимальная нетто-прибыль
+    TAKE_PROFIT_PCT = float(os.getenv("TAKE_PROFIT_PCT", "22.0"))  # gross = net + комиссии
+    STOP_LOSS_PCT   = float(os.getenv("STOP_LOSS_PCT",   "5.0"))   # запасной стоп (не используется при ONLY_PROFIT_EXIT)
 
-    # ── Прогрессивный трейлинг-стоп (защита прибыли на пути к 50%) ──────
-    # Пороги масштабированы под цель +50%, чтобы трейлинг не закрывал сделку
-    # раньше времени, но защищал прибыль по мере роста.
-    # Этап 1 (прибыль > 12.5%): поднимаем стоп на уровень безубытка
-    # Этап 2 (прибыль > 25%):   трейлинг 6% от максимума
-    # Этап 3 (прибыль > 37.5%): трейлинг 4% от максимума
-    # Этап 4 (прибыль > 45%):   трейлинг 2% от максимума → фиксируем ≥43% нетто
-    TRAIL_BREAKEVEN_AT  = float(os.getenv("TRAIL_BREAKEVEN_AT", "12.5"))   # % прибыли → стоп в безубыток
-    TRAIL_STAGE2_AT     = float(os.getenv("TRAIL_STAGE2_AT",    "25.0"))   # % → трейлинг 6%
+    @classmethod
+    def required_gross_pct(cls):
+        """Минимальный gross-% движения цены, при котором нетто-прибыль после
+        комиссий ОБЕИХ сторон ≥ TARGET_NET_PCT.
+
+        Комиссия считается на обе ноги: fee = (entry+exit)·amount·FEE_PCT/100,
+        поэтому при exit = entry·(1+g/100):
+            net% = g − (2 + g/100)·FEE_PCT
+        Решая net% ≥ TARGET_NET_PCT относительно g:
+            g ≥ (TARGET_NET_PCT + 2·FEE_PCT) / (1 − FEE_PCT/100)
+        Плоское «net + 2·FEE_PCT» занижало бы порог на член g/100·FEE_PCT.
+        """
+        denom = 1.0 - cls.FEE_PCT / 100.0
+        if denom <= 0:
+            return cls.TARGET_NET_PCT + cls.FEE_ROUND_TRIP
+        return (cls.TARGET_NET_PCT + 2.0 * cls.FEE_PCT) / denom
+
+    # ── Режим «только в плюс»: никогда не выходим в убыток ──────────────
+    # При True убыточный стоп отключён: позиция закрывается ТОЛЬКО по тейк-
+    # профиту (+22% gross / +20% нетто) или по трейлингу, который встаёт не
+    # ниже безубытка (после покрытия комиссии) — то есть всегда в плюс.
+    # КОМПРОМИСС: если цена не вырастет, позиция держится сколько угодно
+    # («бриллиантовые руки») — реальный GRINCH не продаётся в минус.
+    ONLY_PROFIT_EXIT = os.getenv("ONLY_PROFIT_EXIT", "true").lower() == "true"
+
+    # ── Резерв TON на комиссию/газ — ВСЕГДА остаётся на кошельке ────────
+    # Покупка никогда не тратит этот резерв: он нужен на газ будущей продажи
+    # GRINCH→TON (своп на DeDust требует ~0.65 TON газа, иначе отскок).
+    GAS_RESERVE_TON = float(os.getenv("GAS_RESERVE_TON", "0.7"))
+
+    # Минимальная осмысленная ставка: после резерва на комиссию покупка
+    # меньше этого порога не открывается (пыль не оправдывает газ свопа).
+    MIN_STAKE_TON = float(os.getenv("MIN_STAKE_TON", "0.5"))
+
+    # ── Прогрессивный трейлинг-стоп (защита прибыли на пути к +20%) ─────
+    # Лестница масштабирована под цель +20% нетто, строго ниже TP-пола (22%):
+    # Этап 1 (прибыль > 5%):  стоп в безубыток (покрывает комиссию — не теряем)
+    # Этап 2 (прибыль > 10%): трейлинг 6% от максимума
+    # Этап 3 (прибыль > 15%): трейлинг 4% от максимума
+    # Этап 4 (прибыль > 20%): трейлинг 2% от максимума → фиксируем прибыль
+    TRAIL_BREAKEVEN_AT  = float(os.getenv("TRAIL_BREAKEVEN_AT", "5.0"))    # % прибыли → стоп в безубыток
+    TRAIL_STAGE2_AT     = float(os.getenv("TRAIL_STAGE2_AT",    "10.0"))   # % → трейлинг 6%
     TRAIL_STAGE2_PCT    = float(os.getenv("TRAIL_STAGE2_PCT",    "6.0"))
-    TRAIL_STAGE3_AT     = float(os.getenv("TRAIL_STAGE3_AT",    "37.5"))   # % → трейлинг 4%
+    TRAIL_STAGE3_AT     = float(os.getenv("TRAIL_STAGE3_AT",    "15.0"))   # % → трейлинг 4%
     TRAIL_STAGE3_PCT    = float(os.getenv("TRAIL_STAGE3_PCT",    "4.0"))
-    TRAIL_STAGE4_AT     = float(os.getenv("TRAIL_STAGE4_AT",    "45.0"))   # % → трейлинг 2%
+    TRAIL_STAGE4_AT     = float(os.getenv("TRAIL_STAGE4_AT",    "20.0"))   # % → трейлинг 2%
     TRAIL_STAGE4_PCT    = float(os.getenv("TRAIL_STAGE4_PCT",    "2.0"))
-    TRAILING_STOP_PCT   = float(os.getenv("TRAILING_STOP_PCT",   "7.0"))   # начальный трейлинг (до 12.5%)
+    TRAILING_STOP_PCT   = float(os.getenv("TRAILING_STOP_PCT",   "7.0"))   # начальный трейлинг (до безубытка)
 
     # ── ATR-цели: динамические ────────────────────────────────────────────
     USE_DYNAMIC_TARGETS = os.getenv("USE_DYNAMIC_TARGETS", "true").lower() == "true"

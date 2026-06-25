@@ -206,9 +206,9 @@ class Trader:
         else:
             sl_pct, tp_pct = Config.STOP_LOSS_PCT, Config.TAKE_PROFIT_PCT
 
-        # Жёсткий минимум TP = нетто 50% + обе стороны комиссии DeDust (0.6%)
-        # Никогда не закрываемся дешевле чем на +50% нетто
-        min_gross_tp = Config.TARGET_NET_PCT + Config.FEE_ROUND_TRIP
+        # Жёсткий минимум TP = gross, дающий ровно +TARGET_NET_PCT нетто после
+        # комиссии обеих ног. Никогда не закрываемся дешевле этого уровня.
+        min_gross_tp = Config.required_gross_pct()
         tp_pct = max(tp_pct, min_gross_tp)
         return sl_pct, tp_pct
 
@@ -219,30 +219,35 @@ class Trader:
         conf_factor = 0.5 + min(max((ai_conf - 50) / 50.0, 0.0), 1.0) * 0.5
         stake  = Config.TRADE_AMOUNT * conf_factor
 
+        # ── Резерв на комиссию + опрос баланса перед сделкой ─────────────
+        # ВСЕГДА оставляем GAS_RESERVE_TON на газ будущей продажи GRINCH→TON.
+        # Покупка не тратит резерв: при нехватке урезаем ставку, а если денег
+        # нет даже на резерв + газ покупки — сделку отменяем (fail-closed).
         ton_stake = None
-        if self.exchange.mode == "dedust":
-            ton_stake = stake
-            amount    = stake / price
-        else:
-            amount = stake / price
-
-        # ── Опрос баланса перед сделкой ──────────────────────────────────
-        # Перед каждой реальной покупкой запрашиваем баланс кошелька. Если TON
-        # недостаточно (ставка + газ свопа) — сделку НЕ открываем вовсе, не
-        # дёргаем биржу впустую. Если баланс не удалось прочитать — тоже не
-        # торгуем (fail-closed: не торгуем вслепую).
         if self.exchange.mode == "dedust" and side == "buy":
             bal     = self.exchange.get_balance() or {}
             ton_bal = bal.get("TON", 0) or 0
-            needed  = stake + 0.45   # газ свопа (0.4 TON) + запас на комиссии сети
-            if bal.get("error") or ton_bal < needed:
-                why = bal.get("error") or f"на кошельке {ton_bal:.3f} TON"
-                self.log(
-                    f"⛔ Недостаточно средств для BUY: {why}, "
-                    f"нужно ≥ {needed:.2f} TON (ставка {stake:.3f} + газ). Сделка отменена.",
-                    "WARN"
+            buy_gas = 0.45                      # газ BUY-свопа + запас на сеть
+            reserve = Config.GAS_RESERVE_TON    # неприкосновенный резерв на комиссию продажи
+            spendable = ton_bal - buy_gas - reserve
+            if bal.get("error") or spendable < Config.MIN_STAKE_TON:
+                why = bal.get("error") or (
+                    f"на кошельке {ton_bal:.3f} TON: после газа {buy_gas} + резерва "
+                    f"{reserve} TON остаётся {spendable:.3f} < мин. ставки "
+                    f"{Config.MIN_STAKE_TON} TON"
                 )
+                self.log(f"⛔ Недостаточно средств для BUY: {why}. Сделка отменена.", "WARN")
                 return False
+            if stake > spendable:
+                self.log(
+                    f"✂️ Ставка урезана {stake:.3f} → {spendable:.3f} TON, "
+                    f"чтобы всегда осталось на комиссию (резерв {reserve} TON)", "INFO"
+                )
+                stake = spendable
+            ton_stake = stake
+            amount = stake / price
+        else:
+            amount = stake / price
 
         order = self.exchange.place_order(side, amount, ton_stake=ton_stake)
         if not order:
@@ -261,7 +266,9 @@ class Trader:
                 amount = actual_grinch
 
         sl_pct, tp_pct = self._targets(price, ai)
-        sl = self.exchange._round(price * (1 - sl_pct / 100))
+        # Режим «только в плюс»: без убыточного стопа (sl=0, вниз не сработает) —
+        # выходим лишь по TP или трейлингу от безубытка.
+        sl = 0.0 if Config.ONLY_PROFIT_EXIT else self.exchange._round(price * (1 - sl_pct / 100))
         tp = self.exchange._round(price * (1 + tp_pct / 100))
 
         trade = {
@@ -291,7 +298,20 @@ class Trader:
 
     def _close_all_trades(self, price, analysis):
         relevant_before = self._relevant_open()
+        net_floor_pct = Config.required_gross_pct()
         for trade in list(relevant_before):
+            # Режим «только в плюс»: AI-сигнал SELL игнорируется, если позиция
+            # ещё не достигла минимальной нетто-прибыли. Продаём только в плюс.
+            if Config.ONLY_PROFIT_EXIT:
+                entry = trade["entry_price"]
+                pnl_pct = (price - entry) / entry * 100 if entry else 0.0
+                if pnl_pct < net_floor_pct:
+                    self.log(
+                        f"⏸️ SELL-сигнал отклонён: прибыль {pnl_pct:+.1f}% < "
+                        f"мин. +{net_floor_pct:.0f}% (режим «только в плюс»). Держим.",
+                        "INFO"
+                    )
+                    continue
             self._close_trade(trade, price, "signal")
         # Сигнал SELL юзерам безопасен ТОЛЬКО когда были позиции и ВСЕ они
         # реально закрылись. При частичном закрытии (одна продажа прошла, другая
@@ -308,12 +328,48 @@ class Trader:
             entry      = trade["entry_price"]
             profit_pct = (price - entry) / entry * 100
 
-            # ── Прогрессивный трейлинг-стоп ────────────────────────────────
-            # Этапы активируются по мере роста прибыли (цель +50%):
-            #   >45%   → трейл 2%  (фиксируем ≥43% нетто)
-            #   >37.5% → трейл 4%
-            #   >25%   → трейл 6%
-            #   >12.5% → стоп в безубыток (не теряем деньги)
+            # Минимальный нетто-пол прибыли (в gross %): нетто-цель + комиссия
+            # цикла. Любой выход обязан быть НЕ НИЖЕ этого уровня → гарантируем
+            # ≥TARGET_NET_PCT нетто после комиссии обеих ног.
+            net_floor_pct = Config.required_gross_pct()
+            floor_price   = self.exchange._round(entry * (1 + net_floor_pct / 100))
+
+            if Config.ONLY_PROFIT_EXIT:
+                # ── Режим «только в плюс, минимум N% нетто» ──────────────────
+                # «Взведённый» стоп = трейлинг уже активирован (стоп ≥ floor_price).
+                # До взведения стоп = 0 и вниз не срабатывает (держим позицию,
+                # никакого стоп-лосса в убыток не существует).
+                armed = trade["stop_loss"] > 0
+
+                # Прибыль достигла пола → взводим/подтягиваем трейлинг. Стоп
+                # НИКОГДА не опускается ниже floor_price (гарантия +N% нетто).
+                if profit_pct >= net_floor_pct:
+                    if price > trade.get("high_water", entry):
+                        trade["high_water"] = price
+                    high_water = trade.get("high_water", entry)
+
+                    new_sl = self.exchange._round(high_water * (1 - Config.TRAIL_STAGE4_PCT / 100))
+                    new_sl = max(new_sl, floor_price)    # пол ≥ +N% нетто
+
+                    if new_sl > trade["stop_loss"]:
+                        old_sl = trade["stop_loss"]
+                        trade["stop_loss"] = new_sl
+                        self.log(
+                            f"🔼 Стоп: {old_sl} → {new_sl} | прибыль {profit_pct:+.1f}% | "
+                            f"трейл {Config.TRAIL_STAGE4_PCT}% (пол +{net_floor_pct:.0f}% нетто)",
+                            "INFO"
+                        )
+                    armed = True
+
+                # Если стоп взведён — проверяем выход КАЖДЫЙ тик (даже если цена
+                # уже просела ниже пола): иначе зафиксированную прибыль можно
+                # «забыть» снять. Стоп всегда ≥ floor_price → выход в плюс.
+                if armed and price <= trade["stop_loss"]:
+                    if self._close_trade(trade, price, "take_profit"):
+                        closed_any = True
+                continue
+
+            # ── Классический режим (SL/TP, трейлинг с безубытком) ───────────
             if profit_pct >= Config.TRAIL_STAGE4_AT:
                 trail_pct = Config.TRAIL_STAGE4_PCT
             elif profit_pct >= Config.TRAIL_STAGE3_AT:
@@ -323,19 +379,16 @@ class Trader:
             else:
                 trail_pct = Config.TRAILING_STOP_PCT   # начальный (7%)
 
-            # Обновляем high_water и стоп
             if price > trade.get("high_water", entry):
                 trade["high_water"] = price
-
             high_water = trade.get("high_water", entry)
-            new_sl     = self.exchange._round(high_water * (1 - trail_pct / 100))
 
-            # Безубыток: если прибыль > TRAIL_BREAKEVEN_AT → стоп не ниже цены входа
+            new_sl = self.exchange._round(high_water * (1 - trail_pct / 100))
+
             if profit_pct >= Config.TRAIL_BREAKEVEN_AT:
-                breakeven_sl = self.exchange._round(entry * 1.002)  # чуть выше входа (покрывает комиссию)
+                breakeven_sl = self.exchange._round(entry * (1 + Config.FEE_ROUND_TRIP / 100))
                 new_sl = max(new_sl, breakeven_sl)
 
-            # Поднимаем стоп только вверх (никогда не опускаем)
             if new_sl > trade["stop_loss"]:
                 old_sl = trade["stop_loss"]
                 trade["stop_loss"] = new_sl
@@ -351,7 +404,6 @@ class Trader:
                     f"прибыль {profit_pct:+.1f}% | {stage_label}", "INFO"
                 )
 
-            # ── Проверка условий закрытия ───────────────────────────────────
             if price <= trade["stop_loss"]:
                 reason = "trailing_stop" if trade["stop_loss"] > entry else "stop_loss"
                 if self._close_trade(trade, price, reason):

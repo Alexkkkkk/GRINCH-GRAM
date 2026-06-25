@@ -13,10 +13,19 @@ The bot is focused only on the TON ecosystem: dropdown + `BASE_PRICES` are GRINC
 ## Trade decision flow (trader._tick)
 Ensemble: strategy+AI must agree, OR AI alone if `conf >= AI_OVERRIDE_CONFIDENCE`. Then BUY-only quality gates block entry on: DOWNTREND regime (if `TREND_FILTER`), `RSI >= RSI_OVERBOUGHT`, `conf < MIN_AI_CONFIDENCE`, or anomaly. Position size scales 0.5×–1.0× of `TRADE_AMOUNT` by AI confidence. Dynamic ATR targets: SL=`ATR_SL_MULT×ATR`, TP=`ATR_TP_MULT×ATR` (R:R ~1:2), TP floored at `2×FEE_PCT+0.5%`. Trailing stop only raises SL and only once in profit (never lowers).
 
-## FEE_PCT semantics — IMPORTANT
-**Rule:** `FEE_PCT` is the **per-side** fee, charged on BOTH entry and exit. Full round-trip cost = `2×FEE_PCT`.
-**Why:** `_close_trade` computes `fee = (entry+exit)*amount*FEE_PCT/100` (both sides), and `_targets` floors TP at `2×FEE_PCT+0.5`. These are only self-consistent under the per-side reading. An earlier comment wrongly called it "full cycle", which would have double-counted.
-**How to apply:** if you ever change the fee model, update BOTH `_close_trade` and `_targets` together, and the config comment.
+## FEE_PCT semantics + exact net floor — IMPORTANT
+**Rule:** `FEE_PCT` is the **per-side** fee on BOTH entry and exit. `_close_trade` computes `fee = (entry+exit)*amount*FEE_PCT/100`. To net X% after fees you need gross `g = (X + 2*FEE_PCT)/(1 - FEE_PCT/100)`, NOT the flat `X + 2*FEE_PCT`.
+**Why:** the flat `2*FEE_PCT` ignores the fee on the *exit* notional's gain (the `g/100*FEE_PCT` term), so e.g. 22% gross nets only ~19.78% at FEE_PCT=1, silently under a 20% target. `Config.required_gross_pct()` is the single source of truth — use it for every floor (`_targets` min TP, `_close_all_trades` SELL gate, ONLY_PROFIT arming floor, liquidator default).
+**How to apply:** never hardcode a gross floor; call `Config.required_gross_pct()`. If you change the fee model, update both that helper and `_close_trade` together. `/api/config` POST must recompute `FEE_ROUND_TRIP` when `fee_pct` changes.
+
+## ONLY_PROFIT_EXIT mode — design
+**Rule:** when `Config.ONLY_PROFIT_EXIT` is true, `_check_stop_loss_take_profit` uses a dedicated branch (not the classic SL/TP ladder): initial `sl=0` (no downside stop ever); trade is HELD until profit ≥ `required_gross_pct()`, then the stop ARMS at `max(2%-trail-from-peak, floor_price=entry*(1+floor/100))` and never drops below the floor. Once armed (`stop_loss>0`), the exit check `price<=stop_loss` runs EVERY tick regardless of current profit — else a locked gain can be "forgotten" on a dip. AI SELL signals in `_close_all_trades` are also gated by the floor.
+**Why:** user wanted "only in profit, minimum 20% net" — guarantees every automated exit ≥ target net (except unavoidable market-gap slippage). Tradeoff: a bag can be held indefinitely if price never reaches the floor (no stop-loss). Buys reserve `GAS_RESERVE_TON` + buy-gas and reject if `spendable < MIN_STAKE_TON` (no dust trades).
+**How to apply:** the classic-mode trailing ladder (`TRAIL_*_AT`) only matters when ONLY_PROFIT_EXIT is false.
+
+## settings.json overrides config.py — IMPORTANT
+**Rule:** `settings.json` (loaded at config.py import + by the liquidator) OVERRIDES config.py defaults at runtime, including `liquidator.sell_rise_pct`, `TAKE_PROFIT_PCT`, `FEE_PCT`. Editing config.py alone is insufficient — update settings.json too, or the persisted value wins.
+**Why:** a stale `sell_rise_pct`/`TAKE_PROFIT_PCT` in settings.json silently re-introduced a below-target floor after config.py was fixed.
 
 ## Profit target & trailing-stop coupling — IMPORTANT
 **Rule:** the progressive trailing-stop stage thresholds (`TRAIL_BREAKEVEN_AT`/`STAGE2_AT`/`STAGE3_AT`/`STAGE4_AT` in config) must be scaled together with `TARGET_NET_PCT`, keeping them a monotonic ladder strictly below the TP floor (`TARGET_NET_PCT + FEE_ROUND_TRIP`).

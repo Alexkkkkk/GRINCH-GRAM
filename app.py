@@ -359,7 +359,9 @@ def api_config_set():
     if (v := num("take_profit_pct", 0.1, 1000))is not None: Config.TAKE_PROFIT_PCT  = v
     if (v := num("max_open_trades", 1, 50))     is not None: Config.MAX_OPEN_TRADES  = int(v)
     if (v := num("trailing_stop_pct", 0, 90))  is not None: Config.TRAILING_STOP_PCT= v
-    if (v := num("fee_pct", 0, 10))            is not None: Config.FEE_PCT          = v
+    if (v := num("fee_pct", 0, 10))            is not None:
+        Config.FEE_PCT = v
+        Config.FEE_ROUND_TRIP = Config.FEE_PCT * 2   # держим комиссию цикла в синхроне
     if (v := num("min_ai_confidence", 0, 100)) is not None: Config.MIN_AI_CONFIDENCE= v
     if "use_dynamic_targets" in data: Config.USE_DYNAMIC_TARGETS = bool(data["use_dynamic_targets"])
     if "trend_filter"        in data: Config.TREND_FILTER        = bool(data["trend_filter"])

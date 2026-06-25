@@ -69,9 +69,10 @@ class GrinchLiquidator:
         self._sell_count     = 0
         self._logs           = []
         # Порог роста для продажи — можно менять через API.
-        # Загружаем сохранённое значение из settings.json (если есть),
-        # иначе дефолт +50% (как основной бот). Значение переживает перезапуски.
-        self.sell_rise_pct   = 50.0
+        # Загружаем сохранённое значение из settings.json (если есть), иначе
+        # дефолт = нетто-цель + комиссия цикла (≈22% gross → ≥20% нетто).
+        # Значение переживает перезапуски.
+        self.sell_rise_pct   = Config.required_gross_pct()
         try:
             from settings_store import get_section
             saved = get_section("liquidator").get("sell_rise_pct")
