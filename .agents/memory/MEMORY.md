@@ -2,5 +2,6 @@
 - [Real-time price feed](price-feed.md) — free CoinGecko/DexScreener prices; use adaptive decimals (fixed round(x,2) zeroes sub-cent coins like GRINCH).
 - [Coin info + DEX trade feed](coin-info-feed.md) — DexScreener stats + GeckoTerminal trades; decide buy/sell by GRINCH token address, not the `kind` field.
 - [Profit trade engine](trading-profit-logic.md) — TON/GRINCH risk logic; FEE_PCT is per-side (charged both sides); use regime.atr_pct not atr for sub-cent coins
+- [DeDust pool mismatch](dedust-pool-mismatch.md) — SDK Factory.get_pool returns an EMPTY TON/GRINCH pool; real liquidity is in EQDpVwTQr...; swaps bounce — pin the real pool, don't trust the factory
 - [DeDust sell gas](dedust-sell-gas.md) — jetton sells need gas 0.6/fwd 0.35 TON; preflight wallet TON ≥ gas or the swap bounces "Sent…Failed" and burns gas
 - [Multi-user platform](multi-user-platform.md) — TonConnect UI (CDN) on /join; no mnemonic; custodial fund model: users deposit TON with memo "GG-XXXXXXXX", virtual accounting in UserTradingManager; deposit_monitor.py polls TonCenter API; withdrawal via platform dedust_client.send_ton()
