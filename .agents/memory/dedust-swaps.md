@@ -48,20 +48,29 @@ The earlier "min-out skew" theory was WRONG and cost a full day. Hard on-chain p
   `0x61ee542d` → throws **65535** and bounces. So the SDK is the wrong protocol version
   for this pool; min-out was never the cause (a lower limit still threw 65535).
 
-**Working BUY message template (decoded from real txs):** send native TON **directly to
-the pool address** with body: `op:uint32=0xa5a7cbf8, query_id:uint64, amount:Coins`
-(the TON to swap; e.g. 1.0 TON = `0x3b9aca00`), plus `ref0` (~127 bits: const prefix
-`c442500f` + min_out:Coins + deadline-ish) and `ref1` (~813 bits: swap_params incl. the
-**recipient address at the tail**). SELLs send GRINCH via the GRINCH jetton vault
-(`0:07e0c635…`) which forwards `0xa5a7cbf8` to the pool. ref0/ref1 exact field semantics
-were not fully reversed — needs a funded validation trade before shipping.
+**FULLY REVERSED + BYTE-EXACT swap bodies (verified: rebuilt real buy AND sell bodies
+from parsed fields → BOC matched original bit-for-bit).** Builders live in
+`dedust_client._build_buy_body` / `_build_sell_transfer_body` (+ `_build_limits_cell`,
+`_build_params_cell`). Layout (pytoniq_core `begin_cell`):
+- **ref0 (limits):** `uint32=0xc442500f`, `min_out:Coins`, `uint8=0`, `deadline:uint32`,
+  `uint3=0`. (min_out = GRINCH-nano for buy, TON-nano for sell.)
+- **ref1 (params):** `store_address(recipient)`, `store_address(None)` (addr_none),
+  `uint16=c1`, `uint256=salt` (random, pool does NOT validate it), `uint16=0x400`,
+  `uint256=recipient.hash_part`. **c1 = 0x800 for BUY, 0x801 for SELL** (direction marker).
+- **BUY body** (sent native TON DIRECTLY to pool, value = swap_amount + ~0.3 TON gas):
+  `uint32=0xa5a7cbf8, query_id:uint64(random), amount:Coins, ^ref0, ^ref1`.
+- **SELL body** = standard jetton-transfer `op 0x0f8a7ea5` of GRINCH sent to OUR grinch
+  jetton-wallet, with `destination=POOL`, `response=wallet`, `custom_payload=none`,
+  `forward_ton=0.25 TON`, forward_payload (in ref) = `{uint32=0xcbc33949, ^ref0, ^ref1}`.
+  NOT via the dedust jetton-vault. Attach ~0.35 TON gas total.
 
-**Why:** the bot wallet hit 0.29 TON after burned-gas bounces, so the corrected
-direct-`0xa5a7cbf8` flow could NOT be live-tested. Do NOT ship a hand-built swap as
-"fixed" without one real validation trade — that repeats the original failure pattern.
-**How to apply:** to trade on THIS pool, replicate op `0xa5a7cbf8` direct-to-pool (buy)
-and GRINCH-vault→pool (sell); do NOT use the `dedust` 1.1.4 native-vault flow. Confirm
-op codes against fresh successful pool txs before trusting any SDK.
+**Why:** the `dedust` 1.1.4 native/jetton-vault flow (legacy pool-op `0x61ee542d`) is the
+WRONG protocol for this CPMM-v2 pool → exit 65535 bounce. The hand-built `0xa5a7cbf8`
+direct-to-pool flow matches real successful txs byte-for-byte.
+**How to apply:** trade THIS pool only via the builders above; never the SDK vault path.
+Still requires ONE funded validation trade (wallet was ~0.29 TON, untestable) — confirm
+by GRINCH balance delta, not broadcast. Re-verify constants against a fresh successful
+pool tx if the pool contract is ever upgraded.
 
 ## "ok" must mean settled, not broadcast
 `wallet.transfer` only **broadcasts**; the swap can still bounce afterward. Returning
