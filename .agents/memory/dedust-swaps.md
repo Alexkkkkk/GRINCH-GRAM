@@ -32,13 +32,36 @@ but if a buy bounces, suspect **min-out feed-vs-pool skew first**, not gas/decim
 **How to apply:** any min-out for a specific pool must use that pool's native ratio;
 never cross-multiply prices from two different USD feeds for execution limits.
 
-**Routing note (verified on-chain):** a successful GRINCH BUY (1.7 TON → 11574.09
-GRINCH, decimals=9) sent native TON **directly to the pool** with op `0xa5a7cbf8`
-(no native vault). Our bot uses the canonical SDK flow TON→**native vault** op
-`0xea06185d`→pool — that ALSO reaches the pool (failing buys reverted at the pool on
-min-out, not on routing; a UTYA buy via the same vault succeeded). So both routings
-are valid; don't switch to the direct-pool op — the vault flow is documented/SDK-backed
-and the only real bug was min-out.
+## CORRECTED ROOT CAUSE (proven on-chain): wrong swap OP, not min-out
+The earlier "min-out skew" theory was WRONG and cost a full day. Hard on-chain proof:
+- This GRINCH/TON pool (`Config.GRINCH_POOL_ADDRESS` = `EQDpVwTQr…OC9Z` =
+  `0:e95704d0af…fd138`) is a **non-standard CPMM** (TonAPI interface `dedust_v2_cpmm`,
+  exposes **only `get_pool_data`** — the SDK's `get_reserves`/`get_assets`/`get_pool_type`
+  all throw exit 11 because they don't exist on this contract version). `get_pool_data`:
+  `asset_x=""` (native TON), `asset_y`=GRINCH, `base_fee_bps=100` (1%).
+- **Every successful swap on this pool uses op `0xa5a7cbf8`** sent **directly to the pool**
+  (native TON buys go user-wallet → pool, NO vault). Exit codes observed on the pool:
+  `0`=success, **`30`=min-out/slippage not met (the REAL slippage reject)**,
+  **`65535`=our failure = wrong/unrecognized op**.
+- Our `dedust` SDK **1.1.4** routes TON→native vault (`0:dae153a7…` "mergesort.t.me")
+  op `0xea06185d`→pool op **`0x61ee542d`** (legacy). This pool does NOT understand
+  `0x61ee542d` → throws **65535** and bounces. So the SDK is the wrong protocol version
+  for this pool; min-out was never the cause (a lower limit still threw 65535).
+
+**Working BUY message template (decoded from real txs):** send native TON **directly to
+the pool address** with body: `op:uint32=0xa5a7cbf8, query_id:uint64, amount:Coins`
+(the TON to swap; e.g. 1.0 TON = `0x3b9aca00`), plus `ref0` (~127 bits: const prefix
+`c442500f` + min_out:Coins + deadline-ish) and `ref1` (~813 bits: swap_params incl. the
+**recipient address at the tail**). SELLs send GRINCH via the GRINCH jetton vault
+(`0:07e0c635…`) which forwards `0xa5a7cbf8` to the pool. ref0/ref1 exact field semantics
+were not fully reversed — needs a funded validation trade before shipping.
+
+**Why:** the bot wallet hit 0.29 TON after burned-gas bounces, so the corrected
+direct-`0xa5a7cbf8` flow could NOT be live-tested. Do NOT ship a hand-built swap as
+"fixed" without one real validation trade — that repeats the original failure pattern.
+**How to apply:** to trade on THIS pool, replicate op `0xa5a7cbf8` direct-to-pool (buy)
+and GRINCH-vault→pool (sell); do NOT use the `dedust` 1.1.4 native-vault flow. Confirm
+op codes against fresh successful pool txs before trusting any SDK.
 
 ## "ok" must mean settled, not broadcast
 `wallet.transfer` only **broadcasts**; the swap can still bounce afterward. Returning

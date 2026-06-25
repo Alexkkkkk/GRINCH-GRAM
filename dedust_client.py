@@ -6,6 +6,7 @@ import asyncio
 import logging
 import time
 import threading
+import requests
 from typing import Optional
 
 from pytoniq import WalletV5R1, LiteBalancer, Address
@@ -265,43 +266,104 @@ class DedustClient:
             return ton_usd, grinch_usd
         return None, None
 
+    # ── Реальные резервы пула (источник истины для курса свопа) ──────────────
+    # Комиссия пула GRINCH/TON на DeDust нестандартная — 1% (CPMM v2).
+    _POOL_FEE = 0.01
+    _RESERVES_TIMEOUT = 8
+
+    @staticmethod
+    def _same_addr(a: str, b: str) -> bool:
+        """Сравнивает TON-адреса независимо от формата (EQ/UQ/raw)."""
+        try:
+            return (CoreAddress(a).to_str(is_user_friendly=False)
+                    == CoreAddress(b).to_str(is_user_friendly=False))
+        except Exception:
+            return (a or "").lower() == (b or "").lower()
+
+    def _pool_reserves(self):
+        """Читает РЕАЛЬНЫЕ резервы пула (ton_reserve, grinch_reserve) через TonAPI.
+
+        Это единственный надёжный способ узнать фактический курс именно нашего
+        1%-пула: типизированные get-методы DeDust SDK на этом CPMM-v2 контракте
+        падают (exit 11), а внешний USD/priceNative-фид систематически расходится
+        с пулом — из-за чего min-out оказывался завышен и пул отклонял свопы
+        (exit 65535, bounce). По резервам считаем выход свопа точной формулой CPMM.
+
+        Возвращает (ton_reserve, grinch_reserve) в обычных единицах или None.
+        """
+        pool = Config.GRINCH_POOL_ADDRESS
+        try:
+            r1 = requests.get(
+                f"https://tonapi.io/v2/accounts/{pool}",
+                headers={"Accept": "application/json"}, timeout=self._RESERVES_TIMEOUT,
+            )
+            ton_reserve = (r1.json().get("balance", 0) or 0) / TON
+            r2 = requests.get(
+                f"https://tonapi.io/v2/accounts/{pool}/jettons",
+                headers={"Accept": "application/json"}, timeout=self._RESERVES_TIMEOUT,
+            )
+            grinch_reserve = None
+            for b in r2.json().get("balances", []):
+                jaddr = (b.get("jetton", {}) or {}).get("address", "")
+                if self._same_addr(jaddr, Config.GRINCH_TOKEN_ADDRESS):
+                    grinch_reserve = float(b.get("balance", 0)) / TON
+                    break
+            if ton_reserve > 0 and grinch_reserve and grinch_reserve > 0:
+                return ton_reserve, grinch_reserve
+        except Exception as e:  # noqa: BLE001
+            log.warning(f"Не удалось прочитать резервы пула: {e}")
+        return None
+
+    def _cpmm_out(self, amount_in: float, reserve_in: float, reserve_out: float) -> float:
+        """Точный выход свопа по формуле постоянного произведения (с комиссией 1%)."""
+        amt = amount_in * (1 - self._POOL_FEE)
+        return reserve_out * amt / (reserve_in + amt)
+
     def _min_out_buy_grinch(self, ton_amount: float):
         """Минимум GRINCH (нано), который должен прийти за ton_amount TON.
 
-        Рассчитывается от справедливой цены внешнего фида с буфером SLIPPAGE_PCT
-        (комиссия пула + проскальзывание). Возвращает (min_nano, expected_grinch)
-        или (None, None), если цену получить не удалось — тогда сделку нужно
-        отклонить, а НЕ слать своп без защиты.
+        Приоритет источников курса:
+          1) РЕАЛЬНЫЕ резервы пула (точная CPMM-формула) — самый надёжный;
+          2) priceNative пула (DexScreener) — серединная цена;
+          3) перекрёстный USD-курс — последний резерв.
+        Возвращает (min_nano, expected_grinch) или (None, None), если курс получить
+        не удалось — тогда сделку нужно отклонить, а НЕ слать своп без защиты.
         """
-        # РЕАЛЬНЫЙ курс пула (TON за 1 GRINCH) — приоритетно. Перекрёстный
-        # USD-курс берёт цены из разных источников и систематически расходится
-        # с курсом нашего 1%-пула (~6%), из-за чего min-out оказывался завышен
-        # и пул отклонял КАЖДУЮ покупку (exit 65535, bounce).
-        ton_per_grinch = price_feed.get_grinch_ton_price(max_stale=self._PRICE_MAX_STALE)
-        if ton_per_grinch and ton_per_grinch > 0:
-            expected_grinch = ton_amount / ton_per_grinch
+        reserves = self._pool_reserves()
+        if reserves:
+            rt, rg = reserves
+            expected_grinch = self._cpmm_out(ton_amount, rt, rg)
         else:
-            ton_usd, grinch_usd = self._external_prices()
-            if ton_usd is None:
-                return None, None
-            expected_grinch = (ton_amount * ton_usd) / grinch_usd
+            ton_per_grinch = price_feed.get_grinch_ton_price(max_stale=self._PRICE_MAX_STALE)
+            if ton_per_grinch and ton_per_grinch > 0:
+                expected_grinch = ton_amount / ton_per_grinch
+            else:
+                ton_usd, grinch_usd = self._external_prices()
+                if ton_usd is None:
+                    return None, None
+                expected_grinch = (ton_amount * ton_usd) / grinch_usd
         min_grinch = expected_grinch * (1 - Config.SLIPPAGE_PCT / 100.0)
         return int(min_grinch * (10 ** 9)), expected_grinch
 
     def _min_out_sell_ton(self, grinch_amount: float):
         """Минимум TON (нано), который должен прийти за grinch_amount GRINCH.
 
+        Источники курса в том же приоритете, что и для покупки.
         Возвращает (min_nano, expected_ton) или (None, None), если цены нет.
         """
-        # РЕАЛЬНЫЙ курс пула (TON за 1 GRINCH) — приоритетно (см. _min_out_buy).
-        ton_per_grinch = price_feed.get_grinch_ton_price(max_stale=self._PRICE_MAX_STALE)
-        if ton_per_grinch and ton_per_grinch > 0:
-            expected_ton = grinch_amount * ton_per_grinch
+        reserves = self._pool_reserves()
+        if reserves:
+            rt, rg = reserves
+            expected_ton = self._cpmm_out(grinch_amount, rg, rt)
         else:
-            ton_usd, grinch_usd = self._external_prices()
-            if ton_usd is None:
-                return None, None
-            expected_ton = (grinch_amount * grinch_usd) / ton_usd
+            ton_per_grinch = price_feed.get_grinch_ton_price(max_stale=self._PRICE_MAX_STALE)
+            if ton_per_grinch and ton_per_grinch > 0:
+                expected_ton = grinch_amount * ton_per_grinch
+            else:
+                ton_usd, grinch_usd = self._external_prices()
+                if ton_usd is None:
+                    return None, None
+                expected_ton = (grinch_amount * grinch_usd) / ton_usd
         min_ton = expected_ton * (1 - Config.SLIPPAGE_PCT / 100.0)
         return int(min_ton * TON), expected_ton
 

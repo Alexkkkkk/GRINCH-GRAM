@@ -2,9 +2,9 @@
 - [Real-time price feed](price-feed.md) — free CoinGecko/DexScreener prices; use adaptive decimals (fixed round(x,2) zeroes sub-cent coins like GRINCH).
 - [Coin info + DEX trade feed](coin-info-feed.md) — DexScreener stats + GeckoTerminal trades; decide buy/sell by GRINCH token address, not the `kind` field.
 - [Profit trade engine](trading-profit-logic.md) — TON/GRINCH risk logic; FEE_PCT is per-side (charged both sides); use regime.atr_pct not atr for sub-cent coins
-- [DeDust swaps](dedust-swaps.md) — buys bounced (exit 65535) because min-out used a USD cross-rate ~6% richer than the 1%-pool; derive min-out from pool-native priceNative. Confirm "ok" by GRINCH balance change, not broadcast; serialize swaps
+- [DeDust swaps](dedust-swaps.md) — CORRECTED: buys fail exit 65535 = WRONG OP, not min-out. This pool wants op 0xa5a7cbf8 direct-to-pool; SDK 1.1.4 sends legacy 0x61ee542d via native vault → reject. exit 30=real min-out. Confirm "ok" by balance change; serialize swaps
 - [Chart & API latency](chart-and-api-latency.md) — chart must poll fast /api/candles not slow /api/status (4.5s get_balance); self-host JS libs (CDN silently fails in preview iframe)
-- [DeDust pool mismatch](dedust-pool-mismatch.md) — factory computes an EMPTY pool; real GRINCH/TON pool is EQDpVwTQr (1%-fee CPMM v2) — pin it. Counter-asset = native-TON zero-address (shown as "GRAM"); use native vault. SDK get-methods exit 11 (expected)
+- [DeDust pool mismatch](dedust-pool-mismatch.md) — pin real pool EQDpVwTQr (1%-fee CPMM, native-TON/GRINCH). NOTE: "use native vault" here is WRONG — see dedust-swaps.md (pool needs direct op 0xa5a7cbf8, not the SDK vault flow). get_pool_data only; other get-methods exit 11
 - [DeDust sell gas](dedust-sell-gas.md) — jetton sells need gas 0.6/fwd 0.35 TON; preflight wallet TON ≥ gas or the swap bounces "Sent…Failed" and burns gas
 - [Multi-user platform](multi-user-platform.md) — TonConnect UI (CDN) on /join; no mnemonic; custodial fund model: users deposit TON with memo "GG-XXXXXXXX", virtual accounting in UserTradingManager; deposit_monitor.py polls TonCenter API; withdrawal via platform dedust_client.send_ton()
 - [TonConnect manifest HTTPS](tonconnect-manifest-https.md) — Replit proxy omits X-Forwarded-Proto; force https in manifest url from request.host or TonKeeper silently won't connect.
