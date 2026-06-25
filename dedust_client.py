@@ -10,7 +10,7 @@ from typing import Optional
 
 from pytoniq import WalletV5R1, LiteBalancer, Address
 from pytoniq_core import Address as CoreAddress
-from dedust import Asset, Factory, PoolType, VaultNative, VaultJetton, JettonRoot, SwapParams
+from dedust import Asset, Factory, Pool, PoolType, VaultNative, VaultJetton, JettonRoot, SwapParams
 
 from config import Config
 
@@ -134,7 +134,14 @@ class DedustClient:
     async def _get_pool(self, provider):
         ton_asset    = Asset.native()
         grinch_asset = Asset.jetton(self._grinch_address())
-        pool = await Factory.get_pool(PoolType.VOLATILE, [ton_asset, grinch_asset], provider)
+        # Реальный пул GRINCH/TON задан явным адресом (нестандартная комиссия 1%).
+        # Factory.get_pool вернул бы канонический адрес дефолтной комиссии,
+        # которого on-chain нет, и свопы отскакивали бы.
+        pool_addr = (getattr(Config, "GRINCH_POOL_ADDRESS", "") or "").strip()
+        if pool_addr:
+            pool = Pool.create_from_address(CoreAddress(pool_addr))
+        else:
+            pool = await Factory.get_pool(PoolType.VOLATILE, [ton_asset, grinch_asset], provider)
         return pool, ton_asset, grinch_asset
 
     async def _estimate_async(self, sell_asset, amount_nano: int) -> dict:

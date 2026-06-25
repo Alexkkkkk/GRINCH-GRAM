@@ -69,6 +69,10 @@ class Config:
     TON_WALLET = os.getenv("TON_WALLET", "EQDDgb2BTM-KCjntOoUg6uHllvnu3KGqEquKw6IySVP3hGXJ")
     # Адрес контракта токена GRINCH (TON-джеттон)
     GRINCH_TOKEN_ADDRESS = os.getenv("GRINCH_TOKEN_ADDRESS", "EQA6G0uVERDZTkLNa0drWBna1F5TSbogy7UXEWU5ERHz4uJL")
+    # Реальный ликвидный пул GRINCH/TON на DeDust (нестандартная комиссия 1%).
+    # Factory.get_pool возвращает канонический адрес дефолтной комиссии, который
+    # on-chain НЕ существует — поэтому свопы нужно слать прямо в этот пул.
+    GRINCH_POOL_ADDRESS = os.getenv("GRINCH_POOL_ADDRESS", "EQDpVwTQr53cwgaT_VCFsmrleg5fBvStTjMrvyvprF_ROC9Z")
     # Мнемоника TON-кошелька (24 слова через пробел) — хранить только в секретах!
     TON_MNEMONIC = os.getenv("TON_MNEMONIC", "")
     # Режим торговли: "demo" | "dedust"
