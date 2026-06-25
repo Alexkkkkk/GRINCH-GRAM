@@ -383,6 +383,58 @@ class AIEngine:
         log.info(f"[AI] Feedback: {outcome} PNL={pnl:.4f} → {len(self._confirmed_X)} подтверждённых примеров")
 
     # ─────────────────────────────────────────────────────────────────────────
+    # Персистентность опыта (переживает перезапуск)
+    # ─────────────────────────────────────────────────────────────────────────
+
+    def export_experience(self) -> dict:
+        """Сериализует подтверждённый опыт ИИ для записи на диск."""
+        with self._lock:
+            return {
+                "confirmed_X": [list(map(float, x)) for x in self._confirmed_X],
+                "confirmed_y": [int(v) for v in self._confirmed_y],
+                "confirmed_w": [float(v) for v in self._confirmed_w],
+                "slot_acc":    {s.name: list(s._history) for s in self._slots},
+                "feature_dim": len(self._feature_names),
+            }
+
+    def import_experience(self, data: dict) -> int:
+        """Восстанавливает опыт с диска и дообучает модели.
+        Возвращает число восстановленных подтверждённых примеров (0 — если
+        несовместимо или пусто). Вызывать ПОСЛЕ pretrain (нужны feature_names)."""
+        if not data:
+            return 0
+        X = data.get("confirmed_X") or []
+        if not X:
+            return 0
+        with self._lock:
+            cur_dim   = len(self._feature_names)
+            saved_dim = data.get("feature_dim")
+            # Изменился набор признаков → старый опыт несовместим, пропускаем
+            if cur_dim and saved_dim and cur_dim != saved_dim:
+                log.warning(f"[AI] Опыт несовместим: признаков {saved_dim}≠{cur_dim}, пропуск")
+                return 0
+            try:
+                self._confirmed_X = [np.array(x, dtype=float) for x in X]
+                self._confirmed_y = [int(v) for v in data.get("confirmed_y", [])]
+                self._confirmed_w = [float(v) for v in data.get("confirmed_w", [])]
+                acc = data.get("slot_acc", {}) or {}
+                for s in self._slots:
+                    h = acc.get(s.name)
+                    if h:
+                        s._history = deque(h, maxlen=ACCURACY_WINDOW)
+                        if s._history:
+                            a = sum(s._history) / len(s._history)
+                            s.weight = max(0.15, a ** 2)
+                n = len(self._confirmed_X)
+                if n and self._trained:
+                    self._refit_all()
+                log.info(f"[AI] Восстановлено {n} подтверждённых примеров с диска")
+                return n
+            except Exception as e:
+                log.warning(f"[AI] import_experience error: {e}")
+                return 0
+
+    # ─────────────────────────────────────────────────────────────────────────
     # Внутренние методы: обучение
     # ─────────────────────────────────────────────────────────────────────────
 

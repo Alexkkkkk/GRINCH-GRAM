@@ -306,6 +306,12 @@ def api_coin_exchanges():
 def api_liquidator_status():
     return jsonify(grinch_liquidator.get_status())
 
+@app.route("/api/experience")
+def api_experience():
+    """Состояние долговременной памяти и само-управления ИИ."""
+    from experience_manager import experience_manager
+    return jsonify(experience_manager.get_report())
+
 @app.route("/api/liquidator/sell", methods=["POST"])
 def api_liquidator_sell():
     result = grinch_liquidator.force_sell_now()
@@ -363,6 +369,18 @@ def api_config_set():
         Config.FEE_PCT = v
         Config.FEE_ROUND_TRIP = Config.FEE_PCT * 2   # держим комиссию цикла в синхроне
     if (v := num("min_ai_confidence", 0, 100)) is not None: Config.MIN_AI_CONFIDENCE= v
+
+    # Ручное изменение параметров → обновляем опорные значения ИИ, иначе
+    # само-управление потянет их обратно к устаревшей базе.
+    try:
+        from experience_manager import experience_manager
+        experience_manager.set_baseline(
+            min_conf=Config.MIN_AI_CONFIDENCE if "min_ai_confidence" in data else None,
+            trade_amount=Config.TRADE_AMOUNT if "trade_amount" in data else None,
+        )
+    except Exception:  # noqa: BLE001
+        pass
+
     if "use_dynamic_targets" in data: Config.USE_DYNAMIC_TARGETS = bool(data["use_dynamic_targets"])
     if "trend_filter"        in data: Config.TREND_FILTER        = bool(data["trend_filter"])
     if "symbol" in data and data["symbol"] != Config.SYMBOL:

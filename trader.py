@@ -5,6 +5,7 @@ from config import Config
 from exchange import ExchangeClient
 from strategy import analyze
 from ai_engine import AIEngine
+from experience_manager import experience_manager
 
 
 class Trader:
@@ -32,6 +33,9 @@ class Trader:
         self._balance_cache     = {}
         self._balance_cache_ts  = 0
         self._balance_cache_ttl = 30  # секунд
+        # ── Долговременная память + само-управление ИИ ───────────────────
+        self.exp = experience_manager
+        self.exp.restore_trader(self)
 
     def log(self, msg, level="INFO"):
         entry = {"time": datetime.utcnow().strftime("%H:%M:%S"), "level": level, "msg": msg}
@@ -67,12 +71,30 @@ class Trader:
         self.training = False
         self.log("✅ Предобучение завершено. Запускаю торговый цикл.", "INFO")
 
+        # Возвращаем сохранённый опыт обратно в ИИ (тёплый старт обучения)
+        try:
+            n = self.exp.restore_ai(self.ai)
+            if n:
+                self.log(f"🧠 ИИ дообучен на {n} сохранённых сделках из памяти", "INFO")
+        except Exception as e:
+            self.log(f"Восстановление опыта ИИ: {e}", "WARN")
+
         while self.running:
             try:
                 self._tick()
+                self._record_equity()
             except Exception as e:
                 self.log(f"Ошибка в цикле: {e}", "ERROR")
             time.sleep(30)
+
+    def _record_equity(self):
+        """Снимок капитала кошелька в память (троттлинг внутри менеджера)."""
+        try:
+            from price_feed import price_feed
+            self.exp.record_balance(self._get_balance_cached(),
+                                    price_feed.get("GRINCH") or 0.0)
+        except Exception:  # noqa: BLE001
+            pass
 
     def _emit_progress(self, progress_dict):
         if self.on_training_progress:
@@ -130,7 +152,9 @@ class Trader:
                 conf >= Config.REVERSAL_AI_MIN
             )
 
-            if conf < Config.MIN_AI_CONFIDENCE:
+            if self.exp.is_paused():
+                blocked = "ИИ-пауза: просадка капитала (защита от убытков)"
+            elif conf < Config.MIN_AI_CONFIDENCE:
                 blocked = f"низкая уверенность AI {conf}%"
             elif mean_rev_override:
                 # RSI экстремально низкий + AI уверен → Mean Reversion вход даже в DOWNTREND
@@ -460,7 +484,7 @@ class Trader:
 
         # ── 2. Виртуальный P&L ───────────────────────────────────────────
         gross = (price - trade["entry_price"]) * trade["amount"]
-        # Обе стороны DeDust: 0.3% вход + 0.3% выход
+        # Комиссия обеих ног DeDust: FEE_PCT за вход + FEE_PCT за выход
         fee   = (trade["entry_price"] + price) * trade["amount"] * Config.FEE_PCT / 100
         pnl_raw = gross - fee
 
@@ -496,6 +520,19 @@ class Trader:
             self.log(f"🧠 AI feedback: {outcome} PNL={pnl:+.6f} TON", "INFO")
         except Exception as e:
             self.log(f"AI feedback ошибка: {e}", "WARN")
+
+        # ── 4. Память + само-управление ИИ ───────────────────────────────
+        try:
+            self.exp.record_trade(trade, self.stats, self.ai)
+            from price_feed import price_feed
+            self.exp.record_balance(
+                self._get_balance_cached(),
+                price_feed.get("GRINCH") or price,
+                force=True,
+            )
+            self.exp.analyze_and_adapt(self, self.ai)
+        except Exception as e:
+            self.log(f"Память/адаптация: {e}", "WARN")
 
         emoji = "🟩" if pnl >= 0 else "🟥"
         self.log(
