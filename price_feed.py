@@ -26,7 +26,16 @@ class PriceFeed:
         self._cache = {}   # base -> (price, ts)
         self._lock = threading.Lock()
 
-    def get(self, base):
+    def get(self, base, max_stale=None):
+        """Цена базового актива в USD.
+
+        max_stale: если задан (сек), при невозможности получить свежую цену
+        НЕ возвращаем бесконечно устаревший кэш — только если он не старше
+        max_stale. Используется для исполнения свопов (защита от устаревшей
+        цены): передавайте небольшой max_stale, чтобы не торговать по протухшей
+        котировке. Если max_stale=None — поведение прежнее (отдаём последнюю
+        известную цену любой давности, годится для отображения в UI).
+        """
         base = (base or "").upper()
         now = time.time()
         with self._lock:
@@ -38,10 +47,14 @@ class PriceFeed:
             with self._lock:
                 self._cache[base] = (price, now)
             return price
-        # Если свежей цены нет — отдаём последнюю известную (если была)
+        # Свежую цену получить не удалось — отдаём последнюю известную.
         with self._lock:
             entry = self._cache.get(base)
-            return entry[0] if entry else None
+            if not entry:
+                return None
+            if max_stale is not None and (now - entry[1]) > max_stale:
+                return None
+            return entry[0]
 
     def _fetch(self, base):
         cid = COINGECKO_IDS.get(base)

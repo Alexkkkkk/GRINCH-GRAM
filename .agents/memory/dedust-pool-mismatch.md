@@ -30,9 +30,11 @@ GeckoTerminal labels it `TON / Toncoin`; DexScreener labels it `GRAM / Gram`; th
 The installed `dedust` SDK is older than this CPMM-v2 1%-fee contract, so typed get-methods
 (`get_assets`/`get_reserves`/`estimate_swap_out`) return exit code 11 on-chain (confirmed via liteserver, TonCenter,
 TonAPI — don't keep retrying them). Swap **execution** does not need them; price comes from the external feed
-(CoinGecko/DexScreener/GeckoTerminal). **Caveat:** with no working on-chain estimate there is no slippage/min-out
-(`limit=0`) — the vaults' `create_swap_payload` supports a `limit` param, so min-out should be computed from the
-external price before trading large sums.
+(CoinGecko/DexScreener/GeckoTerminal). Slippage protection is now wired: min-out is derived from external USD
+prices (TON & GRINCH), buffered by `Config.SLIPPAGE_PCT` (clamped 0.1..50, default 5), passed as the vaults'
+`create_swap_payload(limit=...)`. Trades **abort** (no funds sent) if a fresh price is unavailable (price feed
+`get(base, max_stale=120)` rejects indefinitely-stale cache). **Why:** the pool has no usable on-chain estimate, so
+an external-price min-out is the only slippage guard — never send `limit=0` with real funds.
 
 **How to apply:** keep the pool pinned by address; trust the zero-address = native TON; use native vault for buys,
 GRINCH jetton vault for sells; ignore exit-11 get-method failures; validate end-to-end with a small (1 TON) test trade

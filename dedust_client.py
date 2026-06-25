@@ -13,6 +13,7 @@ from pytoniq_core import Address as CoreAddress
 from dedust import Asset, Factory, Pool, PoolType, VaultNative, VaultJetton, JettonRoot, SwapParams
 
 from config import Config
+from price_feed import price_feed
 
 log = logging.getLogger(__name__)
 
@@ -205,10 +206,70 @@ class DedustClient:
             log.debug(f"[DeDust] estimate_sell ошибка: {e}")
             return None
 
+    # ─────────────────────── защита от проскальзывания ─────────────────────
+
+    # Максимальная допустимая «протухлость» цены для исполнения свопа (сек).
+    # Прайс-фид кэширует 30 сек; на исполнение допускаем до 120 сек, иначе
+    # сделка отклоняется — чтобы не торговать по устаревшей котировке.
+    _PRICE_MAX_STALE = 120
+
+    @classmethod
+    def _external_prices(cls) -> tuple:
+        """Возвращает (ton_usd, grinch_usd) из внешнего прайс-фида или (None, None).
+
+        Использует max_stale, чтобы не отдавать бесконечно устаревший кэш для
+        исполнения свопа.
+        """
+        ton_usd = price_feed.get("TON", max_stale=cls._PRICE_MAX_STALE)
+        grinch_usd = price_feed.get("GRINCH", max_stale=cls._PRICE_MAX_STALE)
+        if ton_usd and grinch_usd and ton_usd > 0 and grinch_usd > 0:
+            return ton_usd, grinch_usd
+        return None, None
+
+    def _min_out_buy_grinch(self, ton_amount: float):
+        """Минимум GRINCH (нано), который должен прийти за ton_amount TON.
+
+        Рассчитывается от справедливой цены внешнего фида с буфером SLIPPAGE_PCT
+        (комиссия пула + проскальзывание). Возвращает (min_nano, expected_grinch)
+        или (None, None), если цену получить не удалось — тогда сделку нужно
+        отклонить, а НЕ слать своп без защиты.
+        """
+        ton_usd, grinch_usd = self._external_prices()
+        if ton_usd is None:
+            return None, None
+        expected_grinch = (ton_amount * ton_usd) / grinch_usd
+        min_grinch = expected_grinch * (1 - Config.SLIPPAGE_PCT / 100.0)
+        return int(min_grinch * (10 ** 9)), expected_grinch
+
+    def _min_out_sell_ton(self, grinch_amount: float):
+        """Минимум TON (нано), который должен прийти за grinch_amount GRINCH.
+
+        Возвращает (min_nano, expected_ton) или (None, None), если цены нет.
+        """
+        ton_usd, grinch_usd = self._external_prices()
+        if ton_usd is None:
+            return None, None
+        expected_ton = (grinch_amount * grinch_usd) / ton_usd
+        min_ton = expected_ton * (1 - Config.SLIPPAGE_PCT / 100.0)
+        return int(min_ton * TON), expected_ton
+
     # ─────────────────────────── swap: buy ─────────────────────────────────
 
     async def _buy_async(self, ton_amount: float) -> dict:
         """TON → GRINCH: отправляем TON в NativeVault с payload свопа."""
+        # Защита от проскальзывания: считаем min-out ДО отправки средств.
+        min_out_nano, expected_grinch = self._min_out_buy_grinch(ton_amount)
+        if min_out_nano is None:
+            return {
+                "ok": False,
+                "side": "buy",
+                "error": (
+                    "Нет актуальной цены GRINCH/TON для расчёта защиты от "
+                    "проскальзывания — сделка отклонена (своп без min-out не "
+                    "отправляется во избежание убыточного курса)."
+                ),
+            }
+
         wallet, provider = await self._wallet_and_provider()
         try:
             pool, ton_asset, _ = await self._get_pool(provider)
@@ -225,6 +286,7 @@ class DedustClient:
             payload = VaultNative.create_swap_payload(
                 amount=amount_nano,
                 pool_address=pool.address,
+                limit=min_out_nano,
                 swap_params=swap_params,
             )
 
@@ -239,6 +301,9 @@ class DedustClient:
                 "side": "buy",
                 "ton_spent": ton_amount,
                 "vault": str(native_vault.address),
+                "min_grinch_out": round(min_out_nano / (10 ** 9), 6),
+                "expected_grinch": round(expected_grinch, 6),
+                "slippage_pct": Config.SLIPPAGE_PCT,
             }
         finally:
             await provider.close_all()
@@ -261,6 +326,19 @@ class DedustClient:
         Газ: 0.6 TON total (DeDust рекомендует ≥ 0.5 TON для jetton swap).
         Forward: 0.35 TON — достаточно для исполнения свопа внутри vault.
         """
+        # Защита от проскальзывания: считаем min-out TON ДО перевода жеттонов.
+        min_out_nano, expected_ton = self._min_out_sell_ton(grinch_amount)
+        if min_out_nano is None:
+            return {
+                "ok": False,
+                "side": "sell",
+                "error": (
+                    "Нет актуальной цены GRINCH/TON для расчёта защиты от "
+                    "проскальзывания — продажа отклонена (своп без min-out не "
+                    "отправляется во избежание убыточного курса)."
+                ),
+            }
+
         wallet, provider = await self._wallet_and_provider()
         try:
             pool, _, grinch_asset = await self._get_pool(provider)
@@ -301,6 +379,7 @@ class DedustClient:
 
             forward_payload = VaultJetton.create_swap_payload(
                 pool_address=pool.address,
+                limit=min_out_nano,
                 swap_params=swap_params,
             )
 
@@ -323,6 +402,9 @@ class DedustClient:
                 "side": "sell",
                 "grinch_spent": grinch_amount,
                 "vault": str(jetton_vault.address),
+                "min_ton_out": round(min_out_nano / TON, 6),
+                "expected_ton": round(expected_ton, 6),
+                "slippage_pct": Config.SLIPPAGE_PCT,
             }
         finally:
             await provider.close_all()
