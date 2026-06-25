@@ -230,7 +230,7 @@ class Trader:
         if self.exchange.mode == "dedust" and side == "buy":
             bal     = self.exchange.get_balance() or {}
             ton_bal = bal.get("TON", 0) or 0
-            needed  = stake + 0.30   # газ свопа (~0.25 TON) + запас на комиссии сети
+            needed  = stake + 0.45   # газ свопа (0.4 TON) + запас на комиссии сети
             if bal.get("error") or ton_bal < needed:
                 why = bal.get("error") or f"на кошельке {ton_bal:.3f} TON"
                 self.log(

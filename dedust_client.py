@@ -117,6 +117,45 @@ class DedustClient:
         finally:
             await provider.close_all()
 
+    # ───────────── низкоуровневые балансы для проверки исполнения ─────────────
+
+    async def _grinch_balance_nano(self, provider, addr) -> int:
+        """GRINCH-баланс кошелька в нанотокенах (0, если jetton-кошелёк не задеплоен)."""
+        try:
+            grinch_root = JettonRoot.create_from_address(Config.GRINCH_TOKEN_ADDRESS)
+            gw = await grinch_root.get_wallet(addr, provider)
+            g_state = await provider.get_account_state(gw.address)
+            if getattr(g_state, "state", None) and g_state.state.type_ == "active":
+                return await gw.get_balance(provider)
+        except Exception as e:
+            log.debug(f"[DeDust] grinch balance poll: {e}")
+        return 0
+
+    async def _wait_for_settlement(self, provider, addr, *, direction: str,
+                                   baseline_nano: int, min_delta_nano: int,
+                                   timeout: int = 75, interval: int = 7):
+        """Ждёт реального изменения GRINCH-баланса после отправки свопа.
+
+        direction="increase" — покупка (GRINCH должен прийти).
+        direction="decrease" — продажа (GRINCH должен уйти).
+
+        Возвращает текущий баланс (нано) при подтверждении или None, если за
+        timeout сек изменение так и не наступило (своп отскочил / не исполнился).
+        """
+        deadline = time.time() + timeout
+        while time.time() < deadline:
+            await asyncio.sleep(interval)
+            try:
+                cur = await self._grinch_balance_nano(provider, addr)
+            except Exception as e:
+                log.debug(f"[DeDust] settlement poll error: {e}")
+                continue
+            if direction == "increase" and (cur - baseline_nano) >= min_delta_nano:
+                return cur
+            if direction == "decrease" and (baseline_nano - cur) >= min_delta_nano:
+                return cur
+        return None
+
     def get_balance(self) -> dict:
         if not self._ready:
             return {"TON": 0.0, "GRINCH": 0.0, "error": self._error}
@@ -276,7 +315,13 @@ class DedustClient:
             native_vault = await Factory.get_native_vault(provider)
 
             amount_nano = int(ton_amount * TON)
-            gas_nano    = int(0.25 * TON)
+            # Газ на покупку повышен 0.25 → 0.4 TON. На своп TON→GRINCH пул
+            # должен оплатить не только сам обмен, но и выдачу GRINCH через
+            # jetton-vault с ДЕПЛОЕМ jetton-кошелька покупателя (если его ещё
+            # нет). При 0.25 TON пул отскакивал (exit 65535) — газа не хватало
+            # на выдачу. Излишек газа возвращается на кошелёк, поэтому запас
+            # безопасен.
+            gas_nano    = int(0.4 * TON)
 
             # ── Preflight: хватает ли TON на сумму свопа + газ? ──────────────
             # Покупка отправляет amount_nano (на своп) + gas_nano (газ/комиссии).
@@ -310,11 +355,36 @@ class DedustClient:
                 swap_params=swap_params,
             )
 
+            # Базовый GRINCH-баланс ДО свопа — для проверки реального исполнения.
+            baseline_nano = await self._grinch_balance_nano(provider, wallet.address)
+
             await wallet.transfer(
                 destination=native_vault.address,
                 amount=amount_nano + gas_nano,
                 body=payload,
             )
+
+            # ── Проверка реального исполнения on-chain ───────────────────────
+            # wallet.transfer лишь ШИРОКОВЕЩАЕТ транзакцию; своп в пуле может
+            # отскочить (bounce) уже после отправки. Поэтому ждём, пока GRINCH
+            # реально поступит. Требуем хотя бы половину ожидаемого объёма.
+            min_delta = int(expected_grinch * 0.5 * (10 ** 9))
+            confirmed = await self._wait_for_settlement(
+                provider, wallet.address, direction="increase",
+                baseline_nano=baseline_nano, min_delta_nano=min_delta,
+            )
+            if confirmed is None:
+                return {
+                    "ok": False,
+                    "side": "buy",
+                    "broadcast": True,
+                    "error": (
+                        "Своп отправлен, но GRINCH не поступил — ордер отскочил "
+                        "(bounce) в пуле DeDust. TON возвращён на кошелёк (минус "
+                        "сетевой газ). Вероятные причины: проскальзывание выше "
+                        f"{Config.SLIPPAGE_PCT}% или нехватка ликвидности."
+                    ),
+                }
 
             return {
                 "ok": True,
@@ -323,6 +393,7 @@ class DedustClient:
                 "vault": str(native_vault.address),
                 "min_grinch_out": round(min_out_nano / (10 ** 9), 6),
                 "expected_grinch": round(expected_grinch, 6),
+                "grinch_received": round((confirmed - baseline_nano) / (10 ** 9), 6),
                 "slippage_pct": Config.SLIPPAGE_PCT,
             }
         finally:
@@ -332,11 +403,15 @@ class DedustClient:
         """Покупка GRINCH за TON через DeDust. Блокирует до завершения транзакции."""
         if not self._ready:
             return {"ok": False, "error": self._error}
-        try:
-            return _run(self._buy_async(ton_amount))
-        except Exception as e:
-            log.error(f"[DeDust] buy ошибка: {e}")
-            return {"ok": False, "error": str(e)}
+        # Сериализуем свопы на общем кастодиальном кошельке: проверка исполнения
+        # опирается на изменение GRINCH-баланса, поэтому параллельные buy/sell
+        # могли бы дать ложный результат. Лок гарантирует один своп за раз.
+        with self._lock:
+            try:
+                return _run(self._buy_async(ton_amount))
+            except Exception as e:
+                log.error(f"[DeDust] buy ошибка: {e}")
+                return {"ok": False, "error": str(e)}
 
     # ─────────────────────────── swap: sell ────────────────────────────────
 
@@ -411,11 +486,35 @@ class DedustClient:
                 forward_payload=forward_payload,
             )
 
+            # Базовый GRINCH-баланс ДО свопа — для проверки реального исполнения.
+            baseline_nano = await self._grinch_balance_nano(provider, wallet.address)
+
             await wallet.transfer(
                 destination=grinch_wallet.address,
                 amount=gas_nano,
                 body=transfer_payload,
             )
+
+            # ── Проверка реального исполнения on-chain ───────────────────────
+            # Если своп отскочит, GRINCH вернётся на кошелёк и баланс НЕ
+            # уменьшится. Ждём фактического списания (хотя бы половины объёма).
+            min_delta = int(grinch_amount * 0.5 * (10 ** 9))
+            confirmed = await self._wait_for_settlement(
+                provider, wallet.address, direction="decrease",
+                baseline_nano=baseline_nano, min_delta_nano=min_delta,
+            )
+            if confirmed is None:
+                return {
+                    "ok": False,
+                    "side": "sell",
+                    "broadcast": True,
+                    "error": (
+                        "Своп отправлен, но GRINCH не списался — ордер отскочил "
+                        "(bounce) в пуле DeDust. GRINCH возвращён на кошелёк "
+                        "(минус сетевой газ). Вероятные причины: проскальзывание "
+                        f"выше {Config.SLIPPAGE_PCT}% или нехватка ликвидности."
+                    ),
+                }
 
             return {
                 "ok": True,
@@ -424,6 +523,7 @@ class DedustClient:
                 "vault": str(jetton_vault.address),
                 "min_ton_out": round(min_out_nano / TON, 6),
                 "expected_ton": round(expected_ton, 6),
+                "grinch_sold": round((baseline_nano - confirmed) / (10 ** 9), 6),
                 "slippage_pct": Config.SLIPPAGE_PCT,
             }
         finally:
@@ -433,11 +533,14 @@ class DedustClient:
         """Продажа GRINCH за TON через DeDust. Блокирует до завершения транзакции."""
         if not self._ready:
             return {"ok": False, "error": self._error}
-        try:
-            return _run(self._sell_async(grinch_amount))
-        except Exception as e:
-            log.error(f"[DeDust] sell ошибка: {e}")
-            return {"ok": False, "error": str(e)}
+        # Сериализуем свопы (см. комментарий в buy): один своп за раз, иначе
+        # параллельные операции исказят проверку GRINCH-баланса.
+        with self._lock:
+            try:
+                return _run(self._sell_async(grinch_amount))
+            except Exception as e:
+                log.error(f"[DeDust] sell ошибка: {e}")
+                return {"ok": False, "error": str(e)}
 
     # ─────────────────────────── transfer TON ──────────────────────────────
 

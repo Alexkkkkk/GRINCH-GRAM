@@ -288,7 +288,14 @@ class GrinchLiquidator:
 
     # ── Исполнение продажи ───────────────────────────────────────────────────
 
-    def _execute_sell(self, grinch_amount: float, current_price: float):
+    def _execute_sell(self, grinch_amount: float, current_price: float) -> dict:
+        """Исполняет продажу и ВОЗВРАЩАЕТ реальный результат свопа.
+
+        Раньше метод глотал ошибку (только лог), из-за чего вызывающий код
+        мог сообщить об «успехе», хотя своп на самом деле отскочил. Теперь
+        результат всегда возвращается, а баланс/счётчики обновляются ТОЛЬКО
+        при подтверждённом on-chain исполнении.
+        """
         try:
             from dedust_client import dedust_client
             result = dedust_client.sell(grinch_amount)
@@ -308,12 +315,15 @@ class GrinchLiquidator:
                     self._ref_time      = None
                 # Обновим баланс через 60 сек
                 self._last_bal_check = time.time() - BAL_CHECK_INTERVAL + 60
+                return {"ok": True, "grinch_sold": grinch_amount, "price": current_price}
             else:
                 err = (result.get("error") if result else None) or "нет ответа"
                 self._log(f"⚠️ Продажа не удалась: {err}", "WARN")
+                return {"ok": False, "error": err}
 
         except Exception as e:
             self._log(f"Ошибка продажи: {e}", "ERROR")
+            return {"ok": False, "error": str(e)}
 
     def force_sell_now(self) -> dict:
         """Немедленная продажа (вызывается вручную через кнопку в UI)."""
@@ -331,8 +341,9 @@ class GrinchLiquidator:
 
         current = price_feed.get("GRINCH") or 0.0
         self._log(f"🔴 РУЧНАЯ продажа {grinch:.4f} GRINCH @ ${current:.8f}")
-        self._execute_sell(grinch, current)
-        return {"ok": True, "grinch_sold": grinch, "price": current}
+        # Возвращаем РЕАЛЬНЫЙ результат свопа (ok только при подтверждённом
+        # списании GRINCH on-chain), а не безусловный успех.
+        return self._execute_sell(grinch, current)
 
 
 # ── Синглтон — запускается при импорте модуля ────────────────────────────────
