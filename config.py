@@ -87,3 +87,32 @@ class Config:
     # Жёстко ограничиваем диапазон 0.1..50%, чтобы ошибочная конфигурация
     # (0, отрицательное или ≥100) не отключила защиту и не создала некорректный min-out.
     SLIPPAGE_PCT = min(50.0, max(0.1, float(os.getenv("SLIPPAGE_PCT", "5"))))
+
+
+# ── Применяем сохранённые в дашборде настройки (settings.json) ─────────────────
+# Эти значения переопределяют дефолты/env и сохраняются между перезапусками.
+try:
+    from settings_store import get_section as _get_section
+
+    _persisted = _get_section("config")
+    for _key, _val in _persisted.items():
+        if not hasattr(Config, _key):
+            continue
+        # Приводим к типу дефолта, чтобы повреждённый settings.json не сломал логику
+        _default = getattr(Config, _key)
+        try:
+            if isinstance(_default, bool):
+                _val = bool(_val)
+            elif isinstance(_default, int):
+                _val = int(_val)
+            elif isinstance(_default, float):
+                _val = float(_val)
+            elif isinstance(_default, str):
+                _val = str(_val)
+            setattr(Config, _key, _val)
+        except (TypeError, ValueError):
+            continue
+    # Производное значение пересчитываем после применения переопределений
+    Config.FEE_ROUND_TRIP = Config.FEE_PCT * 2
+except Exception as _e:  # noqa: BLE001 — настройки не должны ломать запуск
+    print(f"[Config] Не удалось применить сохранённые настройки: {_e}")

@@ -9,3 +9,4 @@
 - [Multi-user platform](multi-user-platform.md) — TonConnect UI (CDN) on /join; no mnemonic; custodial fund model: users deposit TON with memo "GG-XXXXXXXX", virtual accounting in UserTradingManager; deposit_monitor.py polls TonCenter API; withdrawal via platform dedust_client.send_ton()
 - [TonConnect manifest HTTPS](tonconnect-manifest-https.md) — Replit proxy omits X-Forwarded-Proto; force https in manifest url from request.host or TonKeeper silently won't connect.
 - [Custodial sync invariant](custodial-sync-invariant.md) — virtual user updates must follow CONFIRMED real on-chain execution; deposits oldest-first; gate BUY/SELL callbacks on real fills; never SELL+BUY same tick.
+- [Settings persistence](settings-persistence.md) — dashboard settings survive restarts via settings.json (settings_store.py), not by rewriting source; new tunables must persist in POST AND load at startup.

@@ -314,7 +314,10 @@ def api_liquidator_sell():
 @app.route("/api/liquidator/threshold", methods=["POST"])
 def api_liquidator_threshold():
     data = request.json or {}
-    pct  = float(data.get("pct", 3.0))
+    try:
+        pct = float(data.get("pct", 50.0))
+    except (TypeError, ValueError):
+        return jsonify({"ok": False, "message": "Некорректное значение порога"}), 400
     grinch_liquidator.set_threshold(pct)
     return jsonify({"ok": True, "sell_rise_pct": grinch_liquidator.sell_rise_pct})
 
@@ -364,7 +367,26 @@ def api_config_set():
         if trader.open_trades:
             return jsonify({"ok": False, "message": "Нельзя сменить пару при открытых сделках."}), 409
         Config.SYMBOL = data["symbol"]
-    return jsonify({"ok": True, "message": "Настройки сохранены"})
+
+    # Сохраняем текущее состояние настроек на диск, чтобы они пережили перезапуск
+    try:
+        from settings_store import update_section
+        update_section("config", {
+            "SYMBOL":            Config.SYMBOL,
+            "TRADE_AMOUNT":      Config.TRADE_AMOUNT,
+            "MAX_OPEN_TRADES":   Config.MAX_OPEN_TRADES,
+            "STOP_LOSS_PCT":     Config.STOP_LOSS_PCT,
+            "TAKE_PROFIT_PCT":   Config.TAKE_PROFIT_PCT,
+            "TRAILING_STOP_PCT": Config.TRAILING_STOP_PCT,
+            "FEE_PCT":           Config.FEE_PCT,
+            "MIN_AI_CONFIDENCE": Config.MIN_AI_CONFIDENCE,
+            "USE_DYNAMIC_TARGETS": Config.USE_DYNAMIC_TARGETS,
+            "TREND_FILTER":      Config.TREND_FILTER,
+        })
+    except Exception as e:  # noqa: BLE001
+        return jsonify({"ok": True, "message": f"Настройки применены, но не сохранены на диск: {e}"})
+
+    return jsonify({"ok": True, "message": "Настройки сохранены (применятся и после перезапуска)"})
 
 
 # ════════════════════════════════════════════════════════════════════════════

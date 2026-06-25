@@ -68,8 +68,17 @@ class GrinchLiquidator:
         self._last_sell_at   = None
         self._sell_count     = 0
         self._logs           = []
-        # Порог роста для продажи — можно менять через API
-        self.sell_rise_pct   = 50.0   # продаём при +50% от опорной цены (как основной бот)
+        # Порог роста для продажи — можно менять через API.
+        # Загружаем сохранённое значение из settings.json (если есть),
+        # иначе дефолт +50% (как основной бот). Значение переживает перезапуски.
+        self.sell_rise_pct   = 50.0
+        try:
+            from settings_store import get_section
+            saved = get_section("liquidator").get("sell_rise_pct")
+            if saved is not None:
+                self.sell_rise_pct = max(0.5, min(float(saved), 200.0))
+        except Exception:  # noqa: BLE001 — настройки не должны ломать запуск
+            pass
 
     # ── Логирование ─────────────────────────────────────────────────────────
 
@@ -125,10 +134,15 @@ class GrinchLiquidator:
             }
 
     def set_threshold(self, pct: float):
-        """Изменить порог продажи (в процентах)."""
+        """Изменить порог продажи (в процентах) и сохранить между перезапусками."""
         pct = max(0.5, min(pct, 200.0))
         self.sell_rise_pct = pct
-        self._log(f"⚙️ Порог продажи изменён на +{pct}%")
+        try:
+            from settings_store import update_section
+            update_section("liquidator", {"sell_rise_pct": pct})
+        except Exception as e:  # noqa: BLE001
+            self._log(f"⚠️ Не удалось сохранить порог: {e}", "WARN")
+        self._log(f"⚙️ Порог продажи изменён на +{pct}% (сохранено)")
 
     # ── Основной цикл ───────────────────────────────────────────────────────
 
