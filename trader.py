@@ -469,6 +469,18 @@ class Trader:
     def get_status(self):
         ohlcv    = self.exchange.get_ohlcv(limit=100)
         analysis = analyze(ohlcv)
+        # Единый источник «текущей цены» для всего UI: спотовая цена DexScreener
+        # (price_feed.get), та же, что использует авто-ликвидатор и карточка монеты.
+        # Иначе hero/кошелёк показывают close последней свечи (GeckoTerminal), а
+        # ликвидатор — спот, и числа расходятся (~1%). Свечи для графика/индикаторов
+        # не трогаем — меняем только отображаемую цену.
+        try:
+            from price_feed import price_feed
+            spot = price_feed.get("GRINCH")
+            if spot and spot > 0:
+                analysis["price"] = spot
+        except Exception:
+            pass
         ai       = self.last_ai if self.last_ai else self.ai.analyze(ohlcv)
         balance  = self._get_balance_cached()
         winrate  = 0

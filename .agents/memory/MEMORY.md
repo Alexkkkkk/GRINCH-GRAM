@@ -10,3 +10,4 @@
 - [TonConnect manifest HTTPS](tonconnect-manifest-https.md) — Replit proxy omits X-Forwarded-Proto; force https in manifest url from request.host or TonKeeper silently won't connect.
 - [Custodial sync invariant](custodial-sync-invariant.md) — virtual user updates must follow CONFIRMED real on-chain execution; deposits oldest-first; gate BUY/SELL callbacks on real fills; never SELL+BUY same tick.
 - [Settings persistence](settings-persistence.md) — dashboard settings survive restarts via settings.json (settings_store.py), not by rewriting source; new tunables must persist in POST AND load at startup.
+- [GRINCH price display](grinch-price-display.md) — dashboard shows ONE canonical price = price_feed.get('GRINCH') (DexScreener spot); analyze() candle-close was diverging ~1% in hero/wallet card. Override analysis['price'] for display only, never touch analyze() (trading/chart use candles).
