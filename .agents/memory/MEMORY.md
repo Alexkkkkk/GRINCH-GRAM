@@ -2,7 +2,7 @@
 - [Real-time price feed](price-feed.md) — free CoinGecko/DexScreener prices; use adaptive decimals (fixed round(x,2) zeroes sub-cent coins like GRINCH).
 - [Coin info + DEX trade feed](coin-info-feed.md) — DexScreener stats + GeckoTerminal trades; decide buy/sell by GRINCH token address, not the `kind` field.
 - [Profit trade engine](trading-profit-logic.md) — TON/GRINCH risk logic; FEE_PCT is per-side (charged both sides); use regime.atr_pct not atr for sub-cent coins
-- [DeDust swaps](dedust-swaps.md) — buy gas ≥0.4 TON (pool deploys buyer jetton wallet, else exit 65535+bounce); confirm "ok" by GRINCH balance change, not broadcast; serialize swaps
+- [DeDust swaps](dedust-swaps.md) — buys bounced (exit 65535) because min-out used a USD cross-rate ~6% richer than the 1%-pool; derive min-out from pool-native priceNative. Confirm "ok" by GRINCH balance change, not broadcast; serialize swaps
 - [Chart & API latency](chart-and-api-latency.md) — chart must poll fast /api/candles not slow /api/status (4.5s get_balance); self-host JS libs (CDN silently fails in preview iframe)
 - [DeDust pool mismatch](dedust-pool-mismatch.md) — factory computes an EMPTY pool; real GRINCH/TON pool is EQDpVwTQr (1%-fee CPMM v2) — pin it. Counter-asset = native-TON zero-address (shown as "GRAM"); use native vault. SDK get-methods exit 11 (expected)
 - [DeDust sell gas](dedust-sell-gas.md) — jetton sells need gas 0.6/fwd 0.35 TON; preflight wallet TON ≥ gas or the swap bounces "Sent…Failed" and burns gas

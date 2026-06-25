@@ -273,10 +273,18 @@ class DedustClient:
         или (None, None), если цену получить не удалось — тогда сделку нужно
         отклонить, а НЕ слать своп без защиты.
         """
-        ton_usd, grinch_usd = self._external_prices()
-        if ton_usd is None:
-            return None, None
-        expected_grinch = (ton_amount * ton_usd) / grinch_usd
+        # РЕАЛЬНЫЙ курс пула (TON за 1 GRINCH) — приоритетно. Перекрёстный
+        # USD-курс берёт цены из разных источников и систематически расходится
+        # с курсом нашего 1%-пула (~6%), из-за чего min-out оказывался завышен
+        # и пул отклонял КАЖДУЮ покупку (exit 65535, bounce).
+        ton_per_grinch = price_feed.get_grinch_ton_price(max_stale=self._PRICE_MAX_STALE)
+        if ton_per_grinch and ton_per_grinch > 0:
+            expected_grinch = ton_amount / ton_per_grinch
+        else:
+            ton_usd, grinch_usd = self._external_prices()
+            if ton_usd is None:
+                return None, None
+            expected_grinch = (ton_amount * ton_usd) / grinch_usd
         min_grinch = expected_grinch * (1 - Config.SLIPPAGE_PCT / 100.0)
         return int(min_grinch * (10 ** 9)), expected_grinch
 
@@ -285,10 +293,15 @@ class DedustClient:
 
         Возвращает (min_nano, expected_ton) или (None, None), если цены нет.
         """
-        ton_usd, grinch_usd = self._external_prices()
-        if ton_usd is None:
-            return None, None
-        expected_ton = (grinch_amount * grinch_usd) / ton_usd
+        # РЕАЛЬНЫЙ курс пула (TON за 1 GRINCH) — приоритетно (см. _min_out_buy).
+        ton_per_grinch = price_feed.get_grinch_ton_price(max_stale=self._PRICE_MAX_STALE)
+        if ton_per_grinch and ton_per_grinch > 0:
+            expected_ton = grinch_amount * ton_per_grinch
+        else:
+            ton_usd, grinch_usd = self._external_prices()
+            if ton_usd is None:
+                return None, None
+            expected_ton = (grinch_amount * grinch_usd) / ton_usd
         min_ton = expected_ton * (1 - Config.SLIPPAGE_PCT / 100.0)
         return int(min_ton * TON), expected_ton
 

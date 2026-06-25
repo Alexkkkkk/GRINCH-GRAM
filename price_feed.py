@@ -97,5 +97,73 @@ class PriceFeed:
             pass
         return None
 
+    # ───────────── курс TON↔GRINCH напрямую из пула (priceNative) ────────────
+
+    def get_grinch_ton_price(self, max_stale=None):
+        """Цена 1 GRINCH в TON напрямую из пула (priceNative DexScreener).
+
+        Это РЕАЛЬНЫЙ курс пула, а не перекрёстный USD-курс. min-out для свопов
+        нужно считать ОТСЮДА: кросс-курс grinch_usd/ton_usd берёт цены из разных
+        источников (DexScreener + CoinGecko) и систематически расходится с курсом
+        нашего 1%-пула (на ~6%). Из-за этого min-out оказывался завышен, и пул
+        DeDust отклонял каждую покупку (exit 65535, bounce). С курсом пула буфер
+        SLIPPAGE_PCT уверенно перекрывает комиссию пула и проскальзывание.
+        """
+        key = "GRINCH_TON"
+        now = time.time()
+        with self._lock:
+            entry = self._cache.get(key)
+            if entry and now - entry[1] < self.ttl:
+                return entry[0]
+        price = self._fetch_grinch_ton_native()
+        if price and price > 0:
+            with self._lock:
+                self._cache[key] = (price, now)
+            return price
+        with self._lock:
+            entry = self._cache.get(key)
+            if not entry:
+                return None
+            if max_stale is not None and (now - entry[1]) > max_stale:
+                return None
+            return entry[0]
+
+    def _fetch_grinch_ton_native(self):
+        try:
+            r = requests.get(
+                f"https://api.dexscreener.com/latest/dex/tokens/{Config.GRINCH_TOKEN_ADDRESS}",
+                timeout=10,
+            )
+            r.raise_for_status()
+            pairs = r.json().get("pairs") or []
+            if not pairs:
+                return None
+            pinned = (getattr(Config, "GRINCH_POOL_ADDRESS", "") or "").lower()
+            # 1) предпочитаем ЗАКРЕПЛЁННЫЙ пул — именно через него идут свопы
+            if pinned:
+                for p in pairs:
+                    if (p.get("pairAddress", "") or "").lower() == pinned:
+                        pn = p.get("priceNative")
+                        if pn:
+                            return float(pn)
+            # 2) иначе — самый ликвидный пул, НО ТОЛЬКО с котировкой в TON:
+            # priceNative имеет смысл лишь для TON-пары. Если котировка не в TON,
+            # курс будет несопоставим — лучше вернуть None и отклонить своп, чем
+            # считать min-out по чужому рынку.
+            ton_pairs = [
+                p for p in pairs
+                if ((p.get("quoteToken", {}) or {}).get("symbol", "") or "").upper() == "TON"
+                and p.get("priceNative")
+            ]
+            if not ton_pairs:
+                return None
+            ton_pairs.sort(
+                key=lambda p: (p.get("liquidity", {}) or {}).get("usd", 0),
+                reverse=True,
+            )
+            return float(ton_pairs[0]["priceNative"])
+        except Exception:
+            return None
+
 
 price_feed = PriceFeed()
