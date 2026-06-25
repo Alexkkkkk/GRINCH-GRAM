@@ -185,11 +185,27 @@ function updateUI(data) {
     </div>`;
   }).join("") || '<div class="empty-msg">Нет данных</div>';
 
-  // Хедер GRINCH баланс (из бота) — хедер TON обновляется через renderTon (трекер)
+  // Хедер GRINCH баланс (из бота)
   const hdrGrn = document.getElementById("hdr-grn-bal");
   if (hdrGrn && bal.GRINCH != null) {
     const grn = Number(bal.GRINCH);
     hdrGrn.textContent = grn >= 1000 ? (grn/1000).toFixed(1) + "K" : grn.toFixed(0);
+  }
+
+  // Хедер TON баланс (из бота — реальное время в DeDust-режиме)
+  if (bal.TON != null) {
+    const hdrTon = document.getElementById("hdr-ton-bal");
+    if (hdrTon) hdrTon.textContent = Number(bal.TON).toFixed(2);
+    // Кошелёк-карточка TON
+    const wbTon    = document.getElementById("wb-ton-bal");
+    const wbTonUsd = document.getElementById("wb-ton-usd");
+    if (wbTon) {
+      const tonAmt = Number(bal.TON);
+      wbTon.textContent = tonAmt.toFixed(4);
+      if (wbTonUsd && window._tonPriceUsd) {
+        wbTonUsd.textContent = "≈ $" + (tonAmt * window._tonPriceUsd).toFixed(2);
+      }
+    }
   }
 
   // wallet card GRINCH баланс (бот)
