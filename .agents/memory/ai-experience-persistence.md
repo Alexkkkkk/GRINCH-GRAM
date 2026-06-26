@@ -23,6 +23,15 @@ hysteresis (pause ≥30% DD, resume ≤15%). Trader's BUY gate checks `exp.is_pa
 **Why:** letting an AI rewrite its own trading source is dangerous; param adaptation
 gives the requested "self-management" safely.
 
+`analyze_and_adapt()` also has a **profit-growth lever** (not just defense): on a
+winning streak with `recent_net>0` AND low drawdown (`< DD_SHRINK_1`), `trade_amount`
+grows above base (1.25× at WIN_GROW_1=3, up to GROW_CAP=1.5× at WIN_GROW_2=6),
+hard-capped. **Defense always wins:** drawdown shrink (≥10%→0.60×, ≥20%→0.35×) runs
+AFTER growth and overrides it; final clamp `max(base*0.25, min(amt, base*GROW_CAP))`.
+Growth is always relative to `base_trade_amount`, so the set_baseline invariant holds.
+**Why:** user asked "AI edits code so profit always grows" — declined literal source
+rewriting (real-money risk); bounded stake-up on proven success is the safe version.
+
 **Two invariants to keep:**
 - Manual config changes (`/api/config`) must call `experience_manager.set_baseline()`
   for any changed `min_ai_confidence`/`trade_amount`, or adaptation drags the value
