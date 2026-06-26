@@ -183,6 +183,7 @@ class CoinInfo:
                     "token_amount": token_amount,
                     "ton_amount": ton_amount,
                     "ts": a.get("block_timestamp"),
+                    "addr": a.get("tx_from_address") or "",
                 })
             return out
         except Exception:

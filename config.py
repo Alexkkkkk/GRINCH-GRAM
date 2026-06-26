@@ -134,6 +134,10 @@ class Config:
     SMART_MONEY_BOOST_AT = float(os.getenv("SMART_MONEY_BOOST_AT", "0.5")) # ≥ → смягчить порог
     SMART_MONEY_CONF_BONUS = float(os.getenv("SMART_MONEY_CONF_BONUS", "5"))  # на сколько % смягчить
     SMART_MONEY_MIN_FLOOR  = float(os.getenv("SMART_MONEY_MIN_FLOOR", "45")) # ниже не опускаем
+    # Ранний вход: если прибыльные кошельки ТОЛЬКО НАЧАЛИ покупать (свежая
+    # волна накопления), бот входит быстрее — без ожидания 2-го подтверждения.
+    SMART_EARLY_WINDOW_SEC = int(os.getenv("SMART_EARLY_WINDOW_SEC", "600"))  # окно «прямо сейчас» (10 мин)
+    SMART_EARLY_MIN_TON    = float(os.getenv("SMART_EARLY_MIN_TON", "10"))    # мин. покупки умных за окно
     # Режим торговли: "demo" | "dedust"
     TRADE_MODE = os.getenv("TRADE_MODE", "dedust")
     # Защита от проскальзывания: максимально допустимое отклонение цены свопа

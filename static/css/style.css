@@ -397,6 +397,9 @@ body { background: var(--bg); color: var(--text); font-family: 'Segoe UI', syste
 .dt-amt  { color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .dt-usd  { color: var(--text2); font-variant-numeric: tabular-nums; }
 .dt-time { color: var(--text2); font-size: 11px; min-width: 28px; text-align: right; }
+.dt-addr { grid-column: 1 / -1; color: var(--text2); font-size: 10.5px; font-family: ui-monospace, monospace; text-decoration: none; opacity: .7; transition: opacity .2s; }
+.dt-addr:hover { opacity: 1; color: var(--text); text-decoration: underline; }
+.dt-addr.smart { color: var(--grinch, #00ff88); opacity: .95; font-weight: 600; }
 
 /* ═══ Exchange prices ═══ */
 .exch-ai { background: linear-gradient(135deg, rgba(0,152,234,0.10), rgba(0,255,136,0.06)); border: 1px solid rgba(0,152,234,0.25); border-radius: 10px; padding: 10px 12px; margin-bottom: 10px; }

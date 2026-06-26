@@ -237,6 +237,25 @@ class WalletTracker:
             label = "распродажа"
         else:
             label = "нейтрально"
+
+        # ── Ранний вход: свежая волна покупок умных денег ──────────────
+        # Прибыльные кошельки ТОЛЬКО НАЧАЛИ покупать (в коротком окне их
+        # чистые покупки положительны, а в предыдущем таком же окне они
+        # молчали/продавали) → шанс войти раньше основной волны.
+        ew = Config.SMART_EARLY_WINDOW_SEC
+        cur = [e for e in recent if now - e["ts"] <= ew]
+        prev = [e for e in recent if ew < now - e["ts"] <= 2 * ew]
+        cur_buy = sum(e["ton"] for e in cur if e["kind"] == "buy" and e["addr"] in smart)
+        cur_sell = sum(e["ton"] for e in cur if e["kind"] == "sell" and e["addr"] in smart)
+        prev_net = sum(
+            (e["ton"] if e["kind"] == "buy" else -e["ton"])
+            for e in prev if e["addr"] in smart
+        )
+        cur_net = cur_buy - cur_sell
+        early_buy = (
+            cur_net >= Config.SMART_EARLY_MIN_TON
+            and prev_net <= 0
+        )
         return {
             "score": round(score, 3),
             "basis": basis,
@@ -244,6 +263,8 @@ class WalletTracker:
             "buy_ton": round(buy_ton, 2),
             "sell_ton": round(sell_ton, 2),
             "smart_wallets": len(smart),
+            "early_buy": bool(early_buy),
+            "early_buy_ton": round(cur_net, 2),
         }
 
     WINDOW_24H = 86400      # окно для списка кошельков (последние сутки)
@@ -285,11 +306,13 @@ class WalletTracker:
         sell_ton = sum(e["ton"] for e in recent if e["kind"] == "sell")
         smart_n = sum(1 for r in rows if r["smart"])
 
+        smart_addrs = [r["addr"] for r in rows if r["smart"]]
         return {
             "signal": self.get_signal(),
             "total_wallets": len(rows),
             "active_24h": len(active),
             "smart_wallets": smart_n,
+            "smart_addrs": smart_addrs,
             "total_trades_seen": total_events,
             "recent_buy_ton": round(buy_ton, 2),
             "recent_sell_ton": round(sell_ton, 2),

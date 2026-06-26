@@ -175,6 +175,7 @@ class Trader:
             except Exception:
                 sm = None
         sm_score = sm["score"] if sm else 0.0
+        sm_early = bool(sm and sm.get("early_buy"))
 
         # ── Счётчик подтверждений (требуем 2 последовательных BUY) ────
         if final_signal == "BUY":
@@ -191,9 +192,10 @@ class Trader:
                 conf >= Config.REVERSAL_AI_MIN
             )
 
-            # Порог уверенности: смягчаем, если умные деньги копят
+            # Порог уверенности: смягчаем, если умные деньги копят ИЛИ
+            # прибыльные кошельки только начали покупать (ранний вход).
             min_conf = Config.MIN_AI_CONFIDENCE
-            if sm_score >= Config.SMART_MONEY_BOOST_AT:
+            if sm_score >= Config.SMART_MONEY_BOOST_AT or sm_early:
                 min_conf = max(
                     Config.SMART_MONEY_MIN_FLOOR,
                     Config.MIN_AI_CONFIDENCE - Config.SMART_MONEY_CONF_BONUS,
@@ -226,13 +228,16 @@ class Trader:
                 blocked = f"перекупленность RSI={rsi:.1f}"
             elif anomaly:
                 blocked = f"рыночная аномалия Z={ai['anomaly']['z_price']:.2f}"
-            elif self._buy_confirm_count < 2 and not hard_override:
-                # Нужно 2 последовательных сигнала для подтверждения
+            elif self._buy_confirm_count < 2 and not hard_override and not sm_early:
+                # Нужно 2 последовательных сигнала для подтверждения.
+                # Исключение: ранний вход за умными деньгами — входим сразу.
                 blocked = f"ожидаем подтверждение ({self._buy_confirm_count}/2)"
 
         sm_txt = ""
         if sm and sm.get("basis") != "idle":
             sm_txt = f" | 🐋 умн.деньги {sm['score']:+.2f} ({sm['label']})"
+        if sm_early:
+            sm_txt += f" | 🟢 ранний вход (умные купили {sm.get('early_buy_ton', 0)} TON)"
         self.log(
             f"📊 RSI={rsi:.1f} | {regime_name} | "
             f"Сигнал={signal} | AI={ai_signal}({conf}%)"

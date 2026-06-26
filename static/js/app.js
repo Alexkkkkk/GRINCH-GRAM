@@ -898,11 +898,20 @@ async function loadDexTrades() {
     box.innerHTML = arr.map(t => {
       const buy = t.kind === "buy";
       const sym = (document.getElementById("coin-sym").textContent || "").replace("—", "");
+      let addrHtml = "";
+      if (t.addr) {
+        const isSmart = _smartAddrs.has(t.addr);
+        const short = t.addr.slice(0, 6) + "…" + t.addr.slice(-4);
+        addrHtml = '<a class="dt-addr' + (isSmart ? " smart" : "") + '" target="_blank" rel="noopener" ' +
+          'href="https://tonviewer.com/' + encodeURIComponent(t.addr) + '">' +
+          (isSmart ? "⭐ " : "") + escapeHtml(short) + '</a>';
+      }
       return '<div class="dex-trade">' +
         '<span class="dt-side ' + (buy ? "pos" : "neg") + '">' + (buy ? "Покупка" : "Продажа") + '</span>' +
         '<span class="dt-amt">' + fmtAmt(t.token_amount) + ' ' + escapeHtml(sym) + '</span>' +
         '<span class="dt-usd">' + (t.amount_usd != null ? fmtBig(t.amount_usd) : "—") + '</span>' +
         '<span class="dt-time">' + timeAgo(t.ts) + '</span>' +
+        addrHtml +
         '</div>';
     }).join("");
   } catch (e) {}
@@ -910,6 +919,7 @@ async function loadDexTrades() {
 
 let _walletTab = "profit";
 let _walletData = null;
+let _smartAddrs = new Set();
 function switchWalletTab(tab) {
   _walletTab = tab;
   document.getElementById("wl-tab-profit").classList.toggle("active", tab === "profit");
@@ -944,6 +954,7 @@ async function loadWallets() {
     const d = await r.json();
     if (!d) return;
     _walletData = d;
+    _smartAddrs = new Set(d.smart_addrs || []);
     const sig = d.signal || {};
     const score = Number(sig.score) || 0;
     const scoreEl = document.getElementById("sm-score");
