@@ -144,10 +144,27 @@ def _safe_status():
 
 # ── Фоновые потоки ────────────────────────────────────────────────────────────
 
+# ── Буфер обмена данными: общий «снимок» статуса ──────────────────────────────
+# Фоновый поток считает статус один раз и кладёт его в этот буфер. И сокет-
+# рассылка, и REST /api/status отдают ГОТОВЫЙ снимок мгновенно — запросы НИКОГДА
+# не ждут сети/блокчейна (баланс и он-чейн цена считаются в фоне, а не в
+# обработчике запроса). Это убирает подвисания и лишние повторные вычисления.
+_status_snapshot = None
+_snapshot_lock   = threading.Lock()
+
+def _get_snapshot():
+    """Последний готовый снимок статуса (или None, пока буфер не прогрет)."""
+    with _snapshot_lock:
+        return _status_snapshot
+
 def push_updates():
+    global _status_snapshot
     while True:
         try:
-            socketio.emit("status_update", _safe_status())
+            snap = _safe_status()
+            with _snapshot_lock:
+                _status_snapshot = snap
+            socketio.emit("status_update", snap)
         except Exception as e:
             print(f"[Push] Ошибка: {e}")
         time.sleep(2)
@@ -322,7 +339,16 @@ def index():
 
 @app.route("/api/status")
 def api_status():
-    return jsonify(_safe_status())
+    # Отдаём готовый снимок из буфера — мгновенно, без ожидания сети/блокчейна.
+    # Пока буфер не прогрет (самый первый запрос) — считаем напрямую один раз.
+    snap = _get_snapshot()
+    if snap is None:
+        global _status_snapshot
+        snap = _safe_status()
+        with _snapshot_lock:
+            if _status_snapshot is None:
+                _status_snapshot = snap
+    return jsonify(snap)
 
 @app.route("/api/candles")
 def api_candles():

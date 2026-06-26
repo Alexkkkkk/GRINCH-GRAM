@@ -63,7 +63,18 @@ function updatePrice(d) {
   }
 }
 
+// Буфер последних данных на клиенте: если пришёл пустой/битый ответ или
+// оборвалась связь — НЕ затираем экран, показываем последнее известное значение.
+let _lastGoodStatus = null;
 function updateUI(data) {
+  const valid = data && typeof data === "object" &&
+                (data.analysis || data.stats || data.ai || data.open_trades);
+  if (!valid) {
+    if (!_lastGoodStatus) return;   // нечего показывать — оставляем как есть
+    data = _lastGoodStatus;
+  } else {
+    _lastGoodStatus = data;
+  }
   const analysis = data.analysis || {};
   const stats    = data.stats    || {};
   const ai       = data.ai       || {};
