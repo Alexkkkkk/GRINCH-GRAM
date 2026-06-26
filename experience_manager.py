@@ -186,6 +186,24 @@ class ExperienceManager:
             print(f"[Experience] restore_ai error: {e}")
             return 0
 
+    def ai_memory_summary(self) -> dict:
+        """СВЕРКА памяти ИИ перед восстановлением: что лежит на диске.
+        Используется для наглядного лога при перезапуске, чтобы было видно —
+        опыт сохранён и подхватывается, обучение НЕ начинается с нуля."""
+        with self._lock:
+            ai = dict(self.data.get("ai") or {})
+            trades = len(self.data.get("trades") or [])
+        confirmed = len(ai.get("confirmed_X") or [])
+        slot_acc = ai.get("slot_acc") or {}
+        accs = [sum(h) / len(h) for h in slot_acc.values() if h]
+        avg = round(sum(accs) / len(accs) * 100, 1) if accs else None
+        return {
+            "trades":       trades,
+            "confirmed":    confirmed,
+            "feature_dim":  ai.get("feature_dim"),
+            "avg_accuracy": avg,
+        }
+
     def _apply_control_to_config(self):
         ctrl = self.data["control"]
         try:
