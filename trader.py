@@ -224,6 +224,31 @@ class Trader:
     # ──────────────────────────────────────────
     # Торговые операции
     # ──────────────────────────────────────────
+    def _adaptive_trail_pct(self, base_pct):
+        """Адаптивная ШИРИНА трейлинга по силе тренда.
+
+        В сильном восходящем тренде трейлинг расширяется → стоп подтягивается
+        медленнее → прибыль успевает разрастись (ловим большие движения вроде
+        недельного +343%). В боковике/слабости трейлинг сужается → быстрее
+        фиксируем прибыль. ВАЖНО: нижний пол прибыли (floor_price = +N% нетто)
+        не меняется — продажа в минус по-прежнему невозможна.
+        """
+        regime = (self.last_ai or {}).get("regime") or {}
+        name = regime.get("name", "")
+        try:
+            adx = float(regime.get("adx", 20) or 20)
+        except (TypeError, ValueError):
+            adx = 20.0
+        if name == "UPTREND" and adx >= Config.TRAIL_TREND_ADX:
+            mult = Config.TRAIL_TREND_WIDEN                      # сильный тренд → даём бежать
+        elif name in ("UPTREND", "SQUEEZE", "VOLATILE"):
+            mult = (1.0 + Config.TRAIL_TREND_WIDEN) / 2.0        # умеренно шире
+        elif name in ("RANGING", "TRANSITION", "DOWNTREND"):
+            mult = Config.TRAIL_CHOP_TIGHTEN                     # боковик/слабость → туже
+        else:
+            mult = 1.0
+        return base_pct * mult
+
     def _targets(self, price, ai):
         atr_pct = (ai.get("regime", {}) or {}).get("atr_pct", 0) / 100.0 if ai else 0.0
         if Config.USE_DYNAMIC_TARGETS and atr_pct > 0:
@@ -381,15 +406,17 @@ class Trader:
                         trade["high_water"] = price
                     high_water = trade.get("high_water", entry)
 
-                    new_sl = self.exchange._round(high_water * (1 - Config.TRAIL_STAGE4_PCT / 100))
+                    trail_pct = self._adaptive_trail_pct(Config.TRAIL_STAGE4_PCT)
+                    new_sl = self.exchange._round(high_water * (1 - trail_pct / 100))
                     new_sl = max(new_sl, floor_price)    # пол ≥ +N% нетто
 
                     if new_sl > trade["stop_loss"]:
                         old_sl = trade["stop_loss"]
                         trade["stop_loss"] = new_sl
+                        regime_name = ((self.last_ai or {}).get("regime") or {}).get("name", "")
                         self.log(
                             f"🔼 Стоп: {old_sl} → {new_sl} | прибыль {profit_pct:+.1f}% | "
-                            f"трейл {Config.TRAIL_STAGE4_PCT}% (пол +{net_floor_pct:.0f}% нетто)",
+                            f"трейл {trail_pct:.1f}% [{regime_name}] (пол +{net_floor_pct:.0f}% нетто)",
                             "INFO"
                         )
                     armed = True

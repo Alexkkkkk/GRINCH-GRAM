@@ -83,6 +83,12 @@ class Config:
     TRAIL_STAGE4_AT     = float(os.getenv("TRAIL_STAGE4_AT",    "20.0"))   # % → трейлинг 2%
     TRAIL_STAGE4_PCT    = float(os.getenv("TRAIL_STAGE4_PCT",    "2.0"))
     TRAILING_STOP_PCT   = float(os.getenv("TRAILING_STOP_PCT",   "7.0"))   # начальный трейлинг (до безубытка)
+    # ── Адаптивный трейлинг по силе тренда (даём прибыли разрастись) ────────
+    # В сильном восходящем тренде стоп идёт ШИРЕ (winner runs), в боковике/
+    # слабости — ТУЖЕ (быстрее фиксируем). Нижний пол прибыли НЕ затрагивается.
+    TRAIL_TREND_WIDEN   = float(os.getenv("TRAIL_TREND_WIDEN",   "2.5"))    # множитель в сильном тренде
+    TRAIL_CHOP_TIGHTEN  = float(os.getenv("TRAIL_CHOP_TIGHTEN",  "0.6"))    # множитель в боковике/слабости
+    TRAIL_TREND_ADX     = float(os.getenv("TRAIL_TREND_ADX",    "30.0"))    # ADX ≥ → тренд «сильный»
 
     # ── ATR-цели: динамические ────────────────────────────────────────────
     USE_DYNAMIC_TARGETS = os.getenv("USE_DYNAMIC_TARGETS", "true").lower() == "true"
