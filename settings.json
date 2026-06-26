@@ -4,7 +4,7 @@
   },
   "config": {
     "SYMBOL": "GRINCH/USDT",
-    "TRADE_AMOUNT": 2.0,
+    "TRADE_AMOUNT": 1,
     "MAX_OPEN_TRADES": 2,
     "STOP_LOSS_PCT": 5.0,
     "TAKE_PROFIT_PCT": 22.25,
