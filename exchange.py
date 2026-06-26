@@ -130,23 +130,24 @@ class ExchangeClient:
             print(f"[Exchange] get_ticker error: {e}")
             return self._fake_ticker()
 
-    # Кэш реальных свечей GeckoTerminal: ключ (currency, token, tf) ->
+    # Кэш реальных свечей GeckoTerminal: ключ (currency, token, tf, aggregate) ->
     #   {"ts": время успеха, "bars": свечи, "fail_ts": время последней ошибки}
     _ohlcv_cache = {}
     _ohlcv_lock     = threading.Lock()
-    _OHLCV_TTL      = 180  # сек — свечи часовые, обновлять раз в ~3 мин достаточно
+    _OHLCV_TTL      = 180  # сек — обновлять свечи раз в ~3 мин достаточно
     _OHLCV_BACKOFF  = 120  # сек — после ошибки не долбить API (отдаём устаревшие данные)
 
-    def get_real_ohlcv(self, limit=100, currency="usd", token="base", tf="hour"):
+    def get_real_ohlcv(self, limit=100, currency="usd", token="base", tf="hour", aggregate=1):
         """Реальные свечи пула GRINCH/GRAM (Toncoin) с GeckoTerminal.
         currency="usd" — цена в USD; currency="token", token="base" — цена GRINCH в GRAM (TON).
+        tf="minute"+aggregate=15 — 15-минутные свечи (как на DeDust); tf="hour"+aggregate=1 — часовые.
         Возвращает [[ts_ms, o, h, l, c, v], ...] от старых к новым, либо None при ошибке.
         Кэширует успех на _OHLCV_TTL и при ошибке отдаёт устаревшие данные (backoff),
         чтобы не упереться в rate limit бесплатного GeckoTerminal."""
         pool = getattr(Config, "GRINCH_POOL_ADDRESS", None)
         if not pool:
             return None
-        key = (currency, token, tf)
+        key = (currency, token, tf, aggregate)
 
         # Быстрый путь без блокировки: свежий кэш в памяти
         entry = ExchangeClient._ohlcv_cache.get(key)
@@ -175,7 +176,7 @@ class ExchangeClient:
             try:
                 url = (
                     f"https://api.geckoterminal.com/api/v2/networks/ton/pools/{pool}"
-                    f"/ohlcv/{tf}?aggregate=1&limit={max(limit, 100)}"
+                    f"/ohlcv/{tf}?aggregate={aggregate}&limit={max(limit, 100)}"
                     f"&currency={currency}&token={token}"
                 )
                 req = urllib.request.Request(url, headers={
@@ -204,7 +205,7 @@ class ExchangeClient:
 
     @staticmethod
     def _disk_ohlcv_path(key):
-        return f"/tmp/grinch_ohlcv_{key[0]}_{key[1]}_{key[2]}.json"
+        return "/tmp/grinch_ohlcv_" + "_".join(str(k) for k in key) + ".json"
 
     def _load_disk_ohlcv(self, key):
         try:

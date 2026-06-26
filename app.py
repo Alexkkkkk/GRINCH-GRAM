@@ -327,8 +327,10 @@ def api_status():
 @app.route("/api/candles")
 def api_candles():
     from strategy import analyze
-    # Реальные свечи пары GRINCH/GRAM (цена GRINCH в GRAM/Toncoin) с GeckoTerminal
-    ohlcv = trader.exchange.get_real_ohlcv(limit=100, currency="token", token="base")
+    # Реальные свечи пары GRINCH/GRAM (цена GRINCH в GRAM/Toncoin) с GeckoTerminal.
+    # 15-минутный таймфрейм — как на DeDust.
+    ohlcv = trader.exchange.get_real_ohlcv(limit=100, currency="token", token="base",
+                                           tf="minute", aggregate=15)
     if not ohlcv:
         ohlcv = trader.exchange.get_ohlcv(limit=100)
     analysis = analyze(ohlcv)
