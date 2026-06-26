@@ -164,6 +164,18 @@ class Trader:
         if anomaly:
             self.log(f"⚠️ АНОМАЛИЯ! Z-цена={ai['anomaly']['z_price']}", "WARN")
 
+        # ── Сигнал «умных денег» (мониторинг кошельков пула) ───────────
+        # Учимся у тех, кто реально в плюсе: при накоплении смягчаем порог
+        # входа, при распродаже — блокируем покупку. Продажи НЕ трогаем.
+        sm = None
+        wt = getattr(self, "wallet_tracker", None)
+        if wt is not None:
+            try:
+                sm = wt.get_signal()
+            except Exception:
+                sm = None
+        sm_score = sm["score"] if sm else 0.0
+
         # ── Счётчик подтверждений (требуем 2 последовательных BUY) ────
         if final_signal == "BUY":
             self._buy_confirm_count += 1
@@ -179,9 +191,19 @@ class Trader:
                 conf >= Config.REVERSAL_AI_MIN
             )
 
+            # Порог уверенности: смягчаем, если умные деньги копят
+            min_conf = Config.MIN_AI_CONFIDENCE
+            if sm_score >= Config.SMART_MONEY_BOOST_AT:
+                min_conf = max(
+                    Config.SMART_MONEY_MIN_FLOOR,
+                    Config.MIN_AI_CONFIDENCE - Config.SMART_MONEY_CONF_BONUS,
+                )
+
             if self.exp.is_paused():
                 blocked = "ИИ-пауза: просадка капитала (защита от убытков)"
-            elif conf < Config.MIN_AI_CONFIDENCE:
+            elif sm_score <= Config.SMART_MONEY_BLOCK and not hard_override:
+                blocked = f"умные деньги распродают (smart money {sm_score:+.2f})"
+            elif conf < min_conf:
                 blocked = f"низкая уверенность AI {conf}%"
             elif mean_rev_override:
                 # RSI экстремально низкий + AI уверен → Mean Reversion вход даже в DOWNTREND
@@ -208,9 +230,13 @@ class Trader:
                 # Нужно 2 последовательных сигнала для подтверждения
                 blocked = f"ожидаем подтверждение ({self._buy_confirm_count}/2)"
 
+        sm_txt = ""
+        if sm and sm.get("basis") != "idle":
+            sm_txt = f" | 🐋 умн.деньги {sm['score']:+.2f} ({sm['label']})"
         self.log(
             f"📊 RSI={rsi:.1f} | {regime_name} | "
-            f"Сигнал={signal} | AI={ai_signal}({conf}%) | "
+            f"Сигнал={signal} | AI={ai_signal}({conf}%)"
+            f"{sm_txt} | "
             f"Итог={'HOLD' if blocked else final_signal}",
             level="INFO"
         )

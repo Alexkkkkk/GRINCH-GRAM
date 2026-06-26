@@ -247,6 +247,36 @@
         </div>
       </div>
 
+      <!-- Мониторинг кошельков / Умные деньги -->
+      <div class="card wallets-card">
+        <div class="card-title">🐋 Кошельки пула · Умные деньги
+          <span id="wallets-src" class="coin-source"></span>
+        </div>
+        <div class="sm-signal" id="sm-signal">
+          <div class="sm-row">
+            <span class="sm-label">Сигнал умных денег</span>
+            <span class="sm-score" id="sm-score">—</span>
+          </div>
+          <div class="sm-bar-wrap"><div class="sm-bar" id="sm-bar"></div></div>
+          <div class="sm-flow">
+            <span class="pos">Покупки 1ч: <b id="sm-buy">—</b></span>
+            <span class="neg">Продажи 1ч: <b id="sm-sell">—</b></span>
+          </div>
+          <div class="sm-meta">
+            <span>Кошельков: <b id="wl-total">—</b></span>
+            <span>Прибыльных: <b id="wl-smart">—</b></span>
+            <span>Сделок учтено: <b id="wl-seen">—</b></span>
+          </div>
+        </div>
+        <div class="wl-tabs">
+          <button class="wl-tab active" id="wl-tab-profit" onclick="switchWalletTab('profit')">💰 Топ прибыли</button>
+          <button class="wl-tab" id="wl-tab-volume" onclick="switchWalletTab('volume')">📊 Топ оборота</button>
+        </div>
+        <div id="wl-list" class="wl-list">
+          <div class="empty-msg">Накапливаю статистику по кошелькам…</div>
+        </div>
+      </div>
+
       <!-- S/R Уровни -->
       <div class="card">
         <div class="card-title">📐 Уровни поддержки / сопротивления</div>

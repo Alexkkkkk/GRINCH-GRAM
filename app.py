@@ -129,6 +129,11 @@ from grinch_liquidator import grinch_liquidator
 from deposit_monitor import DepositMonitor
 deposit_monitor = DepositMonitor(Config.TON_WALLET)
 
+from wallet_tracker import WalletTracker
+wallet_tracker = WalletTracker()
+# Бот учится у реальных кошельков в пуле — отдаём трекер торговому движку
+trader.wallet_tracker = wallet_tracker
+
 
 def _safe_status():
     def _walk(obj):
@@ -235,6 +240,7 @@ def start_background():
         threading.Thread(target=push_updates,    daemon=True).start()
         threading.Thread(target=push_price,      daemon=True).start()
         threading.Thread(target=_load_users_bg,  daemon=True).start()
+        wallet_tracker.start()
         ton.start()
 
 start_background()
@@ -443,6 +449,11 @@ def api_coin_trades():
 def api_coin_exchanges():
     base = Config.SYMBOL.split("/")[0].upper()
     return jsonify(coin_info.exchanges(base))
+
+@app.route("/api/wallets")
+def api_wallets():
+    """Мониторинг кошельков пула GRINCH: кто покупает/продаёт, умные деньги."""
+    return jsonify(wallet_tracker.get_stats())
 
 @app.route("/api/liquidator")
 def api_liquidator_status():

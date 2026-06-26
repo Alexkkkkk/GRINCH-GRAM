@@ -124,6 +124,16 @@ class Config:
     GRINCH_POOL_ADDRESS = os.getenv("GRINCH_POOL_ADDRESS", "EQDpVwTQr53cwgaT_VCFsmrleg5fBvStTjMrvyvprF_ROC9Z")
     # Мнемоника TON-кошелька (24 слова через пробел) — хранить только в секретах!
     TON_MNEMONIC = os.getenv("TON_MNEMONIC", "")
+
+    # ── Сигнал «умных денег» (мониторинг кошельков пула) ──────────────────
+    # Бот наблюдает за всеми кошельками в пуле GRINCH и учится у прибыльных.
+    # При сильной распродаже умных денег — блокируем вход; при накоплении —
+    # чуть смягчаем требуемый порог уверенности AI. Безопасность (не продавать
+    # в убыток) сигнал НЕ трогает — влияет только на ВХОД (покупку).
+    SMART_MONEY_BLOCK   = float(os.getenv("SMART_MONEY_BLOCK",   "-0.6"))  # ≤ → блок входа
+    SMART_MONEY_BOOST_AT = float(os.getenv("SMART_MONEY_BOOST_AT", "0.5")) # ≥ → смягчить порог
+    SMART_MONEY_CONF_BONUS = float(os.getenv("SMART_MONEY_CONF_BONUS", "5"))  # на сколько % смягчить
+    SMART_MONEY_MIN_FLOOR  = float(os.getenv("SMART_MONEY_MIN_FLOOR", "45")) # ниже не опускаем
     # Режим торговли: "demo" | "dedust"
     TRADE_MODE = os.getenv("TRADE_MODE", "dedust")
     # Защита от проскальзывания: максимально допустимое отклонение цены свопа

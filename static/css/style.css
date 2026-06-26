@@ -419,6 +419,29 @@ body { background: var(--bg); color: var(--text); font-family: 'Segoe UI', syste
 .ex-ch    { font-size: 11px; min-width: 48px; text-align: right; }
 .ex-liq   { font-size: 10px; color: var(--text2); min-width: 64px; text-align: right; }
 
+/* ═══ Кошельки пула / Умные деньги ═══ */
+.sm-signal { background: linear-gradient(135deg, rgba(0,255,136,0.08), rgba(0,152,234,0.05)); border: 1px solid rgba(0,255,136,0.20); border-radius: 10px; padding: 10px 12px; margin-bottom: 10px; }
+.sm-row    { display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px; }
+.sm-label  { font-size: 11px; color: var(--text2); }
+.sm-score  { font-weight: 800; font-size: 14px; font-variant-numeric: tabular-nums; }
+.sm-bar-wrap { position: relative; height: 6px; background: rgba(255,255,255,0.06); border-radius: 4px; margin-bottom: 8px; overflow: hidden; }
+.sm-bar    { position: absolute; top: 0; height: 100%; border-radius: 4px; transition: width .4s, left .4s, background .4s; }
+.sm-flow   { display: flex; justify-content: space-between; gap: 8px; font-size: 11px; margin-bottom: 6px; }
+.sm-flow b { font-weight: 700; }
+.sm-meta   { display: flex; justify-content: space-between; gap: 8px; font-size: 10px; color: var(--text2); }
+.sm-meta b { color: var(--text); }
+.wl-tabs   { display: flex; gap: 6px; margin-bottom: 8px; }
+.wl-tab    { flex: 1; background: rgba(255,255,255,0.03); border: 1px solid var(--border); color: var(--text2); border-radius: 8px; padding: 6px 8px; font-size: 11px; cursor: pointer; transition: all .2s; }
+.wl-tab.active { background: rgba(0,255,136,0.12); border-color: rgba(0,255,136,0.35); color: var(--grinch); }
+.wl-list   { display: flex; flex-direction: column; gap: 3px; max-height: 280px; overflow-y: auto; }
+.wl-row    { display: grid; grid-template-columns: 1fr auto auto auto auto; gap: 8px; align-items: center; padding: 6px 9px; border-radius: 6px; background: rgba(255,255,255,0.02); font-size: 12px; border: 1px solid transparent; }
+.wl-row:hover { border-color: var(--border); }
+.wl-addr   { font-variant-numeric: tabular-nums; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.wl-bs     { font-size: 11px; }
+.wl-side   { font-size: 10px; font-weight: 700; }
+.wl-pnl    { font-variant-numeric: tabular-nums; font-weight: 700; min-width: 70px; text-align: right; }
+.wl-time   { color: var(--text2); font-size: 11px; min-width: 28px; text-align: right; }
+
 /* ═══ Settings ═══ */
 .settings-form { display: flex; flex-direction: column; gap: 9px; }
 .settings-form label { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: var(--text2); }

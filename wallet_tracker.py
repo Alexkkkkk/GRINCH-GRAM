@@ -1,0 +1,327 @@
+"""
+wallet_tracker.py — Мониторинг ВСЕХ кошельков, торгующих GRINCH в пуле.
+
+Что делает:
+  • Фоном опрашивает ленту сделок пула GRINCH/TON (GeckoTerminal) каждые POLL_SEC.
+  • Дедуплицирует по tx_hash и копит ВСЕ увиденные сделки на диск (wallets.json),
+    поэтому статистика накапливается со временем и переживает перезапуск.
+  • Агрегирует по каждому кошельку (адрес отправителя tx_from_address):
+    кто, на сколько и когда купил/продал, потраченный/полученный TON,
+    средние цены входа/выхода, реализованная прибыль в TON.
+  • Считает «умные деньги» (smart money): какие кошельки исторически в плюсе
+    и что они делают ПРЯМО СЕЙЧАС — копят (buy) или раздают (sell).
+  • Отдаёт ИИ числовой сигнал умных денег [-1..+1], чтобы бот учился у тех,
+    кто реально зарабатывает, а не входил против них.
+
+ВАЖНО (честное ограничение): бесплатный API GeckoTerminal отдаёт только
+~последние сделки пула, а не всю историю с самого запуска токена. Поэтому
+полная картина строится ВПЕРЁД — со временем, по мере наблюдения. Чем дольше
+бот работает, тем богаче статистика по кошелькам.
+"""
+import json
+import os
+import threading
+import time
+from datetime import datetime, timezone
+
+import requests
+
+from config import Config
+
+STORE_PATH = os.path.join(os.path.dirname(__file__), "wallets.json")
+
+
+def _f(x, default=0.0):
+    try:
+        return float(x)
+    except (TypeError, ValueError):
+        return default
+
+
+def _ts_to_epoch(iso):
+    """'2026-06-26T17:58:53Z' -> epoch seconds (float)."""
+    if not iso:
+        return 0.0
+    try:
+        return datetime.fromisoformat(iso.replace("Z", "+00:00")).timestamp()
+    except Exception:
+        return 0.0
+
+
+class WalletTracker:
+    POLL_SEC = 30           # как часто опрашиваем ленту пула
+    START_DELAY = 12        # расфазировка с остальными пуллерами
+    SIGNAL_WINDOW_SEC = 3600        # окно «прямо сейчас» для сигнала умных денег (1 ч)
+    MIN_FLOW_TON = 5.0      # минимальный оборот в окне, чтобы доверять сигналу
+    MAX_EVENTS = 2000       # сколько последних сделок храним на диске
+    MAX_SEEN = 6000         # размер набора уже учтённых tx_hash
+    SMART_MIN_TRADES = 2    # минимум сделок, чтобы считать кошелёк «умным»
+
+    def __init__(self):
+        self._lock = threading.RLock()
+        self._running = False
+        self._backoff = self.POLL_SEC
+        self.last_poll = 0.0
+        self.last_error = None
+        # адрес -> агрегат
+        self.wallets = {}
+        # дедупликация увиденных сделок
+        self._seen = set()
+        # последние сделки (для сигнала и отображения)
+        self.events = []
+        self._load()
+
+    # ----------------------------------------------------------------- запуск
+    def start(self):
+        if self._running:
+            return
+        self._running = True
+        t = threading.Thread(target=self._loop, daemon=True)
+        t.start()
+
+    def _loop(self):
+        time.sleep(self.START_DELAY)
+        while self._running:
+            try:
+                self._poll_once()
+                self.last_error = None
+                self._backoff = self.POLL_SEC
+                time.sleep(self.POLL_SEC)
+            except Exception as e:           # noqa: BLE001
+                self.last_error = str(e)
+                self._backoff = min(self._backoff * 2, 300)
+                time.sleep(self._backoff)
+
+    # ------------------------------------------------------------ опрос ленты
+    def _poll_once(self):
+        pool = Config.GRINCH_POOL_ADDRESS
+        grinch = (Config.GRINCH_TOKEN_ADDRESS or "").lower()
+        if not pool:
+            return
+        r = requests.get(
+            f"https://api.geckoterminal.com/api/v2/networks/ton/pools/{pool}/trades",
+            timeout=15,
+        )
+        r.raise_for_status()
+        rows = r.json().get("data") or []
+        new = 0
+        for t in rows:
+            a = t.get("attributes", {}) or {}
+            # Уникальный ключ сделки: одна транзакция может содержать несколько
+            # обменов (мульти-хоп), поэтому tx_hash недостаточно — берём id ленты.
+            tx = a.get("tx_hash")
+            trade_id = t.get("id") or (
+                f"{tx}_{a.get('block_number')}_{a.get('block_timestamp')}"
+                f"_{a.get('from_token_amount')}_{a.get('to_token_amount')}"
+            )
+            if not trade_id:
+                continue
+            with self._lock:
+                if trade_id in self._seen:
+                    continue
+            addr = a.get("tx_from_address") or "—"
+            to_addr = (a.get("to_token_address") or "").lower()
+            from_addr = (a.get("from_token_address") or "").lower()
+            if to_addr == grinch:
+                kind = "buy"
+                grinch_amt = _f(a.get("to_token_amount"))
+                ton_amt = _f(a.get("from_token_amount"))
+                price = _f(a.get("price_to_in_usd"))
+            elif from_addr == grinch:
+                kind = "sell"
+                grinch_amt = _f(a.get("from_token_amount"))
+                ton_amt = _f(a.get("to_token_amount"))
+                price = _f(a.get("price_from_in_usd"))
+            else:
+                continue
+            ts = _ts_to_epoch(a.get("block_timestamp"))
+            self._record(trade_id, addr, kind, ton_amt, grinch_amt, price, ts)
+            new += 1
+        with self._lock:
+            self.last_poll = time.time()
+        if new:
+            self._save()
+
+    def _record(self, tx, addr, kind, ton_amt, grinch_amt, price, ts):
+        with self._lock:
+            self._seen.add(tx)
+            if len(self._seen) > self.MAX_SEEN:
+                # сбрасываем половину старых хэшей (set без порядка — упрощённо)
+                self._seen = set(list(self._seen)[self.MAX_SEEN // 2:])
+
+            w = self.wallets.get(addr)
+            if w is None:
+                w = {
+                    "buys": 0, "sells": 0,
+                    "ton_in": 0.0, "ton_out": 0.0,
+                    "grinch_bought": 0.0, "grinch_sold": 0.0,
+                    "first_ts": ts, "last_ts": ts, "last_kind": kind,
+                }
+                self.wallets[addr] = w
+            if kind == "buy":
+                w["buys"] += 1
+                w["ton_in"] += ton_amt
+                w["grinch_bought"] += grinch_amt
+            else:
+                w["sells"] += 1
+                w["ton_out"] += ton_amt
+                w["grinch_sold"] += grinch_amt
+            w["last_ts"] = max(w["last_ts"], ts)
+            w["first_ts"] = min(w["first_ts"], ts) if w["first_ts"] else ts
+            w["last_kind"] = kind
+
+            self.events.append({
+                "addr": addr, "kind": kind, "ton": ton_amt,
+                "grinch": grinch_amt, "price": price, "ts": ts,
+            })
+            if len(self.events) > self.MAX_EVENTS:
+                self.events = self.events[-self.MAX_EVENTS:]
+
+    # ---------------------------------------------------------------- метрики
+    @staticmethod
+    def _realized_pnl(w):
+        """
+        Реализованная прибыль кошелька в TON по сведённому объёму.
+        Считаем только то количество GRINCH, что и куплено, и продано в
+        наблюдаемой истории (matched = min(куплено, продано)). Иначе при
+        sell > buy (частый случай при истории «только вперёд») прибыль
+        завышается и кошелёк ошибочно попадает в «умные».
+        """
+        gb, gs = w["grinch_bought"], w["grinch_sold"]
+        if gb <= 0 or gs <= 0:
+            return 0.0
+        matched = min(gb, gs)
+        avg_buy = w["ton_in"] / gb
+        avg_sell = w["ton_out"] / gs
+        return matched * (avg_sell - avg_buy)
+
+    def _smart_set(self):
+        out = set()
+        for addr, w in self.wallets.items():
+            if (w["buys"] + w["sells"]) >= self.SMART_MIN_TRADES and self._realized_pnl(w) > 0:
+                out.add(addr)
+        return out
+
+    def get_signal(self):
+        """
+        Сигнал умных денег для ИИ.
+        score в [-1..+1]: >0 — копят (бычий), <0 — раздают (медвежий).
+        """
+        with self._lock:
+            now = time.time()
+            win = self.SIGNAL_WINDOW_SEC
+            recent = [e for e in self.events if now - e["ts"] <= win]
+            smart = self._smart_set()
+
+        smart_buy = sum(e["ton"] for e in recent if e["kind"] == "buy" and e["addr"] in smart)
+        smart_sell = sum(e["ton"] for e in recent if e["kind"] == "sell" and e["addr"] in smart)
+        all_buy = sum(e["ton"] for e in recent if e["kind"] == "buy")
+        all_sell = sum(e["ton"] for e in recent if e["kind"] == "sell")
+
+        if smart_buy + smart_sell >= self.MIN_FLOW_TON:
+            score = (smart_buy - smart_sell) / (smart_buy + smart_sell)
+            basis = "smart"
+            buy_ton, sell_ton = smart_buy, smart_sell
+        elif all_buy + all_sell >= self.MIN_FLOW_TON:
+            score = (all_buy - all_sell) / (all_buy + all_sell)
+            basis = "flow"
+            buy_ton, sell_ton = all_buy, all_sell
+        else:
+            score, basis = 0.0, "idle"
+            buy_ton, sell_ton = all_buy, all_sell
+
+        score = max(-1.0, min(1.0, score))
+        if score >= 0.4:
+            label = "накопление"
+        elif score <= -0.4:
+            label = "распродажа"
+        else:
+            label = "нейтрально"
+        return {
+            "score": round(score, 3),
+            "basis": basis,
+            "label": label,
+            "buy_ton": round(buy_ton, 2),
+            "sell_ton": round(sell_ton, 2),
+            "smart_wallets": len(smart),
+        }
+
+    def get_stats(self, top=12):
+        """Полная статистика для дашборда."""
+        with self._lock:
+            wallets = {k: dict(v) for k, v in self.wallets.items()}
+            now = time.time()
+            recent = [dict(e) for e in self.events if now - e["ts"] <= self.SIGNAL_WINDOW_SEC]
+            total_events = len(self.events)
+            last_poll = self.last_poll
+            err = self.last_error
+
+        rows = []
+        for addr, w in wallets.items():
+            pnl = self._realized_pnl(w)
+            held = w["grinch_bought"] - w["grinch_sold"]
+            rows.append({
+                "addr": addr,
+                "short": (addr[:6] + "…" + addr[-4:]) if len(addr) > 12 else addr,
+                "buys": w["buys"], "sells": w["sells"],
+                "ton_in": round(w["ton_in"], 2),
+                "ton_out": round(w["ton_out"], 2),
+                "grinch_held": round(held, 2),
+                "pnl_ton": round(pnl, 3),
+                "first_ts": w["first_ts"], "last_ts": w["last_ts"],
+                "last_kind": w["last_kind"],
+                "smart": (w["buys"] + w["sells"]) >= self.SMART_MIN_TRADES and pnl > 0,
+            })
+
+        top_profit = sorted(rows, key=lambda x: x["pnl_ton"], reverse=True)[:top]
+        top_volume = sorted(rows, key=lambda x: x["ton_in"] + x["ton_out"], reverse=True)[:top]
+
+        buy_ton = sum(e["ton"] for e in recent if e["kind"] == "buy")
+        sell_ton = sum(e["ton"] for e in recent if e["kind"] == "sell")
+        smart_n = sum(1 for r in rows if r["smart"])
+
+        return {
+            "signal": self.get_signal(),
+            "total_wallets": len(rows),
+            "smart_wallets": smart_n,
+            "total_trades_seen": total_events,
+            "recent_buy_ton": round(buy_ton, 2),
+            "recent_sell_ton": round(sell_ton, 2),
+            "top_profit": top_profit,
+            "top_volume": top_volume,
+            "last_poll": last_poll,
+            "error": err,
+            "pool": Config.GRINCH_POOL_ADDRESS,
+        }
+
+    # ------------------------------------------------------------ persistence
+    def _load(self):
+        if not os.path.exists(STORE_PATH):
+            return
+        try:
+            with open(STORE_PATH, "r", encoding="utf-8") as fh:
+                data = json.load(fh)
+            self.wallets = data.get("wallets", {}) or {}
+            self.events = data.get("events", []) or []
+            self._seen = set(data.get("seen", []) or [])
+            self.last_poll = data.get("last_poll", 0.0) or 0.0
+        except Exception:
+            # повреждённый файл не должен ронять старт
+            self.wallets, self.events, self._seen = {}, [], set()
+
+    def _save(self):
+        with self._lock:
+            payload = {
+                "wallets": self.wallets,
+                "events": self.events[-self.MAX_EVENTS:],
+                "seen": list(self._seen)[-self.MAX_SEEN:],
+                "last_poll": self.last_poll,
+                "saved_at": datetime.now(timezone.utc).isoformat(),
+            }
+        tmp = STORE_PATH + ".tmp"
+        try:
+            with open(tmp, "w", encoding="utf-8") as fh:
+                json.dump(payload, fh, ensure_ascii=False)
+            os.replace(tmp, STORE_PATH)
+        except Exception:
+            pass

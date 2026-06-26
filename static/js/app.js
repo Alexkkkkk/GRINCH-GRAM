@@ -901,6 +901,60 @@ async function loadDexTrades() {
   } catch (e) {}
 }
 
+let _walletTab = "profit";
+let _walletData = null;
+function switchWalletTab(tab) {
+  _walletTab = tab;
+  document.getElementById("wl-tab-profit").classList.toggle("active", tab === "profit");
+  document.getElementById("wl-tab-volume").classList.toggle("active", tab === "volume");
+  renderWalletList();
+}
+function renderWalletList() {
+  const list = document.getElementById("wl-list");
+  if (!list || !_walletData) return;
+  const rows = (_walletTab === "profit" ? _walletData.top_profit : _walletData.top_volume) || [];
+  if (!rows.length) {
+    list.innerHTML = '<div class="empty-msg">Накапливаю статистику по кошелькам…</div>';
+    return;
+  }
+  list.innerHTML = rows.map(w => {
+    const pnl = Number(w.pnl_ton) || 0;
+    const pnlCls = pnl > 0 ? "pos" : (pnl < 0 ? "neg" : "");
+    const pnlTxt = (pnl > 0 ? "+" : "") + pnl.toFixed(2) + " TON";
+    const lastBuy = w.last_kind === "buy";
+    return '<div class="wl-row">' +
+      '<span class="wl-addr">' + (w.smart ? "⭐ " : "") + escapeHtml(w.short) + '</span>' +
+      '<span class="wl-bs"><span class="pos">' + w.buys + '↑</span>/<span class="neg">' + w.sells + '↓</span></span>' +
+      '<span class="wl-side ' + (lastBuy ? "pos" : "neg") + '">' + (lastBuy ? "купил" : "продал") + '</span>' +
+      '<span class="wl-pnl ' + pnlCls + '">' + pnlTxt + '</span>' +
+      '<span class="wl-time">' + timeAgo(w.last_ts) + '</span>' +
+      '</div>';
+  }).join("");
+}
+async function loadWallets() {
+  try {
+    const r = await fetch("/api/wallets");
+    const d = await r.json();
+    if (!d) return;
+    _walletData = d;
+    const sig = d.signal || {};
+    const score = Number(sig.score) || 0;
+    const scoreEl = document.getElementById("sm-score");
+    scoreEl.textContent = (score > 0 ? "+" : "") + score.toFixed(2) + " · " + (sig.label || "—");
+    scoreEl.className = "sm-score " + (score >= 0.4 ? "pos" : (score <= -0.4 ? "neg" : ""));
+    const bar = document.getElementById("sm-bar");
+    bar.style.width = Math.min(100, Math.abs(score) * 100) + "%";
+    bar.style.left = score >= 0 ? "50%" : (50 - Math.min(50, Math.abs(score) * 50)) + "%";
+    bar.style.background = score >= 0 ? "var(--grinch, #00ff88)" : "#ff4d6d";
+    document.getElementById("sm-buy").textContent  = (Number(sig.buy_ton)  || 0).toFixed(1) + " TON";
+    document.getElementById("sm-sell").textContent = (Number(sig.sell_ton) || 0).toFixed(1) + " TON";
+    document.getElementById("wl-total").textContent = d.total_wallets || 0;
+    document.getElementById("wl-smart").textContent = d.smart_wallets || 0;
+    document.getElementById("wl-seen").textContent  = d.total_trades_seen || 0;
+    renderWalletList();
+  } catch (e) {}
+}
+
 async function loadExchanges() {
   try {
     const r    = await fetch("/api/coin/exchanges");
@@ -952,6 +1006,8 @@ setInterval(loadTon, 15000);
 setInterval(loadCoin, 10000);
 setInterval(loadDexTrades, 8000);
 setInterval(loadExchanges, 15000);
+loadWallets();
+setInterval(loadWallets, 20000);
 
 // ═══════════════════════════════════════════════════════════════════════════
 //  ШКАЛА ОБУЧЕНИЯ AI
