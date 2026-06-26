@@ -19,3 +19,11 @@ so live data (e.g. `/api/ton`) stays stale/empty in production while looking fin
 **How to apply:** Add new background threads inside the existing `start_background()`
 in `app.py` (idempotent via `_bg_started` flag). Keep the guard so multi-worker
 gunicorn setups don't spawn duplicate threads per process.
+
+## 24/7 deployment must be VM, never autoscale
+For continuous trading the deployment target MUST be `vm` (Reserved VM), not `autoscale`.
+**Why:** autoscale scales to zero when there's no inbound HTTP traffic, which kills the
+in-memory trading loop + deposit_monitor + pollers (all daemon threads started at import).
+Run command pins a SINGLE worker: `gunicorn -w 1 --threads 8 --timeout 120 -b 0.0.0.0:5000 main:app`.
+**Why single worker:** >1 gunicorn worker = multiple processes = the custodial trading loop
+runs more than once → duplicate buys/sells. Always keep `-w 1`; use `--threads` for concurrency.
