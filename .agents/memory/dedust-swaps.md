@@ -5,6 +5,35 @@ description: Why TON→GRINCH buys bounced (min-out from USD cross-rate, not gas
 
 # DeDust swaps: pool-native min-out + honest settlement
 
+## DEFINITIVE ROOT CAUSE of "only gas spent" buys: RANDOM SALT (not min-out, not op)
+Proven by deterministic tonapi `/v2/traces/emulate` against live state (fixed BOC =
+100% reproducible; same boc emulated 5× gives identical exit). The pool
+(`0:e95704d0…` = `Config.GRINCH_POOL_ADDRESS`) parses the **256-bit "salt"** field of
+the params cell (`_build_params_cell`) as part of its payload and throws **compute
+`exit 9` (cell underflow)** on **~55% of random salt values** — TON bounces back, gas
+is burned. Our code generated a fresh `secrets.randbits(256)` salt **per swap**, so
+roughly half of buys/sells silently bounced. The earlier "min-out too high → exit 9"
+read was a RED HERRING: a fixed *good* salt makes min-out behave correctly — output
+honored up to the real CPMM amount, and a genuinely too-high min-out gives a clean
+**exit 30** (not 9).
+
+**Fix:** in `_build_params_cell`, replace the random salt with a **deterministic,
+verified-good** value: `salt = int.from_bytes(recipient.hash_part)` (recipient is
+always the platform custodial wallet, so this is a stable constant; emulated exit 0
+across all amounts/min-outs). Real successful third-party wallets do the same — each
+reuses ONE fixed salt across all its swaps (observed: same salt repeated per wallet),
+they never randomize per swap.
+**Why:** good vs bad salt has **no simple byte pattern** (e.g. `0`,`0xAA..`,recip_hash
+= good; `1`,`0xFF..`,`0x55..` = bad) — looks like a deep TL-B mis-parse of that region,
+so you cannot pick a good salt analytically; pick one and VERIFY by emulation. The
+"salt is not validated, accounts don't exist on-chain" note (below) was WRONG — the
+*value* matters even though no account exists.
+**How to apply:** never randomize the params salt for this pool; reuse a fixed salt
+verified to emulate `exit 0`. Diagnose swap bounces with tonapi trace-emulate of a
+FIXED boc (deterministic); a varying-salt sweep gives jagged/nondeterministic exits
+that mislead. This fix covers BOTH buy and sell (shared `_build_params_cell`).
+
+
 ## Buys bounced because min-out came from a USD cross-rate, NOT the pool
 Every buy reverted (`exit_code 65535` + bounce): TON left the wallet, no GRINCH
 arrived. Root cause was the slippage `min_out`, computed as
