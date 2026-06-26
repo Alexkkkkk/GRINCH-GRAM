@@ -2,7 +2,7 @@ import json
 import math
 import os
 import numpy as np
-from flask import Flask, render_template, jsonify, request
+from flask import Flask, render_template, jsonify, request, session, redirect, url_for
 from flask.json.provider import DefaultJSONProvider
 from flask_socketio import SocketIO, emit
 import threading
@@ -179,6 +179,70 @@ def start_background():
         ton.start()
 
 start_background()
+
+
+# ════════════════════════════════════════════════════════════════════════════
+#  Авторизация — логин / пароль для входа в панель
+# ════════════════════════════════════════════════════════════════════════════
+import hmac
+from datetime import timedelta
+
+ADMIN_USERNAME = os.environ.get("ADMIN_USERNAME", "")
+ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "")
+
+app.permanent_session_lifetime = timedelta(days=30)
+
+# Публичные пути — доступны без входа (страницы участников платформы)
+_PUBLIC_PREFIXES = (
+    "/login", "/logout", "/static", "/favicon",
+    "/tonconnect-manifest", "/join", "/dashboard/",
+    "/api/user", "/api/platform",
+)
+
+
+def _auth_configured():
+    return bool(ADMIN_USERNAME and ADMIN_PASSWORD)
+
+
+@app.before_request
+def _require_login():
+    # Пока логин/пароль не заданы — доступ не блокируем (чтобы не закрыть панель).
+    if not _auth_configured():
+        return None
+    path = request.path or "/"
+    if any(path == p or path.startswith(p) for p in _PUBLIC_PREFIXES):
+        return None
+    if session.get("logged_in"):
+        return None
+    if path.startswith("/api") or path.startswith("/socket.io"):
+        return jsonify({"ok": False, "error": "Требуется вход"}), 401
+    return redirect(url_for("login", next=path))
+
+
+@app.route("/login", methods=["GET", "POST"])
+def login():
+    if session.get("logged_in"):
+        return redirect(request.args.get("next") or url_for("index"))
+    error = None
+    if request.method == "POST":
+        username = (request.form.get("username") or "").strip()
+        password = request.form.get("password") or ""
+        if (_auth_configured()
+                and hmac.compare_digest(username, ADMIN_USERNAME)
+                and hmac.compare_digest(password, ADMIN_PASSWORD)):
+            session.permanent = True
+            session["logged_in"] = True
+            session["user"] = username
+            return redirect(request.args.get("next") or url_for("index"))
+        error = "Неверный логин или пароль"
+    return render_template("login.html", error=error,
+                           next=request.args.get("next", ""))
+
+
+@app.route("/logout")
+def logout():
+    session.clear()
+    return redirect(url_for("login"))
 
 
 # ════════════════════════════════════════════════════════════════════════════
