@@ -21,7 +21,7 @@ COINGECKO_IDS = {
 class PriceFeed:
     """Реальные цены через бесплатные API (CoinGecko + DexScreener). С кэшем по TTL."""
 
-    def __init__(self, ttl=30):
+    def __init__(self, ttl=10):
         self.ttl = ttl
         self._cache = {}   # base -> (price, ts)
         self._lock = threading.Lock()

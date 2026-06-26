@@ -19,10 +19,10 @@ socket.on("connect", () => {
 socket.on("status_update", updateUI);
 socket.on("price_update", updatePrice);
 
-// Постоянный polling: REST каждые 3 сек
+// Постоянный polling: REST каждые 2 сек (резерв на случай разрыва сокета)
 setInterval(() => {
   fetch("/api/status").then(r => r.json()).then(updateUI).catch(() => {});
-}, 3000);
+}, 2000);
 
 function fmtPrice(p) {
   p = Number(p) || 0;
@@ -936,11 +936,11 @@ loadConfig();
 loadCoin();
 loadDexTrades();
 loadExchanges();
-setInterval(() => loadTonPrice().then(() => loadTon()), 120000);
-setInterval(loadTon, 30000);
-setInterval(loadCoin, 20000);
-setInterval(loadDexTrades, 15000);
-setInterval(loadExchanges, 20000);
+setInterval(() => loadTonPrice().then(() => loadTon()), 60000);
+setInterval(loadTon, 15000);
+setInterval(loadCoin, 10000);
+setInterval(loadDexTrades, 8000);
+setInterval(loadExchanges, 15000);
 
 // ═══════════════════════════════════════════════════════════════════════════
 //  ШКАЛА ОБУЧЕНИЯ AI
@@ -1087,7 +1087,7 @@ function pollLiquidator() {
     .catch(() => {});
 }
 pollLiquidator();
-setInterval(pollLiquidator, 30000);
+setInterval(pollLiquidator, 20000);
 
 // Ручная продажа
 function forceLiqSell() {

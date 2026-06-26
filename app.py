@@ -150,7 +150,7 @@ def push_updates():
             socketio.emit("status_update", _safe_status())
         except Exception as e:
             print(f"[Push] Ошибка: {e}")
-        time.sleep(5)
+        time.sleep(2)
 
 
 def push_price():

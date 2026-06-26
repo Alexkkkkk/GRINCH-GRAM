@@ -16,7 +16,7 @@ class CoinInfo:
     """Рыночная статистика монеты и лента последних сделок через бесплатные API
     (DexScreener / GeckoTerminal для GRINCH-джеттона, CoinGecko для крупных монет)."""
 
-    def __init__(self, ttl_market=30, ttl_trades=15):
+    def __init__(self, ttl_market=12, ttl_trades=8):
         self.ttl_market = ttl_market
         self.ttl_trades = ttl_trades
         self._lock = threading.Lock()
