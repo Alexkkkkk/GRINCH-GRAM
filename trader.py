@@ -27,6 +27,9 @@ class Trader:
         self._thread = None
         self.signal_callbacks = []
         self.on_training_progress = None
+        # Сериализация закрытия позиций: не даём торговому циклу и ручному
+        # закрытию продать одну и ту же позицию дважды.
+        self._close_lock = threading.Lock()
         # Счётчик подтверждений BUY-сигнала (требуем 2 последовательных)
         self._buy_confirm_count = 0
         # Кеш баланса: не долбим блокчейн при каждом /api/status (TTL 30 сек)
@@ -450,7 +453,30 @@ class Trader:
             return True
         return False
 
+    def close_trade(self, trade_id):
+        """Ручное закрытие ОДНОЙ позиции по её id (рыночная продажа сейчас)."""
+        trade = next((t for t in self.open_trades
+                      if str(t.get("id")) == str(trade_id)), None)
+        if not trade:
+            return {"ok": False, "error": "Позиция не найдена или уже закрыта"}
+        try:
+            from price_feed import price_feed
+            price = price_feed.get("GRINCH") or trade.get("entry_price")
+        except Exception:
+            price = trade.get("entry_price")
+        self.log(f"🖐 Ручное закрытие позиции {trade_id} @ {price}", "INFO")
+        ok = self._close_trade(trade, price, "manual")
+        return {"ok": True} if ok else {
+            "ok": False, "error": "Продажа не исполнена — попробуйте ещё раз позже"}
+
     def _close_trade(self, trade, price, reason):
+        """Сериализует закрытие (лок) и защищает от двойной продажи позиции."""
+        with self._close_lock:
+            if trade.get("id") not in {t.get("id") for t in self.open_trades}:
+                return False   # уже закрыта другим потоком
+            return self._close_trade_locked(trade, price, reason)
+
+    def _close_trade_locked(self, trade, price, reason):
         """
         Закрывает позицию:
         1. Исполняет реальную продажу GRINCH на блокчейне (DeDust режим)

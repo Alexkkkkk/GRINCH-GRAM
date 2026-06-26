@@ -227,7 +227,7 @@ function updateUI(data) {
     if (wbGrnUsd) wbGrnUsd.textContent = "≈ $" + grnUsd.toFixed(4);
   }
 
-  renderOpenTrades(data.open_trades  || [], Number(data.analysis?.price) || 0);
+  renderOpenTrades(data.open_trades  || [], Number(data.analysis?.price) || 0, Number(data.grinch_ton) || 0);
   renderHistory(data.recent_trades || []);
   renderLogs(data.logs             || []);
 
@@ -540,13 +540,16 @@ function renderFeatureImportance(fi) {
   }).join("");
 }
 
-function renderOpenTrades(trades, curPrice) {
+function renderOpenTrades(trades, curPrice, gramPrice) {
   const el = document.getElementById("open-trades-list");
   if (!trades.length) {
     el.innerHTML = '<div class="empty-msg">Нет позиций, ожидающих продажи</div>';
     return;
   }
+  const gram = Number(gramPrice) || 0;
   el.innerHTML = trades.map(t => {
+    const amount = Number(t.amount) || 0;
+    const valueGram = gram > 0 ? amount * gram : 0;
     const entry = Number(t.entry_price) || 0;
     const tp    = Number(t.take_profit) || 0;
     const sl    = Number(t.stop_loss)   || 0;
@@ -596,11 +599,40 @@ function renderOpenTrades(trades, curPrice) {
         <span class="ot-wait" style="color:${waitColor}">${waitLabel}</span>
       </div>
       <div class="trade-row" style="font-size:10px;color:#4a5568">
-        <span>Кол-во: ${t.amount} GRINCH</span>
+        <span>Кол-во: <b style="color:#e2e8f0">${amount}</b> GRINCH</span>
         ${t.ai_confidence ? `<span style="color:#a78bfa">AI ${t.ai_confidence}%</span>` : ""}
       </div>
+      <div class="trade-row" style="font-size:11px;color:#8892b0">
+        <span>Куплено по: <b style="color:#e2e8f0">$${entry}</b></span>
+        <span>Стоит сейчас: <b style="color:#00d4aa">${gram > 0 ? fmtGram(valueGram) : "—"}</b></span>
+      </div>
+      <button onclick='closeTrade(this, ${JSON.stringify(String(t.id))})'
+        style="margin-top:8px;width:100%;padding:8px;border:none;border-radius:8px;cursor:pointer;font-weight:700;font-size:11px;color:#fff;background:linear-gradient(90deg,#ff4d6d,#ff7a3d)">
+        ✖ Продать сейчас
+      </button>
     </div>`;
   }).join("");
+}
+
+async function closeTrade(btn, id) {
+  if (!confirm("Закрыть эту позицию? GRINCH будет продан на DeDust по текущей рыночной цене.")) return;
+  if (btn) { btn.disabled = true; btn.textContent = "⏳ Продаю…"; }
+  try {
+    const r = await fetch("/api/trade/close", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id })
+    });
+    const d = await r.json().catch(() => ({ ok: false, error: "ошибка ответа" }));
+    if (!d.ok) {
+      alert("Не удалось закрыть: " + (d.error || "ошибка"));
+      if (btn) { btn.disabled = false; btn.textContent = "✖ Продать сейчас"; }
+    }
+  } catch (e) {
+    alert("Ошибка сети при закрытии позиции");
+    if (btn) { btn.disabled = false; btn.textContent = "✖ Продать сейчас"; }
+  }
+  fetch("/api/status").then(r => r.json()).then(updateUI).catch(() => {});
 }
 
 function renderHistory(trades) {
