@@ -246,8 +246,10 @@ class WalletTracker:
             "smart_wallets": len(smart),
         }
 
-    def get_stats(self, top=12):
-        """Полная статистика для дашборда."""
+    WINDOW_24H = 86400      # окно для списка кошельков (последние сутки)
+
+    def get_stats(self, top=20):
+        """Полная статистика для дашборда (список — за последние 24 часа)."""
         with self._lock:
             wallets = {k: dict(v) for k, v in self.wallets.items()}
             now = time.time()
@@ -256,6 +258,7 @@ class WalletTracker:
             last_poll = self.last_poll
             err = self.last_error
 
+        cutoff_24h = now - self.WINDOW_24H
         rows = []
         for addr, w in wallets.items():
             pnl = self._realized_pnl(w)
@@ -273,8 +276,10 @@ class WalletTracker:
                 "smart": (w["buys"] + w["sells"]) >= self.SMART_MIN_TRADES and pnl > 0,
             })
 
-        top_profit = sorted(rows, key=lambda x: x["pnl_ton"], reverse=True)[:top]
-        top_volume = sorted(rows, key=lambda x: x["ton_in"] + x["ton_out"], reverse=True)[:top]
+        # Список — только кошельки, активные за последние 24 часа, по убыванию
+        active = [r for r in rows if r["last_ts"] >= cutoff_24h]
+        top_profit = sorted(active, key=lambda x: x["pnl_ton"], reverse=True)[:top]
+        top_volume = sorted(active, key=lambda x: x["ton_in"] + x["ton_out"], reverse=True)[:top]
 
         buy_ton = sum(e["ton"] for e in recent if e["kind"] == "buy")
         sell_ton = sum(e["ton"] for e in recent if e["kind"] == "sell")
@@ -283,6 +288,7 @@ class WalletTracker:
         return {
             "signal": self.get_signal(),
             "total_wallets": len(rows),
+            "active_24h": len(active),
             "smart_wallets": smart_n,
             "total_trades_seen": total_events,
             "recent_buy_ton": round(buy_ton, 2),

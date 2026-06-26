@@ -958,6 +958,8 @@ async function loadWallets() {
     document.getElementById("wl-total").textContent = d.total_wallets || 0;
     document.getElementById("wl-smart").textContent = d.smart_wallets || 0;
     document.getElementById("wl-seen").textContent  = d.total_trades_seen || 0;
+    const src = document.getElementById("wallets-src");
+    if (src) src.textContent = "· за 24ч: " + (d.active_24h || 0);
     renderWalletList();
   } catch (e) {}
 }
