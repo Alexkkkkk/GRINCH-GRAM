@@ -13,4 +13,5 @@
 - [Settings persistence](settings-persistence.md) — dashboard settings survive restarts via settings.json (settings_store.py), not by rewriting source; new tunables must persist in POST AND load at startup.
 - [Dashboard login auth](dashboard-auth.md) — owner panel gated by ADMIN_USERNAME/PASSWORD session; Flask-SocketIO connect handshake bypasses before_request, gate it in @socketio.on("connect"); no weak default SECRET_KEY.
 - [GRINCH price display](grinch-price-display.md) — dashboard shows ONE canonical price = price_feed.get('GRINCH') (DexScreener spot); analyze() candle-close was diverging ~1% in hero/wallet card. Override analysis['price'] for display only, never touch analyze() (trading/chart use candles).
+- [Port 5000 bind crash](port-bind-crash.md) — restart left a stale app.py holding port 5000 → EADDRINUSE. app.py __main__ self-frees port (kills own stale PID via /proc, cmdline-guarded) + EADDRINUSE-only retry. Not threads (all daemon).
 - [Manual per-trade close](manual-trade-close.md) — single-position close must NOT _emit_signal SELL (would force-liquidate all custodial users); _close_lock + membership recheck prevents double-sell.

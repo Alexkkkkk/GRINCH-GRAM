@@ -677,6 +677,104 @@ def on_connect(auth=None):
         print(f"[on_connect] Ошибка: {e}")
 
 
+def _free_port(port: int):
+    """Освобождает TCP-порт перед запуском сервера.
+
+    Находит ЧУЖОЙ процесс, который слушает этот порт (например, зависший прошлый
+    экземпляр приложения), и аккуратно завершает его (SIGTERM, затем SIGKILL).
+    Без этого рестарт падал с 'Address already in use'. Свой PID не трогаем,
+    на чистом старте (никто не слушает) — это no-op.
+    """
+    import glob
+    import signal
+
+    my_pid = os.getpid()
+    target_hex = f"{port:04X}"
+
+    def _listening_inodes():
+        inodes = set()
+        for path in ("/proc/net/tcp", "/proc/net/tcp6"):
+            try:
+                with open(path) as f:
+                    next(f, None)  # пропускаем заголовок
+                    for line in f:
+                        parts = line.split()
+                        if len(parts) < 10:
+                            continue
+                        local, state = parts[1], parts[3]
+                        if state != "0A":  # 0A = LISTEN
+                            continue
+                        if local.split(":")[-1].upper() == target_hex:
+                            inodes.add(parts[9])
+            except FileNotFoundError:
+                pass
+        return inodes
+
+    inodes = _listening_inodes()
+    if not inodes:
+        return
+
+    def _is_our_app(pid: int) -> bool:
+        # Завершаем ТОЛЬКО зависший экземпляр этого же приложения, а не любой
+        # чужой процесс на порту, чтобы случайно не убить посторонний сервис.
+        try:
+            with open(f"/proc/{pid}/cmdline", "rb") as f:
+                cmd = f.read().replace(b"\x00", b" ").decode("utf-8", "ignore")
+        except OSError:
+            return False
+        return "app.py" in cmd
+
+    pids = set()
+    for fd_link in glob.glob("/proc/[0-9]*/fd/*"):
+        try:
+            link = os.readlink(fd_link)
+        except OSError:
+            continue
+        if not link.startswith("socket:["):
+            continue
+        if link[len("socket:["):-1] in inodes:
+            try:
+                pid = int(fd_link.split("/")[2])
+            except (IndexError, ValueError):
+                continue
+            if pid != my_pid and _is_our_app(pid):
+                pids.add(pid)
+
+    if not pids:
+        return
+    for pid in pids:
+        try:
+            os.kill(pid, signal.SIGTERM)
+            print(f"[startup] порт {port} занят процессом {pid} — отправлен SIGTERM")
+        except OSError:
+            pass
+    time.sleep(2)
+    for pid in pids:
+        try:
+            os.kill(pid, 0)              # ещё жив?
+            os.kill(pid, signal.SIGKILL)  # добиваем
+        except OSError:
+            pass
+    time.sleep(1)
+
+
 if __name__ == "__main__":
+    import errno
+
     start_background()
-    socketio.run(app, host="0.0.0.0", port=5000, debug=False, allow_unsafe_werkzeug=True)
+    _free_port(5000)
+    for attempt in range(1, 11):
+        try:
+            socketio.run(app, host="0.0.0.0", port=5000,
+                         debug=False, allow_unsafe_werkzeug=True)
+            break
+        except OSError as e:
+            # Повторяем ТОЛЬКО при «адрес занят»; прочие ошибки — пробрасываем.
+            if e.errno != errno.EADDRINUSE:
+                raise
+            print(f"[startup] порт 5000 занят "
+                  f"(попытка {attempt}/10): {e} — освобождаю и повторяю…")
+            _free_port(5000)
+            time.sleep(2)
+    else:
+        raise SystemExit("[startup] порт 5000 так и не освободился")
