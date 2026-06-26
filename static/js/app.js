@@ -555,11 +555,17 @@ function renderOpenTrades(trades, curPrice, gramPrice) {
     const sl    = Number(t.stop_loss)   || 0;
     const cur   = curPrice > 0 ? curPrice : entry;
 
-    // Live P&L % (комиссия 0.3% за сторону на обе стороны, как в trader.py)
+    // Чистый результат «если продать сейчас» — авторитетный расчёт бэкенда
+    // (net_pct_now: учитывает обе комиссии 1%+1% и газ). Фолбэк — оценка по
+    // цене с круговой комиссией 2%, если бэкенд не прислал значения.
+    const hasNet   = (t.net_pct_now !== undefined && t.net_pct_now !== null);
     const grossPct = entry > 0 ? (cur - entry) / entry * 100 : 0;
-    const feePct   = entry > 0 ? (1 + cur / entry) * 0.3 : 0.6;
-    const netPct   = grossPct - feePct;
-    const pnlCls   = netPct >= 0 ? "pnl-pos" : "pnl-neg";
+    const netPct   = hasNet ? Number(t.net_pct_now)
+                            : grossPct - (entry > 0 ? (2 + grossPct / 100) : 2);
+    const netTon   = (t.net_ton_now !== undefined && t.net_ton_now !== null) ? Number(t.net_ton_now) : null;
+    const be       = Number(t.breakeven_price) || 0;
+    const inProfit = (t.in_profit !== undefined && t.in_profit !== null) ? !!t.in_profit : netPct >= 0;
+    const pnlCls   = inProfit ? "pnl-pos" : "pnl-neg";
     const pnlSign  = netPct >= 0 ? "+" : "";
 
     // Прогресс от входа к тейк-профиту (0..100%)
@@ -570,12 +576,13 @@ function renderOpenTrades(trades, curPrice, gramPrice) {
     // Сколько ещё % до цели продажи
     const toTpPct = (tp > 0 && cur > 0) ? (tp - cur) / cur * 100 : 0;
 
-    // Статус ожидания
+    // Статус ожидания — главный сигнал: уже в плюсе после ОБЕИХ комиссий?
     let waitLabel, waitColor;
-    if (cur >= tp)      { waitLabel = "🎯 Достигнут TP — продаём"; waitColor = "#00ff88"; }
-    else if (cur <= sl) { waitLabel = "🛑 Достигнут SL — продаём"; waitColor = "#ff4d6d"; }
-    else if (sl > entry){ waitLabel = "🔒 Прибыль защищена (трейлинг)"; waitColor = "#00d4aa"; }
-    else                { waitLabel = `⏳ Ждём роста ещё +${toTpPct.toFixed(1)}%`; waitColor = "#ffd166"; }
+    if (inProfit)                 { waitLabel = "✅ Уже в плюсе — можно закрыть"; waitColor = "#00ff88"; }
+    else if (be > 0 && cur > 0)   { waitLabel = `⏳ До прибыли ещё +${((be - cur) / cur * 100).toFixed(1)}%`; waitColor = "#ffd166"; }
+    else if (cur >= tp)           { waitLabel = "🎯 Достигнут TP — продаём"; waitColor = "#00ff88"; }
+    else if (sl > entry)          { waitLabel = "🔒 Прибыль защищена (трейлинг)"; waitColor = "#00d4aa"; }
+    else                          { waitLabel = `⏳ Ждём роста ещё +${toTpPct.toFixed(1)}%`; waitColor = "#ffd166"; }
 
     return `
     <div class="trade-card buy waiting-sell">
@@ -606,9 +613,16 @@ function renderOpenTrades(trades, curPrice, gramPrice) {
         <span>Куплено по: <b style="color:#e2e8f0">$${entry}</b></span>
         <span>Стоит сейчас: <b style="color:#00d4aa">${gram > 0 ? fmtGram(valueGram) : "—"}</b></span>
       </div>
+      <div class="trade-row" style="font-size:12px;align-items:center">
+        <span style="color:#8892b0">Если продать сейчас (−комиссии):</span>
+        <b class="${pnlCls}" style="font-weight:800">${netTon !== null ? (netTon >= 0 ? "+" : "−") + fmtGram(Math.abs(netTon)) : "—"}</b>
+      </div>
+      ${be > 0 ? `<div class="trade-row" style="font-size:10px;color:#4a5568">
+        <span>Безубыток (с учётом 2 транзакций): <b style="color:#ffd166">$${be}</b></span>
+      </div>` : ""}
       <button onclick='closeTrade(this, ${JSON.stringify(String(t.id))})'
-        style="margin-top:8px;width:100%;padding:8px;border:none;border-radius:8px;cursor:pointer;font-weight:700;font-size:11px;color:#fff;background:linear-gradient(90deg,#ff4d6d,#ff7a3d)">
-        ✖ Продать сейчас
+        style="margin-top:8px;width:100%;padding:9px;border:none;border-radius:8px;cursor:pointer;font-weight:800;font-size:12px;color:#fff;background:${inProfit ? "linear-gradient(90deg,#00b894,#00ff88)" : "linear-gradient(90deg,#ff4d6d,#ff7a3d)"}">
+        ${inProfit ? "✅ Продать с прибылью" : "✖ Продать сейчас"}
       </button>
     </div>`;
   }).join("");
