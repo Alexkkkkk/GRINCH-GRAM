@@ -100,14 +100,16 @@ class PriceFeed:
     # ───────────── курс TON↔GRINCH напрямую из пула (priceNative) ────────────
 
     def get_grinch_ton_price(self, max_stale=None):
-        """Цена 1 GRINCH в TON напрямую из пула (priceNative DexScreener).
+        """Цена 1 GRINCH в TON напрямую из пула.
 
-        Это РЕАЛЬНЫЙ курс пула, а не перекрёстный USD-курс. min-out для свопов
-        нужно считать ОТСЮДА: кросс-курс grinch_usd/ton_usd берёт цены из разных
-        источников (DexScreener + CoinGecko) и систематически расходится с курсом
-        нашего 1%-пула (на ~6%). Из-за этого min-out оказывался завышен, и пул
-        DeDust отклонял каждую покупку (exit 65535, bounce). С курсом пула буфер
-        SLIPPAGE_PCT уверенно перекрывает комиссию пула и проскальзывание.
+        Источник истины — РЕАЛЬНЫЕ резервы пула в блокчейне (get_pool_data, см.
+        _fetch_grinch_ton_onchain); при недоступности — priceNative закреплённого
+        пула с DexScreener. Это РЕАЛЬНЫЙ курс пула, а не перекрёстный USD-курс.
+        min-out для свопов нужно считать ОТСЮДА: кросс-курс grinch_usd/ton_usd
+        берёт цены из разных источников (DexScreener + CoinGecko) и систематически
+        расходится с курсом нашего 1%-пула (на ~6%). Из-за этого min-out оказывался
+        завышен, и пул DeDust отклонял каждую покупку (exit 65535, bounce). С курсом
+        пула буфер SLIPPAGE_PCT уверенно перекрывает комиссию пула и проскальзывание.
         """
         key = "GRINCH_TON"
         now = time.time()
@@ -129,6 +131,12 @@ class PriceFeed:
             return entry[0]
 
     def _fetch_grinch_ton_native(self):
+        # 1) Источник истины — РЕАЛЬНЫЕ резервы пула в блокчейне (без задержки и
+        #    без лимитов внешних API). Цена = резерв TON / резерв GRINCH.
+        onchain = self._fetch_grinch_ton_onchain()
+        if onchain and onchain > 0:
+            return onchain
+        # 2) Резерв — priceNative закреплённого пула с DexScreener
         try:
             r = requests.get(
                 f"https://api.dexscreener.com/latest/dex/tokens/{Config.GRINCH_TOKEN_ADDRESS}",
@@ -164,6 +172,43 @@ class PriceFeed:
             return float(ton_pairs[0]["priceNative"])
         except Exception:
             return None
+
+    def _fetch_grinch_ton_onchain(self):
+        """Цена 1 GRINCH в TON из РЕАЛЬНЫХ резервов пула в блокчейне.
+
+        Самый точный источник — get-метод `get_pool_data` самого контракта пула
+        (через TonCenter runGetMethod). Он отдаёт ФАКТИЧЕСКИЕ резервы пула — ровно
+        те, по которым DeDust считает цену, — без задержки и без лимитов внешних
+        агрегаторов. Важно: брать именно резервы из get_pool_data, а НЕ баланс
+        TON-аккаунта пула (в балансе ~190 TON газа/ренты, что завышает цену на ~3%).
+
+        У DeDust CPMM-v2 get_pool_data возвращает в стеке: позиция 9 — резерв TON
+        (нано), позиция 10 — резерв GRINCH (нано). Оба актива 9-знаковые.
+        """
+        try:
+            pool = Config.GRINCH_POOL_ADDRESS
+            r = requests.post(
+                "https://toncenter.com/api/v2/runGetMethod",
+                json={"address": pool, "method": "get_pool_data", "stack": []},
+                headers={"Accept": "application/json"}, timeout=8,
+            )
+            d = r.json()
+            res = d.get("result") or {}
+            if not d.get("ok") or res.get("exit_code") not in (0, None):
+                return None
+            stack = res.get("stack") or []
+            if len(stack) < 11 or stack[9][0] != "num" or stack[10][0] != "num":
+                return None
+            ton_reserve    = int(stack[9][1], 16) / 1e9
+            grinch_reserve = int(stack[10][1], 16) / 1e9
+            if ton_reserve > 0 and grinch_reserve > 0:
+                price = ton_reserve / grinch_reserve
+                # Защита от неверного разбора стека: курс должен быть в разумных пределах
+                if 1e-6 < price < 1e-1:
+                    return price
+        except Exception:
+            return None
+        return None
 
 
 price_feed = PriceFeed()
