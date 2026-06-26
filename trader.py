@@ -570,11 +570,14 @@ class Trader:
         # Иначе hero/кошелёк показывают close последней свечи (GeckoTerminal), а
         # ликвидатор — спот, и числа расходятся (~1%). Свечи для графика/индикаторов
         # не трогаем — меняем только отображаемую цену.
+        grinch_ton = None
         try:
             from price_feed import price_feed
             spot = price_feed.get("GRINCH")
             if spot and spot > 0:
                 analysis["price"] = spot
+            # Курс 1 GRINCH в GRAM (TON) — реальный курс пула (priceNative)
+            grinch_ton = price_feed.get_grinch_ton_price()
         except Exception:
             pass
         ai       = self.last_ai if self.last_ai else self.ai.analyze(ohlcv)
@@ -587,6 +590,7 @@ class Trader:
             "training":      self.training,
             "demo_mode":     self.exchange.demo_mode,
             "symbol":        Config.SYMBOL,
+            "grinch_ton":    grinch_ton,
             "balance":       balance,
             "analysis":      analysis,
             "ai":            ai,

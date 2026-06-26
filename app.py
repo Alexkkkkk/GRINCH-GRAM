@@ -154,6 +154,7 @@ def push_updates():
 
 
 def push_price():
+    from price_feed import price_feed
     last, last_symbol = None, None
     while True:
         try:
@@ -161,10 +162,14 @@ def push_price():
             if symbol != last_symbol:
                 last = None
                 last_symbol = symbol
-            price  = float(trader.exchange.get_live_price())
-            change = round((price - last) / last * 100, 3) if last else 0.0
-            socketio.emit("price_update", {"symbol": symbol, "price": price, "change": change})
-            last = price
+            price = float(trader.exchange.get_live_price())
+            gram  = price_feed.get_grinch_ton_price()
+            # Изменение считаем по курсу в GRAM (он же показан в hero)
+            change = round((gram - last) / last * 100, 3) if (last and gram) else 0.0
+            socketio.emit("price_update",
+                          {"symbol": symbol, "price": price, "gram": gram, "change": change})
+            if gram and gram > 0:
+                last = gram
         except Exception as e:
             print(f"[Price] Ошибка: {e}")
         time.sleep(2)
@@ -304,13 +309,14 @@ def index():
     try:
         status       = _safe_status()
         init_price   = status.get("analysis", {}).get("price", 0)
+        init_gram    = status.get("grinch_ton", 0)
         init_running = status.get("running", False)
         init_ai      = status.get("ai", {})
         init_balance = status.get("balance", {})
     except Exception:
-        init_price, init_running, init_ai, init_balance = 0, False, {}, {}
+        init_price, init_gram, init_running, init_ai, init_balance = 0, 0, False, {}, {}
     return render_template("index.html", symbol=Config.SYMBOL, demo=Config.DEMO_MODE,
-                           init_price=init_price, init_running=init_running,
+                           init_price=init_price, init_gram=init_gram, init_running=init_running,
                            init_ai=init_ai, init_balance=init_balance)
 
 

@@ -159,7 +159,7 @@
         <span class="hdr-bal-val" id="hdr-grn-bal">{{ "%.0f"|format(init_balance.get('GRINCH', 0)) if init_balance.get('GRINCH') is not none else '0' }}</span>
         <span class="hdr-bal-sym">GRINCH</span>
       </div>
-      <div class="symbol-label" id="symbol-label">TON/GRINCH</div>
+      <div class="symbol-label" id="symbol-label">GRINCH/GRAM</div>
     </div>
 
     <div class="header-right">
@@ -183,8 +183,8 @@
               <span class="live-dot" title="В реальном времени"></span>
               Цена GRINCH
             </div>
-            <div class="price" id="price">{% if init_price and init_price > 0 %}{{ "${:,.8f}".format(init_price).rstrip('0').rstrip('.') }}{% else %}$0.00{% endif %}</div>
-            <div class="price-in-ton" id="price-in-ton">— TON</div>
+            <div class="price" id="price">{% if init_gram and init_gram > 0 %}{{ "{:,.8f}".format(init_gram).rstrip('0').rstrip('.') }} GRAM{% else %}— GRAM{% endif %}</div>
+            <div class="price-in-ton" id="price-in-ton">{% if init_price and init_price > 0 %}≈ ${{ "{:,.8f}".format(init_price).rstrip('0').rstrip('.') }}{% else %}≈ $0.00{% endif %}</div>
             <div class="price-change" id="price-change">0.00%</div>
           </div>
           <div style="display:flex;flex-direction:column;gap:6px;align-items:flex-end">

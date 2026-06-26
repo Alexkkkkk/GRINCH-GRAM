@@ -30,18 +30,31 @@ function fmtPrice(p) {
   return "$" + p.toLocaleString("en-US", { minimumFractionDigits: digits, maximumFractionDigits: digits });
 }
 
+// Курс GRINCH в GRAM (бывш. Toncoin)
+function fmtGram(p) {
+  p = Number(p) || 0;
+  const digits = p >= 100 ? 2 : (p >= 1 ? 4 : (p >= 0.01 ? 6 : 8));
+  return p.toLocaleString("en-US", { minimumFractionDigits: digits, maximumFractionDigits: digits }) + " GRAM";
+}
+
 let _lastLivePrice = null;
 function updatePrice(d) {
   const el = document.getElementById("price");
   if (!el) return;
-  const price = Number(d.price) || 0;
-  el.textContent = fmtPrice(price);
-  if (_lastLivePrice !== null && price !== _lastLivePrice) {
-    el.classList.remove("price-up", "price-down");
-    void el.offsetWidth;
-    el.classList.add(price > _lastLivePrice ? "price-up" : "price-down");
+  const gram = Number(d.gram) || 0;
+  const usd  = Number(d.price) || 0;
+  // Hero ВСЕГДА в GRAM: при сбое котировки не подменяем доллар, держим прежнее значение
+  if (gram > 0) {
+    el.textContent = fmtGram(gram);
+    if (_lastLivePrice !== null && gram !== _lastLivePrice) {
+      el.classList.remove("price-up", "price-down");
+      void el.offsetWidth;
+      el.classList.add(gram > _lastLivePrice ? "price-up" : "price-down");
+    }
+    _lastLivePrice = gram;
   }
-  _lastLivePrice = price;
+  const pit = document.getElementById("price-in-ton");
+  if (pit && usd > 0) pit.textContent = "≈ " + fmtPrice(usd);
   const ch = document.getElementById("price-change");
   if (ch) {
     const c = Number(d.change) || 0;
@@ -55,20 +68,16 @@ function updateUI(data) {
   const stats    = data.stats    || {};
   const ai       = data.ai       || {};
 
-  // Цена из анализа
+  // Курс GRINCH в GRAM (бывш. Toncoin) — основное число; USD — справочно
   const priceFromAnalysis = Number(analysis.price);
-  if (priceFromAnalysis > 0) {
-    const priceEl = document.getElementById("price");
-    if (priceEl) priceEl.textContent = fmtPrice(priceFromAnalysis);
-    // Цена в TON (GRINCH/TON)
-    const pitEl = document.getElementById("price-in-ton");
-    if (pitEl && window._tonPriceUsd && window._tonPriceUsd > 0) {
-      const priceTon = priceFromAnalysis / window._tonPriceUsd;
-      pitEl.textContent = priceTon.toFixed(8) + " TON";
-    }
-  }
+  const gram = Number(data.grinch_ton) || 0;
+  const priceEl = document.getElementById("price");
+  // Hero ВСЕГДА в GRAM: при отсутствии курса не подменяем доллар
+  if (priceEl && gram > 0) priceEl.textContent = fmtGram(gram);
+  const pitEl = document.getElementById("price-in-ton");
+  if (pitEl && priceFromAnalysis > 0) pitEl.textContent = "≈ " + fmtPrice(priceFromAnalysis);
   const symLabel = document.getElementById("symbol-label");
-  if (symLabel) symLabel.textContent = data.symbol || "GRINCH/USDT";
+  if (symLabel) symLabel.textContent = "GRINCH/GRAM";
 
   // Технический сигнал
   const sig = analysis.signal || "HOLD";
