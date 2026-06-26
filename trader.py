@@ -464,6 +464,22 @@ class Trader:
             price = price_feed.get("GRINCH") or trade.get("entry_price")
         except Exception:
             price = trade.get("entry_price")
+        # Режим «только в плюс»: даже РУЧНОЕ закрытие не продаёт в минус.
+        # Если позиция ещё не достигла минимальной нетто-прибыли — отказываем
+        # и держим, пока цена вырастет (та же гарантия, что и для авто-выхода).
+        if Config.ONLY_PROFIT_EXIT:
+            entry = trade.get("entry_price") or 0
+            pnl_pct = (price - entry) / entry * 100 if entry else 0.0
+            net_floor_pct = Config.required_gross_pct()
+            if pnl_pct < net_floor_pct:
+                self.log(
+                    f"⏸️ Ручная продажа отклонена: прибыль {pnl_pct:+.1f}% < "
+                    f"мин. +{net_floor_pct:.0f}% (режим «только в плюс»). Держим.",
+                    "INFO"
+                )
+                return {"ok": False, "error": (
+                    f"Продажа в минус отключена: прибыль {pnl_pct:+.1f}% ниже "
+                    f"минимума +{net_floor_pct:.0f}%. Ждём роста цены.")}
         self.log(f"🖐 Ручное закрытие позиции {trade_id} @ {price}", "INFO")
         ok = self._close_trade(trade, price, "manual")
         return {"ok": True} if ok else {

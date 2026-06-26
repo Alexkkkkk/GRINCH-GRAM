@@ -713,7 +713,6 @@ async function saveConfig() {
   const cfg = {
     symbol:             document.getElementById("cfg-symbol").value,
     trade_amount:       document.getElementById("cfg-amount").value,
-    stop_loss_pct:      document.getElementById("cfg-sl").value,
     take_profit_pct:    document.getElementById("cfg-tp").value,
     trailing_stop_pct:  document.getElementById("cfg-trail").value,
     fee_pct:            document.getElementById("cfg-fee").value,
@@ -732,7 +731,6 @@ async function loadConfig() {
   const cfg = await r.json();
   document.getElementById("cfg-symbol").value  = cfg.symbol;
   document.getElementById("cfg-amount").value  = cfg.trade_amount;
-  document.getElementById("cfg-sl").value      = cfg.stop_loss_pct;
   document.getElementById("cfg-tp").value      = cfg.take_profit_pct;
   document.getElementById("cfg-trail").value   = cfg.trailing_stop_pct;
   document.getElementById("cfg-fee").value     = cfg.fee_pct;

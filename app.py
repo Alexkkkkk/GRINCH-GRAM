@@ -442,7 +442,7 @@ def api_config_get():
     return jsonify({
         "symbol": Config.SYMBOL, "timeframe": Config.TIMEFRAME,
         "trade_amount": Config.TRADE_AMOUNT, "max_open_trades": Config.MAX_OPEN_TRADES,
-        "stop_loss_pct": Config.STOP_LOSS_PCT, "take_profit_pct": Config.TAKE_PROFIT_PCT,
+        "take_profit_pct": Config.TAKE_PROFIT_PCT,
         "trailing_stop_pct": Config.TRAILING_STOP_PCT, "fee_pct": Config.FEE_PCT,
         "use_dynamic_targets": Config.USE_DYNAMIC_TARGETS, "trend_filter": Config.TREND_FILTER,
         "min_ai_confidence": Config.MIN_AI_CONFIDENCE, "demo_mode": Config.DEMO_MODE,
@@ -462,7 +462,7 @@ def api_config_set():
         return max(lo, min(hi, v))
 
     errors = []
-    for key in ("trade_amount", "stop_loss_pct", "take_profit_pct",
+    for key in ("trade_amount", "take_profit_pct",
                 "max_open_trades", "trailing_stop_pct", "fee_pct", "min_ai_confidence"):
         if key in data and num(key, -1e18, 1e18) is None:
             errors.append(key)
@@ -470,7 +470,6 @@ def api_config_set():
         return jsonify({"ok": False, "message": "Некорректные значения: " + ", ".join(errors)}), 400
 
     if (v := num("trade_amount", 1, 1e9))      is not None: Config.TRADE_AMOUNT     = v
-    if (v := num("stop_loss_pct", 0.1, 90))    is not None: Config.STOP_LOSS_PCT    = v
     if (v := num("take_profit_pct", 0.1, 1000))is not None: Config.TAKE_PROFIT_PCT  = v
     if (v := num("max_open_trades", 1, 50))     is not None: Config.MAX_OPEN_TRADES  = int(v)
     if (v := num("trailing_stop_pct", 0, 90))  is not None: Config.TRAILING_STOP_PCT= v
@@ -504,7 +503,6 @@ def api_config_set():
             "SYMBOL":            Config.SYMBOL,
             "TRADE_AMOUNT":      Config.TRADE_AMOUNT,
             "MAX_OPEN_TRADES":   Config.MAX_OPEN_TRADES,
-            "STOP_LOSS_PCT":     Config.STOP_LOSS_PCT,
             "TAKE_PROFIT_PCT":   Config.TAKE_PROFIT_PCT,
             "TRAILING_STOP_PCT": Config.TRAILING_STOP_PCT,
             "FEE_PCT":           Config.FEE_PCT,
