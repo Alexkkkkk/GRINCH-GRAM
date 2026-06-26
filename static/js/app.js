@@ -841,7 +841,14 @@ function fmtAmt(n) {
 }
 function timeAgo(ts) {
   if (!ts) return "";
-  const sec = Math.max(0, (Date.now() - new Date(ts).getTime()) / 1000);
+  // Числовой ts — это epoch в секундах (а Date ждёт миллисекунды) → ×1000
+  let ms;
+  if (typeof ts === "number") {
+    ms = ts < 1e12 ? ts * 1000 : ts;
+  } else {
+    ms = new Date(ts).getTime();
+  }
+  const sec = Math.max(0, (Date.now() - ms) / 1000);
   if (sec < 60) return Math.floor(sec) + "с";
   if (sec < 3600) return Math.floor(sec / 60) + "м";
   if (sec < 86400) return Math.floor(sec / 3600) + "ч";
