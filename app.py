@@ -157,6 +157,20 @@ def _get_snapshot():
     with _snapshot_lock:
         return _status_snapshot
 
+def _status_for_response():
+    """Готовый снимок из буфера для любого ответа (страница, REST, сокет).
+    Пока буфер холодный (самый первый запрос до первого тика фонового потока) —
+    считаем напрямую один раз и сразу прогреваем буфер, чтобы параллельные
+    запросы не пересчитывали то же самое."""
+    global _status_snapshot
+    snap = _get_snapshot()
+    if snap is None:
+        snap = _safe_status()
+        with _snapshot_lock:
+            if _status_snapshot is None:
+                _status_snapshot = snap
+    return snap
+
 def push_updates():
     global _status_snapshot
     while True:
@@ -324,7 +338,7 @@ def tonconnect_manifest():
 @app.route("/")
 def index():
     try:
-        status       = _safe_status()
+        status       = _status_for_response()
         init_price   = status.get("analysis", {}).get("price", 0)
         init_gram    = status.get("grinch_ton", 0)
         init_running = status.get("running", False)
@@ -341,14 +355,7 @@ def index():
 def api_status():
     # Отдаём готовый снимок из буфера — мгновенно, без ожидания сети/блокчейна.
     # Пока буфер не прогрет (самый первый запрос) — считаем напрямую один раз.
-    snap = _get_snapshot()
-    if snap is None:
-        global _status_snapshot
-        snap = _safe_status()
-        with _snapshot_lock:
-            if _status_snapshot is None:
-                _status_snapshot = snap
-    return jsonify(snap)
+    return jsonify(_status_for_response())
 
 @app.route("/api/candles")
 def api_candles():
@@ -698,7 +705,7 @@ def on_connect(auth=None):
     if _auth_configured() and not session.get("logged_in"):
         return False  # отклонить подключение неавторизованного клиента
     try:
-        emit("status_update", _safe_status())
+        emit("status_update", _status_for_response())
     except Exception as e:
         print(f"[on_connect] Ошибка: {e}")
 
