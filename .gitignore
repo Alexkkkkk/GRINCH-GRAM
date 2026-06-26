@@ -16,3 +16,4 @@ env/
 .DS_Store
 *.sqlite3
 *.db
+.session_secret

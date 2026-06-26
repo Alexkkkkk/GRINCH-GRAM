@@ -32,8 +32,31 @@ class NumpyJSONProvider(DefaultJSONProvider):
 app = Flask(__name__)
 app.json_provider_class = NumpyJSONProvider
 app.json = NumpyJSONProvider(app)
-app.config["SECRET_KEY"] = Config.SECRET_KEY
-app.secret_key = Config.SECRET_KEY
+def _resolve_secret_key():
+    """Надёжный ключ сессий: env → постоянный файл → случайный.
+    Слабый зашитый ключ по умолчанию не используется (иначе cookie подделать)."""
+    import secrets as _secrets
+    key = os.environ.get("SESSION_SECRET") or os.environ.get("SECRET_KEY")
+    if key and key != "grinch-gram-secret-2024":
+        return key
+    path = ".session_secret"
+    try:
+        if os.path.exists(path):
+            with open(path) as f:
+                saved = f.read().strip()
+            if saved:
+                return saved
+        generated = _secrets.token_hex(32)
+        with open(path, "w") as f:
+            f.write(generated)
+        return generated
+    except Exception:
+        return _secrets.token_hex(32)
+
+
+_SECRET_KEY = _resolve_secret_key()
+app.config["SECRET_KEY"] = _SECRET_KEY
+app.secret_key = _SECRET_KEY
 
 # ── База данных ───────────────────────────────────────────────────────────────
 app.config["SQLALCHEMY_DATABASE_URI"] = os.environ.get(
@@ -192,16 +215,21 @@ ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "")
 
 app.permanent_session_lifetime = timedelta(days=30)
 
-# Публичные пути — доступны без входа (страницы участников платформы)
-_PUBLIC_PREFIXES = (
-    "/login", "/logout", "/static", "/favicon",
-    "/tonconnect-manifest", "/join", "/dashboard/",
-    "/api/user", "/api/platform",
-)
+# Публичные пути — доступны без входа (страницы участников платформы).
+# Точные пути + узкие префиксы, чтобы случайно не открыть будущие эндпоинты.
+_PUBLIC_EXACT = {
+    "/login", "/logout", "/favicon.ico",
+    "/tonconnect-manifest.json", "/join", "/api/platform/stats",
+}
+_PUBLIC_PREFIXES = ("/static/", "/dashboard/", "/api/user/")
 
 
 def _auth_configured():
     return bool(ADMIN_USERNAME and ADMIN_PASSWORD)
+
+
+def _is_public_path(path):
+    return path in _PUBLIC_EXACT or any(path.startswith(p) for p in _PUBLIC_PREFIXES)
 
 
 @app.before_request
@@ -210,7 +238,7 @@ def _require_login():
     if not _auth_configured():
         return None
     path = request.path or "/"
-    if any(path == p or path.startswith(p) for p in _PUBLIC_PREFIXES):
+    if _is_public_path(path):
         return None
     if session.get("logged_in"):
         return None
@@ -625,6 +653,9 @@ def api_platform_stats():
 
 @socketio.on("connect")
 def on_connect(auth=None):
+    # Поток статуса панели — только для владельца после входа.
+    if _auth_configured() and not session.get("logged_in"):
+        return False  # отклонить подключение неавторизованного клиента
     try:
         emit("status_update", _safe_status())
     except Exception as e:
