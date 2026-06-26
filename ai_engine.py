@@ -113,6 +113,7 @@ class AIEngine:
         self._feature_names: list[str] = []
         self._tick_count  = 0
         self._new_confirms = 0
+        self._retrains    = 0   # сколько раз модель самопереобучилась после старта
 
         # ── Буфер опыта ──────────────────────────────────────────────────
         self._replay_X:  list = []
@@ -466,6 +467,23 @@ class AIEngine:
 
         self._trained = True
         self._new_confirms = 0
+
+        # Отражаем непрерывное самообучение в UI (банер обучения)
+        self._retrains += 1
+        try:
+            accs = [s.accuracy for s in self._slots if s.accuracy is not None]
+            avg_acc = round(sum(accs) / len(accs) * 100, 1) if accs else 0.0
+            self._set_progress(
+                "ready", 100,
+                f"🟢 Самообучение активно · переобучений: {self._retrains} · "
+                f"подтверждённых сделок: {len(self._confirmed_X)} · точность {avg_acc}%",
+                len(X_arr),
+            )
+            self.training_progress["retrains"]   = self._retrains
+            self.training_progress["confirmed"]  = len(self._confirmed_X)
+            self.training_progress["accuracy"]   = avg_acc
+        except Exception:
+            pass
 
     def _try_fit_meta(self, X, y):
         """Первый запуск мета-слоя на исторических данных."""

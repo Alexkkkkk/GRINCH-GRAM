@@ -903,7 +903,6 @@ setInterval(loadExchanges, 20000);
 // ═══════════════════════════════════════════════════════════════════════════
 
 const TB_STAGE_ORDER = ["collecting", "features", "rf", "gb", "validate", "ready"];
-let _tbDismissTimer = null;
 
 // Прогресс приходит двумя путями:
 // 1) SocketIO event "training_progress" (в реальном времени)
@@ -950,17 +949,8 @@ function renderTrainingProgress(tp) {
     el.className = "tb-stage " + (i < phaseIdx ? "done" : i === phaseIdx ? "active" : "pending");
   });
 
-  // Авто-скрытие через 2.5с после завершения
-  if (isDone) {
-    clearTimeout(_tbDismissTimer);
-    _tbDismissTimer = setTimeout(() => {
-      if (!banner) return;
-      banner.style.transition = "opacity .8s ease, max-height .8s ease";
-      banner.style.opacity    = "0";
-      banner.style.maxHeight  = "0";
-      setTimeout(() => { banner.style.display = "none"; }, 850);
-    }, 2500);
-  }
+  // Банер обучения показываем ПОСТОЯННО (не скрываем после завершения).
+  // После предобучения он отражает непрерывное самообучение модели.
 }
 
 // ══════════════════════════════════════════════════════════════════
