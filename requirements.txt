@@ -8,7 +8,7 @@ numpy==1.26.4
 pandas==2.2.2
 scikit-learn==1.5.0
 python-dotenv==1.1.0
-pytoniq==0.1.41
+pytoniq==0.1.43
 aiohttp==3.9.5
 ta==0.11.0
 dedust==1.1.4
