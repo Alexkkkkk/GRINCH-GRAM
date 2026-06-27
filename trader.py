@@ -32,6 +32,10 @@ class Trader:
         self._close_lock = threading.Lock()
         # Счётчик подтверждений BUY-сигнала (требуем 2 последовательных)
         self._buy_confirm_count = 0
+        # Smart BUY: ожидаем откат к лучшей цене перед входом
+        # Структура: {"target": float, "signal_price": float, "ai": dict,
+        #              "analysis": dict, "ticks_left": int}
+        self._pending_buy = None
         # Кеш баланса: не долбим блокчейн при каждом /api/status (TTL 30 сек)
         self._balance_cache     = {}
         self._balance_cache_ts  = 0
@@ -152,7 +156,48 @@ class Trader:
         # чтобы в этом же тике не открыть BUY поверх ещё не сведённого
         # пользовательского состояния (гонка SELL→BUY в одном окне).
         if self._check_stop_loss_take_profit(price):
+            self._pending_buy = None   # отменяем ожидание если позиция закрылась
             return
+
+        # ── Smart BUY: проверяем отложенный вход ───────────────────────────
+        # Если ожидаем откат к лучшей цене — проверяем достигнута ли цель.
+        if self._pending_buy and not self.open_trades:
+            pb = self._pending_buy
+            pb["ticks_left"] -= 1
+            if price <= pb["target"]:
+                # Цена откатилась к цели — покупаем по лучшей цене!
+                self.log(
+                    f"🎯 Smart BUY: откат поймали! Сигнал был ${pb['signal_price']:.8f}, "
+                    f"покупаем по ${price:.8f} (экономия {(pb['signal_price']-price)/pb['signal_price']*100:.2f}%)",
+                    "INFO"
+                )
+                opened = self._open_trade("buy", price, pb["analysis"], pb["ai"])
+                if opened:
+                    self._buy_confirm_count = 0
+                    self._emit_signal("BUY", price, pb["ai"])
+                self._pending_buy = None
+                return
+            elif pb["ticks_left"] <= 0:
+                # Время вышло — берём по текущей рыночной цене
+                self.log(
+                    f"⏱️ Smart BUY: откат не пришёл за {Config.SMART_BUY_MAX_WAIT_TICKS} тика, "
+                    f"покупаем по рынку ${price:.8f}",
+                    "INFO"
+                )
+                opened = self._open_trade("buy", price, pb["analysis"], pb["ai"])
+                if opened:
+                    self._buy_confirm_count = 0
+                    self._emit_signal("BUY", price, pb["ai"])
+                self._pending_buy = None
+                return
+            else:
+                # Ещё ждём
+                self.log(
+                    f"⏳ Smart BUY: ждём откат до ${pb['target']:.8f} "
+                    f"(сейчас ${price:.8f}, осталось {pb['ticks_left']} тика)",
+                    "INFO"
+                )
+                return
 
         # ── Формируем итоговый сигнал ──────────────────────────────────
         final_signal = "HOLD"
@@ -249,13 +294,38 @@ class Trader:
         if final_signal == "BUY" and blocked:
             self.log(f"⏸️ Вход отменён: {blocked}", "WARN")
         elif final_signal == "BUY" and len(self.open_trades) < Config.MAX_OPEN_TRADES:
-            opened = self._open_trade("buy", price, result, ai)
-            # Сигнал пользователям шлём ТОЛЬКО если реальный ордер исполнился —
-            # иначе у юзеров спишется виртуальный TON и откроется позиция без
-            # реальной сделки (рассинхрон балансов, блокировка вывода).
-            if opened:
-                self._buy_confirm_count = 0   # сбрасываем после входа
-                self._emit_signal("BUY", price, ai)
+            # ── Smart BUY: ждём откат или покупаем сразу ──────────────────
+            use_smart = (
+                Config.SMART_BUY_ENABLED
+                and conf < Config.SMART_BUY_SKIP_CONF   # при ≥90% — сразу
+                and not self._pending_buy                # не дублируем ожидание
+            )
+            if use_smart:
+                target = self.exchange._round(price * (1 - Config.SMART_BUY_PULLBACK_PCT / 100))
+                self._pending_buy = {
+                    "target":       target,
+                    "signal_price": price,
+                    "ai":           ai,
+                    "analysis":     result,
+                    "ticks_left":   Config.SMART_BUY_MAX_WAIT_TICKS,
+                }
+                self.log(
+                    f"🎯 Smart BUY: ждём откат до ${target:.8f} "
+                    f"(сейчас ${price:.8f}, -{ Config.SMART_BUY_PULLBACK_PCT}%, "
+                    f"макс {Config.SMART_BUY_MAX_WAIT_TICKS} тика) | AI {conf}%",
+                    "INFO"
+                )
+            else:
+                # Либо AI очень уверен (≥90%) — берём сразу, либо Smart BUY выключен
+                if conf >= Config.SMART_BUY_SKIP_CONF:
+                    self.log(f"⚡ Smart BUY пропущен: AI {conf}% ≥ {Config.SMART_BUY_SKIP_CONF}% — покупаем сразу", "INFO")
+                opened = self._open_trade("buy", price, result, ai)
+                # Сигнал пользователям шлём ТОЛЬКО если реальный ордер исполнился —
+                # иначе у юзеров спишется виртуальный TON и откроется позиция без
+                # реальной сделки (рассинхрон балансов, блокировка вывода).
+                if opened:
+                    self._buy_confirm_count = 0   # сбрасываем после входа
+                    self._emit_signal("BUY", price, ai)
         elif final_signal == "SELL" and self.open_trades:
             closed = self._close_all_trades(price, result)
             # Сигнал SELL юзерам шлём ТОЛЬКО если реальная продажа прошла —
@@ -781,6 +851,7 @@ class Trader:
         winrate  = 0
         if self.stats["total_trades"] > 0:
             winrate = round(self.stats["winning_trades"] / self.stats["total_trades"] * 100, 1)
+        pb = self._pending_buy
         return {
             "running":       self.running,
             "training":      self.training,
@@ -795,4 +866,10 @@ class Trader:
             "logs":          self.logs[-50:],
             "stats":         {**self.stats, "winrate": winrate},
             "training_progress": self.ai.training_progress,
+            "pending_buy":   {
+                "target":       pb["target"],
+                "signal_price": pb["signal_price"],
+                "ticks_left":   pb["ticks_left"],
+                "ai_conf":      (pb["ai"] or {}).get("confidence", 0),
+            } if pb else None,
         }

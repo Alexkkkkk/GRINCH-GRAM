@@ -106,6 +106,17 @@ class Config:
     # меньше этого порога не открывается (пыль не оправдывает газ свопа).
     MIN_STAKE_TON = float(os.getenv("MIN_STAKE_TON", "0.5"))
 
+    # ── Smart BUY: умная покупка с откатом ───────────────────────────────
+    # Когда все условия для покупки выполнены, бот НЕ покупает сразу по рынку.
+    # Он ставит цель-откат чуть ниже текущей цены и ждёт N тиков.
+    # Если цена откатилась → покупаем дешевле (лучший вход, ниже безубыток).
+    # Если откат не пришёл за SMART_BUY_MAX_WAIT_TICKS → берём по рынку.
+    # При AI >= SMART_BUY_SKIP_CONF% — покупаем сразу (слишком сильный сигнал).
+    SMART_BUY_ENABLED       = bool(int(os.getenv("SMART_BUY_ENABLED", "1")))
+    SMART_BUY_PULLBACK_PCT  = float(os.getenv("SMART_BUY_PULLBACK_PCT", "0.8"))  # ждём откат -0.8%
+    SMART_BUY_MAX_WAIT_TICKS = int(os.getenv("SMART_BUY_MAX_WAIT_TICKS", "3"))   # макс 3 тика (~90 сек)
+    SMART_BUY_SKIP_CONF     = float(os.getenv("SMART_BUY_SKIP_CONF", "90.0"))    # ≥90% → сразу
+
     # ── Smart TP: умная продажа с ИИ ─────────────────────────────────────
     # Когда позиция достигает минимального порога прибыли, бот проверяет сигнал
     # ИИ. Если уверенность >= SMART_TP_MIN_CONF% и сигнал BUY — держим позицию

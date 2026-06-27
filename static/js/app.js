@@ -247,6 +247,39 @@ function updateUI(data) {
 
   // Шкала обучения (берём из статуса если нет отдельного event)
   if (data.training_progress) renderTrainingProgress(data.training_progress);
+
+  // Smart BUY: индикатор ожидания откатного входа
+  renderSmartBuy(data.pending_buy || null);
+}
+
+function renderSmartBuy(pb) {
+  let el = document.getElementById("smart-buy-banner");
+  if (!el) {
+    el = document.createElement("div");
+    el.id = "smart-buy-banner";
+    el.style.cssText = [
+      "display:none", "margin:8px 0", "padding:10px 14px",
+      "border-radius:10px", "border:1px solid rgba(167,139,250,0.4)",
+      "background:rgba(167,139,250,0.08)", "font-size:12px",
+      "color:#a78bfa", "display:none",
+    ].join(";");
+    const openTradesSection = document.querySelector(".section-trades") ||
+                              document.getElementById("open-trades") ||
+                              document.querySelector(".trades-section");
+    if (openTradesSection) openTradesSection.before(el);
+    else {
+      const main = document.querySelector("main") || document.body;
+      main.appendChild(el);
+    }
+  }
+  if (!pb) { el.style.display = "none"; return; }
+  el.style.display = "";
+  el.innerHTML = `
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap">
+      <span>🎯 <b>Smart BUY:</b> ждём откат до <b style="color:#e2e8f0">$${Number(pb.target).toFixed(8)}</b></span>
+      <span style="color:#8892b0">Сигнал: $${Number(pb.signal_price).toFixed(8)} | AI ${pb.ai_conf}% | осталось ${pb.ticks_left} тика</span>
+    </div>
+  `;
 }
 
 // ═══════════════════════════════════════════════════════
