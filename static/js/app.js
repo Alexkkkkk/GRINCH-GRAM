@@ -1129,7 +1129,7 @@ function updateLiquidator(d) {
 
   if (refEl) refEl.textContent = d.ref_price ? fmt8(d.ref_price) : "—";
   if (curEl) curEl.textContent = d.current_price ? fmt8(d.current_price) : "—";
-  if (tgtEl) tgtEl.textContent = d.target_price  ? fmt8(d.target_price) + " (+" + d.sell_rise_pct + "%)" : "—";
+  if (tgtEl) tgtEl.textContent = d.target_price  ? fmt8(d.target_price) + " (+" + (+d.sell_rise_pct).toFixed(2) + "%)" : "—";
 
   // Изменение цены с опорной
   if (pctEl) {
@@ -1159,7 +1159,7 @@ function updateLiquidator(d) {
       msgEl.textContent = "Последняя продажа: " + d.last_sell_at + " (всего: " + d.sell_count + ")";
     } else if (d.target_price) {
       const pctLeft = d.pct_to_go != null ? d.pct_to_go.toFixed(2) + "% до цели" : "";
-      msgEl.textContent = "Жду роста +" + d.sell_rise_pct + "% | " + pctLeft;
+      msgEl.textContent = "Жду роста +" + (+d.sell_rise_pct).toFixed(2) + "% | " + pctLeft;
     } else {
       msgEl.textContent = "Ожидание данных...";
     }
