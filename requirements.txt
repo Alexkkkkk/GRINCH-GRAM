@@ -9,7 +9,6 @@ pandas==2.2.2
 scikit-learn==1.5.0
 python-dotenv==1.1.0
 pytoniq==0.1.41
-pytoniq-core==0.1.39
 aiohttp==3.9.5
 ta==0.11.0
 dedust==1.1.4
