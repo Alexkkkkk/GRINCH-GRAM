@@ -30,7 +30,9 @@ from datetime import datetime
 
 from config import Config
 
-FILE = os.getenv("EXPERIENCE_FILE", "experience.json")
+_DATA_DIR = os.getenv("DATA_DIR", os.path.join(os.path.dirname(os.path.abspath(__file__)), "data"))
+os.makedirs(_DATA_DIR, exist_ok=True)
+FILE = os.getenv("EXPERIENCE_FILE", os.path.join(_DATA_DIR, "experience.json"))
 
 # ── Параметры адаптации (само-управление) ────────────────────────────────────
 MAX_TRADES_KEPT   = 1000     # сколько последних сделок хранить в журнале

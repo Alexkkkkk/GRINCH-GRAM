@@ -17,3 +17,10 @@ env/
 *.sqlite3
 *.db
 .session_secret
+
+# Данные бота (хранятся в data/ или /app/data/ на Bothost — не в Git)
+data/
+experience.json
+settings.json
+wallets.json
+uv.lock

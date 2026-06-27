@@ -28,7 +28,9 @@ import requests
 
 from config import Config
 
-STORE_PATH = os.path.join(os.path.dirname(__file__), "wallets.json")
+_DATA_DIR = os.getenv("DATA_DIR", os.path.join(os.path.dirname(os.path.abspath(__file__)), "data"))
+os.makedirs(_DATA_DIR, exist_ok=True)
+STORE_PATH = os.getenv("WALLETS_FILE", os.path.join(_DATA_DIR, "wallets.json"))
 
 
 def _f(x, default=0.0):

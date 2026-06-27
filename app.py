@@ -805,19 +805,22 @@ def _free_port(port: int):
 if __name__ == "__main__":
     import errno
 
+    # Bothost передаёт порт через PORT; на Replit фолбэк — 5000
+    _PORT = int(os.environ.get("PORT", 5000))
+
     start_background()
-    _free_port(5000)
+    _free_port(_PORT)
     for attempt in range(1, 11):
         try:
-            socketio.run(app, host="0.0.0.0", port=5000,
+            socketio.run(app, host="0.0.0.0", port=_PORT,
                          debug=False, allow_unsafe_werkzeug=True)
             break
         except OSError as e:
             if e.errno != errno.EADDRINUSE:
                 raise
-            print(f"[startup] порт 5000 занят "
+            print(f"[startup] порт {_PORT} занят "
                   f"(попытка {attempt}/10): {e} — освобождаю и повторяю…")
-            _free_port(5000)
+            _free_port(_PORT)
             time.sleep(2)
     else:
-        raise SystemExit("[startup] порт 5000 так и не освободился")
+        raise SystemExit(f"[startup] порт {_PORT} так и не освободился")

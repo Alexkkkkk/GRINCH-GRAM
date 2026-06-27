@@ -16,7 +16,9 @@ import json
 import os
 import threading
 
-_SETTINGS_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "settings.json")
+_DATA_DIR = os.getenv("DATA_DIR", os.path.join(os.path.dirname(os.path.abspath(__file__)), "data"))
+os.makedirs(_DATA_DIR, exist_ok=True)
+_SETTINGS_FILE = os.getenv("SETTINGS_FILE", os.path.join(_DATA_DIR, "settings.json"))
 _lock = threading.Lock()
 
 
