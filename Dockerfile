@@ -17,7 +17,7 @@ COPY . .
 # /app/data — персистентная папка Bothost (сохраняется между деплоями)
 RUN mkdir -p /app/data
 
-ENV PORT=8000
-EXPOSE 8000
+ENV PORT=3000
+EXPOSE 3000
 
 CMD ["python", "app.py"]
