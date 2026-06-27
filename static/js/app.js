@@ -1238,6 +1238,104 @@ function forceLiqSell() {
     .catch(() => { if (btn) btn.disabled = false; });
 }
 
+// ── График истории баланса кошелька (equity curve) ───────────────────────────
+(function initEquityChart() {
+  const canvas  = document.getElementById("eq-chart");
+  const emptyEl = document.getElementById("eq-empty");
+  if (!canvas) return;
+
+  function drawEquity(pts) {
+    if (!pts || pts.length < 2) {
+      canvas.style.display = "none";
+      if (emptyEl) emptyEl.style.display = "";
+      return;
+    }
+    canvas.style.display = "block";
+    if (emptyEl) emptyEl.style.display = "none";
+
+    const dpr = window.devicePixelRatio || 1;
+    const W   = canvas.offsetWidth  || 320;
+    const H   = canvas.offsetHeight || 90;
+    canvas.width  = W * dpr;
+    canvas.height = H * dpr;
+    const ctx = canvas.getContext("2d");
+    ctx.scale(dpr, dpr);
+
+    const vals = pts.map(p => p.equity_ton);
+    const times = pts.map(p => new Date(p.t).getTime());
+    const minV  = Math.min(...vals);
+    const maxV  = Math.max(...vals);
+    const range = maxV - minV || 0.0001;
+    const minT  = times[0];
+    const maxT  = times[times.length - 1];
+    const timeRange = maxT - minT || 1;
+
+    const PAD_L = 2, PAD_R = 4, PAD_T = 8, PAD_B = 14;
+    const cW = W - PAD_L - PAD_R;
+    const cH = H - PAD_T - PAD_B;
+
+    const toX = t => PAD_L + ((t - minT) / timeRange) * cW;
+    const toY = v => PAD_T + (1 - (v - minV) / range) * cH;
+
+    // фон
+    ctx.clearRect(0, 0, W, H);
+
+    // область под линией
+    const grad = ctx.createLinearGradient(0, PAD_T, 0, H - PAD_B);
+    const isUp = vals[vals.length - 1] >= vals[0];
+    grad.addColorStop(0, isUp ? "rgba(0,209,143,0.25)" : "rgba(255,90,90,0.22)");
+    grad.addColorStop(1, "rgba(0,0,0,0)");
+    ctx.beginPath();
+    ctx.moveTo(toX(times[0]), toY(vals[0]));
+    for (let i = 1; i < pts.length; i++) ctx.lineTo(toX(times[i]), toY(vals[i]));
+    ctx.lineTo(toX(times[times.length - 1]), H - PAD_B);
+    ctx.lineTo(toX(times[0]), H - PAD_B);
+    ctx.closePath();
+    ctx.fillStyle = grad;
+    ctx.fill();
+
+    // линия
+    ctx.beginPath();
+    ctx.moveTo(toX(times[0]), toY(vals[0]));
+    for (let i = 1; i < pts.length; i++) ctx.lineTo(toX(times[i]), toY(vals[i]));
+    ctx.strokeStyle = isUp ? "#00d18f" : "#ff5a5a";
+    ctx.lineWidth   = 1.5;
+    ctx.lineJoin    = "round";
+    ctx.stroke();
+
+    // метки мин/макс
+    ctx.font      = "9px monospace";
+    ctx.fillStyle = "#8892b0";
+    ctx.textAlign = "right";
+    ctx.fillText(maxV.toFixed(4) + " TON", W - PAD_R, PAD_T + 8);
+    ctx.fillText(minV.toFixed(4) + " TON", W - PAD_R, H - PAD_B - 2);
+
+    // диапазон времени
+    const rangeLbl = document.getElementById("eq-range-lbl");
+    if (rangeLbl && pts.length > 0) {
+      const first = new Date(pts[0].t);
+      const last  = new Date(pts[pts.length - 1].t);
+      const fmt   = d => d.toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" });
+      const fmtD  = d => d.toLocaleDateString("ru-RU", { day: "2-digit", month: "2-digit" });
+      const sameDay = first.toDateString() === last.toDateString();
+      rangeLbl.textContent = sameDay
+        ? `${fmtD(first)} ${fmt(first)} – ${fmt(last)}`
+        : `${fmtD(first)} – ${fmtD(last)}`;
+    }
+  }
+
+  function fetchAndDraw() {
+    fetch("/api/equity")
+      .then(r => r.json())
+      .then(d => drawEquity(d.points || []))
+      .catch(() => {});
+  }
+
+  fetchAndDraw();
+  setInterval(fetchAndDraw, 30000);
+  window.addEventListener("resize", fetchAndDraw);
+})();
+
 // Изменить порог
 function setLiqThreshold(val) {
   const pct = parseFloat(val);

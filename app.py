@@ -459,6 +459,14 @@ def api_wallets():
 def api_liquidator_status():
     return jsonify(grinch_liquidator.get_status())
 
+@app.route("/api/equity")
+def api_equity():
+    """История изменения баланса кошелька (equity curve)."""
+    from experience_manager import experience_manager
+    with experience_manager._lock:
+        pts = list(experience_manager.data.get("equity", []))
+    return jsonify({"points": pts})
+
 @app.route("/api/experience")
 def api_experience():
     """Состояние долговременной памяти и само-управления ИИ."""
