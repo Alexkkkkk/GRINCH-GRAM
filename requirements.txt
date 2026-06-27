@@ -1,0 +1,5 @@
+fastapi
+uvicorn
+# другие ваши зависимости, например:
+# flask
+# python-telegram-bot
