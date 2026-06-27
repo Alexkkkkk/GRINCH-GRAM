@@ -1,5 +1,6 @@
 fastapi
 uvicorn
-# другие ваши зависимости, например:
-# flask
-# python-telegram-bot
+flask
+flask-socketio
+python-telegram-bot
+requests
