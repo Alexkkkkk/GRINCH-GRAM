@@ -809,16 +809,16 @@ if __name__ == "__main__":
     _free_port(5000)
     for attempt in range(1, 11):
         try:
-            socketio.run(app, host="0.0.0.0", port=5000,
+            socketio.run(app, host="0.0.0.0", port=3000,
                          debug=False, allow_unsafe_werkzeug=True)
             break
         except OSError as e:
             # Повторяем ТОЛЬКО при «адрес занят»; прочие ошибки — пробрасываем.
             if e.errno != errno.EADDRINUSE:
                 raise
-            print(f"[startup] порт 5000 занят "
+            print(f"[startup] порт 3000 занят "
                   f"(попытка {attempt}/10): {e} — освобождаю и повторяю…")
-            _free_port(5000)
+            _free_port(3000)
             time.sleep(2)
     else:
-        raise SystemExit("[startup] порт 5000 так и не освободился")
+        raise SystemExit("[startup] порт 3000 так и не освободился")
