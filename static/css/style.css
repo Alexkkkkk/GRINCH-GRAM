@@ -311,6 +311,7 @@ body { background: var(--bg); color: var(--text); font-family: 'Segoe UI', syste
 @keyframes wspin { from { transform: rotate(0); } to { transform: rotate(360deg); } }
 
 .wallet-eq-title { font-size: 11px; color: var(--text2); margin: 14px 0 2px; font-weight: 600; display: flex; align-items: center; }
+.cfg-section-title { font-size: 11px; font-weight: 700; color: #a78bfa; margin: 14px 0 6px; padding: 5px 8px; background: rgba(167,139,250,0.07); border-left: 2px solid #a78bfa; border-radius: 0 6px 6px 0; letter-spacing: .02em; }
 .ton-deposits-title { font-size: 11px; color: var(--text2); margin: 10px 0 6px; font-weight: 600; }
 .ton-deposits { display: flex; flex-direction: column; gap: 5px; max-height: 200px; overflow-y: auto; }
 .ton-empty    { font-size: 11px; color: var(--text2); text-align: center; padding: 12px; }

@@ -499,6 +499,15 @@ def api_config_get():
         "use_dynamic_targets": Config.USE_DYNAMIC_TARGETS, "trend_filter": Config.TREND_FILTER,
         "min_ai_confidence": Config.MIN_AI_CONFIDENCE, "demo_mode": Config.DEMO_MODE,
         "exchange": Config.EXCHANGE, "ton_wallet": Config.TON_WALLET,
+        # Smart BUY
+        "smart_buy_enabled":        Config.SMART_BUY_ENABLED,
+        "smart_buy_pullback_pct":   Config.SMART_BUY_PULLBACK_PCT,
+        "smart_buy_max_wait_ticks": Config.SMART_BUY_MAX_WAIT_TICKS,
+        "smart_buy_skip_conf":      Config.SMART_BUY_SKIP_CONF,
+        # Smart TP
+        "smart_tp_enabled":         Config.SMART_TP_ENABLED,
+        "smart_tp_min_conf":        Config.SMART_TP_MIN_CONF,
+        "smart_tp_tight_trail_pct": Config.SMART_TP_TIGHT_TRAIL_PCT,
     })
 
 @app.route("/api/config", methods=["POST"])
@@ -543,6 +552,17 @@ def api_config_set():
 
     if "use_dynamic_targets" in data: Config.USE_DYNAMIC_TARGETS = bool(data["use_dynamic_targets"])
     if "trend_filter"        in data: Config.TREND_FILTER        = bool(data["trend_filter"])
+
+    # Smart BUY
+    if "smart_buy_enabled"   in data: Config.SMART_BUY_ENABLED   = bool(data["smart_buy_enabled"])
+    if (v := num("smart_buy_pullback_pct",   0.1, 5))   is not None: Config.SMART_BUY_PULLBACK_PCT   = v
+    if (v := num("smart_buy_max_wait_ticks", 1,   20))  is not None: Config.SMART_BUY_MAX_WAIT_TICKS = int(v)
+    if (v := num("smart_buy_skip_conf",      50,  100)) is not None: Config.SMART_BUY_SKIP_CONF      = v
+    # Smart TP
+    if "smart_tp_enabled"    in data: Config.SMART_TP_ENABLED     = bool(data["smart_tp_enabled"])
+    if (v := num("smart_tp_min_conf",        50,  100)) is not None: Config.SMART_TP_MIN_CONF        = v
+    if (v := num("smart_tp_tight_trail_pct", 0.5, 10))  is not None: Config.SMART_TP_TIGHT_TRAIL_PCT = v
+
     if "symbol" in data and data["symbol"] != Config.SYMBOL:
         if trader.open_trades:
             return jsonify({"ok": False, "message": "Нельзя сменить пару при открытых сделках."}), 409
@@ -561,6 +581,15 @@ def api_config_set():
             "MIN_AI_CONFIDENCE": Config.MIN_AI_CONFIDENCE,
             "USE_DYNAMIC_TARGETS": Config.USE_DYNAMIC_TARGETS,
             "TREND_FILTER":      Config.TREND_FILTER,
+            # Smart BUY
+            "SMART_BUY_ENABLED":        Config.SMART_BUY_ENABLED,
+            "SMART_BUY_PULLBACK_PCT":   Config.SMART_BUY_PULLBACK_PCT,
+            "SMART_BUY_MAX_WAIT_TICKS": Config.SMART_BUY_MAX_WAIT_TICKS,
+            "SMART_BUY_SKIP_CONF":      Config.SMART_BUY_SKIP_CONF,
+            # Smart TP
+            "SMART_TP_ENABLED":         Config.SMART_TP_ENABLED,
+            "SMART_TP_MIN_CONF":        Config.SMART_TP_MIN_CONF,
+            "SMART_TP_TIGHT_TRAIL_PCT": Config.SMART_TP_TIGHT_TRAIL_PCT,
         })
     except Exception as e:  # noqa: BLE001
         return jsonify({"ok": True, "message": f"Настройки применены, но не сохранены на диск: {e}"})

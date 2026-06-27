@@ -762,16 +762,26 @@ async function switchPair(symbol) {
 }
 
 async function saveConfig() {
+  const g = id => document.getElementById(id);
   const cfg = {
-    symbol:             document.getElementById("cfg-symbol").value,
-    trade_amount:       document.getElementById("cfg-amount").value,
-    take_profit_pct:    document.getElementById("cfg-tp").value,
-    trailing_stop_pct:  document.getElementById("cfg-trail").value,
-    fee_pct:            document.getElementById("cfg-fee").value,
-    min_ai_confidence:  document.getElementById("cfg-minconf").value,
-    max_open_trades:    document.getElementById("cfg-max").value,
-    use_dynamic_targets:document.getElementById("cfg-dyn").checked,
-    trend_filter:       document.getElementById("cfg-trend").checked,
+    symbol:             g("cfg-symbol").value,
+    trade_amount:       g("cfg-amount").value,
+    take_profit_pct:    g("cfg-tp").value,
+    trailing_stop_pct:  g("cfg-trail").value,
+    fee_pct:            g("cfg-fee").value,
+    min_ai_confidence:  g("cfg-minconf").value,
+    max_open_trades:    g("cfg-max").value,
+    use_dynamic_targets:g("cfg-dyn").checked,
+    trend_filter:       g("cfg-trend").checked,
+    // Smart BUY
+    smart_buy_enabled:        g("cfg-smart-buy").checked,
+    smart_buy_pullback_pct:   g("cfg-sb-pullback").value,
+    smart_buy_max_wait_ticks: g("cfg-sb-wait").value,
+    smart_buy_skip_conf:      g("cfg-sb-skip").value,
+    // Smart TP
+    smart_tp_enabled:         g("cfg-smart-tp").checked,
+    smart_tp_min_conf:        g("cfg-stp-conf").value,
+    smart_tp_tight_trail_pct: g("cfg-stp-trail").value,
   };
   const r = await fetch("/api/config", {method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify(cfg)});
   const d = await r.json();
@@ -781,19 +791,30 @@ async function saveConfig() {
 async function loadConfig() {
   const r   = await fetch("/api/config");
   const cfg = await r.json();
-  document.getElementById("cfg-symbol").value  = cfg.symbol;
-  document.getElementById("cfg-amount").value  = cfg.trade_amount;
-  document.getElementById("cfg-tp").value      = cfg.take_profit_pct;
-  document.getElementById("cfg-trail").value   = cfg.trailing_stop_pct;
-  document.getElementById("cfg-fee").value     = cfg.fee_pct;
-  document.getElementById("cfg-minconf").value = cfg.min_ai_confidence;
-  document.getElementById("cfg-max").value     = cfg.max_open_trades;
-  document.getElementById("cfg-dyn").checked   = !!cfg.use_dynamic_targets;
-  document.getElementById("cfg-trend").checked = !!cfg.trend_filter;
-  document.getElementById("demo-badge").style.display = cfg.demo_mode ? "" : "none";
+  const g = id => document.getElementById(id);
+  g("cfg-symbol").value  = cfg.symbol;
+  g("cfg-amount").value  = cfg.trade_amount;
+  g("cfg-tp").value      = cfg.take_profit_pct;
+  g("cfg-trail").value   = cfg.trailing_stop_pct;
+  g("cfg-fee").value     = cfg.fee_pct;
+  g("cfg-minconf").value = cfg.min_ai_confidence;
+  g("cfg-max").value     = cfg.max_open_trades;
+  g("cfg-dyn").checked   = !!cfg.use_dynamic_targets;
+  g("cfg-trend").checked = !!cfg.trend_filter;
+  // Smart BUY
+  if (g("cfg-smart-buy"))     g("cfg-smart-buy").checked     = !!cfg.smart_buy_enabled;
+  if (g("cfg-sb-pullback"))   g("cfg-sb-pullback").value     = cfg.smart_buy_pullback_pct   ?? 0.8;
+  if (g("cfg-sb-wait"))       g("cfg-sb-wait").value         = cfg.smart_buy_max_wait_ticks ?? 3;
+  if (g("cfg-sb-skip"))       g("cfg-sb-skip").value         = cfg.smart_buy_skip_conf      ?? 90;
+  // Smart TP
+  if (g("cfg-smart-tp"))      g("cfg-smart-tp").checked      = !!cfg.smart_tp_enabled;
+  if (g("cfg-stp-conf"))      g("cfg-stp-conf").value        = cfg.smart_tp_min_conf        ?? 75;
+  if (g("cfg-stp-trail"))     g("cfg-stp-trail").value       = cfg.smart_tp_tight_trail_pct ?? 1.5;
+
+  g("demo-badge").style.display = cfg.demo_mode ? "" : "none";
   if (cfg.ton_wallet) {
     window._tonWallet = cfg.ton_wallet;
-    document.getElementById("ton-addr").textContent = cfg.ton_wallet;
+    g("ton-addr").textContent = cfg.ton_wallet;
   }
 }
 
