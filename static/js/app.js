@@ -635,6 +635,7 @@ function renderOpenTrades(trades, curPrice, gramPrice) {
       </div>
       ${be > 0 ? `<div class="trade-row" style="font-size:10px;color:#4a5568">
         <span>Безубыток (газ обоих свопов + 2% DEX): <b style="color:#ffd166">$${be}</b></span>
+        ${t.min_gross_pct ? `<span style="color:#718096">нужен рост <b style="color:#ffd166">+${t.min_gross_pct}%</b></span>` : ""}
       </div>` : ""}
       <button onclick='closeTrade(this, ${JSON.stringify(String(t.id))})'
         style="margin-top:8px;width:100%;padding:9px;border:none;border-radius:8px;cursor:pointer;font-weight:800;font-size:12px;color:#fff;background:${inProfit ? "linear-gradient(90deg,#00b894,#00ff88)" : "linear-gradient(90deg,#ff4d6d,#ff7a3d)"}">

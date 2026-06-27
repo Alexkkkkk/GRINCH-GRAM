@@ -304,18 +304,17 @@ class Trader:
             mult = 1.0
         return base_pct * mult
 
-    def _targets(self, price, ai):
+    def _targets(self, price, ai, stake_ton=None):
         atr_pct = (ai.get("regime", {}) or {}).get("atr_pct", 0) / 100.0 if ai else 0.0
         if Config.USE_DYNAMIC_TARGETS and atr_pct > 0:
             sl_pct = max(atr_pct * Config.ATR_SL_MULT * 100, Config.STOP_LOSS_PCT)
-            # ATR × 8 используется только если ОН ВЫШЕ минимального нетто-таргета
             tp_pct = max(atr_pct * Config.ATR_TP_MULT * 100, Config.TAKE_PROFIT_PCT)
         else:
             sl_pct, tp_pct = Config.STOP_LOSS_PCT, Config.TAKE_PROFIT_PCT
 
-        # Жёсткий минимум TP = gross, дающий ровно +TARGET_NET_PCT нетто после
-        # комиссии обеих ног. Никогда не закрываемся дешевле этого уровня.
-        min_gross_tp = Config.required_gross_pct()
+        # Жёсткий минимум TP учитывает и DEX-комиссию, и газ обоих свопов.
+        # Чем меньше ставка — тем выше требуемый gross% для реального плюса.
+        min_gross_tp = Config.required_gross_pct_with_gas(stake_ton)
         tp_pct = max(tp_pct, min_gross_tp)
         return sl_pct, tp_pct
 
@@ -372,9 +371,8 @@ class Trader:
                 )
                 amount = actual_grinch
 
-        sl_pct, tp_pct = self._targets(price, ai)
-        # Режим «только в плюс»: без убыточного стопа (sl=0, вниз не сработает) —
-        # выходим лишь по TP или трейлингу от безубытка.
+        # Передаём stake в _targets: TP учтёт и DEX-комиссию, и газ обоих свопов
+        sl_pct, tp_pct = self._targets(price, ai, stake_ton=stake)
         sl = 0.0 if Config.ONLY_PROFIT_EXIT else self.exchange._round(price * (1 - sl_pct / 100))
         tp = self.exchange._round(price * (1 + tp_pct / 100))
 
@@ -411,17 +409,17 @@ class Trader:
 
     def _close_all_trades(self, price, analysis):
         relevant_before = self._relevant_open()
-        net_floor_pct = Config.required_gross_pct()
         for trade in list(relevant_before):
-            # Режим «только в плюс»: AI-сигнал SELL игнорируется, если позиция
-            # ещё не достигла минимальной нетто-прибыли. Продаём только в плюс.
             if Config.ONLY_PROFIT_EXIT:
-                entry = trade["entry_price"]
-                pnl_pct = (price - entry) / entry * 100 if entry else 0.0
+                entry      = trade["entry_price"]
+                stake_ton  = trade.get("stake_ton") or None
+                pnl_pct    = (price - entry) / entry * 100 if entry else 0.0
+                # Порог включает газ обоих свопов для данной конкретной ставки
+                net_floor_pct = Config.required_gross_pct_with_gas(stake_ton)
                 if pnl_pct < net_floor_pct:
                     self.log(
                         f"⏸️ SELL-сигнал отклонён: прибыль {pnl_pct:+.1f}% < "
-                        f"мин. +{net_floor_pct:.0f}% (режим «только в плюс»). Держим.",
+                        f"мин. +{net_floor_pct:.1f}% (режим «только в плюс», газ учтён). Держим.",
                         "INFO"
                     )
                     continue
@@ -441,10 +439,10 @@ class Trader:
             entry      = trade["entry_price"]
             profit_pct = (price - entry) / entry * 100
 
-            # Минимальный нетто-пол прибыли (в gross %): нетто-цель + комиссия
-            # цикла. Любой выход обязан быть НЕ НИЖЕ этого уровня → гарантируем
-            # ≥TARGET_NET_PCT нетто после комиссии обеих ног.
-            net_floor_pct = Config.required_gross_pct()
+            # Минимальный нетто-пол прибыли (в gross %): учитывает DEX-комиссию
+            # И газ обоих свопов для данной ставки. Для мелких сделок порог выше.
+            stake_ton     = trade.get("stake_ton") or None
+            net_floor_pct = Config.required_gross_pct_with_gas(stake_ton)
             floor_price   = self.exchange._round(entry * (1 + net_floor_pct / 100))
 
             if Config.ONLY_PROFIT_EXIT:
@@ -547,21 +545,21 @@ class Trader:
         except Exception:
             price = trade.get("entry_price")
         # Режим «только в плюс»: даже РУЧНОЕ закрытие не продаёт в минус.
-        # Если позиция ещё не достигла минимальной нетто-прибыли — отказываем
-        # и держим, пока цена вырастет (та же гарантия, что и для авто-выхода).
+        # Порог включает газ обоих свопов — настоящая гарантия реальной прибыли.
         if Config.ONLY_PROFIT_EXIT:
-            entry = trade.get("entry_price") or 0
-            pnl_pct = (price - entry) / entry * 100 if entry else 0.0
-            net_floor_pct = Config.required_gross_pct()
+            entry         = trade.get("entry_price") or 0
+            stake_ton     = trade.get("stake_ton") or None
+            pnl_pct       = (price - entry) / entry * 100 if entry else 0.0
+            net_floor_pct = Config.required_gross_pct_with_gas(stake_ton)
             if pnl_pct < net_floor_pct:
                 self.log(
                     f"⏸️ Ручная продажа отклонена: прибыль {pnl_pct:+.1f}% < "
-                    f"мин. +{net_floor_pct:.0f}% (режим «только в плюс»). Держим.",
+                    f"мин. +{net_floor_pct:.1f}% (газ учтён). Держим.",
                     "INFO"
                 )
                 return {"ok": False, "error": (
                     f"Продажа в минус отключена: прибыль {pnl_pct:+.1f}% ниже "
-                    f"минимума +{net_floor_pct:.0f}%. Ждём роста цены.")}
+                    f"минимума +{net_floor_pct:.1f}% (с учётом газа). Ждём роста цены.")}
         self.log(f"🖐 Ручное закрытие позиции {trade_id} @ {price}", "INFO")
         ok = self._close_trade(trade, price, "manual")
         return {"ok": True} if ok else {
@@ -707,17 +705,19 @@ class Trader:
             amount    = t.get("amount", 0) or 0
             stake_ton = t.get("stake_ton", 0) or 0
             entry_usd = t.get("entry_price", 0) or 0
+            # Минимальный gross % для выхода в реальный плюс с учётом газа
+            min_gross_pct = Config.required_gross_pct_with_gas(stake_ton if stake_ton > 0 else None)
+            c["min_gross_pct"] = round(min_gross_pct, 1)
             if cur_ton > 0 and amount > 0 and stake_ton > 0:
-                value_now = amount * cur_ton                        # текущая стоимость в TON
-                proceeds  = value_now * (1 - fee) - sell_gas       # выручка после комиссии продажи и газа
+                value_now  = amount * cur_ton                        # текущая стоимость в TON
+                proceeds   = value_now * (1 - fee) - sell_gas       # выручка после комиссии продажи и газа
                 total_cost = stake_ton + buy_gas                    # реальные затраты: ставка + газ покупки
-                net_ton   = proceeds - total_cost                   # чистый результат (+ = прибыль)
+                net_ton    = proceeds - total_cost                  # чистый результат (+ = прибыль)
                 c["value_ton_now"] = round(value_now, 6)
                 c["net_ton_now"]   = round(net_ton, 6)
                 c["net_pct_now"]   = round(net_ton / total_cost * 100, 2)
                 c["in_profit"]     = bool(net_ton > 0)
                 # Безубыточная цена за GRINCH (где net=0), в USD для карточки.
-                # be_ton = цена GRINCH в TON при которой proceeds = total_cost
                 # amount * be_ton * (1 - fee) - sell_gas = total_cost
                 # be_ton = (total_cost + sell_gas) / (amount * (1 - fee))
                 entry_ton = stake_ton / amount

@@ -32,19 +32,47 @@ class Config:
     @classmethod
     def required_gross_pct(cls):
         """Минимальный gross-% движения цены, при котором нетто-прибыль после
-        комиссий ОБЕИХ сторон ≥ TARGET_NET_PCT.
+        комиссий DEX ОБЕИХ сторон ≥ TARGET_NET_PCT (без учёта газа).
 
-        Комиссия считается на обе ноги: fee = (entry+exit)·amount·FEE_PCT/100,
-        поэтому при exit = entry·(1+g/100):
-            net% = g − (2 + g/100)·FEE_PCT
-        Решая net% ≥ TARGET_NET_PCT относительно g:
-            g ≥ (TARGET_NET_PCT + 2·FEE_PCT) / (1 − FEE_PCT/100)
-        Плоское «net + 2·FEE_PCT» занижало бы порог на член g/100·FEE_PCT.
+        Используется как нижняя граница, когда размер ставки неизвестен.
+        Для честного расчёта с газом используй required_gross_pct_with_gas(stake_ton).
         """
         denom = 1.0 - cls.FEE_PCT / 100.0
         if denom <= 0:
             return cls.TARGET_NET_PCT + cls.FEE_ROUND_TRIP
         return (cls.TARGET_NET_PCT + 2.0 * cls.FEE_PCT) / denom
+
+    @classmethod
+    def required_gross_pct_with_gas(cls, stake_ton=None):
+        """Минимальный gross-% движения цены с учётом газа ОБОИХ свопов.
+
+        Чем меньше ставка — тем больший % нужен чтобы покрыть фиксированный
+        газ. Для 1 TON сделки газ съедает ~50% ставки, для 10 TON — только 5%.
+
+        Вывод формулы:
+          total_cost  = stake + BUY_GAS_TON           (реальные затраты)
+          proceeds    = stake * (1-fee)² * (1+g/100)  − SELL_GAS_TON
+          net         = proceeds − total_cost
+
+          Решая net ≥ TARGET_NET_PCT/100 * total_cost:
+            (1+g/100) = [total_cost*(1+target) + SELL_GAS] / [stake*(1-fee)²]
+
+        Если stake_ton не задан — фолбэк на required_gross_pct() (DEX-only).
+        """
+        if stake_ton is None or stake_ton <= 0:
+            return cls.required_gross_pct()
+        fee      = cls.FEE_PCT / 100.0
+        buy_gas  = cls.BUY_GAS_TON
+        sell_gas = cls.SELL_GAS_TON
+        target   = cls.TARGET_NET_PCT / 100.0
+        total_cost  = stake_ton + buy_gas
+        numerator   = total_cost * (1.0 + target) + sell_gas
+        denominator = stake_ton * (1.0 - fee) ** 2
+        if denominator <= 0:
+            return cls.required_gross_pct()
+        gross = (numerator / denominator - 1.0) * 100.0
+        # Не ниже DEX-only минимума, не выше разумного потолка (500%)
+        return max(gross, cls.required_gross_pct())
 
     # ── Режим «только в плюс»: никогда не выходим в убыток ──────────────
     # Убыточный стоп отключён НАВСЕГДА: позиция закрывается ТОЛЬКО по тейк-
