@@ -588,8 +588,10 @@ function renderOpenTrades(trades, curPrice, gramPrice) {
     const toTpPct = (tp > 0 && cur > 0) ? (tp - cur) / cur * 100 : 0;
 
     // Статус ожидания — главный сигнал: уже в плюсе после ОБЕИХ комиссий?
+    const smartTp = !!t.smart_tp_active;
     let waitLabel, waitColor;
-    if (inProfit)                 { waitLabel = "✅ Уже в плюсе — можно закрыть"; waitColor = "#00ff88"; }
+    if (smartTp && inProfit)      { waitLabel = `🧠 ИИ держит — ищем больше прибыли`; waitColor = "#a78bfa"; }
+    else if (inProfit)            { waitLabel = "✅ Уже в плюсе — можно закрыть"; waitColor = "#00ff88"; }
     else if (be > 0 && cur > 0)   { waitLabel = `⏳ До прибыли ещё +${((be - cur) / cur * 100).toFixed(1)}%`; waitColor = "#ffd166"; }
     else if (cur >= tp)           { waitLabel = "🎯 Достигнут TP — продаём"; waitColor = "#00ff88"; }
     else if (sl > entry)          { waitLabel = "🔒 Прибыль защищена (трейлинг)"; waitColor = "#00d4aa"; }
@@ -611,7 +613,7 @@ function renderOpenTrades(trades, curPrice, gramPrice) {
       </div>
       <div class="trade-row" style="font-size:10px">
         <span style="color:#ff4d6d">SL $${sl}</span>
-        <span style="color:#00d4aa">TP $${tp}</span>
+        <span style="color:#00d4aa">TP $${tp}${smartTp ? ' <span style="background:#a78bfa22;color:#a78bfa;border:1px solid #a78bfa55;border-radius:4px;padding:0 4px;font-size:9px;margin-left:3px">🧠 Smart</span>' : ''}</span>
       </div>
       <div class="trade-row">
         <span class="ot-wait" style="color:${waitColor}">${waitLabel}</span>

@@ -459,7 +459,36 @@ class Trader:
                         trade["high_water"] = price
                     high_water = trade.get("high_water", entry)
 
-                    trail_pct = self._adaptive_trail_pct(Config.TRAIL_STAGE4_PCT)
+                    # ── Smart TP: ИИ решает держать или фиксировать ────────────
+                    # Если ИИ уверен в продолжении роста (≥ порога) и сигнал BUY —
+                    # используем тугой трейлинг (1.5%) чтобы дать цене расти дальше.
+                    # Как только уверенность падает — переключаемся на обычный трейл.
+                    ai_conf   = (self.last_ai or {}).get("confidence", 0)
+                    ai_action = (self.last_ai or {}).get("action", "")
+                    smart_active = (
+                        Config.SMART_TP_ENABLED
+                        and ai_conf >= Config.SMART_TP_MIN_CONF
+                        and ai_action == "BUY"
+                    )
+                    if smart_active:
+                        trail_pct = Config.SMART_TP_TIGHT_TRAIL_PCT
+                        if not trade.get("smart_tp_active"):
+                            trade["smart_tp_active"] = True
+                            self.log(
+                                f"🧠 Smart TP активен: AI {ai_conf:.0f}% BUY — "
+                                f"держим позицию, трейл {trail_pct}% (ищем больше прибыли)",
+                                "INFO"
+                            )
+                    else:
+                        trail_pct = self._adaptive_trail_pct(Config.TRAIL_STAGE4_PCT)
+                        if trade.get("smart_tp_active"):
+                            trade["smart_tp_active"] = False
+                            self.log(
+                                f"🧠 Smart TP выключен: AI ослаб до {ai_conf:.0f}% / {ai_action} — "
+                                f"обычный трейл {trail_pct:.1f}%, фиксируем прибыль",
+                                "INFO"
+                            )
+
                     new_sl = self.exchange._round(high_water * (1 - trail_pct / 100))
                     new_sl = max(new_sl, floor_price)    # пол ≥ +N% нетто
 
@@ -467,9 +496,11 @@ class Trader:
                         old_sl = trade["stop_loss"]
                         trade["stop_loss"] = new_sl
                         regime_name = ((self.last_ai or {}).get("regime") or {}).get("name", "")
+                        smart_label = " [🧠 Smart TP]" if smart_active else ""
                         self.log(
                             f"🔼 Стоп: {old_sl} → {new_sl} | прибыль {profit_pct:+.1f}% | "
-                            f"трейл {trail_pct:.1f}% [{regime_name}] (пол +{net_floor_pct:.0f}% нетто)",
+                            f"трейл {trail_pct:.1f}% [{regime_name}]{smart_label} "
+                            f"(пол +{net_floor_pct:.0f}% нетто)",
                             "INFO"
                         )
                     armed = True
