@@ -624,12 +624,17 @@ function renderOpenTrades(trades, curPrice, gramPrice) {
         <span>Куплено по: <b style="color:#e2e8f0">$${entry}</b></span>
         <span>Стоит сейчас: <b style="color:#00d4aa">${gram > 0 ? fmtGram(valueGram) : "—"}</b></span>
       </div>
-      <div class="trade-row" style="font-size:12px;align-items:center">
-        <span style="color:#8892b0">Если продать сейчас (−комиссии):</span>
-        <b class="${pnlCls}" style="font-weight:800">${netTon !== null ? (netTon >= 0 ? "+" : "−") + fmtGram(Math.abs(netTon)) : "—"}</b>
+      <div style="margin:6px 0;padding:8px 10px;border-radius:8px;background:${inProfit ? 'rgba(0,255,136,0.08)' : 'rgba(255,77,109,0.08)'};border:1px solid ${inProfit ? 'rgba(0,255,136,0.25)' : 'rgba(255,77,109,0.25)'}">
+        <div class="trade-row" style="font-size:11px;color:#8892b0;margin-bottom:3px">
+          <span>Если продать сейчас (−газ покупки −газ продажи −1% DEX):</span>
+        </div>
+        <div class="trade-row" style="align-items:center">
+          <b style="font-size:18px;font-weight:900;color:${inProfit ? '#00ff88' : '#ff4d6d'};letter-spacing:0.5px">${netTon !== null ? (netTon >= 0 ? '+' : '−') + fmtGram(Math.abs(netTon)) : '—'}</b>
+          <span style="font-size:13px;font-weight:700;color:${inProfit ? '#00ff88' : '#ff4d6d'}">${pnlSign}${netPct.toFixed(2)}%</span>
+        </div>
       </div>
       ${be > 0 ? `<div class="trade-row" style="font-size:10px;color:#4a5568">
-        <span>Безубыток (с учётом 2 транзакций): <b style="color:#ffd166">$${be}</b></span>
+        <span>Безубыток (газ обоих свопов + 2% DEX): <b style="color:#ffd166">$${be}</b></span>
       </div>` : ""}
       <button onclick='closeTrade(this, ${JSON.stringify(String(t.id))})'
         style="margin-top:8px;width:100%;padding:9px;border:none;border-radius:8px;cursor:pointer;font-weight:800;font-size:12px;color:#fff;background:${inProfit ? "linear-gradient(90deg,#00b894,#00ff88)" : "linear-gradient(90deg,#ff4d6d,#ff7a3d)"}">

@@ -688,30 +688,41 @@ class Trader:
 
     def _enriched_open_trades(self, grinch_ton):
         """Открытые сделки + расчёт «если продать сейчас» с учётом ОБЕИХ
-        транзакций. Комиссия покупки уже сидит в полученном `amount` (пул
-        списал 1% при входе), здесь дополнительно вычитаем комиссию продажи
-        (1%) и газ — так пользователь видит реальную чистую прибыль в GRAM."""
+        транзакций и газа ОБОИХ свопов.
+
+        Схема реальных затрат пользователя:
+          Покупка:  stake_ton (в пул) + buy_gas (~0.25 TON газа сети)  → получает amount GRINCH
+          Продажа:  amount * cur_ton * (1 - fee) − sell_gas            → получает TON обратно
+
+        Итоговый результат = выручка_от_продажи − stake_ton − buy_gas
+        Безубыток = цена, при которой этот результат = 0.
+        """
         out = []
-        fee     = Config.FEE_PCT / 100.0
-        gas     = Config.SELL_GAS_TON
-        cur_ton = grinch_ton or 0
+        fee      = Config.FEE_PCT / 100.0
+        sell_gas = Config.SELL_GAS_TON
+        buy_gas  = getattr(Config, "BUY_GAS_TON", 0.25)
+        cur_ton  = grinch_ton or 0
         for t in self.open_trades:
             c = dict(t)
             amount    = t.get("amount", 0) or 0
             stake_ton = t.get("stake_ton", 0) or 0
             entry_usd = t.get("entry_price", 0) or 0
             if cur_ton > 0 and amount > 0 and stake_ton > 0:
-                value_now = amount * cur_ton              # текущая стоимость в TON
-                proceeds  = value_now * (1 - fee) - gas   # минус комиссия продажи + газ
-                net_ton   = proceeds - stake_ton          # против потраченного на покупку
+                value_now = amount * cur_ton                        # текущая стоимость в TON
+                proceeds  = value_now * (1 - fee) - sell_gas       # выручка после комиссии продажи и газа
+                total_cost = stake_ton + buy_gas                    # реальные затраты: ставка + газ покупки
+                net_ton   = proceeds - total_cost                   # чистый результат (+ = прибыль)
                 c["value_ton_now"] = round(value_now, 6)
                 c["net_ton_now"]   = round(net_ton, 6)
-                c["net_pct_now"]   = round(net_ton / stake_ton * 100, 2)
+                c["net_pct_now"]   = round(net_ton / total_cost * 100, 2)
                 c["in_profit"]     = bool(net_ton > 0)
-                # Безубыточная цена за GRINCH (где net=0), в USD для карточки
+                # Безубыточная цена за GRINCH (где net=0), в USD для карточки.
+                # be_ton = цена GRINCH в TON при которой proceeds = total_cost
+                # amount * be_ton * (1 - fee) - sell_gas = total_cost
+                # be_ton = (total_cost + sell_gas) / (amount * (1 - fee))
                 entry_ton = stake_ton / amount
                 if entry_ton > 0 and entry_usd > 0:
-                    be_ton = (stake_ton + gas) / (amount * (1 - fee))
+                    be_ton = (total_cost + sell_gas) / (amount * (1 - fee))
                     c["breakeven_price"] = round(entry_usd * be_ton / entry_ton, 8)
             out.append(c)
         return out
