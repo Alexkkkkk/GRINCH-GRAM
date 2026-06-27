@@ -4,3 +4,16 @@ flask
 flask-socketio
 python-telegram-bot
 requests
+ccxt
+email_validator
+flask
+flask-sqlalchemy
+gunicorn
+numpy
+pandas
+psycopg2-binary
+python-dotenv
+pytoniq
+pytoniq-core
+scikit-learn
+sqlalchemy

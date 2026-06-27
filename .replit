@@ -1,4 +1,4 @@
-modules = ["nodejs-20", "python-3.11", "web"]
+modules = ["python-3.11", "nodejs-20", "web"]
 [agent]
 expertMode = true
 stack = "FLASK_VANILLA_JS"
@@ -28,20 +28,20 @@ outputType = "webview"
 
 [[workflows.workflow.tasks]]
 task = "shell.exec"
-args = ".pythonlibs/bin/python app.py"
+args = "python app.py"
 waitForPort = 5000
+
+[[ports]]
+localPort = 3000
+externalPort = 3000
 
 [[ports]]
 localPort = 5000
 externalPort = 80
 
-[[ports]]
-localPort = 5055
-externalPort = 3000
-
 [deployment]
-deploymentTarget = "vm"
-run = ["gunicorn", "-w", "1", "--threads", "8", "--timeout", "120", "--bind", "0.0.0.0:5000", "main:app"]
+deploymentTarget = "autoscale"
+run = ["gunicorn", "--bind", "0.0.0.0:5000", "main:app"]
 
 [userenv]
 

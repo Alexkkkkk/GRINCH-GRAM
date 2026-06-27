@@ -18,6 +18,7 @@ dependencies = [
     "pandas>=3.0.3",
     "psycopg2-binary>=2.9.12",
     "python-dotenv>=1.2.2",
+    "python-telegram-bot>=22.0",
     "pytoniq>=0.1.43",
     "pytoniq-core>=0.1.46",
     "requests>=2.34.2",
