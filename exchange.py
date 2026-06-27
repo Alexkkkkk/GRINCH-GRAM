@@ -1,4 +1,3 @@
-import ccxt
 import json
 import os
 import random
@@ -41,6 +40,7 @@ class ExchangeClient:
         # ── Режим реального CEX через CCXT ──────────────────────────────
         if not self.demo_mode and Config.API_KEY:
             try:
+                import ccxt
                 exchange_class = getattr(ccxt, Config.EXCHANGE)
                 self._exchange = exchange_class({
                     "apiKey":         Config.API_KEY,
