@@ -24,3 +24,13 @@ experience.json
 settings.json
 wallets.json
 uv.lock
+
+# Артефакты Replit (не нужны на Bothost — содержат package.json который сбивает автодетект)
+artifacts/
+.cache/
+.local/
+.upm/
+.pythonlibs/
+.replit
+pyproject.toml
+attached_assets/
