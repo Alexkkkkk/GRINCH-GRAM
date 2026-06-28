@@ -37,6 +37,10 @@ class Trader:
         #              "analysis": dict, "ticks_left": int}
         self._pending_buy = None
         self.last_sm      = None   # последний сигнал умных денег (для статуса)
+        self.last_entry   = {      # последняя оценка качества входа (для статуса)
+            "quality": "C", "score": 0, "reasons": [],
+            "vol_ratio": 1.0, "stoch_rsi": 0.5,
+        }
         # Кеш баланса: не долбим блокчейн при каждом /api/status (TTL 30 сек)
         self._balance_cache     = {}
         self._balance_cache_ts  = 0
@@ -198,6 +202,31 @@ class Trader:
         regime_name = regime.get("name", "?")
         anomaly     = ai.get("anomaly", {}).get("detected", False)
 
+        # ── Качество точки входа (A/B/C) — многофакторный скоринг ─────────
+        entry_quality  = result.get("entry_quality", "C")
+        entry_score    = result.get("entry_score", 0)
+        entry_reasons  = result.get("entry_reasons", [])
+        self.last_entry = {
+            "quality":  entry_quality,
+            "score":    entry_score,
+            "reasons":  entry_reasons,
+            "vol_ratio": result.get("vol_ratio", 1.0),
+            "stoch_rsi": result.get("stoch_rsi", 0.5),
+        }
+
+        # Динамические параметры по грейду:
+        #   A (≥7 очков) — элитный вход: 1 подтверждение, откат -0.3%
+        #   B (≥3 очков) — стандарт:    2 подтверждения, откат -0.8%
+        #   C (<3 очков) — слабый:      3 подтверждения, откат -1.5%
+        _grade_params = {
+            "A": {"confirm": 1, "pullback": 0.3},
+            "B": {"confirm": 2, "pullback": Config.SMART_BUY_PULLBACK_PCT},
+            "C": {"confirm": 3, "pullback": 1.5},
+        }
+        _gp = _grade_params.get(entry_quality, _grade_params["B"])
+        confirm_needed = _gp["confirm"]
+        pullback_pct   = _gp["pullback"]
+
         # Если SL/TP закрыл все позиции и разослал SELL — завершаем тик,
         # чтобы в этом же тике не открыть BUY поверх ещё не сведённого
         # пользовательского состояния (гонка SELL→BUY в одном окне).
@@ -281,7 +310,8 @@ class Trader:
         sm_score = sm["score"] if sm else 0.0
         sm_early = bool(sm and sm.get("early_buy"))
 
-        # ── Счётчик подтверждений (требуем 2 последовательных BUY) ────
+        # ── Счётчик подтверждений (требуем N последовательных BUY) ───
+        # N зависит от грейда точки входа: A=1, B=2, C=3
         if final_signal == "BUY":
             self._buy_confirm_count += 1
         else:
@@ -332,41 +362,58 @@ class Trader:
                 blocked = f"перекупленность RSI={rsi:.1f}"
             elif anomaly:
                 blocked = f"рыночная аномалия Z={ai['anomaly']['z_price']:.2f}"
-            elif self._buy_confirm_count < 2 and not hard_override and not sm_early:
-                # Нужно 2 последовательных сигнала для подтверждения.
-                # Исключение: ранний вход за умными деньгами — входим сразу.
-                blocked = f"ожидаем подтверждение ({self._buy_confirm_count}/2)"
+            elif self._buy_confirm_count < confirm_needed and not hard_override and not sm_early:
+                # Нужно confirm_needed последовательных сигналов.
+                # A-грейд требует 1, B — 2, C — 3. Ранний SM-вход пропускает проверку.
+                blocked = f"ожидаем подтверждение ({self._buy_confirm_count}/{confirm_needed}) [грейд {entry_quality}]"
 
+        # ── Расширенное логирование с качеством точки входа ───────────
         sm_txt = ""
         if sm and sm.get("basis") != "idle":
             sm_txt = f" | 🐋 умн.деньги {sm['score']:+.2f} ({sm['label']})"
         if sm_early:
             sm_txt += f" | 🟢 ранний вход (умные купили {sm.get('early_buy_ton', 0)} TON)"
+
+        # Бейдж грейда
+        grade_badge = {"A": "🏆A", "B": "⭐B", "C": "🔸C"}.get(entry_quality, "?")
         self.log(
             f"📊 RSI={rsi:.1f} | {regime_name} | "
-            f"Сигнал={signal} | AI={ai_signal}({conf}%)"
+            f"Сигнал={signal} | AI={ai_signal}({conf}%) | "
+            f"Вход {grade_badge}({entry_score}пт)"
             f"{sm_txt} | "
             f"Итог={'HOLD' if blocked else final_signal}",
             level="INFO"
         )
 
+        # Логируем причины хорошего входа (только при BUY-сигнале)
+        if final_signal == "BUY" and entry_reasons:
+            self.log(
+                f"  └─ Факторы входа [{entry_quality}]: " + " · ".join(entry_reasons),
+                level="INFO"
+            )
+
         if final_signal == "BUY" and blocked:
             self.log(f"⏸️ Вход отменён: {blocked}", "WARN")
         elif final_signal == "BUY" and len(self.open_trades) < Config.MAX_OPEN_TRADES:
             # ── Smart BUY: ждём откат или покупаем сразу ──────────────────
+            # Грейд A при высокой уверенности — покупаем сразу (не ждём откат)
+            is_elite_instant = (entry_quality == "A" and conf >= Config.SMART_BUY_SKIP_CONF - 10)
             use_smart = (
                 Config.SMART_BUY_ENABLED
-                and conf < Config.SMART_BUY_SKIP_CONF   # при ≥90% — сразу
-                and not self._pending_buy                # не дублируем ожидание
+                and not is_elite_instant            # А-грейд + сильный AI → сразу
+                and conf < Config.SMART_BUY_SKIP_CONF
+                and not self._pending_buy           # не дублируем ожидание
             )
             if use_smart:
-                target = self.exchange._round(price * (1 - Config.SMART_BUY_PULLBACK_PCT / 100))
+                target = self.exchange._round(price * (1 - pullback_pct / 100))
                 self._pending_buy = {
-                    "target":       target,
-                    "signal_price": price,
-                    "ai":           ai,
-                    "analysis":     result,
-                    "ticks_left":   Config.SMART_BUY_MAX_WAIT_TICKS,
+                    "target":        target,
+                    "signal_price":  price,
+                    "ai":            ai,
+                    "analysis":      result,
+                    "ticks_left":    Config.SMART_BUY_MAX_WAIT_TICKS,
+                    "entry_quality": entry_quality,
+                    "pullback_pct":  pullback_pct,
                 }
                 # Персистируем в DB — переживёт перезапуск
                 try:
@@ -376,14 +423,19 @@ class Trader:
                 except Exception:
                     pass
                 self.log(
-                    f"🎯 Smart BUY: ждём откат до ${target:.8f} "
-                    f"(сейчас ${price:.8f}, -{ Config.SMART_BUY_PULLBACK_PCT}%, "
+                    f"🎯 Smart BUY [{entry_quality}-грейд]: ждём откат до ${target:.8f} "
+                    f"(сейчас ${price:.8f}, -{pullback_pct:.1f}%, "
                     f"макс {Config.SMART_BUY_MAX_WAIT_TICKS} тика) | AI {conf}%",
                     "INFO"
                 )
             else:
-                # Либо AI очень уверен (≥90%) — берём сразу, либо Smart BUY выключен
-                if conf >= Config.SMART_BUY_SKIP_CONF:
+                # AI очень уверен ИЛИ A-грейд + сильный сигнал — берём сразу
+                if is_elite_instant:
+                    self.log(
+                        f"🚀 ЭЛИТНЫЙ ВХОД [{entry_quality}]: AI {conf}% + {entry_score} факторов → покупаем немедленно",
+                        "INFO"
+                    )
+                elif conf >= Config.SMART_BUY_SKIP_CONF:
                     self.log(f"⚡ Smart BUY пропущен: AI {conf}% ≥ {Config.SMART_BUY_SKIP_CONF}% — покупаем сразу", "INFO")
                 opened = self._open_trade("buy", price, result, ai)
                 # Сигнал пользователям шлём ТОЛЬКО если реальный ордер исполнился —
@@ -1004,10 +1056,13 @@ class Trader:
             "logs":          self.logs[-50:],
             "stats":         {**self.stats, "winrate": winrate},
             "training_progress": self.ai.training_progress,
+            "entry_quality": self.last_entry,
             "pending_buy":   {
-                "target":       pb["target"],
-                "signal_price": pb["signal_price"],
-                "ticks_left":   pb["ticks_left"],
-                "ai_conf":      (pb["ai"] or {}).get("confidence", 0),
+                "target":        pb["target"],
+                "signal_price":  pb["signal_price"],
+                "ticks_left":    pb["ticks_left"],
+                "ai_conf":       (pb["ai"] or {}).get("confidence", 0),
+                "entry_quality": pb.get("entry_quality", "B"),
+                "pullback_pct":  pb.get("pullback_pct", Config.SMART_BUY_PULLBACK_PCT),
             } if pb else None,
         }

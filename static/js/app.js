@@ -251,6 +251,9 @@ function updateUI(data) {
   // Smart BUY: индикатор ожидания откатного входа
   renderSmartBuy(data.pending_buy || null);
 
+  // Качество точки входа (A/B/C-грейд + факторы)
+  renderEntryQuality(data.entry_quality || null, data.analysis?.signal || "HOLD");
+
   // Умные деньги + AI-управление (защита капитала, просадка)
   renderSmartMoneyBar(data.smart_money || null);
   renderAIManagement(data.ai_management || null);
@@ -264,25 +267,85 @@ function renderSmartBuy(pb) {
     el.style.cssText = [
       "display:none", "margin:8px 0", "padding:10px 14px",
       "border-radius:10px", "border:1px solid rgba(167,139,250,0.4)",
-      "background:rgba(167,139,250,0.08)", "font-size:12px",
-      "color:#a78bfa", "display:none",
+      "background:rgba(167,139,250,0.08)", "font-size:12px", "color:#a78bfa",
     ].join(";");
     const openTradesSection = document.querySelector(".section-trades") ||
                               document.getElementById("open-trades") ||
                               document.querySelector(".trades-section");
     if (openTradesSection) openTradesSection.before(el);
-    else {
-      const main = document.querySelector("main") || document.body;
-      main.appendChild(el);
-    }
+    else (document.querySelector("main") || document.body).appendChild(el);
   }
   if (!pb) { el.style.display = "none"; return; }
+  const gradeInfo = { A: ["🏆", "#ffd700", "Элитный"], B: ["⭐", "#a78bfa", "Стандарт"], C: ["🔸", "#f59e0b", "Слабый"] };
+  const [gIcon, gCol, gLabel] = gradeInfo[pb.entry_quality] || gradeInfo.B;
+  const savings = pb.signal_price > 0
+    ? ((pb.signal_price - pb.target) / pb.signal_price * 100).toFixed(2)
+    : "0.00";
   el.style.display = "";
   el.innerHTML = `
     <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap">
-      <span>🎯 <b>Smart BUY:</b> ждём откат до <b style="color:#e2e8f0">$${Number(pb.target).toFixed(8)}</b></span>
+      <span>🎯 <b>Smart BUY</b>
+        <span style="color:${gCol};font-weight:700;margin-left:6px">${gIcon} ${gLabel} ${pb.entry_quality || "B"}</span>
+        · откат до <b style="color:#e2e8f0">$${Number(pb.target).toFixed(8)}</b>
+        <span style="color:#00d18f;font-size:10px;margin-left:4px">(-${pb.pullback_pct || 0.8}% · экономия ${savings}%)</span>
+      </span>
       <span style="color:#8892b0">Сигнал: $${Number(pb.signal_price).toFixed(8)} | AI ${pb.ai_conf}% | осталось ${pb.ticks_left} тика</span>
     </div>
+  `;
+}
+
+// ── Качество точки входа: A/B/C-грейд + факторы confluence ────────────────
+function renderEntryQuality(eq, signal) {
+  let el = document.getElementById("entry-quality-bar");
+  if (!el) {
+    el = document.createElement("div");
+    el.id = "entry-quality-bar";
+    // Вставляем сразу после ai-signal-block (в hero-карточке)
+    const ref = document.getElementById("ai-signal-block");
+    if (ref && ref.parentElement) ref.parentElement.after(el);
+    else {
+      const hero = document.querySelector(".grinch-hero") || document.querySelector(".col-left");
+      if (hero) hero.insertAdjacentElement("afterbegin", el);
+    }
+  }
+  if (!eq || !eq.quality) { el.style.display = "none"; return; }
+
+  const quality  = eq.quality;
+  const score    = eq.score || 0;
+  const reasons  = eq.reasons || [];
+  const volRatio = Number(eq.vol_ratio || 1).toFixed(1);
+  const stochRsi = Math.round((eq.stoch_rsi || 0.5) * 100);
+
+  // Цвета и иконки грейда
+  const cfg = {
+    A: { col: "#ffd700", bg: "rgba(255,215,0,0.08)",  brd: "rgba(255,215,0,0.3)",  icon: "🏆", lbl: "ЭЛИТНЫЙ ВХОД" },
+    B: { col: "#a78bfa", bg: "rgba(167,139,250,0.06)", brd: "rgba(167,139,250,0.3)", icon: "⭐", lbl: "СТАНДАРТ" },
+    C: { col: "#f59e0b", bg: "rgba(245,158,11,0.05)",  brd: "rgba(245,158,11,0.2)",  icon: "🔸", lbl: "СЛАБЫЙ" },
+  }[quality] || { col: "#6b82a8", bg: "transparent", brd: "rgba(107,130,168,0.2)", icon: "○", lbl: "—" };
+
+  // Только показываем при BUY-сигнале (в HOLD/SELL — скрываем)
+  if (signal !== "BUY") { el.style.display = "none"; return; }
+
+  el.style.cssText = `
+    margin:6px 0 2px;padding:8px 12px;border-radius:9px;
+    border:1px solid ${cfg.brd};background:${cfg.bg};
+    font-size:11px;display:block;
+  `;
+
+  const reasonsHtml = reasons.length
+    ? `<div style="margin-top:5px;display:flex;flex-wrap:wrap;gap:4px">
+        ${reasons.map(r => `<span style="background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.08);
+          border-radius:5px;padding:2px 7px;color:#c8d6e8;font-size:10px">${r}</span>`).join("")}
+       </div>`
+    : "";
+
+  el.innerHTML = `
+    <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+      <span style="color:${cfg.col};font-weight:800;font-size:13px">${cfg.icon} Вход ${quality} · ${cfg.lbl}</span>
+      <span style="color:#6b82a8;font-size:10px">score ${score}пт</span>
+      <span style="margin-left:auto;color:#8892b0;font-size:10px">vol ${volRatio}x · Stoch ${stochRsi}%</span>
+    </div>
+    ${reasonsHtml}
   `;
 }
 
