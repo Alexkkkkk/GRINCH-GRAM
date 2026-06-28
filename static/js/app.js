@@ -1,3 +1,19 @@
+// ═══ Toast-уведомления (заменяет alert(), который блокируется в iframe) ═══
+function showToast(msg, type) {
+  // type: "ok" | "err" | "info"  (default: "info")
+  const container = document.getElementById("toast-container");
+  if (!container) { console.log("[toast]", msg); return; }
+  const t = document.createElement("div");
+  t.className = "toast toast-" + (type || "info");
+  t.textContent = msg;
+  container.appendChild(t);
+  requestAnimationFrame(() => requestAnimationFrame(() => t.classList.add("show")));
+  setTimeout(() => {
+    t.classList.remove("show");
+    setTimeout(() => t.remove(), 300);
+  }, type === "err" ? 5000 : 3000);
+}
+
 // Мгновенная инициализация AI из серверных данных (без ожидания REST-поллинга)
 document.addEventListener("DOMContentLoaded", () => {
   if (window._initAI && window._initAI.ai_signal) {
@@ -815,11 +831,11 @@ async function closeTrade(btn, id) {
     });
     const d = await r.json().catch(() => ({ ok: false, error: "ошибка ответа" }));
     if (!d.ok) {
-      alert("Не удалось закрыть: " + (d.error || "ошибка"));
+      showToast("❌ Не удалось закрыть: " + (d.error || "ошибка"), "err");
       if (btn) { btn.disabled = false; btn.textContent = "✖ Продать сейчас"; }
     }
   } catch (e) {
-    alert("Ошибка сети при закрытии позиции");
+    showToast("❌ Ошибка сети при закрытии позиции", "err");
     if (btn) { btn.disabled = false; btn.textContent = "✖ Продать сейчас"; }
   }
   fetch("/api/status").then(r => r.json()).then(updateUI).catch(() => {});
@@ -878,7 +894,7 @@ async function switchPair(symbol) {
     body: JSON.stringify({ symbol }),
   });
   const d = await r.json();
-  if (!d.ok) { alert(d.message); loadConfig(); return; }
+  if (!d.ok) { showToast("❌ " + (d.message || "Ошибка смены пары"), "err"); loadConfig(); return; }
   _lastLivePrice = null;
   document.getElementById("symbol-label").textContent = symbol;
   document.getElementById("price").textContent = "…";
@@ -887,29 +903,49 @@ async function switchPair(symbol) {
 
 async function saveConfig() {
   const g = id => document.getElementById(id);
+  const btn = document.getElementById("btn-save-cfg");
+  if (btn) { btn.disabled = true; btn.textContent = "⏳ Сохраняю…"; }
+
   const cfg = {
     symbol:             g("cfg-symbol").value,
-    trade_amount:       g("cfg-amount").value,
-    take_profit_pct:    g("cfg-tp").value,
-    trailing_stop_pct:  g("cfg-trail").value,
-    fee_pct:            g("cfg-fee").value,
-    min_ai_confidence:  g("cfg-minconf").value,
-    max_open_trades:    g("cfg-max").value,
+    trade_amount:       parseFloat(g("cfg-amount").value),
+    take_profit_pct:    parseFloat(g("cfg-tp").value),
+    trailing_stop_pct:  parseFloat(g("cfg-trail").value),
+    fee_pct:            parseFloat(g("cfg-fee").value),
+    min_ai_confidence:  parseFloat(g("cfg-minconf").value),
+    max_open_trades:    parseInt(g("cfg-max").value, 10),
     use_dynamic_targets:g("cfg-dyn").checked,
     trend_filter:       g("cfg-trend").checked,
     // Smart BUY
     smart_buy_enabled:        g("cfg-smart-buy").checked,
-    smart_buy_pullback_pct:   g("cfg-sb-pullback").value,
-    smart_buy_max_wait_ticks: g("cfg-sb-wait").value,
-    smart_buy_skip_conf:      g("cfg-sb-skip").value,
+    smart_buy_pullback_pct:   parseFloat(g("cfg-sb-pullback").value),
+    smart_buy_max_wait_ticks: parseInt(g("cfg-sb-wait").value, 10),
+    smart_buy_skip_conf:      parseFloat(g("cfg-sb-skip").value),
     // Smart TP
     smart_tp_enabled:         g("cfg-smart-tp").checked,
-    smart_tp_min_conf:        g("cfg-stp-conf").value,
-    smart_tp_tight_trail_pct: g("cfg-stp-trail").value,
+    smart_tp_min_conf:        parseFloat(g("cfg-stp-conf").value),
+    smart_tp_tight_trail_pct: parseFloat(g("cfg-stp-trail").value),
   };
-  const r = await fetch("/api/config", {method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify(cfg)});
-  const d = await r.json();
-  alert(d.message);
+
+  try {
+    const r = await fetch("/api/config", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(cfg)
+    });
+    const d = await r.json();
+    if (d.ok) {
+      showToast("✅ " + (d.message || "Настройки сохранены"), "ok");
+      if (btn) { btn.textContent = "✅ Сохранено"; setTimeout(() => { btn.disabled = false; btn.textContent = "💾 Сохранить настройки"; }, 2000); }
+      await loadConfig();
+    } else {
+      showToast("❌ " + (d.message || d.error || "Ошибка сохранения"), "err");
+      if (btn) { btn.disabled = false; btn.textContent = "💾 Сохранить настройки"; }
+    }
+  } catch (e) {
+    showToast("❌ Ошибка сети: " + e.message, "err");
+    if (btn) { btn.disabled = false; btn.textContent = "💾 Сохранить настройки"; }
+  }
 }
 
 async function loadConfig() {
