@@ -288,10 +288,10 @@ function renderSmartBuy(pb) {
 
 // ── Полоса умных денег (появляется под Smart BUY баннером) ─────────────────
 function renderSmartMoneyBar(sm) {
-  let el = document.getElementById("sm-bar");
+  let el = document.getElementById("sm-global-bar");
   if (!el) {
     el = document.createElement("div");
-    el.id = "sm-bar";
+    el.id = "sm-global-bar";
     el.style.cssText = "display:none;margin:4px 0;padding:8px 12px;border-radius:8px;font-size:11px;border:1px solid transparent;";
     const ref = document.getElementById("smart-buy-banner");
     if (ref) ref.after(el); else (document.querySelector("main")||document.body).appendChild(el);
@@ -321,7 +321,7 @@ function renderAIManagement(mgmt) {
     el = document.createElement("div");
     el.id = "ai-mgmt-bar";
     el.style.cssText = "display:none;margin:4px 0;padding:8px 12px;border-radius:8px;font-size:11px;border:1px solid rgba(167,139,250,0.3);background:rgba(167,139,250,0.05);display:flex;flex-wrap:wrap;gap:12px;";
-    const ref = document.getElementById("sm-bar");
+    const ref = document.getElementById("sm-global-bar");
     if (ref) ref.after(el); else (document.querySelector("main")||document.body).appendChild(el);
   }
   if (!mgmt || mgmt.trades_count == null) { el.style.display = "none"; return; }
