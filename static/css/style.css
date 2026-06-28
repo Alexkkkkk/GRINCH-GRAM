@@ -439,13 +439,18 @@ body { background: var(--bg); color: var(--text); font-family: 'Segoe UI', syste
 .wl-tab    { flex: 1; background: rgba(255,255,255,0.03); border: 1px solid var(--border); color: var(--text2); border-radius: 8px; padding: 6px 8px; font-size: 11px; cursor: pointer; transition: all .2s; }
 .wl-tab.active { background: rgba(0,255,136,0.12); border-color: rgba(0,255,136,0.35); color: var(--grinch); }
 .wl-list   { display: flex; flex-direction: column; gap: 3px; max-height: 280px; overflow-y: auto; }
-.wl-row    { display: grid; grid-template-columns: 1fr auto auto auto auto; gap: 8px; align-items: center; padding: 6px 9px; border-radius: 6px; background: rgba(255,255,255,0.02); font-size: 12px; border: 1px solid transparent; }
+.wl-row    { display: grid; grid-template-columns: 1fr auto auto auto auto auto; gap: 6px; align-items: center; padding: 6px 9px; border-radius: 6px; background: rgba(255,255,255,0.02); font-size: 12px; border: 1px solid transparent; }
 .wl-row:hover { border-color: var(--border); }
 .wl-addr   { font-variant-numeric: tabular-nums; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .wl-bs     { font-size: 11px; }
 .wl-side   { font-size: 10px; font-weight: 700; }
 .wl-pnl    { font-variant-numeric: tabular-nums; font-weight: 700; min-width: 70px; text-align: right; }
+.wl-usd    { font-variant-numeric: tabular-nums; font-weight: 700; min-width: 55px; text-align: right; color: #ffd166; }
+.wl-vol-detail { font-size: 10px; color: var(--text2); min-width: 80px; text-align: right; }
 .wl-time   { color: var(--text2); font-size: 11px; min-width: 28px; text-align: right; }
+.wl-events-title { font-size: 11px; color: var(--text2); margin: 10px 0 4px; padding: 0 2px; font-weight: 600; letter-spacing: 0.5px; }
+.wl-events { display: flex; flex-direction: column; gap: 2px; max-height: 220px; overflow-y: auto; }
+.dt-addr.smart { color: var(--grinch); font-weight: 700; }
 
 /* ═══ Settings ═══ */
 .settings-form { display: flex; flex-direction: column; gap: 9px; }

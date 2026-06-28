@@ -1001,12 +1001,41 @@ function renderWalletList() {
     const pnlCls = pnl > 0 ? "pos" : (pnl < 0 ? "neg" : "");
     const pnlTxt = (pnl > 0 ? "+" : "") + pnl.toFixed(2) + " TON";
     const lastBuy = w.last_kind === "buy";
+    const usdVol = Number(w.usd_volume) || 0;
+    const usdIn  = Number(w.usd_in)  || 0;
+    const usdOut = Number(w.usd_out) || 0;
+    const volTxt = _walletTab === "volume"
+      ? '<span class="wl-usd">' + fmtBig(usdVol) + '</span>'
+      : '<span class="wl-pnl ' + pnlCls + '">' + pnlTxt + '</span>';
+    const detailTxt = _walletTab === "volume"
+      ? '<span class="wl-vol-detail"><span class="pos">↑' + fmtBig(usdIn) + '</span> <span class="neg">↓' + fmtBig(usdOut) + '</span></span>'
+      : '<span class="wl-vol-detail">' + fmtBig(Number(w.grinch_bought)||0, true) + ' GRINCH</span>';
     return '<div class="wl-row">' +
       '<span class="wl-addr">' + (w.smart ? "⭐ " : "") + escapeHtml(w.short) + '</span>' +
       '<span class="wl-bs"><span class="pos">' + w.buys + '↑</span>/<span class="neg">' + w.sells + '↓</span></span>' +
       '<span class="wl-side ' + (lastBuy ? "pos" : "neg") + '">' + (lastBuy ? "купил" : "продал") + '</span>' +
-      '<span class="wl-pnl ' + pnlCls + '">' + pnlTxt + '</span>' +
+      volTxt +
+      detailTxt +
       '<span class="wl-time">' + timeAgo(w.last_ts) + '</span>' +
+      '</div>';
+  }).join("");
+}
+
+function renderWalletEvents() {
+  const box = document.getElementById("wl-events");
+  if (!box || !_walletData) return;
+  const evts = _walletData.recent_events || [];
+  if (!evts.length) { box.innerHTML = ""; return; }
+  box.innerHTML = evts.map(e => {
+    const buy = e.kind === "buy";
+    const usd = Number(e.usd) || 0;
+    const grinch = Number(e.grinch) || 0;
+    return '<div class="dex-trade">' +
+      '<span class="dt-side ' + (buy ? "pos" : "neg") + '">' + (buy ? "Покупка" : "Продажа") + '</span>' +
+      '<span class="dt-amt">' + fmtAmt(grinch) + ' GRINCH</span>' +
+      '<span class="dt-usd">' + (usd > 0 ? fmtBig(usd) : "—") + '</span>' +
+      '<span class="dt-time">' + timeAgo(e.ts) + '</span>' +
+      '<span class="dt-addr' + (e.smart ? " smart" : "") + '">' + (e.smart ? "⭐ " : "") + escapeHtml(e.short) + '</span>' +
       '</div>';
   }).join("");
 }
@@ -1026,14 +1055,19 @@ async function loadWallets() {
     bar.style.width = Math.min(100, Math.abs(score) * 100) + "%";
     bar.style.left = score >= 0 ? "50%" : (50 - Math.min(50, Math.abs(score) * 50)) + "%";
     bar.style.background = score >= 0 ? "var(--grinch, #00ff88)" : "#ff4d6d";
-    document.getElementById("sm-buy").textContent  = (Number(sig.buy_ton)  || 0).toFixed(1) + " TON";
-    document.getElementById("sm-sell").textContent = (Number(sig.sell_ton) || 0).toFixed(1) + " TON";
+    const buyUsd  = Number(d.recent_buy_usd)  || 0;
+    const sellUsd = Number(d.recent_sell_usd) || 0;
+    const buyTon  = Number(sig.buy_ton)  || 0;
+    const sellTon = Number(sig.sell_ton) || 0;
+    document.getElementById("sm-buy").textContent  = buyTon.toFixed(1) + " TON" + (buyUsd  > 0 ? " · " + fmtBig(buyUsd)  : "");
+    document.getElementById("sm-sell").textContent = sellTon.toFixed(1) + " TON" + (sellUsd > 0 ? " · " + fmtBig(sellUsd) : "");
     document.getElementById("wl-total").textContent = d.total_wallets || 0;
     document.getElementById("wl-smart").textContent = d.smart_wallets || 0;
     document.getElementById("wl-seen").textContent  = d.total_trades_seen || 0;
     const src = document.getElementById("wallets-src");
     if (src) src.textContent = "· за 24ч: " + (d.active_24h || 0);
     renderWalletList();
+    renderWalletEvents();
   } catch (e) {}
 }
 

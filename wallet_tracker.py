@@ -147,19 +147,19 @@ class WalletTracker:
                 price = _f(a.get("price_from_in_usd"))
             else:
                 continue
+            usd_vol = _f(a.get("volume_in_usd"))
             ts = _ts_to_epoch(a.get("block_timestamp"))
-            self._record(trade_id, addr, kind, ton_amt, grinch_amt, price, ts)
+            self._record(trade_id, addr, kind, ton_amt, grinch_amt, price, ts, usd_vol)
             new += 1
         with self._lock:
             self.last_poll = time.time()
         if new:
             self._save()
 
-    def _record(self, tx, addr, kind, ton_amt, grinch_amt, price, ts):
+    def _record(self, tx, addr, kind, ton_amt, grinch_amt, price, ts, usd_vol=0.0):
         with self._lock:
             self._seen.add(tx)
             if len(self._seen) > self.MAX_SEEN:
-                # сбрасываем половину старых хэшей (set без порядка — упрощённо)
                 self._seen = set(list(self._seen)[self.MAX_SEEN // 2:])
 
             w = self.wallets.get(addr)
@@ -167,6 +167,7 @@ class WalletTracker:
                 w = {
                     "buys": 0, "sells": 0,
                     "ton_in": 0.0, "ton_out": 0.0,
+                    "usd_in": 0.0, "usd_out": 0.0,
                     "grinch_bought": 0.0, "grinch_sold": 0.0,
                     "first_ts": ts, "last_ts": ts, "last_kind": kind,
                 }
@@ -175,17 +176,21 @@ class WalletTracker:
                 w["buys"] += 1
                 w["ton_in"] += ton_amt
                 w["grinch_bought"] += grinch_amt
+                w["usd_in"] = w.get("usd_in", 0.0) + usd_vol
             else:
                 w["sells"] += 1
                 w["ton_out"] += ton_amt
                 w["grinch_sold"] += grinch_amt
+                w["usd_out"] = w.get("usd_out", 0.0) + usd_vol
             w["last_ts"] = max(w["last_ts"], ts)
             w["first_ts"] = min(w["first_ts"], ts) if w["first_ts"] else ts
             w["last_kind"] = kind
 
             self.events.append({
                 "addr": addr, "kind": kind, "ton": ton_amt,
-                "grinch": grinch_amt, "price": price, "ts": ts,
+                "grinch": grinch_amt, "price": price,
+                "usd": round(usd_vol, 2),
+                "ts": ts,
             })
             if len(self.events) > self.MAX_EVENTS:
                 self.events = self.events[-self.MAX_EVENTS:]
@@ -297,13 +302,20 @@ class WalletTracker:
         for addr, w in wallets.items():
             pnl = self._realized_pnl(w)
             held = w["grinch_bought"] - w["grinch_sold"]
+            usd_in  = round(w.get("usd_in",  0.0), 2)
+            usd_out = round(w.get("usd_out", 0.0), 2)
             rows.append({
                 "addr": addr,
                 "short": (addr[:6] + "…" + addr[-4:]) if len(addr) > 12 else addr,
                 "buys": w["buys"], "sells": w["sells"],
-                "ton_in": round(w["ton_in"], 2),
+                "ton_in":  round(w["ton_in"],  2),
                 "ton_out": round(w["ton_out"], 2),
+                "usd_in":  usd_in,
+                "usd_out": usd_out,
+                "usd_volume": round(usd_in + usd_out, 2),
                 "grinch_held": round(held, 2),
+                "grinch_bought": round(w["grinch_bought"], 2),
+                "grinch_sold":   round(w["grinch_sold"],   2),
                 "pnl_ton": round(pnl, 3),
                 "first_ts": w["first_ts"], "last_ts": w["last_ts"],
                 "last_kind": w["last_kind"],
@@ -313,11 +325,28 @@ class WalletTracker:
         # Список — только кошельки, активные за последние 24 часа, по убыванию
         active = [r for r in rows if r["last_ts"] >= cutoff_24h]
         top_profit = sorted(active, key=lambda x: x["pnl_ton"], reverse=True)[:top]
-        top_volume = sorted(active, key=lambda x: x["ton_in"] + x["ton_out"], reverse=True)[:top]
+        top_volume = sorted(active, key=lambda x: x["usd_volume"], reverse=True)[:top]
 
-        buy_ton = sum(e["ton"] for e in recent if e["kind"] == "buy")
+        buy_ton  = sum(e["ton"] for e in recent if e["kind"] == "buy")
         sell_ton = sum(e["ton"] for e in recent if e["kind"] == "sell")
-        smart_n = sum(1 for r in rows if r["smart"])
+        buy_usd  = sum(e.get("usd", 0.0) for e in recent if e["kind"] == "buy")
+        sell_usd = sum(e.get("usd", 0.0) for e in recent if e["kind"] == "sell")
+        smart_n  = sum(1 for r in rows if r["smart"])
+
+        # Последние 30 событий — для блока «Последние сделки» в карточке кошельков
+        smart_addrs_set = {r["addr"] for r in rows if r["smart"]}
+        recent_events = []
+        for e in reversed(self.events[-30:]):
+            recent_events.append({
+                "addr":   e["addr"],
+                "short":  (e["addr"][:6] + "…" + e["addr"][-4:]) if len(e["addr"]) > 12 else e["addr"],
+                "kind":   e["kind"],
+                "grinch": e["grinch"],
+                "ton":    e["ton"],
+                "usd":    e.get("usd", 0.0),
+                "ts":     e["ts"],
+                "smart":  e["addr"] in smart_addrs_set,
+            })
 
         smart_addrs = [r["addr"] for r in rows if r["smart"]]
         return {
@@ -327,10 +356,13 @@ class WalletTracker:
             "smart_wallets": smart_n,
             "smart_addrs": smart_addrs,
             "total_trades_seen": total_events,
-            "recent_buy_ton": round(buy_ton, 2),
+            "recent_buy_ton":  round(buy_ton,  2),
             "recent_sell_ton": round(sell_ton, 2),
+            "recent_buy_usd":  round(buy_usd,  2),
+            "recent_sell_usd": round(sell_usd, 2),
             "top_profit": top_profit,
             "top_volume": top_volume,
+            "recent_events": recent_events,
             "last_poll": last_poll,
             "error": err,
             "pool": Config.GRINCH_POOL_ADDRESS,
