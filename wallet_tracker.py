@@ -19,6 +19,7 @@ wallet_tracker.py — Мониторинг ВСЕХ кошельков, торг
 бот работает, тем богаче статистика по кошелькам.
 """
 import json
+import logging
 import os
 import threading
 import time
@@ -27,6 +28,16 @@ from datetime import datetime, timezone
 import requests
 
 from config import Config
+
+logger = logging.getLogger(__name__)
+
+
+def _db():
+    try:
+        import db_store
+        return db_store if db_store.is_available() else None
+    except Exception:
+        return None
 
 _DATA_DIR = os.getenv("DATA_DIR", os.path.join(os.path.dirname(os.path.abspath(__file__)), "data"))
 os.makedirs(_DATA_DIR, exist_ok=True)
@@ -327,28 +338,65 @@ class WalletTracker:
 
     # ------------------------------------------------------------ persistence
     def _load(self):
-        if not os.path.exists(STORE_PATH):
-            return
-        try:
-            with open(STORE_PATH, "r", encoding="utf-8") as fh:
-                data = json.load(fh)
-            self.wallets = data.get("wallets", {}) or {}
-            self.events = data.get("events", []) or []
-            self._seen = set(data.get("seen", []) or [])
-            self.last_poll = data.get("last_poll", 0.0) or 0.0
-        except Exception:
-            # повреждённый файл не должен ронять старт
-            self.wallets, self.events, self._seen = {}, [], set()
+        db = _db()
+        loaded_from_db = False
+
+        # Попытка загрузить из PostgreSQL
+        if db:
+            try:
+                wallets, events, seen, last_poll = db.wallets_load()
+                if wallets or events:
+                    self.wallets   = wallets
+                    self.events    = events
+                    self._seen     = seen
+                    self.last_poll = last_poll
+                    loaded_from_db = True
+                    logger.info(f"[WalletTracker] Загружено из DB: {len(wallets)} кошельков")
+            except Exception as e:
+                logger.warning(f"[WalletTracker] DB load error: {e}")
+
+        # Fallback / миграция: JSON
+        if not loaded_from_db:
+            if not os.path.exists(STORE_PATH):
+                return
+            try:
+                with open(STORE_PATH, "r", encoding="utf-8") as fh:
+                    data = json.load(fh)
+                self.wallets   = data.get("wallets", {}) or {}
+                self.events    = data.get("events", []) or []
+                self._seen     = set(data.get("seen", []) or [])
+                self.last_poll = data.get("last_poll", 0.0) or 0.0
+                logger.info(f"[WalletTracker] Загружено из JSON: {len(self.wallets)} кошельков")
+                # Миграция в DB
+                if db and self.wallets:
+                    try:
+                        db.wallets_save(
+                            self.wallets,
+                            self.events[-self.MAX_EVENTS:],
+                            list(self._seen)[-self.MAX_SEEN:],
+                            self.last_poll,
+                        )
+                        logger.info("[WalletTracker] ✅ Кошельки мигрированы JSON → PostgreSQL")
+                    except Exception as e:
+                        logger.warning(f"[WalletTracker] migrate_to_db error: {e}")
+            except Exception:
+                self.wallets, self.events, self._seen = {}, [], set()
 
     def _save(self):
         with self._lock:
-            payload = {
-                "wallets": self.wallets,
-                "events": self.events[-self.MAX_EVENTS:],
-                "seen": list(self._seen)[-self.MAX_SEEN:],
-                "last_poll": self.last_poll,
-                "saved_at": datetime.now(timezone.utc).isoformat(),
-            }
+            wallets    = dict(self.wallets)
+            events     = self.events[-self.MAX_EVENTS:]
+            seen       = list(self._seen)[-self.MAX_SEEN:]
+            last_poll  = self.last_poll
+
+        # JSON backup
+        payload = {
+            "wallets": wallets,
+            "events": events,
+            "seen": seen,
+            "last_poll": last_poll,
+            "saved_at": datetime.now(timezone.utc).isoformat(),
+        }
         tmp = STORE_PATH + ".tmp"
         try:
             with open(tmp, "w", encoding="utf-8") as fh:
@@ -356,3 +404,11 @@ class WalletTracker:
             os.replace(tmp, STORE_PATH)
         except Exception:
             pass
+
+        # DB
+        db = _db()
+        if db:
+            try:
+                db.wallets_save(wallets, events, seen, last_poll)
+            except Exception as e:
+                logger.warning(f"[WalletTracker] DB save error: {e}")

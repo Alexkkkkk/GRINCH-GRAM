@@ -23,12 +23,23 @@ experience_manager.py — Долговременная память и САМО-
 """
 
 import json
+import logging
 import os
 import threading
 import time
 from datetime import datetime
 
 from config import Config
+
+logger = logging.getLogger(__name__)
+
+
+def _db():
+    try:
+        import db_store
+        return db_store if db_store.is_available() else None
+    except Exception:
+        return None
 
 _DATA_DIR = os.getenv("DATA_DIR", os.path.join(os.path.dirname(os.path.abspath(__file__)), "data"))
 os.makedirs(_DATA_DIR, exist_ok=True)
@@ -84,31 +95,95 @@ class ExperienceManager:
 
     # ── Чтение / запись ──────────────────────────────────────────────────────
     def _load(self):
+        db = _db()
+        loaded_from_db = False
+
+        # ── Попытка загрузить из PostgreSQL ──────────────────────────────────
+        if db:
+            try:
+                trades     = db.trades_get_all()
+                equity     = db.equity_get_all()
+                open_trades = db.open_trades_get()
+                ai_state   = db.ai_state_get_all()
+                control_raw = ai_state.get("control")
+                stats_raw   = ai_state.get("stats")
+                ai_raw      = ai_state.get("ai_export")
+
+                if trades or equity or control_raw:
+                    if trades:      self.data["trades"]      = trades
+                    if equity:      self.data["equity"]      = equity
+                    if open_trades: self.data["open_trades"] = open_trades
+                    if control_raw: self.data["control"]     = control_raw if isinstance(control_raw, dict) else json.loads(control_raw)
+                    if stats_raw:   self.data["stats"]       = stats_raw if isinstance(stats_raw, dict) else json.loads(stats_raw)
+                    if ai_raw:      self.data["ai"]          = ai_raw if isinstance(ai_raw, dict) else json.loads(ai_raw)
+                    ctrl = self._default_control()
+                    ctrl.update(self.data.get("control") or {})
+                    self.data["control"] = ctrl
+                    print(f"[Experience] загружено из DB: {len(self.data['trades'])} сделок, "
+                          f"{len(self.data['equity'])} точек капитала")
+                    loaded_from_db = True
+            except Exception as e:
+                logger.warning(f"[Experience] DB load error: {e}")
+
+        # ── Fallback / миграция: читаем JSON ─────────────────────────────────
+        if not loaded_from_db:
+            try:
+                if not os.path.exists(self.path):
+                    return
+                with open(self.path, "r", encoding="utf-8") as f:
+                    disk = json.load(f)
+                for k in ("trades", "open_trades", "equity", "stats", "ai", "control", "created"):
+                    if k in disk and disk[k] is not None:
+                        self.data[k] = disk[k]
+                ctrl = self._default_control()
+                ctrl.update(self.data.get("control") or {})
+                self.data["control"] = ctrl
+                print(f"[Experience] загружено из JSON: {len(self.data['trades'])} сделок, "
+                      f"{len(self.data['equity'])} точек капитала")
+                # Миграция JSON → DB (однократно)
+                if db:
+                    self._migrate_to_db(db)
+            except Exception as e:
+                print(f"[Experience] ошибка чтения {self.path}: {e}")
+
+    def _migrate_to_db(self, db):
+        """Однократный перенос данных из JSON в PostgreSQL."""
         try:
-            if not os.path.exists(self.path):
-                return
-            with open(self.path, "r", encoding="utf-8") as f:
-                disk = json.load(f)
-            for k in ("trades", "open_trades", "equity", "stats", "ai", "control", "created"):
-                if k in disk and disk[k] is not None:
-                    self.data[k] = disk[k]
-            # гарантируем все ключи управления
-            ctrl = self._default_control()
-            ctrl.update(self.data.get("control") or {})
-            self.data["control"] = ctrl
-            print(f"[Experience] загружено: {len(self.data['trades'])} сделок, "
-                  f"{len(self.data['equity'])} точек капитала")
-        except Exception as e:  # noqa: BLE001
-            print(f"[Experience] ошибка чтения {self.path}: {e}")
+            trades  = self.data.get("trades") or []
+            equity  = self.data.get("equity") or []
+            open_ts = self.data.get("open_trades") or []
+            ctrl    = self.data.get("control") or {}
+            stats   = self.data.get("stats") or {}
+            ai      = self.data.get("ai") or {}
+            if trades:  db.trades_bulk_insert(trades)
+            if equity:  db.equity_bulk_insert(equity)
+            if open_ts: db.open_trades_save(open_ts)
+            if ctrl:    db.ai_state_set("control", ctrl)
+            if stats:   db.ai_state_set("stats", stats)
+            if ai:      db.ai_state_set("ai_export", ai)
+            logger.info(f"[Experience] ✅ Мигрировано в DB: {len(trades)} сделок, {len(equity)} точек")
+        except Exception as e:
+            logger.warning(f"[Experience] migrate_to_db error: {e}")
 
     def _save_locked(self):
+        # JSON (локальный backup)
         try:
             tmp = self.path + ".tmp"
             with open(tmp, "w", encoding="utf-8") as f:
                 json.dump(self.data, f, ensure_ascii=False)
             os.replace(tmp, self.path)
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:
             print(f"[Experience] ошибка записи {self.path}: {e}")
+        # DB: control + stats (AI export сохраняется отдельно в record_trade)
+        db = _db()
+        if db:
+            try:
+                ctrl  = self.data.get("control") or {}
+                stats = self.data.get("stats") or {}
+                if ctrl:  db.ai_state_set("control", ctrl)
+                if stats: db.ai_state_set("stats", stats)
+            except Exception as e:
+                logger.warning(f"[Experience] DB _save_locked error: {e}")
 
     def save(self):
         with self._lock:
@@ -159,9 +234,16 @@ class ExperienceManager:
     def save_open_trades(self, open_trades):
         """АВТО-СОХРАНЕНИЕ открытых позиций при КАЖДОЙ сделке (открытие/закрытие).
         Хранит цену покупки и цель продажи, чтобы пережить перезапуск."""
+        trades_list = [dict(t) for t in (open_trades or [])]
         with self._lock:
-            self.data["open_trades"] = [dict(t) for t in (open_trades or [])]
+            self.data["open_trades"] = trades_list
             self._save_locked()
+        db = _db()
+        if db:
+            try:
+                db.open_trades_save(trades_list)
+            except Exception as e:
+                logger.warning(f"[Experience] DB save_open_trades error: {e}")
 
     def get_cost_basis(self) -> float | None:
         """Средневзвешенная цена покупки открытых позиций (None если нет).
@@ -255,7 +337,7 @@ class ExperienceManager:
     # ── Запись сделки ────────────────────────────────────────────────────────
     def record_trade(self, trade: dict, stats: dict, ai=None):
         with self._lock:
-            self.data["trades"].append({
+            trade_rec = {
                 "id":          trade.get("id"),
                 "entry_price": trade.get("entry_price"),
                 "exit_price":  trade.get("exit_price"),
@@ -265,7 +347,8 @@ class ExperienceManager:
                 "reason":      trade.get("close_reason"),
                 "opened_at":   trade.get("opened_at"),
                 "closed_at":   trade.get("closed_at"),
-            })
+            }
+            self.data["trades"].append(trade_rec)
             if len(self.data["trades"]) > MAX_TRADES_KEPT:
                 self.data["trades"] = self.data["trades"][-MAX_TRADES_KEPT:]
             if stats:
@@ -276,6 +359,15 @@ class ExperienceManager:
                 except Exception as e:  # noqa: BLE001
                     print(f"[Experience] export_experience error: {e}")
             self._save_locked()
+            # DB: уписываем сделку + AI-опыт
+            db = _db()
+            if db:
+                try:
+                    db.trades_upsert(trade_rec)
+                    if self.data.get("ai"):
+                        db.ai_state_set("ai_export", self.data["ai"])
+                except Exception as e:
+                    logger.warning(f"[Experience] DB record_trade error: {e}")
 
     # ── Запись капитала (кривая баланса) ─────────────────────────────────────
     def record_balance(self, balance: dict, grinch_price_usd: float, force: bool = False):
@@ -297,20 +389,28 @@ class ExperienceManager:
         if grinch > 0 and (ton_usd <= 0 or gp <= 0):
             return
         equity_ton = ton + (grinch * gp / ton_usd if ton_usd else 0.0)
+        point = {
+            "t":          datetime.utcnow().isoformat(),
+            "ton":        round(ton, 6),
+            "grinch":     round(grinch, 4),
+            "grinch_usd": gp,
+            "equity_ton": round(equity_ton, 6),
+        }
         with self._lock:
-            self.data["equity"].append({
-                "t":          datetime.utcnow().isoformat(),
-                "ton":        round(ton, 6),
-                "grinch":     round(grinch, 4),
-                "grinch_usd": gp,
-                "equity_ton": round(equity_ton, 6),
-            })
+            self.data["equity"].append(point)
             if len(self.data["equity"]) > MAX_EQUITY_KEPT:
                 self.data["equity"] = self.data["equity"][-MAX_EQUITY_KEPT:]
             ctrl = self.data["control"]
             if equity_ton > ctrl.get("peak_equity", 0):
                 ctrl["peak_equity"] = round(equity_ton, 6)
             self._save_locked()
+            # DB: вставляем только новую точку (не перезаписываем всю историю)
+            db = _db()
+            if db:
+                try:
+                    db.equity_insert(point)
+                except Exception as e:
+                    logger.warning(f"[Experience] DB equity_insert error: {e}")
 
     # ── Анализ опыта и адаптация управления («супер-ИИ управление») ──────────
     def analyze_and_adapt(self, trader=None, ai=None) -> dict:
