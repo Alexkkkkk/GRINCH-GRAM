@@ -110,10 +110,16 @@ class Trader:
         except Exception as e:
             self.log(f"Восстановление опыта ИИ: {e}", "WARN")
 
+        _last_db_sync = 0.0
         while self.running:
             try:
                 self._tick()
                 self._record_equity()
+                # Обновляем live-поля открытых сделок в DB раз в 60 секунд
+                now = time.time()
+                if self.open_trades and (now - _last_db_sync) >= 60:
+                    self._sync_open_trades_to_db()
+                    _last_db_sync = now
             except Exception as e:
                 self.log(f"Ошибка в цикле: {e}", "ERROR")
             time.sleep(30)
@@ -126,6 +132,21 @@ class Trader:
                                     price_feed.get("GRINCH") or 0.0)
         except Exception:  # noqa: BLE001
             pass
+
+    def _sync_open_trades_to_db(self):
+        """Обновляет live-поля открытых позиций в PostgreSQL (раз в 60 сек).
+        Сохраняет актуальные: текущую стоимость, P&L, прогресс к TP — всё
+        то, что показывается на карточке «Сделки, ожидающие продажи»."""
+        try:
+            from price_feed import price_feed
+            import db_store
+            if not db_store.is_available():
+                return
+            grinch_ton = price_feed.get_grinch_ton_price() or 0.0
+            enriched   = self._enriched_open_trades(grinch_ton)
+            db_store.open_trades_save(enriched)
+        except Exception as e:
+            pass  # молча: live-синк не критичен
 
     def _emit_progress(self, progress_dict):
         if self.on_training_progress:
@@ -446,21 +467,35 @@ class Trader:
         sl = 0.0 if Config.ONLY_PROFIT_EXIT else self.exchange._round(price * (1 - sl_pct / 100))
         tp = self.exchange._round(price * (1 + tp_pct / 100))
 
+        # Константы для карточки «ожидают продажи» — рассчитываем один раз при открытии
+        fee       = Config.FEE_PCT / 100.0
+        sell_gas  = Config.SELL_GAS_TON
+        buy_gas   = getattr(Config, "BUY_GAS_TON", 0.25)
+        total_cost = stake + buy_gas
+        # be_ton: цена GRINCH в TON при которой net = 0
+        # amount * be_ton * (1 - fee) - sell_gas = total_cost
+        be_ton    = (total_cost + sell_gas) / (amount * (1 - fee)) if amount > 0 else 0
+        entry_ton = stake / amount if amount > 0 else 0
+        be_usd    = round(price * be_ton / entry_ton, 8) if (entry_ton > 0 and price > 0) else 0
+        min_gross = Config.required_gross_pct_with_gas(stake if stake > 0 else None)
         trade = {
-            "id":            order["id"],
-            "symbol":        Config.SYMBOL,
-            "side":          side,
-            "entry_price":   price,
-            "amount":        round(amount, 6),
-            "stake_ton":     round(stake, 4),
-            "stop_loss":     sl,
-            "take_profit":   tp,
-            "trail_pct":     Config.TRAILING_STOP_PCT,
-            "high_water":    price,
-            "opened_at":     datetime.utcnow().isoformat(),
-            "pnl":           0.0,
-            "status":        "open",
-            "ai_confidence": ai_conf,
+            "id":              order["id"],
+            "symbol":          Config.SYMBOL,
+            "side":            side,
+            "entry_price":     price,
+            "amount":          round(amount, 6),
+            "stake_ton":       round(stake, 4),
+            "stop_loss":       sl,
+            "take_profit":     tp,
+            "trail_pct":       Config.TRAILING_STOP_PCT,
+            "high_water":      price,
+            "opened_at":       datetime.utcnow().isoformat(),
+            "pnl":             0.0,
+            "status":          "open",
+            "ai_confidence":   ai_conf,
+            # Постоянные расчётные поля карточки (не меняются после открытия)
+            "breakeven_price": be_usd,
+            "min_gross_pct":   round(min_gross, 1),
         }
         self.open_trades.append(trade)
         self.trades.append(dict(trade))
