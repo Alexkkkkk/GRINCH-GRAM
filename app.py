@@ -530,7 +530,7 @@ def api_config_set():
     if errors:
         return jsonify({"ok": False, "message": "Некорректные значения: " + ", ".join(errors)}), 400
 
-    if (v := num("trade_amount", 1, 1e9))      is not None: Config.TRADE_AMOUNT     = v
+    if (v := num("trade_amount", 5, 1e9))      is not None: Config.TRADE_AMOUNT     = v
     if (v := num("take_profit_pct", 0.1, 1000))is not None: Config.TAKE_PROFIT_PCT  = v
     if (v := num("max_open_trades", 1, 50))     is not None: Config.MAX_OPEN_TRADES  = int(v)
     if (v := num("trailing_stop_pct", 0, 90))  is not None: Config.TRAILING_STOP_PCT= v

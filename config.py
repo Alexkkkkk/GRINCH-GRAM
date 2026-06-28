@@ -9,10 +9,10 @@ class Config:
     API_SECRET = os.getenv("API_SECRET", "")
     SYMBOL = os.getenv("SYMBOL", "GRINCH/USDT")
     TIMEFRAME = os.getenv("TIMEFRAME", "1h")
-    TRADE_AMOUNT = float(os.getenv("TRADE_AMOUNT", "1"))
+    TRADE_AMOUNT = float(os.getenv("TRADE_AMOUNT", "5"))
 
     # ── 1 сделка за раз: весь капитал в одну позицию ──
-    # Торговля по 1 TON на сделку — концентрируемся на одном лучшем входе
+    # Торговля по 5 TON на сделку — концентрируемся на одном лучшем входе
     MAX_OPEN_TRADES = int(os.getenv("MAX_OPEN_TRADES", "1"))
 
     # ── Комиссия DEX (реальный пул GRINCH/TON — 1% за сторону) ──
