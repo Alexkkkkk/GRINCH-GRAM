@@ -172,6 +172,24 @@ def settings_update_section(section: str, updates: dict):
         logger.warning(f"[DB] settings_update_section error: {e}")
 
 
+def settings_get(section: str, key: str):
+    """Читает одно значение из bot_settings. Возвращает None если не найдено."""
+    if not _available:
+        return None
+    try:
+        with _conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "SELECT value FROM bot_settings WHERE section=%s AND key=%s",
+                    (section, key)
+                )
+                row = cur.fetchone()
+                return row[0] if row else None
+    except Exception as e:
+        logger.warning(f"[DB] settings_get error: {e}")
+        return None
+
+
 def settings_get_all() -> dict:
     if not _available:
         return {}

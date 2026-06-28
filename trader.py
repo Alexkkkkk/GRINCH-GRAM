@@ -36,6 +36,7 @@ class Trader:
         # Структура: {"target": float, "signal_price": float, "ai": dict,
         #              "analysis": dict, "ticks_left": int}
         self._pending_buy = None
+        self.last_sm      = None   # последний сигнал умных денег (для статуса)
         # Кеш баланса: не долбим блокчейн при каждом /api/status (TTL 30 сек)
         self._balance_cache     = {}
         self._balance_cache_ts  = 0
@@ -43,6 +44,21 @@ class Trader:
         # ── Долговременная память + само-управление ИИ ───────────────────
         self.exp = experience_manager
         self.exp.restore_trader(self)
+        # Восстанавливаем Smart BUY из DB (если был при перезапуске)
+        # Примечание: ai/analysis не сохраняются (тяжёлые объекты), поэтому
+        # восстановленный ордер помечаем флагом restored=True — в _tick()
+        # он будет исполнен по текущей рыночной цене без ожидания откатa.
+        try:
+            import db_store as _dbs2
+            pb_raw = _dbs2.settings_get("trader_state", "pending_buy")
+            if pb_raw:
+                import json as _json2
+                pb_data = _json2.loads(pb_raw)
+                if pb_data and pb_data.get("target"):
+                    pb_data["restored"] = True   # флаг: ai/analysis отсутствуют
+                    self._pending_buy = pb_data
+        except Exception:
+            pass
 
     def log(self, msg, level="INFO"):
         entry = {"time": datetime.utcnow().strftime("%H:%M:%S"), "level": level, "msg": msg}
@@ -133,6 +149,15 @@ class Trader:
         except Exception:  # noqa: BLE001
             pass
 
+    def _clear_pending_buy(self):
+        """Сбрасывает Smart BUY и удаляет его из DB."""
+        self._pending_buy = None
+        try:
+            import db_store as _dbs
+            _dbs.settings_update_section("trader_state", {"pending_buy": ""})
+        except Exception:
+            pass
+
     def _sync_open_trades_to_db(self):
         """Обновляет live-поля открытых позиций в PostgreSQL (раз в 60 сек).
         Сохраняет актуальные: текущую стоимость, P&L, прогресс к TP — всё
@@ -177,13 +202,25 @@ class Trader:
         # чтобы в этом же тике не открыть BUY поверх ещё не сведённого
         # пользовательского состояния (гонка SELL→BUY в одном окне).
         if self._check_stop_loss_take_profit(price):
-            self._pending_buy = None   # отменяем ожидание если позиция закрылась
+            self._clear_pending_buy()
             return
 
         # ── Smart BUY: проверяем отложенный вход ───────────────────────────
         # Если ожидаем откат к лучшей цене — проверяем достигнута ли цель.
         if self._pending_buy and not self.open_trades:
             pb = self._pending_buy
+            # Если ордер восстановлен из DB — нет ai/analysis: исполняем сразу
+            if pb.get("restored"):
+                self.log(
+                    f"🔄 Smart BUY восстановлен после рестарта @ ${price:.8f} (цель была ${pb.get('target', 0):.8f})",
+                    "INFO"
+                )
+                opened = self._open_trade("buy", price, result, ai)
+                if opened:
+                    self._buy_confirm_count = 0
+                    self._emit_signal("BUY", price, ai)
+                self._clear_pending_buy()
+                return
             pb["ticks_left"] -= 1
             if price <= pb["target"]:
                 # Цена откатилась к цели — покупаем по лучшей цене!
@@ -196,7 +233,7 @@ class Trader:
                 if opened:
                     self._buy_confirm_count = 0
                     self._emit_signal("BUY", price, pb["ai"])
-                self._pending_buy = None
+                self._clear_pending_buy()
                 return
             elif pb["ticks_left"] <= 0:
                 # Время вышло — берём по текущей рыночной цене
@@ -209,7 +246,7 @@ class Trader:
                 if opened:
                     self._buy_confirm_count = 0
                     self._emit_signal("BUY", price, pb["ai"])
-                self._pending_buy = None
+                self._clear_pending_buy()
                 return
             else:
                 # Ещё ждём
@@ -240,6 +277,7 @@ class Trader:
                 sm = wt.get_signal()
             except Exception:
                 sm = None
+        self.last_sm = sm  # сохраняем для статуса и аналитики
         sm_score = sm["score"] if sm else 0.0
         sm_early = bool(sm and sm.get("early_buy"))
 
@@ -330,6 +368,13 @@ class Trader:
                     "analysis":     result,
                     "ticks_left":   Config.SMART_BUY_MAX_WAIT_TICKS,
                 }
+                # Персистируем в DB — переживёт перезапуск
+                try:
+                    import db_store as _dbs, json as _json
+                    _pb_save = {k: v for k, v in self._pending_buy.items() if k not in ("ai", "analysis")}
+                    _dbs.settings_update_section("trader_state", {"pending_buy": _json.dumps(_pb_save)})
+                except Exception:
+                    pass
                 self.log(
                     f"🎯 Smart BUY: ждём откат до ${target:.8f} "
                     f"(сейчас ${price:.8f}, -{ Config.SMART_BUY_PULLBACK_PCT}%, "
@@ -937,6 +982,12 @@ class Trader:
         if self.stats["total_trades"] > 0:
             winrate = round(self.stats["winning_trades"] / self.stats["total_trades"] * 100, 1)
         pb = self._pending_buy
+        # AI-управление: текущие адаптированные параметры (просадка, пауза, порог)
+        ai_mgmt = {}
+        try:
+            ai_mgmt = self.exp.get_report()
+        except Exception:
+            pass
         return {
             "running":       self.running,
             "training":      self.training,
@@ -946,6 +997,8 @@ class Trader:
             "balance":       balance,
             "analysis":      analysis,
             "ai":            ai,
+            "smart_money":   self.last_sm,
+            "ai_management": ai_mgmt,
             "open_trades":   self._enriched_open_trades(grinch_ton),
             "recent_trades": self.trades[-20:],
             "logs":          self.logs[-50:],

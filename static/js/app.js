@@ -250,6 +250,10 @@ function updateUI(data) {
 
   // Smart BUY: индикатор ожидания откатного входа
   renderSmartBuy(data.pending_buy || null);
+
+  // Умные деньги + AI-управление (защита капитала, просадка)
+  renderSmartMoneyBar(data.smart_money || null);
+  renderAIManagement(data.ai_management || null);
 }
 
 function renderSmartBuy(pb) {
@@ -279,6 +283,63 @@ function renderSmartBuy(pb) {
       <span>🎯 <b>Smart BUY:</b> ждём откат до <b style="color:#e2e8f0">$${Number(pb.target).toFixed(8)}</b></span>
       <span style="color:#8892b0">Сигнал: $${Number(pb.signal_price).toFixed(8)} | AI ${pb.ai_conf}% | осталось ${pb.ticks_left} тика</span>
     </div>
+  `;
+}
+
+// ── Полоса умных денег (появляется под Smart BUY баннером) ─────────────────
+function renderSmartMoneyBar(sm) {
+  let el = document.getElementById("sm-bar");
+  if (!el) {
+    el = document.createElement("div");
+    el.id = "sm-bar";
+    el.style.cssText = "display:none;margin:4px 0;padding:8px 12px;border-radius:8px;font-size:11px;border:1px solid transparent;";
+    const ref = document.getElementById("smart-buy-banner");
+    if (ref) ref.after(el); else (document.querySelector("main")||document.body).appendChild(el);
+  }
+  if (!sm || sm.basis === "idle") { el.style.display = "none"; return; }
+  const score = Number(sm.score || 0);
+  const isPos = score >= 0;
+  const col   = isPos ? "#00ff88" : "#ff4d6d";
+  const bg    = isPos ? "rgba(0,255,136,0.06)" : "rgba(255,77,109,0.06)";
+  const arrow = isPos ? "▲" : "▼";
+  el.style.display = "";
+  el.style.borderColor = col + "55";
+  el.style.background  = bg;
+  el.innerHTML = `
+    <span style="color:${col};font-weight:700">🐋 ${arrow} ${sm.label || "умные деньги"}</span>
+    <span style="color:#8892b0;margin-left:8px">score ${score > 0 ? "+" : ""}${score.toFixed(2)}</span>
+    ${sm.buys_1h  != null ? `<span style="color:#00ff88;margin-left:8px">↑ ${sm.buys_1h.toFixed(1)} TON/ч</span>` : ""}
+    ${sm.sells_1h != null ? `<span style="color:#ff4d6d;margin-left:6px">↓ ${sm.sells_1h.toFixed(1)} TON/ч</span>` : ""}
+    ${sm.early_buy ? `<span style="color:#ffd166;margin-left:8px">⚡ ранний вход</span>` : ""}
+  `;
+}
+
+// ── Панель AI-управления (просадка, пауза, адаптированный порог) ───────────
+function renderAIManagement(mgmt) {
+  let el = document.getElementById("ai-mgmt-bar");
+  if (!el) {
+    el = document.createElement("div");
+    el.id = "ai-mgmt-bar";
+    el.style.cssText = "display:none;margin:4px 0;padding:8px 12px;border-radius:8px;font-size:11px;border:1px solid rgba(167,139,250,0.3);background:rgba(167,139,250,0.05);display:flex;flex-wrap:wrap;gap:12px;";
+    const ref = document.getElementById("sm-bar");
+    if (ref) ref.after(el); else (document.querySelector("main")||document.body).appendChild(el);
+  }
+  if (!mgmt || mgmt.trades_count == null) { el.style.display = "none"; return; }
+  const ctrl     = mgmt.control || {};
+  const paused   = ctrl.paused;
+  const dd       = Number(ctrl.drawdown_pct || 0);
+  const minConf  = Number(ctrl.min_conf || 0);
+  const tradeAmt = Number(ctrl.trade_amount || 0);
+  const streak   = Number(ctrl.loss_streak || 0);
+  el.style.display = "";
+  el.innerHTML = `
+    <span style="color:#a78bfa;font-weight:700">🤖 AI-управление</span>
+    <span title="Текущий адаптированный порог уверенности" style="color:#e2e8f0">⚡ порог ${minConf.toFixed(0)}%</span>
+    <span title="Текущая адаптированная ставка" style="color:#e2e8f0">💰 ставка ${tradeAmt.toFixed(2)} TON</span>
+    <span title="Просадка от пика" style="${dd > 10 ? "color:#ff4d6d" : "color:#00ff88"}">📉 DD ${dd.toFixed(1)}%</span>
+    ${streak > 0 ? `<span style="color:#ffd166">⚠️ убытков подряд: ${streak}</span>` : ""}
+    ${paused ? `<span style="color:#ff4d6d;font-weight:700">⏸️ ПАУЗА (защита)</span>` : `<span style="color:#00ff88">▶️ активен</span>`}
+    <span style="color:#8892b0">W/L ${mgmt.wins}/${mgmt.losses} (${mgmt.win_rate}%)</span>
   `;
 }
 
