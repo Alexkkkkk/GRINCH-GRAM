@@ -478,6 +478,15 @@ class Trader:
         entry_ton = stake / amount if amount > 0 else 0
         be_usd    = round(price * be_ton / entry_ton, 8) if (entry_ton > 0 and price > 0) else 0
         min_gross = Config.required_gross_pct_with_gas(stake if stake > 0 else None)
+        # Рыночный контекст при входе для AI-аналитики
+        ai_snap_entry = self.last_ai or {}
+        regime_entry  = ai_snap_entry.get("regime") or {}
+        sm_entry = {}
+        try:
+            from wallet_tracker import wallet_tracker as _wt
+            sm_entry = _wt.get_signal()
+        except Exception:
+            pass
         trade = {
             "id":              order["id"],
             "symbol":          Config.SYMBOL,
@@ -496,6 +505,15 @@ class Trader:
             # Постоянные расчётные поля карточки (не меняются после открытия)
             "breakeven_price": be_usd,
             "min_gross_pct":   round(min_gross, 1),
+            # Рыночный контекст при входе
+            "entry_regime":     regime_entry.get("name"),
+            "entry_rsi":        ai_snap_entry.get("rsi"),
+            "entry_atr_pct":    (regime_entry.get("atr_pct") or regime_entry.get("atr")),
+            "entry_anomaly":    (ai_snap_entry.get("anomaly") or {}).get("detected", False),
+            "entry_sm_score":   sm_entry.get("score"),
+            "entry_sm_label":   sm_entry.get("label"),
+            "entry_sm_buys_1h": sm_entry.get("buys_1h"),
+            "entry_sm_sells_1h":sm_entry.get("sells_1h"),
         }
         self.open_trades.append(trade)
         self.trades.append(dict(trade))
@@ -784,6 +802,38 @@ class Trader:
             self.log(f"🧠 AI feedback: {outcome} PNL={pnl:+.6f} TON", "INFO")
         except Exception as e:
             self.log(f"AI feedback ошибка: {e}", "WARN")
+
+        # ── Добавляем рыночный контекст при закрытии для аналитики ──────
+        try:
+            ai_snap = self.last_ai or {}
+            regime  = ai_snap.get("regime") or {}
+            opened_ts = None
+            try:
+                from datetime import timezone
+                from dateutil import parser as _dp
+                opened_ts = _dp.parse(trade.get("opened_at", "")).replace(tzinfo=timezone.utc).timestamp()
+            except Exception:
+                pass
+            closed_ts = time.time()
+            trade["duration_min"] = round((closed_ts - opened_ts) / 60, 1) if opened_ts else None
+            trade["exit_ai_confidence"] = ai_snap.get("confidence")
+            trade["exit_ai_signal"]     = ai_snap.get("ai_signal")
+            trade["exit_regime"]        = regime.get("name")
+            trade["exit_rsi"]           = ai_snap.get("rsi")
+            trade["exit_atr_pct"]       = (regime.get("atr_pct") or regime.get("atr"))
+            trade["exit_anomaly"]       = (ai_snap.get("anomaly") or {}).get("detected", False)
+            # Умные деньги в момент закрытия
+            try:
+                from wallet_tracker import wallet_tracker as _wt
+                sm = _wt.get_signal()
+                trade["exit_sm_score"] = sm.get("score")
+                trade["exit_sm_label"] = sm.get("label")
+            except Exception:
+                pass
+            trade["outcome"] = "win" if pnl > 0 else "loss"
+            trade["pnl_pct"] = round(pnl / trade.get("stake_ton", 1) * 100, 2) if trade.get("stake_ton") else None
+        except Exception as e:
+            self.log(f"Контекст сделки: {e}", "WARN")
 
         # ── 4. Память + само-управление ИИ ───────────────────────────────
         try:

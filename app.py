@@ -473,6 +473,88 @@ def api_experience():
     from experience_manager import experience_manager
     return jsonify(experience_manager.get_report())
 
+
+@app.route("/api/analytics/trades")
+def api_analytics_trades():
+    """
+    Полная аналитика закрытых сделок из PostgreSQL.
+    Возвращает агрегаты по режиму рынка, RSI, умным деньгам, уверенности AI —
+    для самообучения и понимания, при каких условиях бот торгует в плюс.
+    """
+    import db_store
+    trades = db_store.trades_get_all(limit=2000)
+    if not trades:
+        return jsonify({"ok": True, "count": 0, "trades": [], "summary": {}})
+
+    wins   = [t for t in trades if t.get("outcome") == "win" or (t.get("pnl", 0) > 0)]
+    losses = [t for t in trades if t.get("outcome") == "loss" or (t.get("pnl", 0) <= 0)]
+    total  = len(trades)
+
+    # Агрегат по рыночному режиму при входе
+    regime_stats = {}
+    for t in trades:
+        r = t.get("entry_regime") or "unknown"
+        if r not in regime_stats:
+            regime_stats[r] = {"count": 0, "wins": 0, "total_pnl": 0.0}
+        regime_stats[r]["count"] += 1
+        if t.get("pnl", 0) > 0:
+            regime_stats[r]["wins"] += 1
+        regime_stats[r]["total_pnl"] = round(regime_stats[r]["total_pnl"] + t.get("pnl", 0), 6)
+    for r in regime_stats:
+        c = regime_stats[r]["count"]
+        regime_stats[r]["win_rate"] = round(regime_stats[r]["wins"] / c * 100, 1) if c else 0
+
+    # Агрегат по уверенности AI (бакеты 0-49, 50-69, 70-89, 90+)
+    conf_buckets = {"0-49": {"count": 0, "wins": 0}, "50-69": {"count": 0, "wins": 0},
+                    "70-89": {"count": 0, "wins": 0}, "90+": {"count": 0, "wins": 0}}
+    for t in trades:
+        c = t.get("ai_confidence") or 0
+        try:
+            c = float(c)
+        except Exception:
+            c = 0
+        bucket = "90+" if c >= 90 else ("70-89" if c >= 70 else ("50-69" if c >= 50 else "0-49"))
+        conf_buckets[bucket]["count"] += 1
+        if t.get("pnl", 0) > 0:
+            conf_buckets[bucket]["wins"] += 1
+    for b in conf_buckets:
+        n = conf_buckets[b]["count"]
+        conf_buckets[b]["win_rate"] = round(conf_buckets[b]["wins"] / n * 100, 1) if n else 0
+
+    # Агрегат по умным деньгам при входе
+    sm_stats = {}
+    for t in trades:
+        label = t.get("entry_sm_label") or "нет данных"
+        if label not in sm_stats:
+            sm_stats[label] = {"count": 0, "wins": 0, "total_pnl": 0.0}
+        sm_stats[label]["count"] += 1
+        if t.get("pnl", 0) > 0:
+            sm_stats[label]["wins"] += 1
+        sm_stats[label]["total_pnl"] = round(sm_stats[label]["total_pnl"] + t.get("pnl", 0), 6)
+    for lbl in sm_stats:
+        n = sm_stats[lbl]["count"]
+        sm_stats[lbl]["win_rate"] = round(sm_stats[lbl]["wins"] / n * 100, 1) if n else 0
+
+    total_pnl = round(sum(t.get("pnl", 0) for t in trades), 6)
+    avg_dur   = None
+    durs = [t.get("duration_min") for t in trades if t.get("duration_min") is not None]
+    if durs:
+        avg_dur = round(sum(durs) / len(durs), 1)
+
+    summary = {
+        "total": total,
+        "wins": len(wins),
+        "losses": len(losses),
+        "win_rate": round(len(wins) / total * 100, 1) if total else 0,
+        "total_pnl_ton": total_pnl,
+        "avg_duration_min": avg_dur,
+        "by_regime": regime_stats,
+        "by_ai_confidence": conf_buckets,
+        "by_smart_money": sm_stats,
+    }
+    return jsonify({"ok": True, "count": total, "trades": trades[-50:], "summary": summary})
+
+
 @app.route("/api/liquidator/sell", methods=["POST"])
 def api_liquidator_sell():
     result = grinch_liquidator.force_sell_now()

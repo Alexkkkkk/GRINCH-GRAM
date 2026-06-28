@@ -337,17 +337,19 @@ class ExperienceManager:
     # ── Запись сделки ────────────────────────────────────────────────────────
     def record_trade(self, trade: dict, stats: dict, ai=None):
         with self._lock:
-            trade_rec = {
-                "id":          trade.get("id"),
-                "entry_price": trade.get("entry_price"),
-                "exit_price":  trade.get("exit_price"),
-                "amount":      trade.get("amount"),
-                "pnl":         trade.get("pnl"),
-                "fee":         trade.get("fee"),
-                "reason":      trade.get("close_reason"),
-                "opened_at":   trade.get("opened_at"),
-                "closed_at":   trade.get("closed_at"),
-            }
+            # Храним полный dict сделки — AI-аналитике нужны ВСЕ поля
+            # (stake_ton, ai_confidence, SL/TP, regime, RSI при закрытии и т.д.)
+            trade_rec = dict(trade)
+            # Гарантируем ключи, которые читает experience_manager.analyze_and_adapt
+            trade_rec.setdefault("id",          trade.get("id"))
+            trade_rec.setdefault("entry_price", trade.get("entry_price"))
+            trade_rec.setdefault("exit_price",  trade.get("exit_price"))
+            trade_rec.setdefault("amount",      trade.get("amount"))
+            trade_rec.setdefault("pnl",         trade.get("pnl", 0))
+            trade_rec.setdefault("fee",         trade.get("fee"))
+            trade_rec.setdefault("reason",      trade.get("close_reason"))
+            trade_rec.setdefault("opened_at",   trade.get("opened_at"))
+            trade_rec.setdefault("closed_at",   trade.get("closed_at"))
             self.data["trades"].append(trade_rec)
             if len(self.data["trades"]) > MAX_TRADES_KEPT:
                 self.data["trades"] = self.data["trades"][-MAX_TRADES_KEPT:]
