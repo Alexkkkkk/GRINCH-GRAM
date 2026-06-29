@@ -169,6 +169,27 @@ class Config:
     RSI_OVERSOLD_REVERSAL = float(os.getenv("RSI_OVERSOLD_REVERSAL", "25"))
     REVERSAL_AI_MIN       = float(os.getenv("REVERSAL_AI_MIN", "85"))
 
+    # ── Двусторонняя торговля (BUY + SHORT) ──────────────────────────
+    # SHORT: когда AI ожидает падение — продаём GRINCH→TON, откупаем дешевле.
+    # Прибыль = получаем обратно БОЛЬШЕ GRINCH чем продали (минимум +20% нетто).
+    SHORT_TRADING_ENABLED = bool(int(os.getenv("SHORT_TRADING_ENABLED", "1")))
+    # Трейлинг шорта: если цена выросла на X% от минимума → фиксируем
+    SHORT_TRAIL_PCT = float(os.getenv("SHORT_TRAIL_PCT", "7.0"))
+    # Резерв GRINCH — это количество GRINCH, которое бот НИКОГДА не включает в шорт.
+    # Нужен, чтобы авто-ликвидатор всегда мог продать свои «зафиксированные» GRINCH.
+    GRINCH_RESERVE = float(os.getenv("GRINCH_RESERVE", "500"))
+    # Минимальная уверенность AI для открытия шорта (чуть выше BUY — шорт рискованнее)
+    SHORT_MIN_AI_CONF = float(os.getenv("SHORT_MIN_AI_CONF", "65.0"))
+
+    @classmethod
+    def required_drop_pct_for_short(cls, grinch_value_ton=None):
+        """Минимальный процент падения цены для прибыльного шорта.
+        Симметрично required_gross_pct_with_gas() для лонгов — те же комиссии
+        DEX (1%+1% пула) + газ обеих ног (продажи + обратной покупки).
+        grinch_value_ton = количество GRINCH × текущий курс TON — аналог stake_ton для лонга.
+        """
+        return cls.required_gross_pct_with_gas(grinch_value_ton)
+
     # ── Полная автономия AI ───────────────────────────────────────────
     # Когда True, AI — единственный распорядитель сделок. Технический сигнал
     # (RSI/EMA/etc.) становится лишь входными данными для AI, не требуется

@@ -759,11 +759,43 @@
         </div>
       </div>
 
-      <!-- Открытые сделки -->
+      <!-- Двусторонняя торговля: лонг + шорт -->
+      <div class="card bidir-header-card">
+        <div class="bidir-header">
+          <div class="bidir-side bidir-long">
+            <span class="bidir-icon">📈</span>
+            <div>
+              <div class="bidir-title">ЛОНГ — TON→GRINCH</div>
+              <div class="bidir-desc">Покупаем GRINCH, ждём роста ≥+20% нетто</div>
+            </div>
+          </div>
+          <div class="bidir-vs">⟷</div>
+          <div class="bidir-side bidir-short">
+            <span class="bidir-icon">📉</span>
+            <div>
+              <div class="bidir-title">ШОРТ — GRINCH→TON</div>
+              <div class="bidir-desc">Продаём GRINCH, откупаем дешевле ≥−20% нетто</div>
+            </div>
+          </div>
+        </div>
+        <div class="bidir-fee-info">
+          🔒 Выход только в плюс &nbsp;│&nbsp; Комиссия: 1%+1% DEX + газ обеих ног &nbsp;│&nbsp; Цель нетто: +20% минимум
+        </div>
+      </div>
+
+      <!-- Открытые лонги -->
       <div class="card">
-        <div class="card-title">⏳ Сделки, ожидающие продажи</div>
+        <div class="card-title">📈 Лонг — ожидает продажи</div>
         <div id="open-trades-list" class="trades-list">
-          <div class="empty-msg">Нет позиций, ожидающих продажи</div>
+          <div class="empty-msg">Нет открытых лонгов</div>
+        </div>
+      </div>
+
+      <!-- Открытые шорты -->
+      <div class="card">
+        <div class="card-title">📉 Шорт — ожидает откупки</div>
+        <div id="open-short-trades-list" class="trades-list">
+          <div class="empty-msg">Нет открытых шортов</div>
         </div>
       </div>
 

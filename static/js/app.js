@@ -260,6 +260,7 @@ function updateUI(data) {
   }
 
   renderOpenTrades(data.open_trades  || [], Number(data.analysis?.price) || 0, Number(data.grinch_ton) || 0);
+  renderOpenShortTrades(data.open_short_trades || [], Number(data.analysis?.price) || 0, Number(data.grinch_ton) || 0);
   renderHistory(data.recent_trades || []);
   renderLogs(data.logs             || []);
 
@@ -2065,4 +2066,87 @@ function manualSellAll() {
     setManualLoading(false);
     setManualStatus("❌ Ошибка соединения", "#ff4d6d");
   });
+}
+
+// ═══════════════════════════════════════════════════════════════════
+//  📉 ШОРТ-ПОЗИЦИИ — рендер карточек
+// ═══════════════════════════════════════════════════════════════════
+
+function renderOpenShortTrades(shorts, curPrice, gramPrice) {
+  const el = document.getElementById("open-short-trades-list");
+  if (!el) return;
+  if (!shorts || !shorts.length) {
+    el.innerHTML = '<div class="empty-msg">Нет открытых шортов — AI ищет сигнал SELL</div>';
+    return;
+  }
+  el.innerHTML = shorts.map(t => {
+    const entry    = Number(t.entry_price) || 0;
+    const amount   = Number(t.amount) || 0;
+    const tonRecv  = Number(t.ton_received) || 0;
+    const dropNow  = Number(t.drop_pct_now) || 0;
+    const reqDrop  = Number(t.required_drop_pct) || 0;
+    const progress = Number(t.progress_pct) || 0;
+    const inProfit = !!t.in_profit;
+    const pnlTon   = t.pnl_ton_now != null ? Number(t.pnl_ton_now) : null;
+    const gProfit  = t.grinch_profit_est != null ? Number(t.grinch_profit_est) : null;
+    const lowWater = Number(t.low_water) || entry;
+    const tp       = Number(t.take_profit) || 0;
+
+    const pnlCls  = inProfit ? "pnl-pos" : "pnl-neg";
+    const barClr  = inProfit
+      ? "linear-gradient(90deg,#ffd166,#00ff88)"
+      : "linear-gradient(90deg,#ff4d6d,#ffd166)";
+
+    let waitLabel, waitColor;
+    if (inProfit && dropNow >= reqDrop * 2) {
+      waitLabel = "🎯 Готово к откупке (≥2× цели)"; waitColor = "#00ff88";
+    } else if (inProfit) {
+      waitLabel = `✅ В прибыли ${dropNow.toFixed(1)}% — ждём трейлинг`; waitColor = "#00d4aa";
+    } else {
+      waitLabel = `⏳ Нужно упасть ещё −${Math.max(0, reqDrop - dropNow).toFixed(1)}%`; waitColor = "#ffd166";
+    }
+
+    return `
+    <div class="trade-card short-card">
+      <div class="trade-row">
+        <span class="trade-side short">📉 ШОРТ — ЖДЁТ ОТКУПКИ</span>
+        <span class="${pnlCls}" style="font-weight:700">${dropNow >= 0 ? "-" : "+"}${Math.abs(dropNow).toFixed(2)}%</span>
+      </div>
+      <div class="trade-row" style="font-size:11px;color:#8892b0">
+        <span>Продали по: <b style="color:#e2e8f0">${fmtPrice(entry)}</b></span>
+        <span>Дно: <b style="color:#ff4d6d">${fmtPrice(lowWater)}</b></span>
+      </div>
+      <div class="trade-row" style="font-size:11px;color:#8892b0">
+        <span>Откупить при: <b style="color:#00ff88">${fmtPrice(tp)}</b> (−${reqDrop.toFixed(1)}%)</span>
+      </div>
+      <!-- Прогресс к цели -->
+      <div class="short-prog-wrap" title="Прогресс к цели">
+        <div class="short-prog-bar" style="width:${Math.min(progress, 100).toFixed(1)}%;background:${barClr}"></div>
+      </div>
+      <div class="trade-row" style="font-size:10px;color:rgba(255,255,255,.4)">
+        <span>Прогресс: ${progress.toFixed(0)}% от цели (нужно −${reqDrop.toFixed(1)}%)</span>
+      </div>
+      <div class="trade-row">
+        <span class="ot-wait" style="color:${waitColor}">${waitLabel}</span>
+      </div>
+      <div style="margin:6px 0;padding:8px 10px;border-radius:8px;background:${inProfit ? 'rgba(0,255,136,0.08)' : 'rgba(255,77,109,0.08)'};border:1px solid ${inProfit ? 'rgba(0,255,136,0.25)' : 'rgba(255,77,109,0.25)'}">
+        <div class="trade-row" style="font-size:11px;color:#8892b0;margin-bottom:3px">
+          <span>Если откупить сейчас (−1% DEX −газ):</span>
+        </div>
+        <div class="trade-row">
+          <b style="font-size:16px;font-weight:900;color:${inProfit ? '#00ff88' : '#ff4d6d'}">
+            ${gProfit != null ? (gProfit >= 0 ? "+" : "") + gProfit.toFixed(2) + " GRINCH" : "—"}
+          </b>
+          <span style="font-size:12px;color:rgba(255,255,255,.4)">
+            ${pnlTon != null ? (pnlTon >= 0 ? "+" : "") + pnlTon.toFixed(4) + " TON" : ""}
+          </span>
+        </div>
+      </div>
+      <div class="trade-row" style="font-size:10px;color:#4a5568">
+        <span>Продано: <b style="color:#e2e8f0">${amount.toFixed(2)}</b> GRINCH</span>
+        <span>TON получено: <b style="color:#e2e8f0">${tonRecv.toFixed(4)}</b></span>
+        ${t.ai_confidence ? `<span style="color:#a78bfa">AI ${t.ai_confidence}%</span>` : ""}
+      </div>
+    </div>`;
+  }).join("");
 }

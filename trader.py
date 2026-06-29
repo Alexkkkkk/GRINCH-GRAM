@@ -39,6 +39,9 @@ class Trader:
         self.last_sm      = None   # последний сигнал умных денег (для статуса)
         self.decision_log = []     # кольцевой буфер AI-решений (макс 25)
         self._last_db_sync_ts = 0  # время последней синхронизации с DB
+        # ── Двусторонняя торговля ────────────────────────────────────────
+        self.open_short_trades = []   # открытые SHORT-позиции (GRINCH→TON→GRINCH)
+        self._sell_confirm_count = 0  # счётчик подтверждений SELL-сигнала для шорта
         self.last_entry   = {      # последняя оценка качества входа (для статуса)
             "quality": "C", "score": 0, "reasons": [],
             "vol_ratio": 1.0, "stoch_rsi": 0.5,
@@ -564,13 +567,34 @@ class Trader:
                 if opened:
                     self._buy_confirm_count = 0   # сбрасываем после входа
                     self._emit_signal("BUY", price, ai)
-        elif final_signal == "SELL" and self.open_trades:
-            closed = self._close_all_trades(price, result)
-            # Сигнал SELL юзерам шлём ТОЛЬКО если реальная продажа прошла —
-            # иначе у юзеров обнулится grinch_held и разблокируется вывод TON,
-            # которого на самом деле нет (реальный GRINCH не продан).
-            if closed:
-                self._emit_signal("SELL", price, ai)
+        elif final_signal == "SELL":
+            if self.open_trades:
+                # Сначала закрываем существующие лонги
+                closed = self._close_all_trades(price, result)
+                if closed:
+                    self._emit_signal("SELL", price, ai)
+                    self._sell_confirm_count = 0
+            elif (Config.SHORT_TRADING_ENABLED
+                  and not self.open_short_trades
+                  and conf >= Config.SHORT_MIN_AI_CONF):
+                # Нет открытых позиций + AI уверен в падении → открываем шорт
+                self._sell_confirm_count += 1
+                short_confirm = 1 if entry_quality in ("A", "B") else 2
+                if self._sell_confirm_count >= short_confirm:
+                    self.log(
+                        f"📉 AI ШОРТ сигнал: уверенность {conf}% | {regime_name} | "
+                        f"RSI={rsi:.1f} | грейд={entry_quality} — открываем шорт",
+                        "INFO"
+                    )
+                    self._open_short_trade(price, result, ai)
+                    self._sell_confirm_count = 0
+                else:
+                    self.log(
+                        f"📉 Шорт: ждём подтверждение ({self._sell_confirm_count}/{short_confirm})",
+                        "INFO"
+                    )
+            else:
+                self._sell_confirm_count = 0
 
     def _emit_signal(self, signal, price, ai=None):
         """Шлёт сигнал BUY/SELL всем подписчикам (UserTradingManager и т.п.).
@@ -789,7 +813,225 @@ class Trader:
         # нет) grinch_held обнулять нельзя — часть реального GRINCH ещё не продана.
         return bool(relevant_before) and not self._relevant_open()
 
+    def _check_short_positions(self, price):
+        """Управляет шорт-позициями: фиксируем прибыль когда цена упала достаточно.
+        ONLY_PROFIT_EXIT: закрываем шорт ТОЛЬКО когда цена упала ≥ required_drop_pct.
+        Трейлинг: когда цена отскакивает вверх от минимума на SHORT_TRAIL_PCT — фиксируем.
+        """
+        closed_any = False
+        for trade in list(self.open_short_trades):
+            entry_usd  = trade["entry_price"]
+            low_water  = trade.get("low_water", entry_usd)
+            grinch_val = trade.get("grinch_value_ton")
+            required_drop = Config.required_drop_pct_for_short(grinch_val)
+
+            # Обновляем низшую точку
+            if price < low_water:
+                trade["low_water"] = price
+                low_water = price
+
+            drop_pct = (entry_usd - price) / entry_usd * 100  # >0 = цена упала (нам выгодно)
+            in_profit = drop_pct >= required_drop             # покрыли комиссии + цель
+
+            if not in_profit:
+                continue  # ONLY_PROFIT_EXIT: ждём пока не в прибыли
+
+            # В прибыльной зоне — применяем трейлинг
+            trail_pct   = Config.SHORT_TRAIL_PCT
+            trail_price = low_water * (1 + trail_pct / 100)   # если цена выросла от дна
+
+            big_tp = drop_pct >= required_drop * 2.0  # упало в 2× больше нужного → берём сразу
+
+            if big_tp:
+                self.log(
+                    f"🎯 Шорт TP: цена упала -{drop_pct:.1f}% (нужно -{required_drop:.1f}%) → "
+                    f"фиксируем прибыль немедленно", "INFO"
+                )
+                self._close_short_trade(trade, price, "take_profit")
+                closed_any = True
+            elif price >= trail_price:
+                self.log(
+                    f"📈 Шорт трейлинг: цена +{trail_pct:.1f}% от дна ${low_water:.8f} → "
+                    f"фиксируем (drop={drop_pct:.1f}% ≥ нужно {required_drop:.1f}%)", "INFO"
+                )
+                self._close_short_trade(trade, price, "trailing")
+                closed_any = True
+
+        return closed_any
+
+    def _open_short_trade(self, price, analysis, ai):
+        """Открывает шорт-позицию: продаёт GRINCH→TON сейчас, откупит дешевле.
+        Прибыль = получаем обратно больше GRINCH чем продали (≥+20% нетто).
+        """
+        if self.exchange.mode != "dedust":
+            self.log("⚠️ Шорт доступен только в DeDust-режиме", "WARN")
+            return False
+
+        ai_conf = ai.get("confidence", 0) if ai else 0
+
+        # Получаем баланс GRINCH
+        bal        = self.exchange.get_balance() or {}
+        grinch_bal = bal.get("GRINCH", 0) or 0
+        grinch_reserve = Config.GRINCH_RESERVE
+
+        # Текущий курс GRINCH в TON
+        from price_feed import price_feed
+        grinch_ton = price_feed.get_grinch_ton_price()
+        if not grinch_ton or grinch_ton <= 0:
+            self.log("⚠️ Шорт: не удалось получить курс GRINCH/TON — пропускаем", "WARN")
+            return False
+
+        # Количество GRINCH для шорта (эквивалент TRADE_AMOUNT TON × коэф. уверенности)
+        conf_factor   = 0.5 + min(max((ai_conf - 50) / 50.0, 0.0), 1.0) * 0.5
+        target_ton    = Config.TRADE_AMOUNT * conf_factor
+        target_grinch = target_ton / grinch_ton
+        available     = max(0.0, grinch_bal - grinch_reserve)
+
+        if available < target_grinch:
+            target_grinch = available  # урезаем до доступного
+
+        # Минимальная осмысленная сумма
+        min_grinch = Config.MIN_STAKE_TON / grinch_ton
+        if target_grinch < min_grinch:
+            self.log(
+                f"⛔ Шорт отменён: доступно {available:.0f} GRINCH < "
+                f"мин. {min_grinch:.0f} (≈{Config.MIN_STAKE_TON} TON). "
+                f"Резерв: {grinch_reserve:.0f}, баланс: {grinch_bal:.0f}", "WARN"
+            )
+            return False
+
+        grinch_value_ton = target_grinch * grinch_ton  # эквивалент в TON для расчёта комиссий
+        required_drop    = Config.required_drop_pct_for_short(grinch_value_ton)
+
+        # Детальный лог комиссий перед сделкой
+        self.log(
+            f"💰 Шорт — расчёт комиссий:\n"
+            f"   Продаём:      {target_grinch:.2f} GRINCH (≈{grinch_value_ton:.3f} TON)\n"
+            f"   Газ продажи:  {Config.SELL_GAS_TON:.3f} TON\n"
+            f"   Газ откупки:  {Config.BUY_GAS_TON:.3f} TON\n"
+            f"   Комиссия DEX: {Config.FEE_PCT}% + {Config.FEE_PCT}% = {Config.FEE_PCT*2:.1f}%\n"
+            f"   Нужно упасть: ≥{required_drop:.2f}% для +{Config.TARGET_NET_PCT:.0f}% нетто",
+            "INFO"
+        )
+
+        # Исполняем продажу GRINCH → TON
+        order = self.exchange.place_order("sell", target_grinch)
+        if not order or order.get("error"):
+            err = (order or {}).get("error", "нет ответа")
+            self.log(f"⚠️ Шорт: продажа GRINCH не исполнена — {err}", "WARN")
+            return False
+
+        # Реально полученный TON из ордера (если DEX вернул)
+        info       = order.get("info") or {}
+        ton_recv   = info.get("ton_received") or (grinch_value_ton * (1 - Config.FEE_PCT/100) - Config.SELL_GAS_TON)
+        tp_price   = self.exchange._round(price * (1 - required_drop / 100))
+
+        trade = {
+            "id":               order["id"],
+            "trade_type":       "short",
+            "entry_price":      price,
+            "entry_price_ton":  grinch_ton,
+            "amount":           round(target_grinch, 6),       # GRINCH продано
+            "grinch_value_ton": round(grinch_value_ton, 4),   # эквивалент в TON
+            "ton_received":     round(ton_recv, 6),            # TON получено от продажи
+            "take_profit":      tp_price,
+            "low_water":        price,
+            "required_drop_pct":round(required_drop, 2),
+            "opened_at":        datetime.utcnow().isoformat(),
+            "status":           "short_open",
+            "ai_confidence":    ai_conf,
+            "entry_regime":     (ai.get("regime") or {}).get("name") if ai else None,
+        }
+        self.open_short_trades.append(trade)
+        self.stats["total_trades"] += 1
+
+        self.log(
+            f"📉 SHORT открыт: продали {target_grinch:.2f} GRINCH @ ${price:.8f} "
+            f"| TON получено: ~{ton_recv:.3f} | TP @ ${tp_price:.8f} (-{required_drop:.1f}%) "
+            f"| AI={ai_conf}%",
+            "SELL"
+        )
+        return True
+
+    def _close_short_trade(self, trade, price, reason):
+        """Закрывает шорт: откупает GRINCH обратно за накопленный TON.
+        Прибыль = grinch_received > grinch_sold → конвертируем в TON для статистики.
+        """
+        trade_id = trade.get("id")
+        # Защита от двойного закрытия
+        if trade_id not in {t.get("id") for t in self.open_short_trades}:
+            return False
+
+        ton_to_spend   = trade.get("ton_received", 0)
+        grinch_sold    = trade.get("amount", 0)
+        grinch_val_ton = trade.get("grinch_value_ton", 0)
+        entry_price    = trade.get("entry_price", price)
+
+        if self.exchange.mode == "dedust" and ton_to_spend > 0:
+            # Необходимо оставить газ на покупку
+            buy_gas    = Config.BUY_GAS_TON
+            spend_net  = ton_to_spend
+            est_grinch = spend_net / price  # примерное количество для place_order
+            self.log(
+                f"💸 Шорт откупка: тратим {ton_to_spend:.4f} TON → покупаем GRINCH @ ${price:.8f}",
+                "INFO"
+            )
+            order = self.exchange.place_order("buy", est_grinch, ton_stake=ton_to_spend)
+            if not order or order.get("error"):
+                err = (order or {}).get("error", "нет ответа")
+                self.log(f"⚠️ Шорт откупка не исполнена: {err} — позиция остаётся", "WARN")
+                return False
+
+            info           = order.get("info") or {}
+            grinch_received = info.get("grinch_received") or (ton_to_spend * (1 - Config.FEE_PCT/100) / price)
+        else:
+            # Demo/fallback: расчётное значение
+            fee            = Config.FEE_PCT / 100.0
+            grinch_received = ton_to_spend * (1 - fee) / price
+
+        grinch_received = float(grinch_received or 0)
+        profit_grinch   = grinch_received - grinch_sold
+
+        # Конвертируем прибыль в TON для статистики
+        from price_feed import price_feed
+        g_ton = price_feed.get_grinch_ton_price() or trade.get("entry_price_ton", 0.0001)
+        pnl_ton = round(profit_grinch * g_ton, 6)
+        drop_pct = (entry_price - price) / entry_price * 100 if entry_price else 0
+
+        trade["exit_price"]      = price
+        trade["closed_at"]       = datetime.utcnow().isoformat()
+        trade["close_reason"]    = reason
+        trade["status"]          = "short_closed"
+        trade["grinch_received"] = round(grinch_received, 6)
+        trade["profit_grinch"]   = round(profit_grinch, 6)
+        trade["pnl"]             = pnl_ton
+        trade["drop_pct"]        = round(drop_pct, 2)
+        trade["pnl_pct"]         = round(profit_grinch / grinch_sold * 100, 2) if grinch_sold else 0
+
+        self.open_short_trades = [t for t in self.open_short_trades if t["id"] != trade_id]
+        self.stats["total_pnl"] = round(self.stats["total_pnl"] + pnl_ton, 6)
+        if pnl_ton > 0:
+            self.stats["winning_trades"] += 1
+
+        emoji = "🟩" if pnl_ton >= 0 else "🟥"
+        self.log(
+            f"{emoji} Шорт закрыт @ ${price:.8f} | GRINCH: продали {grinch_sold:.2f} → "
+            f"откупили {grinch_received:.2f} | Профит: +{profit_grinch:.2f} GRINCH "
+            f"(≈{pnl_ton:+.4f} TON) | Падение: -{drop_pct:.1f}% | {reason}",
+            "SELL" if pnl_ton >= 0 else "ERROR"
+        )
+        # AI feedback
+        try:
+            outcome = "win" if pnl_ton > 0 else "loss"
+            self.ai.feedback(outcome=outcome, pnl=float(pnl_ton))
+        except Exception:
+            pass
+        return True
+
     def _check_stop_loss_take_profit(self, price):
+        # Сначала проверяем шорт-позиции
+        self._check_short_positions(price)
+
         had_relevant = bool(self._relevant_open())
         closed_any   = False
         for trade in list(self.open_trades):
@@ -1150,6 +1392,34 @@ class Trader:
             out.append(c)
         return out
 
+    def _enriched_short_trades(self, grinch_ton):
+        """Шорт-позиции + расчёт текущего P&L и прогресса к цели."""
+        out = []
+        cur_ton = grinch_ton or 0
+        for t in self.open_short_trades:
+            c = dict(t)
+            entry_usd   = t.get("entry_price", 0) or 0
+            amount      = t.get("amount", 0) or 0        # GRINCH продано
+            grinch_val  = t.get("grinch_value_ton", 0)
+            ton_recv    = t.get("ton_received", 0)
+            required_dr = t.get("required_drop_pct", Config.required_drop_pct_for_short(grinch_val))
+
+            if cur_ton > 0 and entry_usd > 0:
+                drop_pct = (entry_usd - cur_ton) / entry_usd * 100
+                c["drop_pct_now"]  = round(drop_pct, 2)
+                c["in_profit"]     = drop_pct >= required_dr
+                c["progress_pct"]  = round(min(drop_pct / required_dr * 100, 200) if required_dr > 0 else 0, 1)
+                # Если сейчас откупить: сколько GRINCH получим
+                fee = Config.FEE_PCT / 100.0
+                if cur_ton > 0:
+                    grinch_back_est = ton_recv * (1 - fee) / cur_ton
+                    profit_grinch   = grinch_back_est - amount
+                    c["grinch_profit_est"] = round(profit_grinch, 4)
+                    c["pnl_ton_now"]       = round(profit_grinch * cur_ton, 6)
+            c["required_drop_pct"] = round(required_dr, 2)
+            out.append(c)
+        return out
+
     def get_status(self):
         ohlcv    = self.exchange.get_ohlcv(limit=100)
         analysis = analyze(ohlcv)
@@ -1191,7 +1461,8 @@ class Trader:
             "ai":            ai,
             "smart_money":   self.last_sm,
             "ai_management": ai_mgmt,
-            "open_trades":   self._enriched_open_trades(grinch_ton),
+            "open_trades":       self._enriched_open_trades(grinch_ton),
+            "open_short_trades": self._enriched_short_trades(grinch_ton),
             "recent_trades": self.trades[-20:],
             "logs":          self.logs[-50:],
             "stats":         {**self.stats, "winrate": winrate},

@@ -821,3 +821,46 @@ body { background: var(--bg); color: var(--text); font-family: 'Segoe UI', syste
 .db-ok   { color:#00ff88; border-color:rgba(0,255,136,.3); background:rgba(0,255,136,.08); }
 .db-warn { color:#ffd166; border-color:rgba(255,209,102,.3); background:rgba(255,209,102,.07); }
 .db-err  { color:#ff4d6d; border-color:rgba(255,77,109,.3); background:rgba(255,77,109,.07); }
+
+/* ═══════════════════════════════════════════════════════
+   📈📉 ДВУСТОРОННЯЯ ТОРГОВЛЯ — заголовочная карточка
+═══════════════════════════════════════════════════════ */
+.bidir-header-card { padding: 0 !important; overflow: hidden; }
+.bidir-header {
+  display: flex; align-items: stretch; gap: 0;
+}
+.bidir-side {
+  flex: 1; display: flex; align-items: center; gap: 10px;
+  padding: 14px 16px;
+}
+.bidir-long  { background: rgba(0,255,136,.06); border-bottom: 2px solid rgba(0,255,136,.25); }
+.bidir-short { background: rgba(255,77,109,.06); border-bottom: 2px solid rgba(255,77,109,.25); }
+.bidir-vs {
+  display: flex; align-items: center; padding: 0 10px;
+  font-size: 20px; color: rgba(255,255,255,.2); flex-shrink: 0;
+}
+.bidir-icon { font-size: 24px; flex-shrink: 0; }
+.bidir-title { font-size: 12px; font-weight: 700; color: rgba(255,255,255,.75); }
+.bidir-desc  { font-size: 10px; color: rgba(255,255,255,.35); margin-top: 2px; }
+.bidir-fee-info {
+  padding: 8px 16px; font-size: 10px;
+  color: rgba(255,209,102,.6); text-align: center; letter-spacing: .3px;
+  border-top: 1px solid rgba(255,255,255,.04);
+}
+
+/* ── Шорт-карточка ── */
+.trade-card.short-card {
+  border-color: rgba(255,77,109,.2) !important;
+  background: linear-gradient(145deg, rgba(255,77,109,.04), rgba(0,0,0,.1)) !important;
+}
+.trade-card.short-card .trade-side.short {
+  background: rgba(255,77,109,.15); color: #ff4d6d;
+  border: 1px solid rgba(255,77,109,.3);
+}
+.short-prog-wrap {
+  height: 4px; background: rgba(255,255,255,.06); border-radius: 2px;
+  margin: 5px 0; overflow: hidden;
+}
+.short-prog-bar {
+  height: 100%; border-radius: 2px; transition: width .5s;
+}
