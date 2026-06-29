@@ -120,15 +120,15 @@
       <div style="display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap">
         <div class="tb-stages">
           <span class="tb-stage pending" data-stage="collecting" id="ts-collecting">📡 Данные</span>
-          <span class="tb-stage pending" data-stage="features"   id="ts-features"  >🔬 Признаки</span>
-          <span class="tb-stage pending" data-stage="rf"         id="ts-rf"         >🌲 RandomForest</span>
-          <span class="tb-stage pending" data-stage="gb"         id="ts-gb"         >🚀 GradientBoost</span>
-          <span class="tb-stage pending" data-stage="validate"   id="ts-validate"   >🔎 Валидация</span>
+          <span class="tb-stage pending" data-stage="features"   id="ts-features"  >🔬 65 Признаков</span>
+          <span class="tb-stage pending" data-stage="rf"         id="ts-rf"         >🌲 RF+ET+GB</span>
+          <span class="tb-stage pending" data-stage="gb"         id="ts-gb"         >🔥 XGB+HGB+MLP</span>
+          <span class="tb-stage pending" data-stage="validate"   id="ts-validate"   >💰 Kelly Criterion</span>
           <span class="tb-stage pending" data-stage="ready"      id="ts-ready"      >✅ Готово</span>
         </div>
         <div class="tb-meta">
           <div class="tb-meta-item">Баров: <strong id="tb-samples">—</strong></div>
-          <div class="tb-meta-item">RandomForest + GradientBoosting</div>
+          <div class="tb-meta-item">QuantumBrain v3 · 6 нейросетей</div>
         </div>
       </div>
     </div>
@@ -200,6 +200,10 @@
       <div class="at-sep">│</div>
       <div class="at-item at-pnl">
         💰 P&amp;L: <span id="at-pnl">+0.0000 TON</span>
+      </div>
+      <div class="at-sep">│</div>
+      <div class="at-item" id="at-kelly-item" style="color:#a78bfa">
+        🎲 Kelly: <span id="at-kelly-frac">—</span>
       </div>
       <div class="at-sep">│</div>
       <div class="at-clock" id="at-clock">00:00:00</div>
@@ -870,6 +874,43 @@
         <div class="wallet-title">
           ◆ TON × 🐸 GRINCH Кошелёк
           <button class="btn-wallet-refresh" onclick="refreshTon()" title="Обновить">⟳</button>
+        </div>
+
+        <!-- Суммарная стоимость портфеля + ROI -->
+        <div class="portfolio-total-wrap">
+          <div class="portfolio-total-left">
+            <div class="pt-label">ПОРТФЕЛЬ</div>
+            <div class="pt-value" id="pt-total">—</div>
+            <div class="pt-change" id="pt-change">—</div>
+          </div>
+          <div class="portfolio-roi-ring">
+            <svg viewBox="0 0 72 72" class="roi-ring-svg">
+              <circle cx="36" cy="36" r="28" fill="none" stroke="rgba(255,255,255,.06)" stroke-width="7"/>
+              <circle cx="36" cy="36" r="28" id="roi-ring-arc"
+                fill="none" stroke="#00ff88" stroke-width="7"
+                stroke-dasharray="0 175.9" stroke-linecap="round"
+                transform="rotate(-90 36 36)"
+                style="transition:stroke-dasharray .9s ease,stroke .5s"/>
+              <text x="36" y="40" text-anchor="middle" font-family="monospace"
+                font-size="11" font-weight="900" fill="white" id="roi-ring-pct">0%</text>
+            </svg>
+            <div class="roi-ring-label">к цели<br>+20%</div>
+          </div>
+        </div>
+
+        <!-- Прогресс к +20% нетто -->
+        <div class="roi-goal-wrap">
+          <div class="roi-goal-header">
+            <span class="roi-goal-lbl">📈 Прогресс к цели +20%</span>
+            <span class="roi-goal-val" id="roi-goal-pct">0%</span>
+          </div>
+          <div class="roi-goal-track">
+            <div class="roi-goal-fill" id="roi-goal-bar" style="width:0%"></div>
+            <div class="roi-goal-marker" style="left:100%">
+              <div class="roi-goal-flag">🎯 20%</div>
+            </div>
+          </div>
+          <div class="roi-goal-sub" id="roi-goal-sub">Накапливаем историю…</div>
         </div>
 
         <!-- Балансы -->

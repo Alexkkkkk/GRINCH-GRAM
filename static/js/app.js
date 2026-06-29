@@ -259,6 +259,9 @@ function updateUI(data) {
     if (wbGrnUsd) wbGrnUsd.textContent = "≈ $" + grnUsd.toFixed(4);
   }
 
+  // Portfolio total + ROI tracker
+  _updatePortfolioTracker(bal, data.analysis, stats);
+
   renderOpenTrades(data.open_trades  || [], Number(data.analysis?.price) || 0, Number(data.grinch_ton) || 0);
   renderOpenShortTrades(data.open_short_trades || [], Number(data.analysis?.price) || 0, Number(data.grinch_ton) || 0);
   renderHistory(data.recent_trades || []);
@@ -625,6 +628,88 @@ function updateAIPro(ai) {
 
   // 12. QuantumBrain 6-model grid
   if (ai.model_info && ai.model_info.length) _updateQuantumModels(ai.model_info);
+}
+
+// ═══════════════════════════════════════════════════════════════════
+//  💎 PORTFOLIO TOTAL + ROI TRACKER
+// ═══════════════════════════════════════════════════════════════════
+let _portfolioBaseline = null;
+
+function _updatePortfolioTracker(bal, analysis, stats) {
+  const tonAmt  = Number(bal?.TON)    || 0;
+  const grnAmt  = Number(bal?.GRINCH) || 0;
+  const grnUsd  = Number(analysis?.price) || 0;
+  const tonUsd  = window._tonPriceUsd || 0;
+
+  if (tonUsd <= 0 || grnUsd <= 0) return;
+
+  const totalUsd = tonAmt * tonUsd + grnAmt * grnUsd;
+
+  // Baseline = first non-zero snapshot (used for day-change %)
+  if (!_portfolioBaseline && totalUsd > 0) {
+    _portfolioBaseline = totalUsd;
+  }
+
+  const ptVal = document.getElementById("pt-total");
+  if (ptVal) ptVal.textContent = "$" + totalUsd.toFixed(2);
+
+  const ptChange = document.getElementById("pt-change");
+  if (ptChange && _portfolioBaseline && _portfolioBaseline > 0) {
+    const chg = ((totalUsd - _portfolioBaseline) / _portfolioBaseline) * 100;
+    const sign = chg >= 0 ? "▲ +" : "▼ ";
+    ptChange.textContent = sign + Math.abs(chg).toFixed(2) + "% сессия";
+    ptChange.className = "pt-change " + (chg >= 0 ? "pos" : "neg");
+  }
+
+  // ROI ring toward +20% target (uses P&L / baseline to compute progress)
+  const pnlTon = Number(stats?.total_pnl) || 0;
+  // compute ROI% from P&L vs current portfolio in TON
+  const portTon = tonAmt + grnAmt * (grnUsd / tonUsd);
+  let roiPct = 0;
+  if (portTon > 0 && pnlTon !== 0) {
+    roiPct = (pnlTon / (portTon - pnlTon)) * 100;
+  }
+  // Also check if there are open trades to display progress toward 20%
+  const goalPct = 20;
+  const progress = Math.min(Math.max(roiPct, 0), goalPct);
+  const progressRatio = progress / goalPct; // 0–1
+
+  // Update ring (circumference = 2π*28 ≈ 175.9)
+  const arc = document.getElementById("roi-ring-arc");
+  if (arc) {
+    const fill = (progressRatio * 175.9).toFixed(1);
+    arc.setAttribute("stroke-dasharray", fill + " 175.9");
+    const ringColor = roiPct >= goalPct ? "#00ff88" : roiPct >= goalPct * 0.5 ? "#ffd166" : "#0098ea";
+    arc.setAttribute("stroke", ringColor);
+  }
+  const ringPct = document.getElementById("roi-ring-pct");
+  if (ringPct) {
+    ringPct.textContent = roiPct.toFixed(1) + "%";
+    const rc = roiPct >= goalPct ? "#00ff88" : roiPct >= 5 ? "#ffd166" : "#e8eef8";
+    ringPct.setAttribute("fill", rc);
+  }
+
+  // Goal progress bar
+  const barEl = document.getElementById("roi-goal-bar");
+  if (barEl) barEl.style.width = (progressRatio * 100).toFixed(1) + "%";
+
+  const goalPctEl = document.getElementById("roi-goal-pct");
+  if (goalPctEl) {
+    goalPctEl.textContent = roiPct.toFixed(2) + "%";
+    goalPctEl.style.color = roiPct >= goalPct ? "#00ff88" : roiPct >= 5 ? "#ffd166" : "#8892b0";
+  }
+
+  const subEl = document.getElementById("roi-goal-sub");
+  if (subEl) {
+    if (pnlTon === 0) {
+      subEl.textContent = "Накапливаем историю прибыли…";
+    } else if (roiPct >= goalPct) {
+      subEl.textContent = `🎯 Цель достигнута! +${roiPct.toFixed(2)}% доходность`;
+    } else {
+      const need = goalPct - roiPct;
+      subEl.textContent = `До цели +20%: ещё +${need.toFixed(2)}% · P&L ${pnlTon >= 0 ? "+" : ""}${pnlTon.toFixed(4)} TON`;
+    }
+  }
 }
 
 // ─── SVG Gauge ───────────────────────────────────────
@@ -1993,6 +2078,15 @@ function updateTicker(data) {
   if (pnlEl) {
     pnlEl.textContent = (pnl >= 0 ? "+" : "") + pnl.toFixed(4) + " TON";
     pnlEl.style.color = pnl >= 0 ? "#00ff88" : "#ff4d6d";
+  }
+
+  // Kelly fraction in ticker
+  const kellyFrac = ai.kelly ? Number(ai.kelly.fraction || 0.5) : null;
+  const kEl = document.getElementById("at-kelly-frac");
+  if (kEl && kellyFrac !== null) {
+    const kPct = (kellyFrac * 100).toFixed(0) + "%";
+    kEl.textContent = kPct;
+    kEl.style.color = kellyFrac >= 0.8 ? "#00ff88" : kellyFrac >= 0.5 ? "#ffd166" : "#ff4d6d";
   }
 }
 

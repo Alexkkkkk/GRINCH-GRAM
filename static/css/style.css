@@ -1428,3 +1428,142 @@ body::after {
   .kelly-stats-grid { grid-template-columns: repeat(4,1fr); }
   .qb-models-grid   { grid-template-columns: 1fr; }
 }
+
+/* ════════════════════════════════════════════════════════════
+   PORTFOLIO TOTAL + ROI TRACKER
+════════════════════════════════════════════════════════════ */
+.portfolio-total-wrap {
+  display: flex; align-items: center; justify-content: space-between;
+  background: linear-gradient(135deg, rgba(0,229,255,.05) 0%, rgba(124,58,237,.07) 100%);
+  border: 1px solid rgba(0,229,255,.12);
+  border-radius: var(--r); padding: 14px 16px; margin-bottom: 12px;
+}
+.portfolio-total-left { flex: 1; }
+.pt-label {
+  font-size: 9px; font-weight: 800; letter-spacing: 2px;
+  color: var(--text3); text-transform: uppercase; margin-bottom: 4px;
+}
+.pt-value {
+  font-size: 22px; font-weight: 900; color: var(--text);
+  font-family: var(--mono); line-height: 1;
+}
+.pt-change {
+  font-size: 12px; font-weight: 700; font-family: var(--mono);
+  margin-top: 4px; transition: color .4s;
+}
+.pt-change.pos { color: var(--green); }
+.pt-change.neg { color: var(--red); }
+.pt-change.neu { color: var(--text2); }
+
+.portfolio-roi-ring {
+  display: flex; flex-direction: column; align-items: center; gap: 4px;
+}
+.roi-ring-svg { width: 72px; height: 72px; }
+.roi-ring-label {
+  font-size: 9px; color: var(--text3); text-align: center;
+  font-weight: 600; line-height: 1.3; letter-spacing: .5px;
+  text-transform: uppercase;
+}
+
+/* ROI Goal progress bar */
+.roi-goal-wrap {
+  background: rgba(255,255,255,.03);
+  border: 1px solid rgba(255,255,255,.06);
+  border-radius: var(--r2); padding: 10px 13px; margin-bottom: 12px;
+}
+.roi-goal-header {
+  display: flex; align-items: center; justify-content: space-between;
+  margin-bottom: 8px;
+}
+.roi-goal-lbl { font-size: 11px; color: var(--text2); font-weight: 500; }
+.roi-goal-val {
+  font-size: 13px; font-weight: 800; color: var(--green);
+  font-family: var(--mono);
+}
+.roi-goal-track {
+  position: relative; height: 7px;
+  background: rgba(255,255,255,.07); border-radius: 100px; overflow: visible;
+  margin-bottom: 6px;
+}
+.roi-goal-fill {
+  height: 100%; border-radius: 100px; max-width: 100%;
+  background: linear-gradient(90deg, #0098ea, #00ff88);
+  transition: width 1s cubic-bezier(.4,0,.2,1);
+  position: relative;
+}
+.roi-goal-fill::after {
+  content: '';
+  position: absolute; top: 0; right: 0; bottom: 0; width: 40px;
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,.4));
+  animation: roi-shine 1.5s linear infinite;
+}
+@keyframes roi-shine { from{opacity:0} 50%{opacity:1} to{opacity:0} }
+
+.roi-goal-marker {
+  position: absolute; top: -3px; transform: translateX(-50%); z-index: 2;
+}
+.roi-goal-flag {
+  font-size: 9px; color: var(--green); font-weight: 700;
+  white-space: nowrap; background: rgba(0,255,136,.1);
+  border: 1px solid rgba(0,255,136,.3); border-radius: 4px;
+  padding: 2px 5px; transform: translateY(-18px);
+}
+.roi-goal-sub {
+  font-size: 10px; color: var(--text3); font-family: var(--mono);
+}
+
+/* ════ Fix undefined CSS vars ════ */
+.qb-model-name { font-family: var(--mono) !important; }
+.qb-model-desc { font-family: var(--font) !important; color: var(--text3) !important; }
+.qb-model-stats .qm-stat-val { color: var(--text) !important; }
+
+/* ════════════════════════════════════════════════════════════
+   CARD HEADER ENHANCEMENTS
+════════════════════════════════════════════════════════════ */
+.card-title {
+  position: relative;
+}
+.card-title::after {
+  content: '';
+  position: absolute; bottom: -10px; left: 0; right: 0;
+  height: 1px;
+  background: linear-gradient(90deg, rgba(0,229,255,.15), transparent);
+}
+
+/* ════ Header total value ════ */
+.hdr-portfolio-val {
+  display: flex; flex-direction: column; align-items: center;
+  padding: 0 14px; border-left: 1px solid rgba(255,255,255,.06);
+  border-right: 1px solid rgba(255,255,255,.06);
+}
+.hdr-pv-label { font-size: 9px; color: var(--text3); letter-spacing: 1.5px; text-transform: uppercase; }
+.hdr-pv-val   { font-size: 14px; font-weight: 800; color: var(--cyan); font-family: var(--mono); }
+
+/* ════ Improved bidir card ════ */
+.bidir-header-card {
+  background: linear-gradient(135deg, rgba(0,209,143,.04) 0%, rgba(0,152,234,.05) 50%, rgba(255,45,85,.04) 100%);
+  border: 1px solid rgba(0,209,143,.12) !important;
+}
+.bidir-long  { border-left: 3px solid #00d18f; }
+.bidir-short { border-right: 3px solid #ff2d55; }
+
+/* ════ Open trade cards — pulsing border when positive ════ */
+.trade-item.profitable {
+  border-left: 2px solid var(--green);
+  box-shadow: inset 0 0 20px rgba(0,255,136,.04);
+}
+.trade-item.losing {
+  border-left: 2px solid var(--red);
+}
+
+/* ════ Smoother price pulse on update ════ */
+@keyframes price-flash {
+  0%   { background: rgba(0,229,255,.18); }
+  100% { background: transparent; }
+}
+.price-flash { animation: price-flash .6s ease-out; }
+
+/* ════ Wallet card deposit chip ════ */
+.ton-deposit-item {
+  border-left: 2px solid rgba(0,152,234,.4);
+}
