@@ -2023,3 +2023,169 @@ body::after {
 .bbr-trail-hint  { font-weight:700;color:var(--text2); }
 .bbr-trail-hint.wide { color:#ff9900; }
 .bbr-sep { color:var(--text3); }
+
+/* ═══════════════════════════════════════════════════════════════════
+   📱 MOBILE RESPONSIVE — ≤768px
+═══════════════════════════════════════════════════════════════════ */
+@media (max-width: 768px) {
+
+  /* ── Base: allow page scroll ── */
+  html, body { overflow-x: hidden; overflow-y: auto; height: auto; }
+  .app { height: auto; overflow: visible; min-height: 100dvh; }
+
+  /* ── Header: 2 rows on mobile ── */
+  .hdr-v2 {
+    display: flex !important;
+    flex-wrap: wrap;
+    height: auto !important;
+    padding: 8px 10px !important;
+    gap: 6px;
+    row-gap: 6px;
+  }
+  .hdr-logo-area  { flex: 0 0 auto; order: 1; }
+  .hdr-bal-area   { flex: 0 0 auto; order: 2; gap: 4px; }
+  .hdr-controls-area {
+    flex: 0 0 auto; order: 3;
+    gap: 4px;
+  }
+  .hdr-price-area {
+    flex: 1 1 100%; order: 4;
+    border-left: none; border-right: none;
+    border-top: 1px solid rgba(255,255,255,.04);
+    padding: 4px 0 0; gap: 6px; flex-wrap: wrap;
+    overflow: visible;
+  }
+  .hdr-price { font-size: 13px; }
+  .hdr-price-usd { font-size: 10px; }
+  .hdr-sig { transform: scale(.75); transform-origin: left center; }
+  .logo-txt { display: none; }       /* скрываем "GRINCH-GRAM" текст */
+  .ai-auto-pill { font-size: 9px; padding: 3px 7px; }
+
+  /* Баланс компактнее */
+  .hdr-bal { padding: 4px 8px; }
+  .hdr-bal-val { font-size: 13px; }
+  .hdr-bal-sym { font-size: 8px; }
+
+  /* Кнопки Пуск/Стоп крупнее для пальца */
+  .btn-xs { padding: 6px 12px !important; font-size: 11px !important; }
+
+  /* ── Ticker: однострочный горизонтальный скролл ── */
+  .ai-ticker { height: 26px !important; overflow-x: auto; overflow-y: hidden; }
+  .ai-ticker-inner {
+    height: 26px; display: flex; align-items: center;
+    white-space: nowrap; width: max-content; padding: 0 8px;
+  }
+  .at-item { font-size: 9px !important; white-space: nowrap; }
+
+  /* ── Мобильный тогл AI Brain ── */
+  #mobile-brain-toggle {
+    display: flex !important;
+    align-items: center; gap: 5px;
+    padding: 5px 10px; font-size: 10px; font-weight: 800;
+    background: rgba(0,229,255,.08); border: 1px solid rgba(0,229,255,.25);
+    color: #00e5ff; border-radius: 100px; cursor: pointer;
+    letter-spacing: .03em; text-transform: uppercase;
+    white-space: nowrap; flex-shrink: 0;
+    transition: background .2s;
+  }
+  #mobile-brain-toggle.active {
+    background: rgba(0,229,255,.18);
+    border-color: rgba(0,229,255,.5);
+  }
+
+  /* ── Main grid: одна колонка ── */
+  .main-grid-v2 {
+    display: flex !important;
+    flex-direction: column;
+    height: auto !important;
+    overflow: visible !important;
+  }
+
+  /* AI Brain: скрыта по умолчанию, разворачивается по тоглу */
+  .ai-brain-col {
+    order: 2;
+    border-right: none;
+    border-bottom: 1px solid rgba(0,229,255,.1);
+    max-height: 0;
+    overflow: hidden;
+    transition: max-height .35s ease;
+    flex-shrink: 0;
+  }
+  .ai-brain-col.mobile-open {
+    max-height: 700px;
+    overflow-y: auto;
+  }
+
+  /* Правая панель: сначала, полная ширина */
+  .right-panel-col {
+    order: 1;
+    flex: 1 1 auto;
+    min-height: 70dvh;
+    overflow: visible;
+  }
+
+  /* Tab pane скроллится нормально */
+  .tab-pane {
+    overflow-y: visible !important;
+    overflow-x: hidden;
+    flex: none;
+  }
+
+  /* ── Grid сетки → компакт на мобиле ── */
+  .mkt-3col   { grid-template-columns: 1fr 1fr !important; }
+  .mkt-2col   { grid-template-columns: 1fr !important; }
+  .trades-2col { grid-template-columns: 1fr !important; }
+  .mo-grid-c  { grid-template-columns: repeat(2,1fr) !important; }
+  .liq-grid-2 { grid-template-columns: 1fr 1fr !important; }
+
+  /* Hero row адаптация */
+  .mkt-hero-row {
+    grid-template-columns: 1fr 1fr !important;
+    gap: 6px;
+  }
+  .mkt-price-big { font-size: 16px; }
+  .mkt-sm-col { min-width: 0; }
+
+  /* Brain sig row */
+  .brain-gauge-svg { width: 72px; height: 66px; }
+  .brain-ds { font-size: 18px; }
+
+  /* Brain breakout bars */
+  .brain-breakout-row, .brain-momentum-row { margin: 0 6px 4px; }
+
+  /* AI autonomy card: compact */
+  .ai-auto-card { flex-direction: column; gap: 8px; }
+  .aac-icon { font-size: 22px; }
+
+  /* Portfolio total */
+  .portfolio-total-wrap { flex-direction: column; gap: 10px; }
+  .portfolio-roi-ring { justify-content: center; }
+
+  /* Stats bar compact */
+  .tsb-val { font-size: 14px; }
+  .tsb-item { padding: 8px 6px; }
+
+  /* Settings form */
+  .settings-form { padding: 10px !important; }
+  .sf-grid { grid-template-columns: 1fr !important; }
+
+  /* Training banner compact */
+  .tb-stages { flex-wrap: wrap; gap: 4px; }
+  .tb-stage { font-size: 9px; padding: 2px 6px; }
+
+  /* Wallet tab */
+  .wallet-addr-row { flex-direction: column; gap: 4px; }
+  .wallet-qr { width: 80px; height: 80px; }
+}
+
+/* ─ Extra small: ≤400px ───────────────────────────────────── */
+@media (max-width: 400px) {
+  .hdr-bal-area { display: none; }   /* балансы в хэдере скрыть — есть в панели */
+  .logo-txt { display: none; }
+  .mkt-3col { grid-template-columns: 1fr 1fr !important; }
+  .brain-gauge-svg { width: 58px; height: 54px; }
+  .brain-ds { font-size: 15px; }
+  .mkt-price-big { font-size: 14px; }
+  .tsb-val { font-size: 12px; }
+  .tnb-btn { font-size: 10px; padding: 8px 2px; }
+}

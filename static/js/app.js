@@ -1066,6 +1066,27 @@ async function startAgent() {
 async function stopAgent() {
   await fetch("/api/stop", {method:"POST"});
 }
+
+// ── Mobile Brain toggle ──────────────────────────────────────────
+function toggleMobileBrain() {
+  const col = document.querySelector(".ai-brain-col");
+  const btn = document.getElementById("mobile-brain-toggle");
+  if (!col) return;
+  const isOpen = col.classList.toggle("mobile-open");
+  if (btn) btn.classList.toggle("active", isOpen);
+  if (btn) btn.textContent = isOpen ? "✕ ЗАКРЫТЬ" : "🧠 AI";
+}
+
+// Показывать кнопку тогла только на мобильных (<768px)
+function _initMobileUI() {
+  const btn = document.getElementById("mobile-brain-toggle");
+  if (!btn) return;
+  const mq = window.matchMedia("(max-width: 768px)");
+  const update = (e) => { btn.style.display = e.matches ? "flex" : "none"; };
+  mq.addEventListener("change", update);
+  update(mq);
+}
+document.addEventListener("DOMContentLoaded", _initMobileUI);
 async function switchPair(symbol) {
   const r = await fetch("/api/config", {
     method: "POST",
