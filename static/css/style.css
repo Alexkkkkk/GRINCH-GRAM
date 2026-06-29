@@ -2025,6 +2025,40 @@ body::after {
 .bbr-sep { color:var(--text3); }
 
 /* ═══════════════════════════════════════════════════════════════════
+   💻 TABLET — 769px … 1199px
+═══════════════════════════════════════════════════════════════════ */
+@media (max-width: 1199px) and (min-width: 769px) {
+
+  /* Главная сетка: убираем фиксированную ширину AI-колонки */
+  .main-grid-v2 {
+    grid-template-columns: 280px 1fr;
+    height: calc(100vh - 50px - 30px);
+  }
+
+  /* Header — чуть компактнее */
+  .hdr-v2 { padding: 0 14px; gap: 8px; }
+  .logo-txt { font-size: 13px; }
+  .hdr-bal { padding: 4px 10px; }
+
+  /* Мелкие сигнал-блоки в хедере */
+  .hdr-sig { transform: scale(.88); transform-origin: center; }
+
+  /* Ticker чуть компактнее */
+  .at-item { padding: 0 10px; font-size: 10px !important; }
+
+  /* 3-col → 2-col */
+  .mkt-3col { grid-template-columns: 1fr 1fr !important; }
+  .mo-grid-c { grid-template-columns: repeat(3, 1fr) !important; }
+  .brain-models-grid { grid-template-columns: repeat(2, 1fr) !important; }
+
+  /* Tabs: меньше padding */
+  .tnb-btn { padding: 8px 2px; font-size: 10px; }
+
+  /* Portfolio wrap: стек при нехватке места */
+  .portfolio-total-wrap { flex-wrap: wrap; gap: 10px; }
+}
+
+/* ═══════════════════════════════════════════════════════════════════
    📱 MOBILE RESPONSIVE — ≤768px
 ═══════════════════════════════════════════════════════════════════ */
 @media (max-width: 768px) {
@@ -2172,10 +2206,33 @@ body::after {
   /* Training banner compact */
   .tb-stages { flex-wrap: wrap; gap: 4px; }
   .tb-stage { font-size: 9px; padding: 2px 6px; }
+  .tb-inner { padding: 10px 12px; gap: 6px; }
+  .tb-name { font-size: .8rem; }
+  .tb-pct  { font-size: 1.2rem; min-width: 48px; }
+  .tb-meta { flex-wrap: wrap; gap: 8px; }
 
   /* Wallet tab */
   .wallet-addr-row { flex-direction: column; gap: 4px; }
   .wallet-qr { width: 80px; height: 80px; }
+
+  /* Touch targets — минимум 44px */
+  .tnb-btn { padding: 11px 4px; min-height: 44px; }
+  .btn-xs  { min-height: 36px; }
+  .btn-tiny { min-height: 32px; padding: 6px 12px; }
+
+  /* Убираем hover-эффекты на тач-устройствах */
+  .card:hover { transform: none; box-shadow: none; }
+  .btn:hover  { transform: none; }
+
+  /* Текст не мельчает */
+  input, select, textarea { font-size: 16px !important; } /* предотвращает zoom на iOS */
+
+  /* Brain breakout + momentum: убираем боковые отступы */
+  .brain-breakout-row, .brain-momentum-row { margin: 0 0 6px; }
+
+  /* Forecast col: убираем на мобиле (экономит место) */
+  .brain-forecast-col { display: none; }
+  .brain-spark-row { grid-template-columns: 1fr; }
 }
 
 /* ─ Extra small: ≤400px ───────────────────────────────────── */

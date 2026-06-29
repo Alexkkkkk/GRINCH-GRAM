@@ -99,6 +99,62 @@
 
     footer { text-align: center; padding: 20px; color: var(--muted); font-size: .76rem; border-top: 1px solid var(--border); }
     footer a { color: var(--ton); text-decoration: none; }
+
+    /* ── Responsive ── */
+    @media (max-width: 768px) {
+      header { padding: 10px 16px; }
+      .logo-text { font-size: .95rem; }
+      .hdr-right { gap: 6px; }
+      .hdr-right a { display: none; } /* скрываем "Новый аккаунт" — экономим место */
+
+      .main { padding: 14px 12px 48px; }
+      h1 { font-size: 1.1rem; }
+      .user-sub { font-size: .72rem; word-break: break-all; }
+
+      /* KPI сетка: 2 колонки */
+      .grid4 { grid-template-columns: 1fr 1fr !important; gap: 10px; }
+      .kpi { padding: 14px 14px; }
+      .kpi-val { font-size: 1.4rem; }
+
+      /* Deposit CTA */
+      .deposit-cta { padding: 16px 14px; border-radius: 14px; }
+      .deposit-cta h2 { font-size: .95rem; }
+      .dep-row {
+        grid-template-columns: 1fr !important;
+        gap: 6px;
+      }
+      .copy-btn { width: 100%; margin-top: 4px; padding: 8px; }
+
+      /* Вывод средств — в стек */
+      .withdraw-bar { flex-wrap: wrap; gap: 8px; }
+      .wd-input { width: 100%; }
+      .wd-btn { width: 100%; padding: 12px; }
+      .wd-result { width: 100%; margin-left: 0; text-align: center; }
+
+      /* Таблица — горизонтальный скролл */
+      .table-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+      table { min-width: 460px; }
+      th, td { padding: 8px 10px; font-size: .75rem; }
+
+      /* Лог */
+      .log-wrap { max-height: 200px; }
+      .log-line { flex-direction: column; gap: 1px; }
+      .log-time { font-size: .7rem; }
+
+      /* Позиция */
+      .pos-row { gap: 12px; }
+      .pos-item .pi-val { font-size: .9rem; }
+
+      /* Section titles */
+      .sec-title { font-size: .85rem; margin: 16px 0 8px; }
+    }
+
+    @media (max-width: 400px) {
+      /* KPI → 1 колонка на очень маленьких экранах */
+      .grid4 { grid-template-columns: 1fr !important; }
+      .kpi-val { font-size: 1.6rem; }
+      header { padding: 8px 12px; }
+    }
   </style>
 </head>
 <body>

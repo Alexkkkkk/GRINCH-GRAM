@@ -30,7 +30,20 @@
       display: flex; align-items: center; justify-content: center;
       padding: 20px;
       -webkit-font-smoothing: antialiased;
-      overflow: hidden;
+      overflow-x: hidden;
+      overflow-y: auto;
+    }
+
+    @media (max-width: 480px) {
+      body { align-items: flex-start; padding: 24px 16px 40px; }
+      .login-card { padding: 28px 20px 24px; border-radius: 16px; }
+      .orb-1 { width: 300px; height: 300px; }
+      .orb-2 { width: 210px; height: 210px; }
+      .orb-3 { width: 130px; height: 130px; }
+      .brand-name { font-size: 20px; }
+      .brand-icon { font-size: 26px; }
+      .field-input { font-size: 16px; } /* предотвращает zoom на iOS */
+      .login-btn { font-size: 13px; }
     }
 
     /* Фон: сетка + блики */
