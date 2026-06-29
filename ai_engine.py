@@ -170,6 +170,160 @@ class MomentumEngine:
 _momentum_engine = MomentumEngine()
 
 
+# ─── BreakoutEngine — предсказатель GRINCH-пампа ──────────────────────────────
+class BreakoutEngine:
+    """
+    GRINCH-специфичный детектор входящего пампа.
+
+    Источники сигнала (все они уже вычисляются в _build_features):
+      1. BB Squeeze      — Bollinger Band сжатие → взрыв волатильности близко
+      2. Vol Acceleration — объём растёт N баров подряд → накопление
+      3. RSI Buildup      — RSI поднимается к 60+ от нейтральной зоны
+      4. MACD Crossover   — MACD histogram меняет знак (−→+)
+      5. Price Coiling    — ценовой диапазон сужается (high-low уменьшается)
+
+    Сигналы: FLAT → COILING → PRIMED → BREAKOUT → RUNAWAY
+    При PRIMED+: буст уверенности AI + масштабирование Kelly-ставки.
+    """
+
+    SIGNAL_MAP = {
+        "RUNAWAY":  {"min_score": 85, "conf_boost": 15.0, "kelly_mult": 2.0, "icon": "🚀"},
+        "BREAKOUT": {"min_score": 65, "conf_boost": 10.0, "kelly_mult": 1.7, "icon": "⚡"},
+        "PRIMED":   {"min_score": 42, "conf_boost":  6.0, "kelly_mult": 1.4, "icon": "🔥"},
+        "COILING":  {"min_score": 22, "conf_boost":  2.0, "kelly_mult": 1.1, "icon": "📡"},
+        "FLAT":     {"min_score":  0, "conf_boost":  0.0, "kelly_mult": 1.0, "icon": "💤"},
+    }
+
+    def detect(self, df: "pd.DataFrame") -> dict:
+        try:
+            if df is None or len(df) < 30:
+                return self._empty()
+
+            n = len(df)
+
+            # ── 1. BB Squeeze (уже посчитан в _build_features) ─────────────
+            bb_squeeze_score = 0.0
+            if "bb_squeeze" in df.columns:
+                # Сколько из последних 5 баров были в сжатии (0-5)
+                sq_count = int(df["bb_squeeze"].iloc[-5:].sum()) if n >= 5 else 0
+                bb_squeeze_score = sq_count / 5.0 * 100.0  # 0-100
+
+                # Дополнительно: ширина BB относительно исторического максимума
+                if "bb_w" in df.columns:
+                    bb_w_now  = float(df["bb_w"].iloc[-1])
+                    bb_w_max  = float(df["bb_w"].rolling(50).max().iloc[-1]) if n >= 50 else bb_w_now
+                    bb_comp   = max(0.0, 1.0 - bb_w_now / (bb_w_max + 1e-10)) * 100.0
+                    bb_squeeze_score = max(bb_squeeze_score, bb_comp)
+
+            # ── 2. Volume Acceleration (объём растёт N баров) ───────────────
+            vol_acc_score = 0.0
+            if "volume" in df.columns and n >= 6:
+                vols = df["volume"].iloc[-6:].values
+                # Считаем количество последовательных баров роста объёма
+                streak = 0
+                for i in range(len(vols) - 1, 0, -1):
+                    if vols[i] > vols[i-1]:
+                        streak += 1
+                    else:
+                        break
+                vol_acc_score = min(100.0, streak / 5.0 * 100.0)
+
+                # Дополнительно: текущий объём vs MA20
+                if n >= 20:
+                    vol_ma = float(df["volume"].iloc[-20:].mean())
+                    vol_now = float(df["volume"].iloc[-1])
+                    vol_ratio = vol_now / (vol_ma + 1e-10)
+                    vol_acc_score = max(vol_acc_score, min(100.0, (vol_ratio - 0.5) * 40.0))
+
+            # ── 3. RSI Buildup ───────────────────────────────────────────────
+            rsi_score = 0.0
+            if "rsi" in df.columns and n >= 5:
+                rsi_now  = float(df["rsi"].iloc[-1])
+                rsi_prev = float(df["rsi"].iloc[-4]) if n >= 4 else rsi_now
+                rsi_vel  = rsi_now - rsi_prev
+
+                # Идеальный памп: RSI растёт из нейтрали (40-60) к зоне 60-75
+                if 45 <= rsi_now <= 72 and rsi_vel > 0:
+                    # Чем ближе к 65, тем лучше (точка начала пампа)
+                    proximity = max(0, 1.0 - abs(rsi_now - 62) / 20.0)
+                    rsi_score = min(100.0, proximity * 70.0 + rsi_vel * 3.0)
+                elif rsi_now > 72:
+                    rsi_score = max(0.0, 50.0 - (rsi_now - 72) * 3.0)  # уже перегрето
+                else:
+                    rsi_score = max(0.0, rsi_now - 35.0) * 1.5  # ещё в слабости
+
+            # ── 4. MACD Crossover (histogram −→+) ────────────────────────────
+            macd_score = 0.0
+            if "macd_h" in df.columns and n >= 3:
+                h_now  = float(df["macd_h"].iloc[-1])
+                h_prev = float(df["macd_h"].iloc[-2])
+                h_prev2 = float(df["macd_h"].iloc[-3]) if n >= 3 else h_prev
+
+                if h_now > 0 and h_prev <= 0:
+                    macd_score = 90.0   # свежий пересечение → очень бычье
+                elif h_now > 0 and h_prev > 0 and h_now > h_prev:
+                    # Гистограмма растёт вверх
+                    accel = h_now - h_prev
+                    avg_h = float(df["macd_h"].abs().rolling(20).mean().iloc[-1]) if n >= 20 else 0.01
+                    macd_score = min(80.0, accel / (avg_h + 1e-10) * 30.0)
+                elif h_now > 0:
+                    macd_score = 40.0   # гистограмма положительная, но замедляется
+
+            # ── 5. Price Coiling (сужение диапазона перед взрывом) ──────────
+            coil_score = 0.0
+            if all(c in df.columns for c in ["high", "low"]) and n >= 20:
+                ranges_now  = (df["high"] - df["low"]).iloc[-5:].mean()
+                ranges_hist = (df["high"] - df["low"]).iloc[-20:-5].mean()
+                if ranges_hist > 0:
+                    compression = max(0.0, 1.0 - float(ranges_now / ranges_hist)) * 100.0
+                    coil_score = min(100.0, compression)
+
+            # ── Итоговый Score (взвешенное среднее) ─────────────────────────
+            score = (
+                bb_squeeze_score * 0.25 +
+                vol_acc_score    * 0.30 +
+                rsi_score        * 0.20 +
+                macd_score       * 0.15 +
+                coil_score       * 0.10
+            )
+
+            # Определяем сигнал
+            signal = "FLAT"
+            for sig, meta in self.SIGNAL_MAP.items():
+                if score >= meta["min_score"]:
+                    signal = sig
+                    break
+
+            meta = self.SIGNAL_MAP[signal]
+            return {
+                "score":        round(score, 1),
+                "signal":       signal,
+                "icon":         meta["icon"],
+                "conf_boost":   meta["conf_boost"],
+                "kelly_mult":   meta["kelly_mult"],
+                "bb_squeeze":   round(bb_squeeze_score, 1),
+                "vol_acc":      round(vol_acc_score, 1),
+                "rsi_build":    round(rsi_score, 1),
+                "macd_cross":   round(macd_score, 1),
+                "coiling":      round(coil_score, 1),
+            }
+        except Exception as e:
+            log.debug(f"[BreakoutEngine] error: {e}")
+            return self._empty()
+
+    @staticmethod
+    def _empty() -> dict:
+        return {
+            "score": 0.0, "signal": "FLAT", "icon": "💤",
+            "conf_boost": 0.0, "kelly_mult": 1.0,
+            "bb_squeeze": 0.0, "vol_acc": 0.0,
+            "rsi_build": 0.0, "macd_cross": 0.0, "coiling": 0.0,
+        }
+
+
+_breakout_engine = BreakoutEngine()
+
+
 class _ModelSlot:
     """Обёртка модели с rolling accuracy tracker и историей предсказаний."""
 
@@ -478,15 +632,24 @@ class AIEngine:
 
         # ── Momentum Engine: детектор взрывного движения ─────────────────
         momentum = _momentum_engine.detect(df)
-        # Буст уверенности: при SURGE/EXPLOSIVE — AI получает бонус
-        if ai_signal == "BUY" and momentum["boost"] > 0:
-            boosted_conf = min(99.0, confidence + momentum["boost"])
-            if boosted_conf > confidence:
-                log.debug(
-                    f"[Momentum] {momentum['signal']} boost +{momentum['boost']:.1f}% "
-                    f"→ conf {confidence}% → {boosted_conf}%"
-                )
-                confidence = boosted_conf
+
+        # ── Breakout Engine: предсказатель GRINCH-пампа ──────────────────
+        breakout = _breakout_engine.detect(df)
+
+        # ── Комбинированный буст уверенности AI ──────────────────────────
+        # Momentum буст + Breakout буст суммируются (но только при BUY)
+        total_boost = 0.0
+        if ai_signal == "BUY":
+            total_boost = momentum.get("boost", 0.0) + breakout.get("conf_boost", 0.0)
+            if total_boost > 0:
+                boosted_conf = min(99.0, confidence + total_boost)
+                if boosted_conf > confidence:
+                    log.debug(
+                        f"[AI Boost] Momentum={momentum['signal']}(+{momentum['boost']:.1f}%) "
+                        f"Breakout={breakout['signal']}(+{breakout['conf_boost']:.1f}%) "
+                        f"→ conf {confidence}% → {boosted_conf}%"
+                    )
+                    confidence = boosted_conf
 
         return {
             "ai_signal":    ai_signal,
@@ -506,6 +669,8 @@ class AIEngine:
             "model_info":   model_info,
             "kelly":        kelly,
             "momentum":     momentum,
+            "breakout":     breakout,
+            "total_boost":  round(total_boost, 1),
         }
 
     # ─────────────────────────────────────────────────────────────────────────
@@ -1189,4 +1354,11 @@ class AIEngine:
             "model_trained": False, "samples_trained": 0,
             "training_progress": self.training_progress,
             "kelly": {"fraction": 0.5, "win_rate": 50.0, "rr_ratio": 1.0, "trades": 0, "ev": 0.0},
+            "momentum": {"score": 0.0, "signal": "CALM", "boost": 0.0,
+                         "rsi_vel": 0.0, "vol_surge": False, "price_vel": 0.0},
+            "breakout": {"score": 0.0, "signal": "FLAT", "icon": "💤",
+                         "conf_boost": 0.0, "kelly_mult": 1.0,
+                         "bb_squeeze": 0.0, "vol_acc": 0.0,
+                         "rsi_build": 0.0, "macd_cross": 0.0, "coiling": 0.0},
+            "total_boost": 0.0,
         }

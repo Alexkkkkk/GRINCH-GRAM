@@ -1973,3 +1973,53 @@ body::after {
 .bm-ms-val { font-size:10px;font-weight:700;color:white;font-family:var(--mono); }
 .bm-boost-val { color:#00ff88; }
 .bm-boost-val.active { color:#ffdd00; text-shadow:0 0 8px #ffdd00; }
+
+/* ── Breakout Engine (GRINCH Pump Predictor) ──────────────────────────────── */
+.brain-breakout-row {
+  background: rgba(0,152,234,.05);
+  border: 1px solid rgba(0,152,234,.2);
+  border-radius: 10px;
+  padding: 8px 10px;
+  margin: 0 0 6px 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.brain-breakout-row.primed  { border-color: rgba(255,153,0,.4); background:rgba(255,153,0,.05); }
+.brain-breakout-row.breakout{ border-color: rgba(255,200,0,.6); background:rgba(255,200,0,.06); animation: bo-glow .9s ease-in-out infinite alternate; }
+.brain-breakout-row.runaway { border-color: rgba(255,80,80,.7); background:rgba(255,80,80,.07); animation: bo-glow-red .7s ease-in-out infinite alternate; }
+@keyframes bo-glow    { from{box-shadow:none} to{box-shadow:0 0 18px rgba(255,200,0,.3)} }
+@keyframes bo-glow-red{ from{box-shadow:none} to{box-shadow:0 0 22px rgba(255,80,80,.4)} }
+
+.bbr-header { display:flex;align-items:center;gap:8px; }
+.bo-icon { font-size:18px;flex-shrink:0; }
+.bbr-title-col { flex:1;display:flex;flex-direction:column;gap:1px; }
+.bbr-title { font-size:9px;text-transform:uppercase;letter-spacing:.1em;color:var(--text3);font-weight:700; }
+.bo-signal {
+  font-size:13px;font-weight:900;letter-spacing:.05em;
+  color:#0098ea;
+  transition: color .3s;
+}
+.bo-signal.primed   { color:#ff9900; }
+.bo-signal.breakout { color:#ffdd00; }
+.bo-signal.runaway  { color:#ff4444; }
+
+.bo-score-ring { position:relative;width:44px;height:44px;flex-shrink:0; }
+.bo-ring-svg   { width:44px;height:44px; }
+.bo-score-txt  {
+  position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);
+  font-size:12px;font-weight:900;color:white;font-family:var(--mono);
+}
+
+.bbr-bars { display:flex;flex-direction:column;gap:3px; }
+.bbr-bar-item { display:flex;align-items:center;gap:6px; }
+.bbr-lbl { font-size:8px;color:var(--text3);text-transform:uppercase;letter-spacing:.06em;width:52px;flex-shrink:0; }
+.bbr-bar-track { flex:1;height:4px;background:rgba(255,255,255,.06);border-radius:100px;overflow:hidden; }
+.bbr-bar-fill  { height:100%;border-radius:100px;background:linear-gradient(90deg,#0098ea,#00ff88);transition:width .6s ease; }
+
+.bbr-footer { display:flex;align-items:center;gap:5px;font-size:10px; }
+.bbr-kelly-mult  { font-weight:800;color:#00ff88;font-family:var(--mono); }
+.bbr-conf-boost  { font-weight:800;color:#ffdd00;font-family:var(--mono); }
+.bbr-trail-hint  { font-weight:700;color:var(--text2); }
+.bbr-trail-hint.wide { color:#ff9900; }
+.bbr-sep { color:var(--text3); }

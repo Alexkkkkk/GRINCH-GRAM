@@ -29,6 +29,19 @@ import threading
 import time
 from datetime import datetime
 
+try:
+    import numpy as _np
+    class _NpEncoder(json.JSONEncoder):
+        def default(self, o):
+            if isinstance(o, _np.integer): return int(o)
+            if isinstance(o, _np.floating): return float(o)
+            if isinstance(o, _np.bool_): return bool(o)
+            if isinstance(o, _np.ndarray): return o.tolist()
+            return super().default(o)
+    def _jdump(obj, f, **kw): return json.dump(obj, f, cls=_NpEncoder, **kw)
+except ImportError:
+    def _jdump(obj, f, **kw): return json.dump(obj, f, **kw)
+
 from config import Config
 
 logger = logging.getLogger(__name__)
@@ -170,7 +183,7 @@ class ExperienceManager:
         try:
             tmp = self.path + ".tmp"
             with open(tmp, "w", encoding="utf-8") as f:
-                json.dump(self.data, f, ensure_ascii=False)
+                _jdump(self.data, f, ensure_ascii=False)
             os.replace(tmp, self.path)
         except Exception as e:
             print(f"[Experience] ошибка записи {self.path}: {e}")

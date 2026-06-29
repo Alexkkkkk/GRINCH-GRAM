@@ -252,6 +252,41 @@
       ⚡ АНОМАЛИЯ: <span id="ai-anomaly-text">—</span>
     </div>
 
+    <!-- Breakout Engine: Предсказатель GRINCH-пампа -->
+    <div class="brain-breakout-row" id="brain-breakout-row">
+      <div class="bbr-header">
+        <span id="bo-icon" class="bo-icon">💤</span>
+        <div class="bbr-title-col">
+          <span class="bbr-title">BREAKOUT ENGINE</span>
+          <span id="bo-signal" class="bo-signal">FLAT</span>
+        </div>
+        <div class="bo-score-ring">
+          <svg viewBox="0 0 44 44" class="bo-ring-svg">
+            <circle cx="22" cy="22" r="18" fill="none" stroke="rgba(255,255,255,.06)" stroke-width="4"/>
+            <circle cx="22" cy="22" r="18" id="bo-ring-arc"
+              fill="none" stroke="#00ff88" stroke-width="4"
+              stroke-dasharray="0 113.1" stroke-linecap="round"
+              transform="rotate(-90 22 22)" style="transition:stroke-dasharray .8s ease"/>
+          </svg>
+          <span id="bo-score-txt" class="bo-score-txt">0</span>
+        </div>
+      </div>
+      <div class="bbr-bars">
+        <div class="bbr-bar-item"><span class="bbr-lbl">BB Сжатие</span><div class="bbr-bar-track"><div id="bo-bb" class="bbr-bar-fill" style="width:0%"></div></div></div>
+        <div class="bbr-bar-item"><span class="bbr-lbl">Vol Разгон</span><div class="bbr-bar-track"><div id="bo-vol" class="bbr-bar-fill" style="width:0%"></div></div></div>
+        <div class="bbr-bar-item"><span class="bbr-lbl">RSI Рост</span><div class="bbr-bar-track"><div id="bo-rsi" class="bbr-bar-fill" style="width:0%"></div></div></div>
+        <div class="bbr-bar-item"><span class="bbr-lbl">MACD ×</span><div class="bbr-bar-track"><div id="bo-macd" class="bbr-bar-fill" style="width:0%"></div></div></div>
+        <div class="bbr-bar-item"><span class="bbr-lbl">Сжатие</span><div class="bbr-bar-track"><div id="bo-coil" class="bbr-bar-fill" style="width:0%"></div></div></div>
+      </div>
+      <div class="bbr-footer">
+        <span class="bbr-lbl">Kelly×</span><span id="bo-kelly-mult" class="bbr-kelly-mult">1.0×</span>
+        <span class="bbr-sep">·</span>
+        <span class="bbr-lbl">Буст</span><span id="bo-conf-boost" class="bbr-conf-boost">+0%</span>
+        <span class="bbr-sep">·</span>
+        <span class="bbr-lbl">Трейл</span><span id="bo-trail-hint" class="bbr-trail-hint">норма</span>
+      </div>
+    </div>
+
     <!-- AI Full Rights + Momentum Engine -->
     <div class="brain-momentum-row" id="brain-momentum-row">
       <div class="bm-rights-badge" id="bm-rights-badge" title="AI имеет полные права торговли — ATR-фильтр снят">

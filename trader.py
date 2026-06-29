@@ -624,28 +624,50 @@ class Trader:
     # Торговые операции
     # ──────────────────────────────────────────
     def _adaptive_trail_pct(self, base_pct):
-        """Адаптивная ШИРИНА трейлинга по силе тренда.
+        """Адаптивная ШИРИНА трейлинга по силе тренда + Momentum + Breakout.
 
         В сильном восходящем тренде трейлинг расширяется → стоп подтягивается
         медленнее → прибыль успевает разрастись (ловим большие движения вроде
         недельного +343%). В боковике/слабости трейлинг сужается → быстрее
         фиксируем прибыль. ВАЖНО: нижний пол прибыли (floor_price = +N% нетто)
         не меняется — продажа в минус по-прежнему невозможна.
+
+        Momentum + Breakout расширяют трейлинг ещё дальше — при GRINCH-пампе
+        стоп отходит дальше от цены, чтобы не выбило раньше времени.
         """
-        regime = (self.last_ai or {}).get("regime") or {}
+        regime   = (self.last_ai or {}).get("regime") or {}
+        momentum = (self.last_ai or {}).get("momentum") or {}
+        breakout = (self.last_ai or {}).get("breakout") or {}
         name = regime.get("name", "")
         try:
             adx = float(regime.get("adx", 20) or 20)
         except (TypeError, ValueError):
             adx = 20.0
+
+        # ── Базовый множитель по режиму ──────────────────────────────────
         if name == "UPTREND" and adx >= Config.TRAIL_TREND_ADX:
-            mult = Config.TRAIL_TREND_WIDEN                      # сильный тренд → даём бежать
+            mult = Config.TRAIL_TREND_WIDEN
         elif name in ("UPTREND", "SQUEEZE", "VOLATILE"):
-            mult = (1.0 + Config.TRAIL_TREND_WIDEN) / 2.0        # умеренно шире
+            mult = (1.0 + Config.TRAIL_TREND_WIDEN) / 2.0
         elif name in ("RANGING", "TRANSITION", "DOWNTREND"):
-            mult = Config.TRAIL_CHOP_TIGHTEN                     # боковик/слабость → туже
+            mult = Config.TRAIL_CHOP_TIGHTEN
         else:
             mult = 1.0
+
+        # ── Momentum буст трейлинга (SURGE/EXPLOSIVE → дать памп пробежать) ──
+        mom_sig = (momentum.get("signal") or "CALM").upper()
+        if mom_sig == "EXPLOSIVE":
+            mult *= 1.5   # при взрывном импульсе стоп сильно шире
+        elif mom_sig == "SURGE":
+            mult *= 1.25  # при разгоне — умеренно шире
+
+        # ── Breakout буст трейлинга (BREAKOUT/RUNAWAY → ещё дальше) ─────
+        bo_sig = (breakout.get("signal") or "FLAT").upper()
+        if bo_sig == "RUNAWAY":
+            mult *= 1.4
+        elif bo_sig == "BREAKOUT":
+            mult *= 1.2
+
         return base_pct * mult
 
     def _targets(self, price, ai, stake_ton=None):
@@ -681,7 +703,29 @@ class Trader:
             kelly_mult = max(kelly_frac, 0.3)
         else:
             kelly_mult = 1.0   # мало данных → нейтральный множитель
-        stake  = Config.TRADE_AMOUNT * conf_factor * kelly_mult
+
+        # ── POWER SIZING: Breakout × Momentum масштабирование ────────────
+        # Когда Breakout-детектор + Momentum одновременно сильные →
+        # Kelly multiplier масштабируется до 2×, чтобы поймать GRINCH-памп
+        breakout    = (ai or {}).get("breakout", {})
+        momentum    = (ai or {}).get("momentum", {})
+        bo_mult     = float(breakout.get("kelly_mult", 1.0))
+        mom_sig     = (momentum.get("signal") or "CALM").upper()
+        mom_mult_map = {"EXPLOSIVE": 1.6, "SURGE": 1.3, "BUILDING": 1.1, "CALM": 1.0}
+        mom_mult    = mom_mult_map.get(mom_sig, 1.0)
+        # Комбинированный power_mult: среднее (не произведение — чтобы не разогнать ×4)
+        power_mult  = min(2.0, (bo_mult + mom_mult) / 2.0)
+
+        bo_sig = (breakout.get("signal") or "FLAT").upper()
+        if bo_sig in ("BREAKOUT", "RUNAWAY") or mom_sig == "EXPLOSIVE":
+            self.log(
+                f"⚡ POWER ENTRY: Breakout={bo_sig}(×{bo_mult:.1f}) "
+                f"Momentum={mom_sig}(×{mom_mult:.1f}) "
+                f"→ Kelly×{power_mult:.2f}",
+                "INFO"
+            )
+
+        stake = Config.TRADE_AMOUNT * conf_factor * kelly_mult * power_mult
 
         # ── Резерв на комиссию + опрос баланса перед сделкой ─────────────
         # ВСЕГДА оставляем GAS_RESERVE_TON на газ будущей продажи GRINCH→TON.
@@ -774,6 +818,9 @@ class Trader:
             sm_entry = _wt.get_signal()
         except Exception:
             pass
+        def _sf(v, d=0.0):
+            try: return float(v) if v is not None else d
+            except Exception: return d
         trade = {
             "id":              order["id"],
             "symbol":          Config.SYMBOL,
@@ -788,19 +835,24 @@ class Trader:
             "opened_at":       datetime.utcnow().isoformat(),
             "pnl":             0.0,
             "status":          "open",
-            "ai_confidence":   ai_conf,
+            "ai_confidence":   float(ai_conf),
             # Постоянные расчётные поля карточки (не меняются после открытия)
             "breakeven_price": be_usd,
             "min_gross_pct":   round(min_gross, 1),
-            # Рыночный контекст при входе
-            "entry_regime":     regime_entry.get("name"),
-            "entry_rsi":        ai_snap_entry.get("rsi"),
-            "entry_atr_pct":    (regime_entry.get("atr_pct") or regime_entry.get("atr")),
-            "entry_anomaly":    (ai_snap_entry.get("anomaly") or {}).get("detected", False),
-            "entry_sm_score":   sm_entry.get("score"),
-            "entry_sm_label":   sm_entry.get("label"),
-            "entry_sm_buys_1h": sm_entry.get("buys_1h"),
-            "entry_sm_sells_1h":sm_entry.get("sells_1h"),
+            # Рыночный контекст при входе (явные Python-типы, не numpy!)
+            "entry_regime":     str(regime_entry.get("name") or ""),
+            "entry_rsi":        _sf(ai_snap_entry.get("rsi")),
+            "entry_atr_pct":    _sf(regime_entry.get("atr_pct") or regime_entry.get("atr")),
+            "entry_anomaly":    bool((ai_snap_entry.get("anomaly") or {}).get("detected", False)),
+            "entry_sm_score":   _sf(sm_entry.get("score")),
+            "entry_sm_label":   str(sm_entry.get("label") or ""),
+            "entry_sm_buys_1h": int(sm_entry.get("buys_1h") or 0),
+            "entry_sm_sells_1h":int(sm_entry.get("sells_1h") or 0),
+            # Breakout + Momentum при входе
+            "entry_bo_signal":  str((ai_snap_entry.get("breakout") or {}).get("signal") or "FLAT"),
+            "entry_bo_score":   _sf((ai_snap_entry.get("breakout") or {}).get("score")),
+            "entry_mom_signal": str((ai_snap_entry.get("momentum") or {}).get("signal") or "CALM"),
+            "entry_mom_score":  _sf((ai_snap_entry.get("momentum") or {}).get("score")),
         }
         self.open_trades.append(trade)
         self.trades.append(dict(trade))
@@ -1509,7 +1561,7 @@ class Trader:
                 "target":        pb["target"],
                 "signal_price":  pb["signal_price"],
                 "ticks_left":    pb["ticks_left"],
-                "ai_conf":       (pb["ai"] or {}).get("confidence", 0),
+                "ai_conf":       (pb.get("ai") or {}).get("confidence", 0),
                 "entry_quality": pb.get("entry_quality", "B"),
                 "pullback_pct":  pb.get("pullback_pct", Config.SMART_BUY_PULLBACK_PCT),
             } if pb else None,

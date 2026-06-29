@@ -18,6 +18,18 @@ from contextlib import contextmanager
 from datetime import datetime
 
 import psycopg2
+try:
+    import numpy as _np
+    class _NpEncoder(json.JSONEncoder):
+        def default(self, o):
+            if isinstance(o, _np.integer): return int(o)
+            if isinstance(o, _np.floating): return float(o)
+            if isinstance(o, _np.bool_): return bool(o)
+            if isinstance(o, _np.ndarray): return o.tolist()
+            return super().default(o)
+    def _jdumps(obj, **kw): return json.dumps(obj, cls=_NpEncoder, **kw)
+except ImportError:
+    def _jdumps(obj, **kw): return json.dumps(obj, **kw)
 import psycopg2.extras
 import psycopg2.pool
 
@@ -236,7 +248,7 @@ def trades_upsert(trade: dict):
                     VALUES (%s, %s, %s)
                     ON CONFLICT (id) DO UPDATE
                       SET data = EXCLUDED.data, closed_at = EXCLUDED.closed_at
-                """, (trade_id, json.dumps(trade, ensure_ascii=False), closed_at))
+                """, (trade_id, _jdumps(trade, ensure_ascii=False), closed_at))
     except Exception as e:
         logger.warning(f"[DB] trades_upsert error: {e}")
 
@@ -291,7 +303,7 @@ def trades_bulk_insert(trades: list):
                         INSERT INTO bot_trades (id, data, closed_at)
                         VALUES (%s, %s, %s)
                         ON CONFLICT (id) DO NOTHING
-                    """, (tid, json.dumps(t, ensure_ascii=False), closed_at))
+                    """, (tid, _jdumps(t, ensure_ascii=False), closed_at))
     except Exception as e:
         logger.warning(f"[DB] trades_bulk_insert error: {e}")
 
@@ -405,7 +417,7 @@ def open_trades_save(trades: list):
                         VALUES (%s, %s, NOW())
                         ON CONFLICT (trade_id) DO UPDATE
                           SET data = EXCLUDED.data, updated_at = NOW()
-                    """, (tid, json.dumps(t, ensure_ascii=False)))
+                    """, (tid, _jdumps(t, ensure_ascii=False)))
     except Exception as e:
         logger.warning(f"[DB] open_trades_save error: {e}")
 
@@ -486,10 +498,10 @@ def wallets_save(wallets: dict, events: list, seen: list, last_poll: float):
                         VALUES (%s, %s, NOW())
                         ON CONFLICT (address) DO UPDATE
                           SET data = EXCLUDED.data, updated_at = NOW()
-                    """, (addr, json.dumps(data, ensure_ascii=False)))
+                    """, (addr, _jdumps(data, ensure_ascii=False)))
                 for key, val in [
-                    ("events",    json.dumps(events[-5000:], ensure_ascii=False)),
-                    ("seen",      json.dumps(list(seen)[-50000:], ensure_ascii=False)),
+                    ("events",    _jdumps(events[-5000:], ensure_ascii=False)),
+                    ("seen",      _jdumps(list(seen)[-50000:], ensure_ascii=False)),
                     ("last_poll", str(last_poll)),
                 ]:
                     cur.execute("""
@@ -544,7 +556,7 @@ def _encode(val) -> str:
     if val is None:
         return "null"
     if isinstance(val, (dict, list)):
-        return json.dumps(val, ensure_ascii=False)
+        return _jdumps(val, ensure_ascii=False)
     return str(val)
 
 

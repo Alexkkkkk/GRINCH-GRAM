@@ -193,6 +193,7 @@ function updateUI(data) {
   renderDecisionLog(data.decision_log || []);
   updateDBSync(data.db_synced_secs != null ? data.db_synced_secs : null);
   updateMomentum(ai.momentum || null, data.ai_full_rights_active);
+  updateBreakout(ai.breakout || null);
 
   // Статус кнопок
   const running = data.running;
@@ -2139,6 +2140,68 @@ function renderDecisionLog(log) {
 // ═══════════════════════════════════════════════════════════════════
 //  🗄️ DB SYNC STATUS
 // ═══════════════════════════════════════════════════════════════════
+
+function updateBreakout(bo) {
+  const row  = document.getElementById("brain-breakout-row");
+  const icon = document.getElementById("bo-icon");
+  const sig  = document.getElementById("bo-signal");
+  const arc  = document.getElementById("bo-ring-arc");
+  const txt  = document.getElementById("bo-score-txt");
+  const km   = document.getElementById("bo-kelly-mult");
+  const cb   = document.getElementById("bo-conf-boost");
+  const trl  = document.getElementById("bo-trail-hint");
+  if (!row) return;
+
+  const b = bo || {};
+  const score   = Number(b.score   || 0);
+  const signal  = (b.signal  || "FLAT").toUpperCase();
+  const kMult   = Number(b.kelly_mult || 1.0);
+  const cBoost  = Number(b.conf_boost || 0);
+
+  // Ring arc: circumference = 2π×18 ≈ 113.1
+  const circ = 113.1;
+  const fill  = (score / 100) * circ;
+  if (arc) arc.setAttribute("stroke-dasharray", `${fill.toFixed(1)} ${circ}`);
+
+  // Color by signal
+  const colorMap = { RUNAWAY:"#ff4444", BREAKOUT:"#ffdd00", PRIMED:"#ff9900", COILING:"#0098ea", FLAT:"#00ff88" };
+  if (arc) arc.setAttribute("stroke", colorMap[signal] || "#00ff88");
+  if (txt) txt.textContent = score.toFixed(0);
+
+  // Signal label + row class
+  const clsMap = { RUNAWAY:"runaway", BREAKOUT:"breakout", PRIMED:"primed" };
+  if (row) row.className = "brain-breakout-row " + (clsMap[signal] || "");
+  if (sig) {
+    sig.textContent = b.icon ? b.icon + " " + signal : signal;
+    sig.className   = "bo-signal " + (clsMap[signal] || "");
+  }
+  if (icon) icon.textContent = b.icon || "💤";
+
+  // Sub-bars
+  const bars = {
+    "bo-bb":   b.bb_squeeze  || 0,
+    "bo-vol":  b.vol_acc     || 0,
+    "bo-rsi":  b.rsi_build   || 0,
+    "bo-macd": b.macd_cross  || 0,
+    "bo-coil": b.coiling     || 0,
+  };
+  for (const [id, pct] of Object.entries(bars)) {
+    const el = document.getElementById(id);
+    if (el) el.style.width = Math.min(100, Math.max(0, pct)).toFixed(0) + "%";
+  }
+
+  // Footer
+  if (km) km.textContent = kMult.toFixed(1) + "×";
+  if (cb) {
+    cb.textContent  = cBoost > 0 ? "+" + cBoost.toFixed(0) + "%" : "+0%";
+    cb.style.color  = cBoost > 8 ? "#ff9900" : cBoost > 3 ? "#ffdd00" : "rgba(255,255,255,.5)";
+  }
+  if (trl) {
+    const isWide = ["BREAKOUT","RUNAWAY","PRIMED"].includes(signal);
+    trl.textContent  = signal === "RUNAWAY" ? "МАКС" : signal === "BREAKOUT" ? "ШИРОКИЙ" : isWide ? "шире" : "норма";
+    trl.className    = "bbr-trail-hint" + (isWide ? " wide" : "");
+  }
+}
 
 function updateMomentum(mom, fullRights) {
   const bar   = document.getElementById("bm-momentum-bar");
