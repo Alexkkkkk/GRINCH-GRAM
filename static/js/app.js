@@ -192,6 +192,7 @@ function updateUI(data) {
   updateTicker(data);
   renderDecisionLog(data.decision_log || []);
   updateDBSync(data.db_synced_secs != null ? data.db_synced_secs : null);
+  updateMomentum(ai.momentum || null, data.ai_full_rights_active);
 
   // Статус кнопок
   const running = data.running;
@@ -2138,6 +2139,50 @@ function renderDecisionLog(log) {
 // ═══════════════════════════════════════════════════════════════════
 //  🗄️ DB SYNC STATUS
 // ═══════════════════════════════════════════════════════════════════
+
+function updateMomentum(mom, fullRights) {
+  const bar   = document.getElementById("bm-momentum-bar");
+  const sig   = document.getElementById("bm-momentum-sig");
+  const score = document.getElementById("bm-momentum-score");
+  const vol   = document.getElementById("bm-vol-ratio");
+  const rsi   = document.getElementById("bm-rsi-vel");
+  const pvel  = document.getElementById("bm-price-vel");
+  const boost = document.getElementById("bm-boost");
+  const badge = document.getElementById("bm-rights-badge");
+  if (!bar) return;
+
+  const m = mom || {};
+  const sc    = Number(m.score || 0);
+  const msig  = (m.signal || "CALM").toUpperCase();
+  const mboost = Number(m.boost || 0);
+
+  if (bar) {
+    bar.style.width = sc + "%";
+    bar.className = "bm-momentum-bar" +
+      (msig === "EXPLOSIVE" ? " explosive" : msig === "SURGE" ? " surge" : "");
+  }
+  if (sig) {
+    sig.textContent = msig;
+    sig.className = "bm-momentum-sig" +
+      (msig === "EXPLOSIVE" ? " explosive" : msig === "SURGE" ? " surge" : "");
+  }
+  if (score) score.textContent = sc.toFixed(0);
+  if (vol)   vol.textContent   = (Number(m.vol_ratio || 1)).toFixed(2) + "×";
+  if (rsi)   rsi.textContent   = (Number(m.rsi_vel || 0) >= 0 ? "+" : "") + (Number(m.rsi_vel || 0)).toFixed(1);
+  if (pvel)  pvel.textContent  = (Number(m.price_vel || 0) >= 0 ? "+" : "") + (Number(m.price_vel || 0)).toFixed(2) + "%";
+  if (boost) {
+    boost.textContent = mboost > 0 ? "+" + mboost.toFixed(0) + "%" : "+0%";
+    boost.className   = "bm-ms-val bm-boost-val" + (mboost > 0 ? " active" : "");
+  }
+
+  if (badge) {
+    const active = fullRights !== false;
+    badge.style.opacity = active ? "1" : "0.4";
+    badge.title = active
+      ? "AI имеет полные права — ATR-фильтр снят при достаточной уверенности"
+      : "AI полные права: ожидание достаточной уверенности";
+  }
+}
 
 function updateDBSync(data) {
   const secs = data != null ? Number(data) : null;

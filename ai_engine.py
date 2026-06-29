@@ -66,6 +66,110 @@ RETRAIN_EVERY     = 3                   # полный рефит каждые N
 KELLY_LOOKBACK    = 50                  # окно для расчёта Kelly fraction
 
 
+# ─── Momentum Engine — детектор взрывного движения GRINCH ─────────────────────
+class MomentumEngine:
+    """
+    Независимый детектор импульсного движения GRINCH/TON.
+
+    Анализирует три источника импульса:
+      1. RSI Velocity    — скорость изменения RSI за последние 3 бара
+      2. Volume Surge    — отношение текущего объёма к MA20
+      3. Price Velocity  — накопленный ход цены за последние 3 бара
+
+    Возвращает Momentum Score 0–100 и сигнал: CALM / BUILDING / SURGE / EXPLOSIVE.
+    При SURGE/EXPLOSIVE — добавляет +boost к уверенности AI (не более +12%).
+    """
+
+    SIGNAL_THRESHOLDS = {
+        "EXPLOSIVE": 78,
+        "SURGE":     55,
+        "BUILDING":  30,
+        "CALM":       0,
+    }
+
+    CONF_BOOST = {
+        "EXPLOSIVE": 12.0,
+        "SURGE":      7.0,
+        "BUILDING":   3.0,
+        "CALM":       0.0,
+    }
+
+    def detect(self, df: "pd.DataFrame") -> dict:
+        """Вычисляет Momentum Score по последним свечам df."""
+        try:
+            if df is None or len(df) < 20:
+                return self._empty()
+
+            closes  = df["close"].values
+            volumes = df["volume"].values if "volume" in df.columns else None
+
+            # ── 1. RSI Velocity ──────────────────────────────────────────
+            rsi_col = "rsi" if "rsi" in df.columns else None
+            rsi_vel = 0.0
+            if rsi_col:
+                rsi_now  = float(df[rsi_col].iloc[-1])
+                rsi_prev = float(df[rsi_col].iloc[-4]) if len(df) >= 4 else rsi_now
+                rsi_vel  = rsi_now - rsi_prev          # позитивный = ускорение вверх
+
+            # ── 2. Volume Surge ──────────────────────────────────────────
+            vol_ratio = 1.0
+            if volumes is not None and len(volumes) >= 20:
+                vol_ma20  = float(np.mean(volumes[-20:]))
+                vol_now   = float(volumes[-1])
+                vol_ratio = vol_now / vol_ma20 if vol_ma20 > 0 else 1.0
+
+            # ── 3. Price Velocity (% за 3 бара) ─────────────────────────
+            price_vel = 0.0
+            if len(closes) >= 4:
+                price_vel = (closes[-1] / closes[-4] - 1.0) * 100.0
+
+            # ── Нормализация в 0-100 ─────────────────────────────────────
+            # RSI vel: диапазон −30…+30 → 0…100 (только позитивный вклад)
+            rsi_score   = min(100.0, max(0.0, (rsi_vel + 30.0) / 60.0 * 100.0))
+            # Vol ratio: 0…5× → 0…100 (1.0 = нейтраль → 20 очков)
+            vol_score   = min(100.0, max(0.0, (vol_ratio - 0.5) / 4.5 * 100.0))
+            # Price vel: −5%…+10% → 0…100 (0% = 33 очка)
+            price_score = min(100.0, max(0.0, (price_vel + 5.0) / 15.0 * 100.0))
+
+            # Взвешенное среднее: RSI 30%, Volume 40%, Price 30%
+            score = rsi_score * 0.30 + vol_score * 0.40 + price_score * 0.30
+
+            # Сигнал по порогам
+            signal = "CALM"
+            for sig, thr in self.SIGNAL_THRESHOLDS.items():
+                if score >= thr:
+                    signal = sig
+                    break
+
+            boost = self.CONF_BOOST.get(signal, 0.0)
+
+            return {
+                "score":       round(score, 1),
+                "signal":      signal,
+                "boost":       boost,
+                "rsi_vel":     round(rsi_vel, 2),
+                "vol_ratio":   round(vol_ratio, 2),
+                "price_vel":   round(price_vel, 3),
+                "rsi_score":   round(rsi_score, 1),
+                "vol_score":   round(vol_score, 1),
+                "price_score": round(price_score, 1),
+            }
+        except Exception as e:
+            log.debug(f"[MomentumEngine] error: {e}")
+            return self._empty()
+
+    @staticmethod
+    def _empty() -> dict:
+        return {
+            "score": 0.0, "signal": "CALM", "boost": 0.0,
+            "rsi_vel": 0.0, "vol_ratio": 1.0, "price_vel": 0.0,
+            "rsi_score": 0.0, "vol_score": 0.0, "price_score": 0.0,
+        }
+
+
+_momentum_engine = MomentumEngine()
+
+
 class _ModelSlot:
     """Обёртка модели с rolling accuracy tracker и историей предсказаний."""
 
@@ -372,6 +476,18 @@ class AIEngine:
         model_info = self._model_stats()
         kelly      = self._compute_kelly()
 
+        # ── Momentum Engine: детектор взрывного движения ─────────────────
+        momentum = _momentum_engine.detect(df)
+        # Буст уверенности: при SURGE/EXPLOSIVE — AI получает бонус
+        if ai_signal == "BUY" and momentum["boost"] > 0:
+            boosted_conf = min(99.0, confidence + momentum["boost"])
+            if boosted_conf > confidence:
+                log.debug(
+                    f"[Momentum] {momentum['signal']} boost +{momentum['boost']:.1f}% "
+                    f"→ conf {confidence}% → {boosted_conf}%"
+                )
+                confidence = boosted_conf
+
         return {
             "ai_signal":    ai_signal,
             "confidence":   confidence,
@@ -389,6 +505,7 @@ class AIEngine:
             "training_progress": self.training_progress,
             "model_info":   model_info,
             "kelly":        kelly,
+            "momentum":     momentum,
         }
 
     # ─────────────────────────────────────────────────────────────────────────

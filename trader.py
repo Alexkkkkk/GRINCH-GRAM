@@ -406,6 +406,11 @@ class Trader:
                 rsi <= Config.RSI_OVERSOLD_REVERSAL and
                 conf >= Config.REVERSAL_AI_MIN
             )
+            # AI ПОЛНЫЕ ПРАВА: при уверенности >= порога ATR-фильтр снимается
+            ai_full_rights_active = (
+                getattr(Config, "AI_FULL_RIGHTS", True) and
+                conf >= getattr(Config, "AI_FULL_RIGHTS_MIN_CONF", 68.0)
+            )
 
             # ── Расчёт комиссионной реалистичности ─────────────────────
             # Минимальный % движения цены нужен, чтобы покрыть:
@@ -418,8 +423,9 @@ class Trader:
             min_gross_needed = Config.required_gross_pct_with_gas(stake_est)
 
             # ATR как прокси волатильности: можно ли ожидать такое движение?
+            # При AI_FULL_RIGHTS + достаточной уверенности — ATR-проверка снимается
             atr_pct = (ai.get("regime", {}) or {}).get("atr_pct", 0)
-            if atr_pct > 0:
+            if atr_pct > 0 and not ai_full_rights_active:
                 atr_capacity = atr_pct * Config.AI_ATR_FEASIBILITY_MULT
                 if atr_capacity < min_gross_needed and not hard_override:
                     fee_feasible_reason = (
@@ -430,7 +436,7 @@ class Trader:
             # ── Применяем фильтры по приоритету ───────────────────────
             if self.exp.is_paused():
                 blocked = "ИИ-пауза: просадка капитала"
-            elif sm_score <= Config.SMART_MONEY_BLOCK and not hard_override:
+            elif sm_score <= Config.SMART_MONEY_BLOCK and not hard_override and not ai_full_rights_active:
                 blocked = f"умные деньги распродают ({sm_score:+.2f})"
             elif conf < (Config.AI_AUTONOMOUS_MIN_CONF if Config.AI_AUTONOMOUS_MODE
                          else Config.MIN_AI_CONFIDENCE):
@@ -440,11 +446,17 @@ class Trader:
                     f"📈 Mean Reversion: RSI={rsi:.1f} + AI={conf}% → вход в {regime_name}",
                     "INFO"
                 )
-            elif fee_feasible_reason and not hard_override:
+            elif fee_feasible_reason and not hard_override and not ai_full_rights_active:
                 # ATR недостаточен для покрытия комиссий и цели — рынок стоит
                 blocked = f"рынок слишком спокойный: {fee_feasible_reason}"
-            elif Config.TREND_FILTER and regime_name == "DOWNTREND" and not hard_override:
+            elif Config.TREND_FILTER and regime_name == "DOWNTREND" and not hard_override and not ai_full_rights_active:
                 blocked = "нисходящий тренд (AI недостаточно уверен для входа)"
+            elif ai_full_rights_active and not hard_override:
+                self.log(
+                    f"🤖 AI ПОЛНЫЕ ПРАВА {conf}%: ATR-фильтр снят, входим в {regime_name}"
+                    + (f" | Momentum={ai.get('momentum', {}).get('score', 0):.0f}" if ai.get('momentum') else ""),
+                    "INFO"
+                )
             elif hard_override:
                 self.log(
                     f"🔥 Hard Override AI {conf}%: входим несмотря на {regime_name}"
@@ -1464,6 +1476,12 @@ class Trader:
             ai_mgmt = self.exp.get_report()
         except Exception:
             pass
+        # AI Full Rights: активен ли в текущем тике
+        _ai_conf = ai.get("confidence", 0) if ai else 0
+        _ai_full_rights_active = (
+            getattr(Config, "AI_FULL_RIGHTS", True) and
+            _ai_conf >= getattr(Config, "AI_FULL_RIGHTS_MIN_CONF", 68.0)
+        )
         return {
             "running":       self.running,
             "training":      self.training,
@@ -1484,6 +1502,9 @@ class Trader:
             "entry_quality": self.last_entry,
             "decision_log":  list(reversed(self.decision_log))[:12],
             "db_synced_secs": int(time.time() - self._last_db_sync_ts) if self._last_db_sync_ts else None,
+            "ai_full_rights":        getattr(Config, "AI_FULL_RIGHTS", True),
+            "ai_full_rights_min_conf": getattr(Config, "AI_FULL_RIGHTS_MIN_CONF", 68.0),
+            "ai_full_rights_active": _ai_full_rights_active,
             "pending_buy":   {
                 "target":        pb["target"],
                 "signal_price":  pb["signal_price"],

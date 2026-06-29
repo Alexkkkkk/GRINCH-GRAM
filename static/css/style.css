@@ -1904,3 +1904,72 @@ body::after {
 .ai-ticker-inner { height:30px; }
 .at-item { font-size:10px !important; }
 
+
+/* ── Momentum Engine + AI Full Rights (v3) ─────────────────────────────────── */
+.brain-momentum-row {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  background: rgba(0,255,136,.04);
+  border: 1px solid rgba(0,255,136,.15);
+  border-radius: 10px;
+  padding: 8px 10px;
+  margin: 0 0 6px 0;
+}
+.bm-rights-badge {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: .08em;
+  color: #00ff88;
+  text-transform: uppercase;
+}
+.bm-rights-dot {
+  width: 7px; height: 7px;
+  border-radius: 50%;
+  background: #00ff88;
+  box-shadow: 0 0 8px #00ff88;
+  animation: pulse-green 1.4s ease-in-out infinite;
+}
+@keyframes pulse-green {
+  0%,100% { opacity:1; box-shadow: 0 0 6px #00ff88; }
+  50%      { opacity:.6; box-shadow: 0 0 14px #00ff88; }
+}
+.bm-momentum-block { display:flex;flex-direction:column;gap:3px; }
+.bm-momentum-label { font-size:9px;color:var(--text3);text-transform:uppercase;letter-spacing:.1em; }
+.bm-momentum-bar-wrap {
+  height: 6px;
+  background: rgba(255,255,255,.06);
+  border-radius: 100px;
+  overflow: hidden;
+}
+.bm-momentum-bar {
+  height: 100%;
+  border-radius: 100px;
+  background: linear-gradient(90deg, #0098ea, #00ff88);
+  transition: width .6s ease, background .4s ease;
+}
+.bm-momentum-bar.surge { background: linear-gradient(90deg,#ff9900,#ffdd00); }
+.bm-momentum-bar.explosive { background: linear-gradient(90deg,#ff3366,#ff9900); animation: glow-bar 1s ease-in-out infinite alternate; }
+@keyframes glow-bar { from { box-shadow:0 0 6px #ff3366; } to { box-shadow:0 0 18px #ff9900; } }
+.bm-momentum-meta { display:flex;align-items:center;justify-content:space-between;margin-top:2px; }
+.bm-momentum-sig {
+  font-size:10px;font-weight:700;letter-spacing:.06em;
+  color: #00ff88;
+}
+.bm-momentum-sig.surge { color:#ffdd00; }
+.bm-momentum-sig.explosive { color:#ff9900; animation: glow-text 1s ease-in-out infinite alternate; }
+@keyframes glow-text { from{text-shadow:none} to{text-shadow:0 0 10px #ff9900} }
+.bm-momentum-score { font-size:13px;font-weight:900;color:white;font-family:var(--mono); }
+.bm-momentum-stats {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 4px;
+}
+.bm-ms-item { display:flex;flex-direction:column;align-items:center;gap:1px; }
+.bm-ms-lbl { font-size:8px;color:var(--text3);text-transform:uppercase;letter-spacing:.06em; }
+.bm-ms-val { font-size:10px;font-weight:700;color:white;font-family:var(--mono); }
+.bm-boost-val { color:#00ff88; }
+.bm-boost-val.active { color:#ffdd00; text-shadow:0 0 8px #ffdd00; }

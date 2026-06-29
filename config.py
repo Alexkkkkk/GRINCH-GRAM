@@ -200,9 +200,18 @@ class Config:
     # Минимальная уверенность AI для самостоятельного входа в автономном режиме
     AI_AUTONOMOUS_MIN_CONF = float(os.getenv("AI_AUTONOMOUS_MIN_CONF", "58.0"))
 
+    # ── ПОЛНЫЕ ПРАВА ТОРГОВЛИ ──────────────────────────────────────────
+    # Когда True и уверенность AI >= AI_FULL_RIGHTS_MIN_CONF%, AI имеет полные
+    # права на открытие позиции: ATR-фильтр не применяется. ONLY_PROFIT_EXIT
+    # по-прежнему активен — выход только в плюс гарантирован.
+    # Это даёт AI реальную автономию — торгует при высокой уверенности,
+    # даже если рынок сейчас «спокойный» по ATR.
+    AI_FULL_RIGHTS = bool(int(os.getenv("AI_FULL_RIGHTS", "1")))
+    AI_FULL_RIGHTS_MIN_CONF = float(os.getenv("AI_FULL_RIGHTS_MIN_CONF", "68.0"))
+
     # Коэффициент «реалистичности» входа: минимальный ATR в % от цены, при котором
     # рынок способен дать нужный gross-% (если ATR × mult < required_gross → не входим).
-    # Защищает от входов в мёртвый боковик, где движения нет.
+    # Применяется ТОЛЬКО если AI_FULL_RIGHTS=False или уверенность AI ниже порога.
     AI_ATR_FEASIBILITY_MULT = float(os.getenv("AI_ATR_FEASIBILITY_MULT", "1.2"))
 
     DEMO_MODE  = os.getenv("DEMO_MODE",  "false").lower() == "true"
