@@ -23,7 +23,7 @@ import psycopg2.pool
 
 logger = logging.getLogger(__name__)
 
-DATABASE_URL = os.getenv("DATABASE_URL", "")
+DATABASE_URL = os.getenv("EXTERNAL_DATABASE_URL", "") or os.getenv("DATABASE_URL", "")
 
 _pool: psycopg2.pool.ThreadedConnectionPool | None = None
 _pool_lock = threading.Lock()
