@@ -660,3 +660,164 @@ body { background: var(--bg); color: var(--text); font-family: 'Segoe UI', syste
 .score-strong { background:rgba(92,200,255,.12)!important; color:#5cc8ff !important; }
 .score-ok     { background:rgba(255,209,102,.1)!important; color:#ffd166 !important; }
 .score-weak   { background:rgba(255,77,109,.1) !important; color:#ff4d6d !important; }
+
+/* ═══════════════════════════════════════════════════════
+   🔴 AI STATUS TICKER
+═══════════════════════════════════════════════════════ */
+.ai-ticker {
+  background: linear-gradient(90deg, #060c18 0%, #0a1526 50%, #060c18 100%);
+  border-bottom: 1px solid rgba(0,200,255,.15);
+  overflow: hidden; position: relative; z-index: 80;
+}
+.ai-ticker::before {
+  content:''; position:absolute; inset:0;
+  background: linear-gradient(90deg, transparent, rgba(0,150,255,.03) 50%, transparent);
+  animation: tickerShimmer 3s ease-in-out infinite;
+}
+@keyframes tickerShimmer { 0%,100%{opacity:0} 50%{opacity:1} }
+.ai-ticker-inner {
+  display:flex; align-items:center; gap:0; overflow-x:auto;
+  scrollbar-width:none; padding:0 16px;
+  white-space:nowrap;
+}
+.ai-ticker-inner::-webkit-scrollbar { display:none; }
+.at-item {
+  display:flex; align-items:center; gap:5px; padding:7px 12px;
+  font-size:11px; font-weight:600; color:rgba(255,255,255,.55);
+  letter-spacing:.3px; white-space:nowrap;
+}
+.at-sep { color:rgba(255,255,255,.1); font-size:14px; flex-shrink:0; }
+.at-mode { color:#00ff88 !important; font-weight:800; }
+.at-mode-dot {
+  width:7px; height:7px; border-radius:50%; background:#00ff88;
+  box-shadow:0 0 8px #00ff88; animation:aiPulse 1.4s infinite;
+}
+.at-lock { color:rgba(255,209,102,.7) !important; }
+.at-pnl  { color:rgba(0,255,136,.7) !important; }
+.at-regime {
+  font-size:9px; padding:1px 5px; border-radius:8px;
+  background:rgba(255,255,255,.06); margin-left:2px;
+}
+.at-clock {
+  font-size:11px; font-family:monospace; color:rgba(255,255,255,.3);
+  padding:7px 12px; letter-spacing:1px; margin-left:auto; flex-shrink:0;
+}
+
+/* ═══════════════════════════════════════════════════════
+   📋 AI ЛОГ РЕШЕНИЙ
+═══════════════════════════════════════════════════════ */
+.ai-declog { margin-top:14px; }
+.ai-declog-title {
+  display:flex; align-items:center; justify-content:space-between;
+  font-size:10px; color:rgba(255,255,255,.3); letter-spacing:.8px;
+  text-transform:uppercase; margin-bottom:7px;
+}
+.ai-declog-live {
+  display:flex; align-items:center; gap:4px;
+  font-size:9px; color:#00ff88; opacity:.7;
+}
+.ai-declog-list { display:flex; flex-direction:column; gap:3px; max-height:180px; overflow-y:auto; }
+.ai-declog-list::-webkit-scrollbar { width:3px; }
+.ai-declog-list::-webkit-scrollbar-thumb { background:rgba(255,255,255,.1); border-radius:2px; }
+.ai-dec-row {
+  display:flex; align-items:center; gap:6px; padding:5px 8px;
+  border-radius:6px; font-size:10px; border:1px solid rgba(255,255,255,.05);
+  background:rgba(255,255,255,.02); transition:background .2s;
+  font-family:monospace;
+}
+.ai-dec-row:hover { background:rgba(255,255,255,.04); }
+.ai-dec-time  { color:rgba(255,255,255,.3); flex-shrink:0; width:48px; }
+.ai-dec-result { font-weight:800; font-size:11px; width:50px; flex-shrink:0; }
+.ai-dec-conf  { color:rgba(255,255,255,.4); width:35px; flex-shrink:0; }
+.ai-dec-rsi   { color:rgba(255,255,255,.35); width:45px; flex-shrink:0; }
+.ai-dec-regime { font-size:9px; padding:1px 4px; border-radius:4px; flex-shrink:0;
+  background:rgba(255,255,255,.06); color:rgba(255,255,255,.45); }
+.ai-dec-grade { font-size:9px; font-weight:700; margin-left:auto; flex-shrink:0; }
+.ai-dec-row.dec-buy  { border-color:rgba(0,255,136,.2); background:rgba(0,255,136,.04); }
+.ai-dec-row.dec-sell { border-color:rgba(255,77,109,.2); background:rgba(255,77,109,.04); }
+.ai-dec-row.dec-hold { opacity:.75; }
+.dec-buy  .ai-dec-result { color:#00ff88; }
+.dec-sell .ai-dec-result { color:#ff4d6d; }
+.dec-hold .ai-dec-result { color:#8892b0; }
+
+/* ═══════════════════════════════════════════════════════
+   ⚡ РУЧНОЕ УПРАВЛЕНИЕ
+═══════════════════════════════════════════════════════ */
+.ai-manual-panel {
+  margin-top:14px;
+  background:linear-gradient(145deg, rgba(255,255,255,.025) 0%, rgba(0,100,200,.04) 100%);
+  border:1px solid rgba(255,255,255,.07); border-radius:10px; overflow:hidden;
+}
+.ai-manual-hdr {
+  display:flex; align-items:center; justify-content:space-between;
+  padding:8px 12px; border-bottom:1px solid rgba(255,255,255,.05);
+  background:rgba(255,255,255,.02);
+}
+.ai-manual-title { font-size:11px; font-weight:700; color:rgba(255,255,255,.7); }
+.ai-manual-lock-badge {
+  font-size:9px; padding:2px 7px; border-radius:10px;
+  background:rgba(255,209,102,.1); color:#ffd166;
+  border:1px solid rgba(255,209,102,.2);
+}
+.ai-manual-body { padding:10px 12px; display:flex; flex-direction:column; gap:10px; }
+.ai-manual-amount-row { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+.ai-manual-lbl { font-size:10px; color:rgba(255,255,255,.4); white-space:nowrap; }
+.ai-manual-ctrl { display:flex; align-items:center; gap:4px; }
+.ai-manual-adj {
+  width:28px; height:28px; border:1px solid rgba(255,255,255,.1);
+  border-radius:6px; background:rgba(255,255,255,.04);
+  color:rgba(255,255,255,.6); font-size:13px; cursor:pointer;
+  display:flex; align-items:center; justify-content:center;
+  transition:all .15s;
+}
+.ai-manual-adj:hover { background:rgba(255,255,255,.1); border-color:rgba(255,255,255,.25); color:#fff; }
+.ai-manual-input {
+  width:60px; padding:4px 8px; background:rgba(255,255,255,.06);
+  border:1px solid rgba(255,255,255,.12); border-radius:6px;
+  color:#fff; font-size:13px; font-family:monospace; font-weight:700;
+  text-align:center;
+}
+.ai-manual-input:focus { outline:none; border-color:rgba(0,200,255,.4); background:rgba(0,150,255,.06); }
+.ai-manual-btns-row { display:flex; gap:8px; }
+.ai-manual-buy-btn, .ai-manual-sell-btn {
+  flex:1; padding:9px 6px; border-radius:8px; border:none; cursor:pointer;
+  font-size:12px; font-weight:800; letter-spacing:.4px;
+  transition:all .2s; position:relative; overflow:hidden;
+}
+.ai-manual-buy-btn {
+  background:linear-gradient(135deg, #00c060, #00ff88);
+  color:#001a0d; box-shadow:0 0 18px rgba(0,255,136,.2);
+}
+.ai-manual-buy-btn:hover { transform:translateY(-1px); box-shadow:0 4px 24px rgba(0,255,136,.35); }
+.ai-manual-buy-btn:active { transform:translateY(0); }
+.ai-manual-sell-btn {
+  background:linear-gradient(135deg, #c0003a, #ff4d6d);
+  color:#fff; box-shadow:0 0 18px rgba(255,77,109,.2);
+}
+.ai-manual-sell-btn:hover { transform:translateY(-1px); box-shadow:0 4px 24px rgba(255,77,109,.35); }
+.ai-manual-sell-btn:active { transform:translateY(0); }
+.ai-manual-buy-btn:disabled, .ai-manual-sell-btn:disabled {
+  opacity:.4; cursor:not-allowed; transform:none; box-shadow:none;
+}
+.ai-manual-status {
+  font-size:11px; min-height:14px; text-align:center;
+  transition:color .3s;
+}
+
+/* DB синхронизация */
+.ai-db-sync-row {
+  display:flex; align-items:center; gap:8px;
+  padding:8px 12px; border-top:1px solid rgba(255,255,255,.05);
+  background:rgba(255,255,255,.01);
+}
+.ai-db-icon { font-size:16px; }
+.ai-db-info { flex:1; display:flex; flex-direction:column; gap:1px; }
+.ai-db-label { font-size:10px; color:rgba(255,255,255,.4); }
+.ai-db-detail { font-size:10px; font-family:monospace; color:rgba(255,255,255,.3); }
+.ai-db-badge {
+  font-size:10px; padding:2px 7px; border-radius:10px; font-weight:700;
+  border:1px solid; transition:all .3s;
+}
+.db-ok   { color:#00ff88; border-color:rgba(0,255,136,.3); background:rgba(0,255,136,.08); }
+.db-warn { color:#ffd166; border-color:rgba(255,209,102,.3); background:rgba(255,209,102,.07); }
+.db-err  { color:#ff4d6d; border-color:rgba(255,77,109,.3); background:rgba(255,77,109,.07); }

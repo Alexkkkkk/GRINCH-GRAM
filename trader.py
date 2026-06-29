@@ -37,6 +37,8 @@ class Trader:
         #              "analysis": dict, "ticks_left": int}
         self._pending_buy = None
         self.last_sm      = None   # последний сигнал умных денег (для статуса)
+        self.decision_log = []     # кольцевой буфер AI-решений (макс 25)
+        self._last_db_sync_ts = 0  # время последней синхронизации с DB
         self.last_entry   = {      # последняя оценка качества входа (для статуса)
             "quality": "C", "score": 0, "reasons": [],
             "vol_ratio": 1.0, "stoch_rsi": 0.5,
@@ -163,9 +165,7 @@ class Trader:
             pass
 
     def _sync_open_trades_to_db(self):
-        """Обновляет live-поля открытых позиций в PostgreSQL (раз в 60 сек).
-        Сохраняет актуальные: текущую стоимость, P&L, прогресс к TP — всё
-        то, что показывается на карточке «Сделки, ожидающие продажи»."""
+        """Обновляет live-поля открытых позиций в PostgreSQL (раз в 60 сек)."""
         try:
             from price_feed import price_feed
             import db_store
@@ -174,8 +174,62 @@ class Trader:
             grinch_ton = price_feed.get_grinch_ton_price() or 0.0
             enriched   = self._enriched_open_trades(grinch_ton)
             db_store.open_trades_save(enriched)
-        except Exception as e:
+            self._last_db_sync_ts = time.time()
+        except Exception:
             pass  # молча: live-синк не критичен
+
+    def force_buy(self, amount_ton=None):
+        """Ручная покупка — обходит сигнальную логику, открывает по текущей цене."""
+        try:
+            from price_feed import price_feed
+            price = price_feed.get("GRINCH") or 0
+            if price <= 0:
+                return {"ok": False, "error": "Нет цены"}
+            if len(self.open_trades) >= getattr(__import__("config"), "Config").MAX_OPEN_TRADES:
+                return {"ok": False, "error": "Достигнут лимит открытых позиций"}
+            if amount_ton:
+                import config as _cfg
+                orig = _cfg.Config.TRADE_AMOUNT_TON
+                _cfg.Config.TRADE_AMOUNT_TON = float(amount_ton)
+            ai = self.last_ai or {}
+            result = self._get_analysis_snapshot()
+            opened = self._open_trade("buy", price, result or {}, ai)
+            if amount_ton:
+                _cfg.Config.TRADE_AMOUNT_TON = orig
+            if opened:
+                self._emit_signal("BUY", price, ai)
+                self.log(f"🖐️ Ручная покупка: ${price:.8f} | {amount_ton or 'auto'} TON", "INFO")
+                return {"ok": True, "price": price}
+            return {"ok": False, "error": "Ордер не прошёл"}
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
+    def force_sell_all(self):
+        """Ручная продажа всех позиций (уважает ONLY_PROFIT_EXIT)."""
+        try:
+            from price_feed import price_feed
+            price = price_feed.get("GRINCH") or 0
+            if price <= 0:
+                return {"ok": False, "error": "Нет цены"}
+            if not self.open_trades:
+                return {"ok": False, "error": "Нет открытых позиций"}
+            result = self._get_analysis_snapshot()
+            closed = self._close_all_trades(price, result or {})
+            if closed:
+                self.log(f"🖐️ Ручная продажа всех позиций: ${price:.8f}", "INFO")
+                return {"ok": True, "closed": len(closed)}
+            return {"ok": False, "error": "Продажа невозможна (ONLY_PROFIT_EXIT)"}
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
+    def _get_analysis_snapshot(self):
+        """Быстрый снимок анализа без блокировки."""
+        try:
+            ohlcv = self.exchange.get_ohlcv(limit=60)
+            from strategy import analyze
+            return analyze(ohlcv)
+        except Exception:
+            return {}
 
     def _emit_progress(self, progress_dict):
         if self.on_training_progress:
@@ -384,6 +438,24 @@ class Trader:
             f"Итог={'HOLD' if blocked else final_signal}",
             level="INFO"
         )
+
+        # Кольцевой буфер AI-решений
+        from datetime import datetime as _dtnow
+        _dec_entry = {
+            "t":       _dtnow.now().strftime("%H:%M:%S"),
+            "signal":  signal,
+            "ai_sig":  ai_signal,
+            "result":  "HOLD" if blocked else final_signal,
+            "conf":    conf,
+            "quality": entry_quality,
+            "score":   entry_score,
+            "rsi":     round(rsi, 1),
+            "regime":  regime_name,
+            "blocked": bool(blocked),
+        }
+        self.decision_log.append(_dec_entry)
+        if len(self.decision_log) > 25:
+            self.decision_log.pop(0)
 
         # Логируем причины хорошего входа (только при BUY-сигнале)
         if final_signal == "BUY" and entry_reasons:
@@ -1057,6 +1129,8 @@ class Trader:
             "stats":         {**self.stats, "winrate": winrate},
             "training_progress": self.ai.training_progress,
             "entry_quality": self.last_entry,
+            "decision_log":  list(reversed(self.decision_log))[:12],
+            "db_synced_secs": int(time.time() - self._last_db_sync_ts) if self._last_db_sync_ts else None,
             "pending_buy":   {
                 "target":        pb["target"],
                 "signal_price":  pb["signal_price"],

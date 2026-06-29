@@ -405,6 +405,40 @@ def api_trade_close():
     result = trader.close_trade(tid)
     return jsonify(result), (200 if result.get("ok") else 400)
 
+@app.route("/api/ai/decisions")
+def api_ai_decisions():
+    log = getattr(trader, "decision_log", [])
+    return jsonify(list(reversed(log))[:15])
+
+@app.route("/api/trade/manual_buy", methods=["POST"])
+def api_manual_buy():
+    data   = request.get_json(silent=True) or {}
+    amount = float(data.get("amount", 0)) or None
+    result = trader.force_buy(amount_ton=amount)
+    return jsonify(result), (200 if result.get("ok") else 400)
+
+@app.route("/api/trade/manual_sell_all", methods=["POST"])
+def api_manual_sell_all():
+    result = trader.force_sell_all()
+    return jsonify(result), (200 if result.get("ok") else 400)
+
+@app.route("/api/db/sync_status")
+def api_db_sync_status():
+    import db_store
+    ts = getattr(trader, "_last_db_sync_ts", 0)
+    secs = int(time.time() - ts) if ts else None
+    trades_count = 0
+    try:
+        trades_count = db_store.trades_count() if db_store.is_available() else 0
+    except Exception:
+        pass
+    return jsonify({
+        "ok":      db_store.is_available(),
+        "secs_ago": secs,
+        "trades":  trades_count,
+        "open":    len(getattr(trader, "open_trades", [])),
+    })
+
 @app.route("/api/ton")
 def api_ton():
     return jsonify(ton.get_data())

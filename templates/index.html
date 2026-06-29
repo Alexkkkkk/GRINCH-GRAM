@@ -170,6 +170,39 @@
     </div>
   </header>
 
+  <!-- ═══ AI STATUS TICKER ═══ -->
+  <div class="ai-ticker" id="ai-ticker">
+    <div class="ai-ticker-inner">
+      <div class="at-item at-mode">
+        <span class="at-mode-dot" id="at-mode-dot"></span>
+        <span id="at-mode-txt">AUTO</span>
+      </div>
+      <div class="at-sep">│</div>
+      <div class="at-item at-lock">🔒 ТОЛЬКО В ПЛЮС</div>
+      <div class="at-sep">│</div>
+      <div class="at-item" id="at-db">
+        <span id="at-db-icon">🗄️</span>
+        DB <span id="at-db-status">—</span>
+      </div>
+      <div class="at-sep">│</div>
+      <div class="at-item">
+        📊 <span id="at-rsi">RSI —</span>
+        <span class="at-regime" id="at-regime">—</span>
+      </div>
+      <div class="at-sep">│</div>
+      <div class="at-item">
+        AI <span id="at-ai-sig">—</span>
+        <span id="at-ai-conf" style="color:rgba(255,255,255,.4)">0%</span>
+      </div>
+      <div class="at-sep">│</div>
+      <div class="at-item at-pnl">
+        💰 P&amp;L: <span id="at-pnl">+0.0000 TON</span>
+      </div>
+      <div class="at-sep">│</div>
+      <div class="at-clock" id="at-clock">00:00:00</div>
+    </div>
+  </div>
+
   <div class="main-grid">
 
     <!-- ═══════════════════════════ ЛЕВАЯ КОЛОНКА ═══════════════════════════ -->
@@ -409,6 +442,56 @@
         <div id="ai-anomaly" class="ai-anomaly-banner" style="display:none">
           <span class="ai-anom-pulse"></span>
           ⚡ АНОМАЛИЯ: <span id="ai-anomaly-text">—</span>
+        </div>
+
+        <!-- ═══ AI ЛОГ РЕШЕНИЙ ═══ -->
+        <div class="ai-declog">
+          <div class="ai-declog-title">
+            <span>📋 AI Лог решений</span>
+            <span class="ai-declog-live"><span class="ai-live-pulse" style="width:5px;height:5px"></span> LIVE</span>
+          </div>
+          <div class="ai-declog-list" id="ai-declog-list">
+            <div class="empty-msg">Ждём первые тики…</div>
+          </div>
+        </div>
+
+        <!-- ═══ РУЧНОЕ УПРАВЛЕНИЕ ═══ -->
+        <div class="ai-manual-panel">
+          <div class="ai-manual-hdr">
+            <span class="ai-manual-title">⚡ Ручное управление</span>
+            <span class="ai-manual-lock-badge">🔒 Выход только в плюс</span>
+          </div>
+          <div class="ai-manual-body">
+            <div class="ai-manual-amount-row">
+              <span class="ai-manual-lbl">Объём TON</span>
+              <div class="ai-manual-ctrl">
+                <button class="ai-manual-adj" onclick="adjustManualAmt(-5)">−5</button>
+                <button class="ai-manual-adj" onclick="adjustManualAmt(-1)">−1</button>
+                <input type="number" id="manual-amount" class="ai-manual-input"
+                  value="7" min="1" max="1000" step="1">
+                <button class="ai-manual-adj" onclick="adjustManualAmt(1)">+1</button>
+                <button class="ai-manual-adj" onclick="adjustManualAmt(5)">+5</button>
+              </div>
+            </div>
+            <div class="ai-manual-btns-row">
+              <button class="ai-manual-buy-btn" id="btn-manual-buy" onclick="manualBuy()">
+                🟢 КУПИТЬ
+              </button>
+              <button class="ai-manual-sell-btn" id="btn-manual-sell" onclick="manualSellAll()">
+                🔴 ПРОДАТЬ ВСЁ
+              </button>
+            </div>
+            <div class="ai-manual-status" id="ai-manual-status"></div>
+          </div>
+          <!-- DB sync статус -->
+          <div class="ai-db-sync-row" id="ai-db-sync-row">
+            <span class="ai-db-icon" id="ai-db-icon">🗄️</span>
+            <div class="ai-db-info">
+              <span class="ai-db-label">База данных PostgreSQL</span>
+              <span class="ai-db-detail" id="ai-db-detail">Подключение…</span>
+            </div>
+            <span class="ai-db-badge" id="ai-db-badge">—</span>
+          </div>
         </div>
       </div>
 

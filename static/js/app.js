@@ -189,6 +189,9 @@ function updateUI(data) {
   document.getElementById("bb-lower").textContent = analysis.bb_lower ?? "—";
   renderMarketOverview(analysis);
   renderAIAnalytics(analysis);
+  updateTicker(data);
+  renderDecisionLog(data.decision_log || []);
+  updateDBSync(data.db_synced_secs != null ? data.db_synced_secs : null);
 
   // Статус кнопок
   const running = data.running;
@@ -1848,4 +1851,212 @@ function renderAIAnalytics(a) {
   const rrGain = document.getElementById("ai-rr-gain-fill");
   if (rrStop) rrStop.style.width = stopWidth.toFixed(1) + "%";
   if (rrGain) rrGain.style.width = gainWidth.toFixed(1) + "%";
+}
+
+// ═══════════════════════════════════════════════════════════════════
+//  🔴 AI STATUS TICKER — живая строка состояния
+// ═══════════════════════════════════════════════════════════════════
+
+// Часы в тикере
+(function startClock() {
+  function tick() {
+    const el = document.getElementById("at-clock");
+    if (el) el.textContent = new Date().toLocaleTimeString("ru-RU", {hour12:false});
+  }
+  tick();
+  setInterval(tick, 1000);
+})();
+
+function updateTicker(data) {
+  if (!data) return;
+  const a = data.analysis || {};
+  const ai = data.ai || {};
+  const stats = data.stats || {};
+
+  // Режим
+  const running = data.running;
+  const modeDot = document.getElementById("at-mode-dot");
+  const modeTxt = document.getElementById("at-mode-txt");
+  if (modeDot) modeDot.style.background = running ? "#00ff88" : "#ff4d6d";
+  if (modeTxt) modeTxt.textContent = running ? "AUTO ON" : "СТОП";
+
+  // RSI + Regime
+  const rsiEl = document.getElementById("at-rsi");
+  if (rsiEl) rsiEl.textContent = "RSI " + (a.rsi != null ? Number(a.rsi).toFixed(1) : "—");
+  const regEl = document.getElementById("at-regime");
+  if (regEl) {
+    regEl.textContent = a.regime || "—";
+    regEl.style.color = a.regime_color || "#8892b0";
+  }
+
+  // AI сигнал
+  const aiSig  = document.getElementById("at-ai-sig");
+  const aiConf = document.getElementById("at-ai-conf");
+  const sigColors = {BUY:"#00ff88", SELL:"#ff4d6d", HOLD:"#8892b0"};
+  if (aiSig) {
+    const sig = ai.ai_signal || "HOLD";
+    aiSig.textContent = sig;
+    aiSig.style.color = sigColors[sig] || "#8892b0";
+  }
+  if (aiConf) aiConf.textContent = (ai.confidence || 0) + "%";
+
+  // P&L
+  const pnl = Number(stats.total_pnl || 0);
+  const pnlEl = document.getElementById("at-pnl");
+  if (pnlEl) {
+    pnlEl.textContent = (pnl >= 0 ? "+" : "") + pnl.toFixed(4) + " TON";
+    pnlEl.style.color = pnl >= 0 ? "#00ff88" : "#ff4d6d";
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════
+//  📋 AI ЛОГ РЕШЕНИЙ
+// ═══════════════════════════════════════════════════════════════════
+
+function renderDecisionLog(log) {
+  const el = document.getElementById("ai-declog-list");
+  if (!el || !log) return;
+  if (!log.length) {
+    el.innerHTML = '<div class="empty-msg">Ждём первые тики…</div>';
+    return;
+  }
+  const gradeColors = { A:"#00ff88", B:"#ffd166", C:"#ff8585" };
+  el.innerHTML = log.slice(0, 12).map(d => {
+    const result = d.result || "HOLD";
+    const cls = result === "BUY" ? "dec-buy" : result === "SELL" ? "dec-sell" : "dec-hold";
+    const icon = result === "BUY" ? "▲ BUY" : result === "SELL" ? "▼ SELL" : "— HOLD";
+    const gc = gradeColors[d.quality] || "#8892b0";
+    return `<div class="ai-dec-row ${cls}">
+      <span class="ai-dec-time">${d.t || "—"}</span>
+      <span class="ai-dec-result">${icon}</span>
+      <span class="ai-dec-conf">${d.conf || 0}%</span>
+      <span class="ai-dec-rsi">RSI ${d.rsi != null ? d.rsi : "—"}</span>
+      <span class="ai-dec-regime">${(d.regime || "").replace("RANGING","RANG").replace("DOWNTREND","DOWN").replace("UPTREND","UP").replace("BREAKOUT","BREAK").replace("VOLATILE","VOLT")}</span>
+      <span class="ai-dec-grade" style="color:${gc}">${d.quality || "C"}(${d.score || 0})</span>
+    </div>`;
+  }).join("");
+}
+
+// Раз в 15 сек запрашиваем лог отдельно
+(function pollDecisionLog() {
+  function fetchLog() {
+    fetch("/api/ai/decisions").then(r => r.json()).then(log => {
+      renderDecisionLog(log);
+    }).catch(() => {});
+  }
+  fetchLog();
+  setInterval(fetchLog, 15000);
+})();
+
+// ═══════════════════════════════════════════════════════════════════
+//  🗄️ DB SYNC STATUS
+// ═══════════════════════════════════════════════════════════════════
+
+function updateDBSync(data) {
+  const secs = data != null ? Number(data) : null;
+  const badgeEl  = document.getElementById("ai-db-badge");
+  const detailEl = document.getElementById("ai-db-detail");
+  const atDbEl   = document.getElementById("at-db-status");
+  let badgeTxt, badgeCls, detail;
+  if (secs === null) {
+    badgeTxt = "нет синхр."; badgeCls = "db-warn";
+    detail = "Ещё не было синхронизации";
+  } else if (secs < 120) {
+    badgeTxt = "✅ SYNC"; badgeCls = "db-ok";
+    detail = `Синхронизировано ${secs}с назад`;
+  } else {
+    badgeTxt = "⚠️ " + Math.floor(secs/60) + "м назад"; badgeCls = "db-warn";
+    detail = `Последняя синхр. ${Math.floor(secs/60)} мин назад`;
+  }
+  if (badgeEl) { badgeEl.textContent = badgeTxt; badgeEl.className = "ai-db-badge " + badgeCls; }
+  if (detailEl) detailEl.textContent = detail;
+  if (atDbEl) atDbEl.textContent = secs != null ? (secs < 120 ? "✅ " + secs + "с" : "⚠️ " + Math.floor(secs/60) + "м") : "—";
+}
+
+(function pollDBSync() {
+  function fetchDB() {
+    fetch("/api/db/sync_status").then(r => r.json()).then(d => {
+      const secs = d.secs_ago;
+      updateDBSync(secs);
+      const detailEl = document.getElementById("ai-db-detail");
+      if (detailEl && d.ok) {
+        const sStr = secs != null ? ` · ${secs}с назад` : "";
+        detailEl.textContent = `✅ Подключено · ${d.trades || 0} сделок в БД · ${d.open || 0} открытых${sStr}`;
+      }
+      if (detailEl && !d.ok) {
+        detailEl.textContent = "❌ Нет подключения к БД";
+      }
+    }).catch(() => updateDBSync(null));
+  }
+  fetchDB();
+  setInterval(fetchDB, 30000);
+})();
+
+// ═══════════════════════════════════════════════════════════════════
+//  ⚡ РУЧНОЕ УПРАВЛЕНИЕ
+// ═══════════════════════════════════════════════════════════════════
+
+function adjustManualAmt(delta) {
+  const el = document.getElementById("manual-amount");
+  if (!el) return;
+  const cur = parseInt(el.value) || 7;
+  el.value = Math.max(1, Math.min(1000, cur + delta));
+}
+
+function setManualStatus(msg, color) {
+  const el = document.getElementById("ai-manual-status");
+  if (!el) return;
+  el.textContent = msg;
+  el.style.color = color || "rgba(255,255,255,.5)";
+  if (msg) setTimeout(() => { el.textContent = ""; }, 5000);
+}
+
+function setManualLoading(loading) {
+  const btnBuy  = document.getElementById("btn-manual-buy");
+  const btnSell = document.getElementById("btn-manual-sell");
+  if (btnBuy)  btnBuy.disabled  = loading;
+  if (btnSell) btnSell.disabled = loading;
+}
+
+function manualBuy() {
+  const amount = parseFloat(document.getElementById("manual-amount")?.value || 7);
+  if (isNaN(amount) || amount < 1) { setManualStatus("❌ Укажите корректный объём", "#ff4d6d"); return; }
+  setManualLoading(true);
+  setManualStatus("⏳ Отправляю ордер покупки…", "#ffd166");
+  fetch("/api/trade/manual_buy", {
+    method: "POST",
+    headers: {"Content-Type": "application/json"},
+    body: JSON.stringify({amount})
+  }).then(r => r.json()).then(d => {
+    setManualLoading(false);
+    if (d.ok) {
+      setManualStatus(`✅ Куплено! Цена: ${d.price != null ? fmtPrice(d.price) : "—"}`, "#00ff88");
+      showToast("✅ Ручная покупка исполнена", "ok");
+    } else {
+      setManualStatus("❌ " + (d.error || "Ошибка"), "#ff4d6d");
+      showToast("❌ " + (d.error || "Ошибка"), "err");
+    }
+  }).catch(() => {
+    setManualLoading(false);
+    setManualStatus("❌ Ошибка соединения", "#ff4d6d");
+  });
+}
+
+function manualSellAll() {
+  if (!confirm("Продать все позиции? (применяется правило: только в плюс)")) return;
+  setManualLoading(true);
+  setManualStatus("⏳ Закрываю все позиции…", "#ffd166");
+  fetch("/api/trade/manual_sell_all", {method:"POST"}).then(r => r.json()).then(d => {
+    setManualLoading(false);
+    if (d.ok) {
+      setManualStatus(`✅ Закрыто позиций: ${d.closed || 0}`, "#00ff88");
+      showToast("✅ Все позиции закрыты", "ok");
+    } else {
+      setManualStatus("⚠️ " + (d.error || "Нельзя продать"), "#ffd166");
+      showToast("⚠️ " + (d.error || "Нельзя продать сейчас"), "info");
+    }
+  }).catch(() => {
+    setManualLoading(false);
+    setManualStatus("❌ Ошибка соединения", "#ff4d6d");
+  });
 }
