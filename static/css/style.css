@@ -556,3 +556,107 @@ body { background: var(--bg); color: var(--text); font-family: 'Segoe UI', syste
 .zone-down    { background:rgba(255,77,109,.12); color:#ff4d6d; border-color:rgba(255,77,109,.3); }
 .zone-neutral { background:rgba(255,255,255,.05); color:var(--text2); border-color:var(--border); }
 .zone-warn    { background:rgba(255,209,102,.1); color:#ffd166; border-color:rgba(255,209,102,.3); }
+
+/* ═══════════════════════════════════════════════════════
+   🤖 AI ТОРГОВАЯ АНАЛИТИКА — Премиум-карточка
+═══════════════════════════════════════════════════════ */
+.ai-card {
+  background: linear-gradient(145deg, #0b1120 0%, #0f1a2e 50%, #0b1120 100%);
+  border: 1px solid rgba(0,209,255,.18);
+  box-shadow: 0 0 40px rgba(0,130,255,.07), inset 0 1px 0 rgba(255,255,255,.04);
+  position: relative; overflow: hidden;
+}
+.ai-card::before {
+  content: ""; position: absolute; inset: 0;
+  background: radial-gradient(ellipse 80% 60% at 50% -10%, rgba(0,180,255,.06) 0%, transparent 70%);
+  pointer-events: none;
+}
+.ai-card-header { margin-bottom: 12px; }
+.ai-card-title-row { display: flex; align-items: center; gap: 8px; }
+.ai-card-title { font-size: 14px; font-weight: 800; letter-spacing: .3px; color: #fff; }
+.ai-card-sub { font-size: 10px; color: rgba(255,255,255,.3); margin-left: auto; letter-spacing: .5px; }
+.ai-score-label-row { margin-top: 3px; }
+.ai-score-word {
+  font-size: 11px; font-weight: 600; letter-spacing: 1px; text-transform: uppercase;
+  padding: 2px 10px; border-radius: 20px;
+  background: rgba(255,255,255,.05); color: rgba(255,255,255,.5);
+  transition: background .5s, color .5s;
+}
+.ai-live-pulse {
+  width: 7px; height: 7px; border-radius: 50%; background: #00ff88;
+  box-shadow: 0 0 8px #00ff88;
+  animation: aiPulse 1.6s ease-in-out infinite;
+}
+@keyframes aiPulse { 0%,100%{opacity:1;transform:scale(1)} 50%{opacity:.4;transform:scale(.7)} }
+
+/* Главная строка */
+.ai-main-row { display: flex; gap: 16px; align-items: flex-start; margin-bottom: 14px; }
+.ai-gauge-wrap { flex-shrink: 0; }
+.ai-gauge-svg { width: 160px; height: 124px; display: block; }
+
+/* MTF */
+.ai-mtf-col { flex: 1; display: flex; flex-direction: column; gap: 6px; justify-content: center; padding-top: 4px; }
+.ai-mtf-title { font-size: 9px; color: rgba(255,255,255,.3); letter-spacing: 1.5px; text-transform: uppercase; margin-bottom: 4px; }
+.ai-mtf-row {
+  display: flex; align-items: center; gap: 8px; padding: 7px 10px;
+  border-radius: 8px; background: rgba(255,255,255,.03);
+  border: 1px solid rgba(255,255,255,.06); position: relative; overflow: hidden;
+}
+.ai-mtf-row::before {
+  content: ""; position: absolute; left: 0; top: 0; bottom: 0;
+  width: 3px; border-radius: 2px;
+}
+.ai-mtf-tf   { font-size: 10px; color: rgba(255,255,255,.4); width: 60px; flex-shrink: 0; }
+.ai-mtf-sig  { font-size: 11px; font-weight: 800; flex: 1; letter-spacing: .3px; }
+.ai-mtf-conf-bar { height: 4px; border-radius: 2px; margin-top: 2px; transition: width .8s ease; }
+.ai-mtf-pct  { font-size: 9px; color: rgba(255,255,255,.35); width: 28px; text-align: right; }
+
+/* AI Компоненты */
+.ai-components-title { font-size: 10px; color: rgba(255,255,255,.3); letter-spacing: 1px; text-transform: uppercase; margin-bottom: 8px; }
+.ai-components-list  { display: flex; flex-direction: column; gap: 6px; margin-bottom: 14px; }
+.ai-comp-row { display: flex; align-items: center; gap: 8px; }
+.ai-comp-icon { font-size: 13px; width: 18px; text-align: center; flex-shrink: 0; }
+.ai-comp-name { font-size: 11px; color: rgba(255,255,255,.6); width: 115px; flex-shrink: 0; }
+.ai-comp-bar-track {
+  flex: 1; height: 6px; border-radius: 3px;
+  background: rgba(255,255,255,.06); position: relative; overflow: hidden;
+}
+.ai-comp-bar-fill {
+  height: 100%; border-radius: 3px; transition: width 1.2s cubic-bezier(.25,.46,.45,.94);
+  box-shadow: 0 0 8px currentColor;
+}
+.ai-comp-pts { font-size: 10px; font-weight: 700; width: 38px; text-align: right; font-family: monospace; flex-shrink: 0; }
+
+/* Предсказание цены */
+.ai-pred-row {
+  background: rgba(255,255,255,.02); border: 1px solid rgba(255,255,255,.07);
+  border-radius: 10px; padding: 10px 12px;
+}
+.ai-pred-title { font-size: 10px; color: rgba(255,255,255,.35); letter-spacing: .8px; margin-bottom: 8px; }
+.ai-pred-grid  { display: flex; justify-content: space-between; margin-bottom: 8px; }
+.ai-pred-item  { display: flex; flex-direction: column; align-items: center; gap: 2px; }
+.ai-pred-lbl   { font-size: 9px; color: rgba(255,255,255,.4); }
+.ai-pred-val   { font-size: 12px; font-weight: 800; font-family: monospace; }
+.ai-pred-stop .ai-pred-val  { color: #ff4d6d; }
+.ai-pred-now  .ai-pred-val  { color: #fff; font-size: 14px; }
+.ai-pred-tgt  .ai-pred-val  { color: #00ff88; }
+
+/* R:R визуальная полоса */
+.ai-rr-bar-wrap {
+  display: flex; height: 6px; border-radius: 3px; overflow: hidden;
+  background: rgba(255,255,255,.04); margin-bottom: 6px;
+}
+.ai-rr-stop-fill { background: rgba(255,77,109,.45); transition: width .8s ease; }
+.ai-rr-mid { width: 3px; background: rgba(255,255,255,.5); flex-shrink: 0; }
+.ai-rr-gain-fill { background: rgba(0,255,136,.45); transition: width .8s ease; }
+.ai-rr-stats {
+  display: flex; justify-content: space-between;
+  font-size: 10px; color: rgba(255,255,255,.4);
+}
+.ai-rr-stats strong { color: #fff; }
+
+/* Score level colors */
+.score-elite  { background:rgba(0,255,136,.12) !important; color:#00ff88 !important; }
+.score-strong { background:rgba(92,200,255,.12)!important; color:#5cc8ff !important; }
+.score-ok     { background:rgba(255,209,102,.1)!important; color:#ffd166 !important; }
+.score-weak   { background:rgba(255,77,109,.1) !important; color:#ff4d6d !important; }

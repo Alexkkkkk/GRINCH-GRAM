@@ -484,6 +484,65 @@ def analyze(ohlcv):
     # Расстояние до EMA50 в %
     price_vs_ema50 = round((last["close"] / last["ema_50"] - 1) * 100, 2) if last["ema_50"] > 0 else 0.0
 
+    # ── AI Opportunity Score (0-100) ─────────────────────────────────
+    score_entry  = min(eq_score / 10 * 38, 38)           # 0-38: качество входа
+    _rbmap = {"UPTREND": 22, "BREAKOUT": 22, "VOLATILE": 9, "RANGING": 4, "DOWNTREND": 0}
+    score_regime = _rbmap.get(regime_name, 4)             # 0-22: режим
+    score_vol    = min(float(last["vol_ratio"]) / 3 * 18, 18)  # 0-18: объём
+    score_adx    = min(float(last["adx"]) / 50 * 12, 12)      # 0-12: тренд
+    score_sig    = round(strength * 10)                    # 0-10: сила сигнала
+    opportunity_score = int(min(100, round(score_entry + score_regime + score_vol + score_adx + score_sig)))
+
+    # ── Мультитаймфреймные сигналы ────────────────────────────────────
+    def _mtf_signal(window_n):
+        if len(df) < window_n + 5:
+            return "НЕЙТРАЛ", 50, "#8892b0"
+        sub  = df.iloc[-window_n:]
+        sl   = sub.iloc[-1]
+        rsi  = float(sl["rsi"])
+        hist = float(sl["macd_hist"])
+        ema_cross = sl["ema_fast"] > sl["ema_slow"]
+        stoch = float(sl["stoch_rsi"])
+        bull = sum([rsi < 65, rsi > 38, hist > 0, ema_cross, stoch < 0.75])
+        bear = sum([rsi > 35, rsi < 62, hist < 0, not ema_cross, stoch > 0.25])
+        if bull >= 4: return "ПОКУПКА", min(50 + bull * 8, 95), "#00ff88"
+        if bear >= 4: return "ПРОДАЖА", min(50 + bear * 8, 95), "#ff4d6d"
+        if bull > bear: return "СЛАБЫЙ ↗", 40 + bull * 5, "#5cc8ff"
+        if bear > bull: return "СЛАБЫЙ ↘", 40 + bear * 5, "#ffd166"
+        return "НЕЙТРАЛ", 50, "#8892b0"
+
+    signals_mtf = [
+        {"tf": "Скальпинг",  "n": 8,  **dict(zip(["signal","conf","color"], _mtf_signal(8)))},
+        {"tf": "Интрадей",   "n": 20, **dict(zip(["signal","conf","color"], _mtf_signal(20)))},
+        {"tf": "Свинг",      "n": 50, **dict(zip(["signal","conf","color"], _mtf_signal(50)))},
+    ]
+
+    # ── Предсказание цены ────────────────────────────────────────────
+    atr_val   = float(last["atr"])
+    price_now = float(last["close"])
+    uptrend   = float(last["ema_fast"]) > float(last["ema_slow"])
+    tgt_mult  = 1.8 if opportunity_score >= 70 else 1.3
+    stp_mult  = 1.0
+
+    price_target  = round(price_now + atr_val * (tgt_mult  if uptrend else -tgt_mult),  d)
+    price_stop    = round(price_now - atr_val * (stp_mult  if uptrend else -stp_mult),  d)
+    rr_ratio      = round(abs(price_target - price_now) / (abs(price_stop - price_now) + 1e-10), 2)
+    prob_win      = min(95, max(30, opportunity_score + (10 if uptrend else -10)))
+
+    # ── AI Компоненты (breakdown для radar/bars) ──────────────────────
+    ai_components = [
+        {"name": "Качество входа",   "icon": "🎯", "val": int(score_entry),  "max": 38,
+         "pct": round(score_entry / 38 * 100), "color": "#00ff88"},
+        {"name": "Режим рынка",      "icon": "🌊", "val": int(score_regime), "max": 22,
+         "pct": round(score_regime / 22 * 100), "color": "#00d4ff"},
+        {"name": "Объём/Ликвид.",    "icon": "💧", "val": round(score_vol,1), "max": 18,
+         "pct": round(score_vol / 18 * 100), "color": "#5cc8ff"},
+        {"name": "Сила тренда ADX",  "icon": "📐", "val": round(score_adx,1), "max": 12,
+         "pct": round(score_adx / 12 * 100), "color": "#ffd166"},
+        {"name": "Сигнал модели",    "icon": "🤖", "val": score_sig, "max": 10,
+         "pct": round(score_sig / 10 * 100), "color": "#c084fc"},
+    ]
+
     return {
         "signal":        signal,
         "strength":      round(strength * 100, 1),
@@ -529,6 +588,14 @@ def analyze(ohlcv):
         "entry_score":   eq_score,
         "entry_reasons": eq_reasons,
         "factors_detail": factors_detail,
+        # AI аналитика
+        "opportunity_score": opportunity_score,
+        "signals_mtf":       signals_mtf,
+        "price_target":      price_target,
+        "price_stop":        price_stop,
+        "rr_ratio":          rr_ratio,
+        "prob_win":          prob_win,
+        "ai_components":     ai_components,
         # Свечи для графика
         "candles":       candles.to_dict("records"),
     }

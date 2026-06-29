@@ -430,6 +430,105 @@
         </div>
       </div>
 
+      <!-- ═══ AI ТОРГОВАЯ АНАЛИТИКА ═══ -->
+      <div class="card ai-card" id="ai-analytics-card">
+
+        <!-- Заголовок -->
+        <div class="ai-card-header">
+          <div class="ai-card-title-row">
+            <span class="ai-card-title">🤖 AI Торговая Аналитика</span>
+            <span class="ai-live-pulse"></span>
+            <span class="ai-card-sub">GRINCH/TON · DeDust</span>
+          </div>
+          <div class="ai-score-label-row">
+            <span class="ai-score-word" id="ai-score-word">Загрузка...</span>
+          </div>
+        </div>
+
+        <!-- Главная строка: Gauge + MTF сигналы -->
+        <div class="ai-main-row">
+
+          <!-- SVG Gauge -->
+          <div class="ai-gauge-wrap">
+            <svg class="ai-gauge-svg" viewBox="0 0 180 140" xmlns="http://www.w3.org/2000/svg">
+              <!-- Дефисы для градиента -->
+              <defs>
+                <linearGradient id="gaugeGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+                  <stop offset="0%"   stop-color="#ff4d6d"/>
+                  <stop offset="40%"  stop-color="#ffd166"/>
+                  <stop offset="75%"  stop-color="#5cc8ff"/>
+                  <stop offset="100%" stop-color="#00ff88"/>
+                </linearGradient>
+                <filter id="glowG">
+                  <feGaussianBlur stdDeviation="3" result="blur"/>
+                  <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+                </filter>
+              </defs>
+              <!-- Фон дуги -->
+              <circle cx="90" cy="90" r="62"
+                fill="none" stroke="rgba(255,255,255,.06)" stroke-width="12"
+                stroke-dasharray="245 144" stroke-dashoffset="-72"
+                stroke-linecap="round" transform="rotate(-225 90 90)"/>
+              <!-- Значение дуги -->
+              <circle cx="90" cy="90" r="62" id="ai-gauge-arc"
+                fill="none" stroke="url(#gaugeGrad)" stroke-width="12"
+                stroke-dasharray="0 389" stroke-dashoffset="-72"
+                stroke-linecap="round" transform="rotate(-225 90 90)"
+                style="transition:stroke-dasharray 1s ease;filter:url(#glowG)"/>
+              <!-- Метки -->
+              <text x="28" y="118" fill="#ff4d6d" font-size="9" font-family="monospace" opacity=".7">0</text>
+              <text x="147" y="118" fill="#00ff88" font-size="9" font-family="monospace" opacity=".7">100</text>
+              <!-- Центр: число -->
+              <text x="90" y="85" id="ai-gauge-num"
+                fill="white" font-size="32" font-weight="900"
+                font-family="monospace" text-anchor="middle" dominant-baseline="auto">—</text>
+              <text x="90" y="103" fill="rgba(255,255,255,.45)" font-size="9"
+                text-anchor="middle" font-family="monospace" letter-spacing="2">ШАНС ВХОДА</text>
+            </svg>
+          </div>
+
+          <!-- Мультитаймфреймные сигналы -->
+          <div class="ai-mtf-col">
+            <div class="ai-mtf-title">МУЛЬТИТАЙМФРЕЙМ</div>
+            <div class="ai-mtf-list" id="ai-mtf-list"></div>
+          </div>
+        </div>
+
+        <!-- AI Компоненты — прогресс-бары -->
+        <div class="ai-components-title">Из чего складывается оценка</div>
+        <div class="ai-components-list" id="ai-components-list"></div>
+
+        <!-- Предсказание цены -->
+        <div class="ai-pred-row" id="ai-pred-row">
+          <div class="ai-pred-title">📍 AI Ценовые уровни</div>
+          <div class="ai-pred-grid">
+            <div class="ai-pred-item ai-pred-stop">
+              <span class="ai-pred-lbl">🛑 Стоп</span>
+              <span class="ai-pred-val" id="ai-pred-stop">—</span>
+            </div>
+            <div class="ai-pred-item ai-pred-now">
+              <span class="ai-pred-lbl">📌 Сейчас</span>
+              <span class="ai-pred-val" id="ai-pred-now">—</span>
+            </div>
+            <div class="ai-pred-item ai-pred-tgt">
+              <span class="ai-pred-lbl">🎯 Цель</span>
+              <span class="ai-pred-val" id="ai-pred-tgt">—</span>
+            </div>
+          </div>
+          <!-- Визуальная линия R:R -->
+          <div class="ai-rr-bar-wrap">
+            <div class="ai-rr-stop-fill" id="ai-rr-stop-fill"></div>
+            <div class="ai-rr-mid"></div>
+            <div class="ai-rr-gain-fill" id="ai-rr-gain-fill"></div>
+          </div>
+          <div class="ai-rr-stats">
+            <span>R:R <strong id="ai-rr-val">—</strong></span>
+            <span>Вероятность победы <strong id="ai-win-prob">—</strong>%</span>
+          </div>
+        </div>
+
+      </div>
+
       <!-- Важность признаков -->
       <div class="card">
         <div class="card-title">🏆 Ключевые признаки модели

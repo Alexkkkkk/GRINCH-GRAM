@@ -188,6 +188,7 @@ function updateUI(data) {
   document.getElementById("bb-upper").textContent = analysis.bb_upper ?? "—";
   document.getElementById("bb-lower").textContent = analysis.bb_lower ?? "—";
   renderMarketOverview(analysis);
+  renderAIAnalytics(analysis);
 
   // Статус кнопок
   const running = data.running;
@@ -1746,3 +1747,105 @@ function renderMarketOverview(analysis) {
   }
 }
 
+
+// ═══════════════════════════════════════════════════════════════════
+//  🤖 AI ТОРГОВАЯ АНАЛИТИКА
+// ═══════════════════════════════════════════════════════════════════
+
+function renderAIAnalytics(a) {
+  if (!a) return;
+
+  // ── Opportunity Score ─────────────────────────────────────────
+  const score = Number(a.opportunity_score || 0);
+
+  // SVG gauge: r=62, circumference=~389.6, 270°=~292.2
+  const circum  = 2 * Math.PI * 62;          // 389.56
+  const arcFull = circum * 270 / 360;        // 292.17
+  const arcVal  = arcFull * (score / 100);
+  const gaugeArc = document.getElementById("ai-gauge-arc");
+  if (gaugeArc) {
+    gaugeArc.setAttribute("stroke-dasharray", `${arcVal.toFixed(1)} ${circum.toFixed(1)}`);
+  }
+  const gaugeNum = document.getElementById("ai-gauge-num");
+  if (gaugeNum) gaugeNum.textContent = score;
+
+  // Уровень словами
+  let word, wordCls;
+  if      (score >= 80) { word = "🔥 Отличный вход";    wordCls = "score-elite";  }
+  else if (score >= 65) { word = "✅ Хороший сигнал";    wordCls = "score-strong"; }
+  else if (score >= 45) { word = "⚡ Слабый сигнал";     wordCls = "score-ok";    }
+  else                  { word = "⏳ Ждём момента";       wordCls = "score-weak";  }
+  const wordEl = document.getElementById("ai-score-word");
+  if (wordEl) { wordEl.textContent = word; wordEl.className = "ai-score-word " + wordCls; }
+
+  // ── Мультитаймфрейм ───────────────────────────────────────────
+  const mtf    = a.signals_mtf || [];
+  const mtfEl  = document.getElementById("ai-mtf-list");
+  if (mtfEl && mtf.length) {
+    mtfEl.innerHTML = mtf.map(m => {
+      const conf = Number(m.conf || 50);
+      const col  = m.color || "#8892b0";
+      return `<div class="ai-mtf-row" style="border-left:3px solid ${col}20">
+        <span class="ai-mtf-tf">${m.tf}</span>
+        <div style="flex:1">
+          <div style="display:flex;justify-content:space-between;margin-bottom:3px">
+            <span class="ai-mtf-sig" style="color:${col}">${m.signal}</span>
+            <span class="ai-mtf-pct">${conf}%</span>
+          </div>
+          <div class="ai-comp-bar-track" style="height:3px">
+            <div class="ai-comp-bar-fill" style="width:${conf}%;background:${col};box-shadow:none"></div>
+          </div>
+        </div>
+      </div>`;
+    }).join("");
+  }
+
+  // ── AI Компоненты ─────────────────────────────────────────────
+  const comps   = a.ai_components || [];
+  const compsEl = document.getElementById("ai-components-list");
+  if (compsEl && comps.length) {
+    compsEl.innerHTML = comps.map(c => {
+      const pct = Number(c.pct || 0);
+      const col = c.color || "#5cc8ff";
+      return `<div class="ai-comp-row">
+        <span class="ai-comp-icon">${c.icon}</span>
+        <span class="ai-comp-name">${c.name}</span>
+        <div class="ai-comp-bar-track">
+          <div class="ai-comp-bar-fill" style="width:${pct}%;background:${col};color:${col}"></div>
+        </div>
+        <span class="ai-comp-pts" style="color:${col}">${c.val}/${c.max}</span>
+      </div>`;
+    }).join("");
+  }
+
+  // ── Предсказание цены ─────────────────────────────────────────
+  const pStop = a.price_stop;
+  const pNow  = a.price;
+  const pTgt  = a.price_target;
+  const rr    = Number(a.rr_ratio || 1);
+  const prob  = Number(a.prob_win || 50);
+
+  if (document.getElementById("ai-pred-stop"))
+    document.getElementById("ai-pred-stop").textContent = pStop != null ? fmtPrice(pStop) : "—";
+  if (document.getElementById("ai-pred-now"))
+    document.getElementById("ai-pred-now").textContent  = pNow  != null ? fmtPrice(pNow)  : "—";
+  if (document.getElementById("ai-pred-tgt"))
+    document.getElementById("ai-pred-tgt").textContent  = pTgt  != null ? fmtPrice(pTgt)  : "—";
+  if (document.getElementById("ai-rr-val"))
+    document.getElementById("ai-rr-val").textContent    = rr.toFixed(2);
+  if (document.getElementById("ai-win-prob"))
+    document.getElementById("ai-win-prob").textContent  = prob;
+
+  // R:R визуальная полоса
+  const totalRange = pStop != null && pTgt != null && pNow != null
+    ? Math.abs(pTgt - pStop) : 1;
+  const stopWidth = pStop != null && pNow != null
+    ? Math.abs(pNow - pStop) / totalRange * 100 : 33;
+  const gainWidth = pTgt  != null && pNow != null
+    ? Math.abs(pTgt - pNow) / totalRange * 100 : 55;
+
+  const rrStop = document.getElementById("ai-rr-stop-fill");
+  const rrGain = document.getElementById("ai-rr-gain-fill");
+  if (rrStop) rrStop.style.width = stopWidth.toFixed(1) + "%";
+  if (rrGain) rrGain.style.width = gainWidth.toFixed(1) + "%";
+}
