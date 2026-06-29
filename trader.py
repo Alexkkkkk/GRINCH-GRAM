@@ -821,11 +821,17 @@ class Trader:
         def _sf(v, d=0.0):
             try: return float(v) if v is not None else d
             except Exception: return d
+        try:
+            from price_feed import price_feed as _pf
+            _grinch_ton_entry = _pf.get_grinch_ton_price() or 0.0
+        except Exception:
+            _grinch_ton_entry = 0.0
         trade = {
             "id":              order["id"],
             "symbol":          Config.SYMBOL,
             "side":            side,
             "entry_price":     price,
+            "entry_price_ton": _grinch_ton_entry,
             "amount":          round(amount, 6),
             "stake_ton":       round(stake, 4),
             "stop_loss":       sl,
@@ -1294,6 +1300,27 @@ class Trader:
         if self.exchange.mode == "dedust":
             grinch_amount = trade.get("amount", 0)
             if grinch_amount > 0:
+                # ── ЖЕЛЕЗНЫЙ ЗАМОК: проверяем TON-цену перед блокчейном ──────
+                # Даже если все верхние проверки пройдены, делаем финальную
+                # верификацию по РЕАЛЬНОЙ on-chain цене (TON/GRINCH).
+                # Продажа в минус по TON абсолютно невозможна.
+                if Config.ONLY_PROFIT_EXIT:
+                    try:
+                        from price_feed import price_feed as _pf2
+                        cur_ton = _pf2.get_grinch_ton_price() or 0.0
+                        entry_ton = trade.get("entry_price_ton") or 0.0
+                        if cur_ton > 0 and entry_ton > 0:
+                            min_sell_ton = entry_ton * (1.0 + Config.FEE_ROUND_TRIP / 100.0)
+                            if cur_ton < min_sell_ton:
+                                self.log(
+                                    f"🛡️ ЖЕЛЕЗНЫЙ ЗАМОК: продажа заблокирована — "
+                                    f"цена {cur_ton:.8f} TON < порог {min_sell_ton:.8f} TON "
+                                    f"(вход {entry_ton:.8f}, нужно +{Config.FEE_ROUND_TRIP:.1f}%). Держим.",
+                                    "WARN"
+                                )
+                                return False
+                    except Exception:
+                        pass
                 self.log(
                     f"💸 Продаём {grinch_amount:.6f} GRINCH на DeDust "
                     f"(причина: {reason})...", "INFO"

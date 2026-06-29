@@ -265,7 +265,11 @@ try:
         _default = getattr(Config, _key)
         try:
             if isinstance(_default, bool):
-                _val = bool(_val)
+                # Строки 'False'/'0'/'no' из DB/JSON → False (стандартный bool() не работает!)
+                if isinstance(_val, str):
+                    _val = _val.strip().lower() not in ("false", "0", "no", "none", "")
+                else:
+                    _val = bool(_val)
             elif isinstance(_default, int):
                 _val = int(_val)
             elif isinstance(_default, float):
