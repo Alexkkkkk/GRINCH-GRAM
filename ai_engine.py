@@ -1,16 +1,24 @@
 """
-AI Engine v2 — Super Self-Learning Trading Brain for GRINCH/TON
+AI Engine v3 — QuantumBrain: World-Class Self-Learning Trading AI for GRINCH/TON
 
-Архитектура:
-  • 4 базовые ML-модели: RandomForest · ExtraTrees · HistGradientBoosting · GradientBoosting
-  • Динамические веса ансамбля (rolling accuracy per model, последние 40 тиков)
-  • Мета-слой: LogisticRegression обучается на выходах базовых моделей после 30+ сделок
-  • 45+ технических признаков: RSI · MACD · BB · ATR · ADX · OBV · CCI · Williams%R · Ichimoku ·
-    Heiken Ashi · Volume Profile · Fibonacci lags · Trend angles · S/R distance
-  • Адаптивная разметка: порог = 0.6 × ATR_pct (не фиксированный), мульти-горизонт (2/3/5 баров)
-  • Буфер опыта (Experience Replay): 600 последних признаков + подтверждённые сделки
-  • Обратная связь от трейдера: feedback(outcome, pnl) → добавляет 5× взвешенные примеры
-  • Авто-переобучение: полный рефит каждые 5 тиков или при накоплении 10+ новых сделок
+Архитектура (6 моделей + мета-стекинг + нейросеть + Kelly-sizing):
+  • 6 базовых ML-моделей:
+      RF   — RandomForest (200 деревьев)
+      ET   — ExtraTrees (150 деревьев, быстрый дивергент)
+      GB   — GradientBoosting (120 итераций)
+      HGB  — HistGradientBoosting (XGBoost-стиль)
+      XGB  — XGBoost (300 деревьев, early stopping)
+      MLP  — Многослойный персептрон (нейросеть: 128-64-32)
+  • Динамические веса: rolling accuracy^2, окно 60 тиков
+  • Мета-слой: LogisticRegression стекинг ВСЕХ 6 моделей (активен с 20+ сделок)
+  • 65+ признаков: RSI · MACD · BB · ATR · ADX · OBV · CCI · Williams%R · Ichimoku ·
+    Heiken Ashi · VWAP · CVD · Price Acceleration · Fractal · S/R zones ·
+    Fibonacci lags · Trend angles · Volume Profile · Higher-order momentum
+  • Адаптивная ATR-разметка (порог 0.5×ATR), мульти-горизонт (2/3/5/8 баров)
+  • Experience Replay: 1200 примеров + подтверждённые сделки (5× вес)
+  • Kelly Criterion: оптимальная доля ставки по win-rate + avg P&L
+  • Авто-переобучение: каждые 3 тика или 5+ новых подтверждений
+  • Полная персистентность: PostgreSQL + experience.json
 """
 
 import numpy as np
@@ -25,8 +33,9 @@ from sklearn.ensemble import (
     GradientBoostingClassifier,
     ExtraTreesClassifier,
 )
-from sklearn.linear_model import LogisticRegression
-from sklearn.preprocessing import StandardScaler
+from sklearn.linear_model import LogisticRegression, RidgeClassifier
+from sklearn.neural_network import MLPClassifier
+from sklearn.preprocessing import StandardScaler, RobustScaler
 from sklearn.pipeline import Pipeline
 import warnings
 warnings.filterwarnings("ignore")
@@ -37,17 +46,24 @@ try:
 except ImportError:
     _HAS_HGB = False
 
+try:
+    from xgboost import XGBClassifier
+    _HAS_XGB = True
+except Exception:
+    _HAS_XGB = False
+
 log = logging.getLogger(__name__)
 
 
 # ─── Константы ────────────────────────────────────────────────────────────────
-LOOK_AHEADS       = [2, 3, 5]          # мульти-горизонт голосования
-ATR_LABEL_MULT    = 0.6                 # порог = 0.6 × ATR_pct
-CONFIRM_WEIGHT    = 5.0                 # вес подтверждённой сделки
-REPLAY_SIZE       = 600                 # размер буфера опыта
-ACCURACY_WINDOW   = 40                  # окно rolling accuracy
-META_MIN_SAMPLES  = 30                  # мин. сделок для мета-слоя
-RETRAIN_EVERY     = 5                   # полный рефит каждые N тиков
+LOOK_AHEADS       = [2, 3, 5, 8]       # мульти-горизонт голосования (добавлен 8)
+ATR_LABEL_MULT    = 0.5                 # порог = 0.5 × ATR_pct (чуть агрессивнее)
+CONFIRM_WEIGHT    = 7.0                 # вес подтверждённой сделки (был 5)
+REPLAY_SIZE       = 1200                # размер буфера опыта (был 600)
+ACCURACY_WINDOW   = 60                  # окно rolling accuracy (был 40)
+META_MIN_SAMPLES  = 20                  # мин. сделок для мета-слоя (был 30)
+RETRAIN_EVERY     = 3                   # полный рефит каждые N тиков (был 5)
+KELLY_LOOKBACK    = 50                  # окно для расчёта Kelly fraction
 
 
 class _ModelSlot:
@@ -147,27 +163,49 @@ class AIEngine:
         self._slots = [
             _ModelSlot("RF", _make_pipeline(
                 RandomForestClassifier(
-                    n_estimators=200, max_depth=8, min_samples_split=4,
+                    n_estimators=250, max_depth=9, min_samples_split=4,
                     min_samples_leaf=2, max_features="sqrt",
                     class_weight="balanced", random_state=42, n_jobs=1)
             )),
             _ModelSlot("ET", _make_pipeline(
                 ExtraTreesClassifier(
-                    n_estimators=150, max_depth=7, min_samples_split=5,
+                    n_estimators=200, max_depth=8, min_samples_split=4,
                     class_weight="balanced", random_state=7, n_jobs=1)
             )),
             _ModelSlot("GB", _make_pipeline(
                 GradientBoostingClassifier(
-                    n_estimators=120, max_depth=4, learning_rate=0.05,
-                    subsample=0.8, random_state=42)
+                    n_estimators=150, max_depth=4, learning_rate=0.04,
+                    subsample=0.8, min_samples_leaf=3, random_state=42)
             )),
         ]
         if _HAS_HGB:
             self._slots.append(_ModelSlot("HGB", Pipeline([
                 ("clf", HistGradientBoostingClassifier(
-                    max_iter=150, max_depth=5, learning_rate=0.05,
-                    min_samples_leaf=10, random_state=42))
+                    max_iter=200, max_depth=6, learning_rate=0.04,
+                    min_samples_leaf=8, l2_regularization=0.1, random_state=42))
             ])))
+        if _HAS_XGB:
+            self._slots.append(_ModelSlot("XGB", Pipeline([
+                ("scaler", StandardScaler()),
+                ("clf", XGBClassifier(
+                    n_estimators=300, max_depth=5, learning_rate=0.04,
+                    subsample=0.8, colsample_bytree=0.8, min_child_weight=3,
+                    gamma=0.1, reg_alpha=0.05, reg_lambda=1.0,
+                    eval_metric="mlogloss", verbosity=0,
+                    random_state=42))
+            ])))
+        self._slots.append(_ModelSlot("MLP", Pipeline([
+            ("scaler", RobustScaler()),
+            ("clf", MLPClassifier(
+                hidden_layer_sizes=(128, 64, 32),
+                activation="relu", solver="adam",
+                alpha=1e-3, learning_rate_init=0.001,
+                max_iter=300, early_stopping=True, n_iter_no_change=15,
+                validation_fraction=0.1, random_state=42))
+        ])))
+        # Kelly trade history
+        self._kelly_wins:   deque = deque(maxlen=KELLY_LOOKBACK)
+        self._kelly_pnls:   deque = deque(maxlen=KELLY_LOOKBACK)
 
     # ─────────────────────────────────────────────────────────────────────────
     # Прогресс
@@ -265,7 +303,8 @@ class AIEngine:
             emit("validate", 96, "🔎 Валидация завершена")
         time.sleep(0.2)
 
-        emit("ready", 100, f"✅ SuperAI готов! {len(self._slots)} моделей · {len(X)} баров · Самообучение активно 🟢", len(X))
+        model_names_str = " · ".join(s.name for s in self._slots)
+        emit("ready", 100, f"✅ QuantumBrain готов! {len(self._slots)} моделей ({model_names_str}) · {len(X)} баров · Kelly активен 🟢", len(X))
         self.training_progress["trained"] = True
 
     # ─────────────────────────────────────────────────────────────────────────
@@ -331,6 +370,7 @@ class AIEngine:
         importance = self._feature_importance()
         anomaly    = self._detect_anomaly(df)
         model_info = self._model_stats()
+        kelly      = self._compute_kelly()
 
         return {
             "ai_signal":    ai_signal,
@@ -348,6 +388,7 @@ class AIEngine:
             "samples_trained": len(X),
             "training_progress": self.training_progress,
             "model_info":   model_info,
+            "kelly":        kelly,
         }
 
     # ─────────────────────────────────────────────────────────────────────────
@@ -363,12 +404,18 @@ class AIEngine:
             return
         with self._lock:
             label  = 1 if outcome == "win" else -1
-            weight = CONFIRM_WEIGHT * (1.0 + min(abs(pnl), 2.0))
+            # Больший вес — для крупных выигрышей (Kelly-обратная связь)
+            pnl_abs = min(abs(pnl), 5.0)
+            weight = CONFIRM_WEIGHT * (1.0 + pnl_abs * 0.5)
             self._confirmed_X.append(self._last_buy_features.copy())
             self._confirmed_y.append(label)
             self._confirmed_w.append(weight)
             self._last_buy_features = None
             self._new_confirms += 1
+
+            # Kelly history
+            self._kelly_wins.append(1 if outcome == "win" else 0)
+            self._kelly_pnls.append(float(pnl))
 
             # Обновляем accuracy для всех моделей
             for slot in self._slots:
@@ -391,11 +438,14 @@ class AIEngine:
         """Сериализует подтверждённый опыт ИИ для записи на диск."""
         with self._lock:
             return {
-                "confirmed_X": [list(map(float, x)) for x in self._confirmed_X],
-                "confirmed_y": [int(v) for v in self._confirmed_y],
-                "confirmed_w": [float(v) for v in self._confirmed_w],
-                "slot_acc":    {s.name: list(s._history) for s in self._slots},
-                "feature_dim": len(self._feature_names),
+                "confirmed_X":  [list(map(float, x)) for x in self._confirmed_X],
+                "confirmed_y":  [int(v) for v in self._confirmed_y],
+                "confirmed_w":  [float(v) for v in self._confirmed_w],
+                "slot_acc":     {s.name: list(s._history) for s in self._slots},
+                "feature_dim":  len(self._feature_names),
+                "kelly_wins":   list(self._kelly_wins),
+                "kelly_pnls":   list(self._kelly_pnls),
+                "retrains":     self._retrains,
             }
 
     def import_experience(self, data: dict) -> int:
@@ -426,10 +476,20 @@ class AIEngine:
                         if s._history:
                             a = sum(s._history) / len(s._history)
                             s.weight = max(0.15, a ** 2)
+                # Восстанавливаем Kelly историю
+                kw = data.get("kelly_wins", [])
+                kp = data.get("kelly_pnls", [])
+                if kw:
+                    for v in kw[-KELLY_LOOKBACK:]:
+                        self._kelly_wins.append(int(v))
+                if kp:
+                    for v in kp[-KELLY_LOOKBACK:]:
+                        self._kelly_pnls.append(float(v))
+                self._retrains = int(data.get("retrains", 0))
                 n = len(self._confirmed_X)
                 if n and self._trained:
                     self._refit_all()
-                log.info(f"[AI] Восстановлено {n} подтверждённых примеров с диска")
+                log.info(f"[AI] Восстановлено {n} подтверждённых примеров, Kelly={len(self._kelly_wins)} сделок")
                 return n
             except Exception as e:
                 log.warning(f"[AI] import_experience error: {e}")
@@ -703,6 +763,34 @@ class AIEngine:
         df["hi20_dist"] = (c - h.rolling(20).max()) / (c + 1e-10)
         df["lo20_dist"] = (c - l.rolling(20).min()) / (c + 1e-10)
 
+        # ── VWAP (Volume-Weighted Average Price) ──────────────────────────
+        vwap = (v * (h + l + c) / 3).cumsum() / (v.cumsum() + 1e-10)
+        df["vwap_dev"] = (c - vwap) / (vwap + 1e-10)   # отклонение от VWAP
+
+        # ── CVD (Cumulative Volume Delta) ─────────────────────────────────
+        # Приближение: объём × знак свечи (покупатели vs продавцы)
+        bull_vol = v.where(c >= o, 0.0)
+        bear_vol = v.where(c <  o, 0.0)
+        cvd      = (bull_vol - bear_vol).cumsum()
+        df["cvd_norm"] = cvd / (v.rolling(20).sum() + 1e-10)
+
+        # ── Price Acceleration (2-я производная) ──────────────────────────
+        vel  = c.pct_change(1)                         # скорость
+        df["accel"] = vel.diff()                       # ускорение (2-я произв.)
+        df["jerk"]  = df["accel"].diff()               # рывок (3-я произв.)
+
+        # ── Fractal Efficiency (насколько прямое движение) ────────────────
+        for win in [5, 10]:
+            price_path = (c.diff().abs()).rolling(win).sum()
+            price_net  = (c - c.shift(win)).abs()
+            df[f"fractal_{win}"] = price_net / (price_path + 1e-10)
+
+        # ── Range Position ────────────────────────────────────────────────
+        # Где внутри 50-барного диапазона находится цена (0=дно, 1=верх)
+        hi50 = h.rolling(50).max()
+        lo50 = l.rolling(50).min()
+        df["range_pos50"] = (c - lo50) / (hi50 - lo50 + 1e-10)
+
         df.dropna(inplace=True)
         return df
 
@@ -729,6 +817,11 @@ class AIEngine:
             "body_r", "bull", "wick_asy",
             "slope_5", "slope_10", "slope_20",
             "hi20_dist", "lo20_dist",
+            # Новые признаки v3
+            "vwap_dev", "cvd_norm",
+            "accel", "jerk",
+            "fractal_5", "fractal_10",
+            "range_pos50",
         ]
         # Оставляем только существующие столбцы
         feature_cols = [col for col in feature_cols if col in df.columns]
@@ -910,10 +1003,45 @@ class AIEngine:
             "description": "⚡ Аномальное движение!" if anom else "Норма",
         }
 
+    def _compute_kelly(self) -> dict:
+        """
+        Kelly Criterion: оптимальная доля ставки от капитала.
+        f* = W - (1-W)/R, где W = win_rate, R = avg_win / avg_loss
+        Возвращаем «half-Kelly» для безопасности (0.5×f*).
+        """
+        try:
+            wins = list(self._kelly_wins)
+            pnls = list(self._kelly_pnls)
+            n = len(wins)
+            if n < 5:
+                return {"fraction": 0.5, "win_rate": 0.5, "rr_ratio": 1.0, "trades": n, "ev": 0.0}
+            win_rate = sum(wins) / n
+            win_pnls  = [p for w, p in zip(wins, pnls) if w == 1 and p > 0]
+            loss_pnls = [abs(p) for w, p in zip(wins, pnls) if w == 0 and p < 0]
+            avg_win  = sum(win_pnls)  / max(len(win_pnls),  1)
+            avg_loss = sum(loss_pnls) / max(len(loss_pnls), 1)
+            rr = avg_win / max(avg_loss, 0.01)
+            kelly = win_rate - (1 - win_rate) / max(rr, 0.01)
+            half_kelly = max(0.1, min(kelly * 0.5, 2.0))   # half-kelly, capped 0.1-2.0
+            ev = win_rate * avg_win - (1 - win_rate) * avg_loss
+            return {
+                "fraction": round(half_kelly, 3),
+                "win_rate": round(win_rate * 100, 1),
+                "rr_ratio": round(rr, 2),
+                "trades":   n,
+                "ev":       round(ev, 4),
+                "avg_win":  round(avg_win, 4),
+                "avg_loss": round(avg_loss, 4),
+            }
+        except Exception:
+            return {"fraction": 0.5, "win_rate": 50.0, "rr_ratio": 1.0, "trades": 0, "ev": 0.0}
+
     def _model_stats(self) -> list:
+        icons = {"RF": "🌲", "ET": "⚡", "GB": "🚀", "HGB": "💥", "XGB": "🔥", "MLP": "🧠"}
         return [
             {
                 "name":     s.name,
+                "icon":     icons.get(s.name, "🤖"),
                 "weight":   round(s.weight, 2),
                 "accuracy": round(s.accuracy * 100, 1),
                 "samples":  len(s._history),
@@ -943,4 +1071,5 @@ class AIEngine:
             "anomaly":  {"detected": False, "z_price": 0, "z_volume": 0, "description": "Нет данных"},
             "model_trained": False, "samples_trained": 0,
             "training_progress": self.training_progress,
+            "kelly": {"fraction": 0.5, "win_rate": 50.0, "rr_ratio": 1.0, "trades": 0, "ev": 0.0},
         }

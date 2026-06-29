@@ -615,10 +615,61 @@
 
       </div>
 
+      <!-- QuantumBrain: Kelly + Модели -->
+      <div class="card quantum-brain-card">
+        <div class="card-title">🧠 QuantumBrain — 6 нейросетей + Kelly
+          <span class="qb-v3-badge">v3</span>
+          <span class="ai-live-pulse" style="margin-left:8px"></span>
+        </div>
+        <!-- Kelly Criterion panel -->
+        <div class="kelly-panel">
+          <div class="kelly-main">
+            <div class="kelly-fraction-wrap">
+              <svg class="kelly-donut" viewBox="0 0 80 80">
+                <circle cx="40" cy="40" r="30" fill="none" stroke="rgba(255,255,255,0.06)" stroke-width="10"/>
+                <circle cx="40" cy="40" r="30" id="kelly-arc"
+                  fill="none" stroke="#00ff88" stroke-width="10"
+                  stroke-dasharray="0 188.5" stroke-linecap="round"
+                  transform="rotate(-90 40 40)"
+                  style="transition:stroke-dasharray 0.8s ease"/>
+                <text x="40" y="44" text-anchor="middle" fill="white"
+                  font-size="13" font-weight="900" font-family="monospace" id="kelly-frac-text">—</text>
+              </svg>
+              <div class="kelly-frac-label">Kelly<br>Ставка</div>
+            </div>
+            <div class="kelly-stats-grid">
+              <div class="kelly-stat">
+                <div class="kelly-stat-val" id="kelly-winrate">—%</div>
+                <div class="kelly-stat-lbl">Win Rate</div>
+              </div>
+              <div class="kelly-stat">
+                <div class="kelly-stat-val" id="kelly-rr">—</div>
+                <div class="kelly-stat-lbl">R:R</div>
+              </div>
+              <div class="kelly-stat">
+                <div class="kelly-stat-val" id="kelly-ev">—</div>
+                <div class="kelly-stat-lbl">Exp. Value</div>
+              </div>
+              <div class="kelly-stat">
+                <div class="kelly-stat-val" id="kelly-trades">—</div>
+                <div class="kelly-stat-lbl">Сделок</div>
+              </div>
+            </div>
+          </div>
+          <div class="kelly-desc" id="kelly-desc">Накапливаем статистику сделок...</div>
+        </div>
+
+        <!-- 6 моделей ансамбля -->
+        <div class="qb-models-title">Ансамбль из 6 моделей</div>
+        <div class="qb-models-grid" id="qb-models-grid">
+          <!-- заполняется из JS -->
+        </div>
+      </div>
+
       <!-- Важность признаков -->
       <div class="card">
         <div class="card-title">🏆 Ключевые признаки модели
-          <span style="font-size:10px;color:var(--text2);font-weight:400;margin-left:4px">RF + GBoost</span>
+          <span style="font-size:10px;color:var(--text2);font-weight:400;margin-left:4px">RF · XGB · MLP</span>
         </div>
         <div id="fi-list" class="fi-list"></div>
       </div>

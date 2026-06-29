@@ -19,3 +19,4 @@
 - [Profit-only guarantee](profit-only-guarantee.md) — never sell at a loss; ONLY_PROFIT_EXIT hardcoded True (reasserted after settings load), gate EVERY sell path (incl. manual /api/trade/close) on required_gross_pct().
 - [Port 5000 bind crash](port-bind-crash.md) — restart left a stale app.py holding port 5000 → EADDRINUSE. app.py __main__ self-frees port (kills own stale PID via /proc, cmdline-guarded) + EADDRINUSE-only retry. Not threads (all daemon).
 - [Manual per-trade close](manual-trade-close.md) — single-position close must NOT _emit_signal SELL (would force-liquidate all custodial users); _close_lock + membership recheck prevents double-sell.
+- [QuantumBrain v3 AI engine](quantumbrain-v3.md) — 6 models: RF+ET+GB+HGB+XGB(xgboost)+MLP(neural net); XGB needs no num_class/objective override (sklearn API handles labels); Kelly deques init in _build_models(); feature_dim incompatibility clears old experience; 65+ features incl VWAP/CVD/acceleration/fractal.

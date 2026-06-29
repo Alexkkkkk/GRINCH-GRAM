@@ -450,6 +450,86 @@ const REGIME_ICON = {
   UPTREND: "🚀", DOWNTREND: "📉", VOLATILE: "⚡", RANGING: "↔️", TRANSITION: "🔄",
 };
 
+function _updateKellyPanel(kelly) {
+  if (!kelly) return;
+  const frac   = Number(kelly.fraction) || 0.5;
+  const wr     = Number(kelly.win_rate) || 0;
+  const rr     = Number(kelly.rr_ratio) || 1;
+  const ev     = Number(kelly.ev) || 0;
+  const trades = Number(kelly.trades) || 0;
+
+  // Donut arc: circumference = 2π×30 = 188.5
+  const arc = document.getElementById("kelly-arc");
+  if (arc) {
+    const fill = Math.min(frac / 2.0, 1.0) * 188.5;
+    const goodKelly = wr >= 55 && trades >= 5;
+    arc.setAttribute("stroke-dasharray", fill.toFixed(1) + " 188.5");
+    arc.setAttribute("stroke", goodKelly ? "#00ff88" : wr >= 50 ? "#ffd166" : "#ff4d6d");
+  }
+  const fracText = document.getElementById("kelly-frac-text");
+  if (fracText) fracText.textContent = (frac * 100).toFixed(0) + "%";
+
+  const wrEl = document.getElementById("kelly-winrate");
+  if (wrEl) {
+    wrEl.textContent = wr.toFixed(1) + "%";
+    wrEl.style.color = wr >= 60 ? "#00ff88" : wr >= 50 ? "#ffd166" : "#ff4d6d";
+  }
+  const rrEl = document.getElementById("kelly-rr");
+  if (rrEl) {
+    rrEl.textContent = rr.toFixed(2);
+    rrEl.style.color = rr >= 2 ? "#00ff88" : rr >= 1 ? "#ffd166" : "#ff4d6d";
+  }
+  const evEl = document.getElementById("kelly-ev");
+  if (evEl) {
+    evEl.textContent = (ev >= 0 ? "+" : "") + ev.toFixed(3) + " TON";
+    evEl.style.color = ev >= 0 ? "#00ff88" : "#ff4d6d";
+  }
+  const trEl = document.getElementById("kelly-trades");
+  if (trEl) trEl.textContent = trades;
+
+  const descEl = document.getElementById("kelly-desc");
+  if (descEl) {
+    if (trades < 5) {
+      descEl.textContent = `Накапливаем статистику: ${trades}/5 сделок…`;
+      descEl.style.color = "#8892b0";
+    } else if (wr >= 60 && rr >= 1.5) {
+      descEl.textContent = `🔥 Отличная статистика! Kelly рекомендует ${(frac*100).toFixed(0)}% ставку`;
+      descEl.style.color = "#00ff88";
+    } else if (wr >= 50) {
+      descEl.textContent = `✅ Позитивное мат.ожидание — Kelly: ${(frac*100).toFixed(0)}% от капитала`;
+      descEl.style.color = "#ffd166";
+    } else {
+      descEl.textContent = `⚠️ Win rate ${wr.toFixed(0)}% — AI снижает ставку до ${(frac*100).toFixed(0)}%`;
+      descEl.style.color = "#ff4d6d";
+    }
+  }
+}
+
+function _updateQuantumModels(modelInfo) {
+  const grid = document.getElementById("qb-models-grid");
+  if (!grid || !modelInfo) return;
+  const MODEL_ICONS = {RF:"🌲",ET:"⚡",GB:"🚀",HGB:"💥",XGB:"🔥",MLP:"🧠"};
+  const MODEL_DESC  = {RF:"Random Forest",ET:"Extra Trees",GB:"Gradient Boost",HGB:"Hist GB",XGB:"XGBoost",MLP:"Neural Net"};
+  grid.innerHTML = modelInfo.map(m => {
+    const pct = Math.round(m.accuracy || 0);
+    const col = pct >= 65 ? "#00ff88" : pct >= 50 ? "#ffd166" : "#ff4d6d";
+    const wPct = Math.min(m.weight / 2.0 * 100, 100).toFixed(0);
+    return `<div class="qb-model-card">
+      <div class="qb-model-icon">${MODEL_ICONS[m.name]||"🤖"}</div>
+      <div class="qb-model-body">
+        <div class="qb-model-name">${m.name} <span class="qb-model-desc">${MODEL_DESC[m.name]||""}</span></div>
+        <div class="qb-model-bar-wrap">
+          <div class="qb-model-bar" style="width:${pct}%;background:${col}"></div>
+        </div>
+        <div class="qb-model-stats">
+          <span style="color:${col}">${pct}% acc</span>
+          <span style="color:#8892b0">wt: ${m.weight.toFixed(2)}</span>
+        </div>
+      </div>
+    </div>`;
+  }).join("");
+}
+
 function updateAIPro(ai) {
   if (!ai) return;
 
@@ -539,6 +619,12 @@ function updateAIPro(ai) {
     const now = new Date();
     updEl.textContent = "обновлено " + now.toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
   }
+
+  // 11. Kelly Criterion panel
+  if (ai.kelly) _updateKellyPanel(ai.kelly);
+
+  // 12. QuantumBrain 6-model grid
+  if (ai.model_info && ai.model_info.length) _updateQuantumModels(ai.model_info);
 }
 
 // ─── SVG Gauge ───────────────────────────────────────

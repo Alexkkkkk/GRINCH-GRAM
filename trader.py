@@ -653,9 +653,23 @@ class Trader:
     def _open_trade(self, side, price, analysis, ai=None):
         ai_conf = ai.get("confidence", 0) if ai else 0
 
-        # Ставка пропорциональна уверенности AI: 50%→100% капитала
+        # ── Kelly-adjusted position sizing ────────────────────────────────
+        # Base: пропорционально уверенности AI (50%→0.5× .. 90%→1.0×)
         conf_factor = 0.5 + min(max((ai_conf - 50) / 50.0, 0.0), 1.0) * 0.5
-        stake  = Config.TRADE_AMOUNT * conf_factor
+        # Kelly fraction: если накоплено ≥5 сделок, используем Kelly для масштаба
+        kelly = (ai or {}).get("kelly", {})
+        kelly_frac = kelly.get("fraction", 0.5)
+        kelly_wr   = kelly.get("win_rate", 50.0)
+        kelly_trades = kelly.get("trades", 0)
+        if kelly_trades >= 5 and kelly_wr >= 50:
+            # Хорошая статистика → Kelly увеличивает ставку (до 2×)
+            kelly_mult = min(kelly_frac, 2.0)
+        elif kelly_trades >= 5 and kelly_wr < 45:
+            # Плохая статистика → уменьшаем ставку
+            kelly_mult = max(kelly_frac, 0.3)
+        else:
+            kelly_mult = 1.0   # мало данных → нейтральный множитель
+        stake  = Config.TRADE_AMOUNT * conf_factor * kelly_mult
 
         # ── Резерв на комиссию + опрос баланса перед сделкой ─────────────
         # ВСЕГДА оставляем GAS_RESERVE_TON на газ будущей продажи GRINCH→TON.
