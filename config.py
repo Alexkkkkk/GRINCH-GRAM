@@ -169,6 +169,21 @@ class Config:
     RSI_OVERSOLD_REVERSAL = float(os.getenv("RSI_OVERSOLD_REVERSAL", "25"))
     REVERSAL_AI_MIN       = float(os.getenv("REVERSAL_AI_MIN", "85"))
 
+    # ── Полная автономия AI ───────────────────────────────────────────
+    # Когда True, AI — единственный распорядитель сделок. Технический сигнал
+    # (RSI/EMA/etc.) становится лишь входными данными для AI, не требуется
+    # совпадение с AI-сигналом. AI сам считает выгодность с учётом всех комиссий.
+    # Отключать нельзя — это и есть смысл системы.
+    AI_AUTONOMOUS_MODE = True
+
+    # Минимальная уверенность AI для самостоятельного входа в автономном режиме
+    AI_AUTONOMOUS_MIN_CONF = float(os.getenv("AI_AUTONOMOUS_MIN_CONF", "58.0"))
+
+    # Коэффициент «реалистичности» входа: минимальный ATR в % от цены, при котором
+    # рынок способен дать нужный gross-% (если ATR × mult < required_gross → не входим).
+    # Защищает от входов в мёртвый боковик, где движения нет.
+    AI_ATR_FEASIBILITY_MULT = float(os.getenv("AI_ATR_FEASIBILITY_MULT", "1.2"))
+
     DEMO_MODE  = os.getenv("DEMO_MODE",  "false").lower() == "true"
     SECRET_KEY = os.getenv("SECRET_KEY", "grinch-gram-secret-2024")
     # EQ-адрес выводится из TON_MNEMONIC (WalletV5R1 / W5 — кошелёк TonKeeper)

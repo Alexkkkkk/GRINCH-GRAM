@@ -340,19 +340,7 @@ class Trader:
                 )
                 return
 
-        # ── Формируем итоговый сигнал ──────────────────────────────────
-        final_signal = "HOLD"
-        if signal == ai_signal and signal != "HOLD":
-            final_signal = signal
-        elif ai_signal != "HOLD" and conf >= Config.AI_OVERRIDE_CONFIDENCE:
-            final_signal = ai_signal
-
-        if anomaly:
-            self.log(f"⚠️ АНОМАЛИЯ! Z-цена={ai['anomaly']['z_price']}", "WARN")
-
         # ── Сигнал «умных денег» (мониторинг кошельков пула) ───────────
-        # Учимся у тех, кто реально в плюсе: при накоплении смягчаем порог
-        # входа, при распродаже — блокируем покупку. Продажи НЕ трогаем.
         sm = None
         wt = getattr(self, "wallet_tracker", None)
         if wt is not None:
@@ -360,19 +348,55 @@ class Trader:
                 sm = wt.get_signal()
             except Exception:
                 sm = None
-        self.last_sm = sm  # сохраняем для статуса и аналитики
+        self.last_sm = sm
         sm_score = sm["score"] if sm else 0.0
         sm_early = bool(sm and sm.get("early_buy"))
 
-        # ── Счётчик подтверждений (требуем N последовательных BUY) ───
-        # N зависит от грейда точки входа: A=1, B=2, C=3
+        if anomaly:
+            self.log(f"⚠️ АНОМАЛИЯ! Z-цена={ai['anomaly']['z_price']}", "WARN")
+
+        # ══════════════════════════════════════════════════════════════════
+        # ПОЛНАЯ АВТОНОМИЯ AI: AI — единственный распорядитель сделок.
+        # Технический сигнал (signal) — лишь дополнительный контекст для AI.
+        # AI выбирает направление сам, используя уверенность, режим рынка,
+        # данные умных денег и расчёт комиссий.
+        # ══════════════════════════════════════════════════════════════════
+        final_signal = "HOLD"
+        signal_source = ""  # для лога: откуда взялся финальный сигнал
+
+        if Config.AI_AUTONOMOUS_MODE:
+            # Порог уверенности AI (смягчается умными деньгами)
+            min_conf = Config.AI_AUTONOMOUS_MIN_CONF
+            if sm_score >= Config.SMART_MONEY_BOOST_AT or sm_early:
+                min_conf = max(
+                    Config.SMART_MONEY_MIN_FLOOR,
+                    min_conf - Config.SMART_MONEY_CONF_BONUS,
+                )
+            if ai_signal != "HOLD" and conf >= min_conf:
+                final_signal = ai_signal
+                signal_source = "AI🤖"
+                if signal == ai_signal:
+                    signal_source = "AI🤖+ТА✅"  # технический анализ подтвердил
+        else:
+            # Легаси-режим: требуем совпадения технического и AI сигналов
+            if signal == ai_signal and signal != "HOLD":
+                final_signal = signal
+                signal_source = "ТА+AI"
+            elif ai_signal != "HOLD" and conf >= Config.AI_OVERRIDE_CONFIDENCE:
+                final_signal = ai_signal
+                signal_source = "AI-override"
+
+        # ── Счётчик подтверждений ───────────────────────────────────────
+        # В автономном режиме AI достаточно 1 подтверждения для A/B, 2 для C
         if final_signal == "BUY":
             self._buy_confirm_count += 1
         else:
             self._buy_confirm_count = 0
 
-        # ── Фильтры входа ──────────────────────────────────────────────
+        # ── Фильтры входа (ТОЛЬКО для BUY) ─────────────────────────────
         blocked = None
+        fee_feasible_reason = ""
+
         if final_signal == "BUY":
             hard_override     = conf >= Config.AI_HARD_OVERRIDE_CONFIDENCE
             mean_rev_override = (
@@ -380,59 +404,81 @@ class Trader:
                 conf >= Config.REVERSAL_AI_MIN
             )
 
-            # Порог уверенности: смягчаем, если умные деньги копят ИЛИ
-            # прибыльные кошельки только начали покупать (ранний вход).
-            min_conf = Config.MIN_AI_CONFIDENCE
-            if sm_score >= Config.SMART_MONEY_BOOST_AT or sm_early:
-                min_conf = max(
-                    Config.SMART_MONEY_MIN_FLOOR,
-                    Config.MIN_AI_CONFIDENCE - Config.SMART_MONEY_CONF_BONUS,
-                )
+            # ── Расчёт комиссионной реалистичности ─────────────────────
+            # Минимальный % движения цены нужен, чтобы покрыть:
+            #   • DEX-комиссия покупки: 1% от суммы
+            #   • DEX-комиссия продажи: 1% от суммы
+            #   • Газ покупки: ~0.103 TON (фикс.)
+            #   • Газ продажи: ~0.253 TON (фикс.)
+            #   • Целевая нетто-прибыль: +20%
+            stake_est = Config.TRADE_AMOUNT  # оценка без баланса
+            min_gross_needed = Config.required_gross_pct_with_gas(stake_est)
 
-            if self.exp.is_paused():
-                blocked = "ИИ-пауза: просадка капитала (защита от убытков)"
-            elif sm_score <= Config.SMART_MONEY_BLOCK and not hard_override:
-                blocked = f"умные деньги распродают (smart money {sm_score:+.2f})"
-            elif conf < min_conf:
-                blocked = f"низкая уверенность AI {conf}%"
-            elif mean_rev_override:
-                # RSI экстремально низкий + AI уверен → Mean Reversion вход даже в DOWNTREND
-                self.log(
-                    f"📈 Mean Reversion Override: RSI={rsi:.1f} + AI={conf}% "
-                    f"→ вход несмотря на {regime_name}", "INFO"
-                )
-            elif Config.TREND_FILTER and regime_name == "DOWNTREND":
-                blocked = "нисходящий тренд"
-            elif regime_name == "VOLATILE" and not hard_override:
-                # VOLATILE = хаос, без сильного AI-сигнала не входим
-                blocked = f"хаотичный рынок (VOLATILE)"
-            elif hard_override:
-                if anomaly:
-                    self.log(
-                        f"🔥 Hard Override: AI={conf}% → вход несмотря на "
-                        f"аномалию Z={ai['anomaly']['z_price']}", "INFO"
+            # ATR как прокси волатильности: можно ли ожидать такое движение?
+            atr_pct = (ai.get("regime", {}) or {}).get("atr_pct", 0)
+            if atr_pct > 0:
+                atr_capacity = atr_pct * Config.AI_ATR_FEASIBILITY_MULT
+                if atr_capacity < min_gross_needed and not hard_override:
+                    fee_feasible_reason = (
+                        f"ATR={atr_pct:.1f}%×{Config.AI_ATR_FEASIBILITY_MULT}"
+                        f"={atr_capacity:.1f}% < нужно {min_gross_needed:.1f}% (комиссии+20%)"
                     )
-            elif rsi >= Config.RSI_OVERBOUGHT:
-                blocked = f"перекупленность RSI={rsi:.1f}"
-            elif anomaly:
-                blocked = f"рыночная аномалия Z={ai['anomaly']['z_price']:.2f}"
-            elif self._buy_confirm_count < confirm_needed and not hard_override and not sm_early:
-                # Нужно confirm_needed последовательных сигналов.
-                # A-грейд требует 1, B — 2, C — 3. Ранний SM-вход пропускает проверку.
-                blocked = f"ожидаем подтверждение ({self._buy_confirm_count}/{confirm_needed}) [грейд {entry_quality}]"
 
-        # ── Расширенное логирование с качеством точки входа ───────────
+            # ── Применяем фильтры по приоритету ───────────────────────
+            if self.exp.is_paused():
+                blocked = "ИИ-пауза: просадка капитала"
+            elif sm_score <= Config.SMART_MONEY_BLOCK and not hard_override:
+                blocked = f"умные деньги распродают ({sm_score:+.2f})"
+            elif conf < (Config.AI_AUTONOMOUS_MIN_CONF if Config.AI_AUTONOMOUS_MODE
+                         else Config.MIN_AI_CONFIDENCE):
+                blocked = f"AI уверенность {conf}% < порога"
+            elif mean_rev_override:
+                self.log(
+                    f"📈 Mean Reversion: RSI={rsi:.1f} + AI={conf}% → вход в {regime_name}",
+                    "INFO"
+                )
+            elif fee_feasible_reason and not hard_override:
+                # ATR недостаточен для покрытия комиссий и цели — рынок стоит
+                blocked = f"рынок слишком спокойный: {fee_feasible_reason}"
+            elif Config.TREND_FILTER and regime_name == "DOWNTREND" and not hard_override:
+                blocked = "нисходящий тренд (AI недостаточно уверен для входа)"
+            elif hard_override:
+                self.log(
+                    f"🔥 Hard Override AI {conf}%: входим несмотря на {regime_name}"
+                    + (f", аномалия Z={ai['anomaly']['z_price']:.2f}" if anomaly else ""),
+                    "INFO"
+                )
+            elif rsi >= Config.RSI_OVERBOUGHT and not hard_override:
+                blocked = f"перекупленность RSI={rsi:.1f}"
+            elif anomaly and not hard_override:
+                blocked = f"рыночная аномалия Z={ai['anomaly']['z_price']:.2f}"
+            elif Config.AI_AUTONOMOUS_MODE:
+                # Автономный режим: A/B грейд = 1 подтверждение, C = 2
+                auto_confirm = 1 if entry_quality in ("A", "B") else 2
+                if self._buy_confirm_count < auto_confirm and not sm_early:
+                    blocked = (
+                        f"жду {auto_confirm} подтверждение(я) AI "
+                        f"({self._buy_confirm_count}/{auto_confirm}) [{entry_quality}]"
+                    )
+            elif self._buy_confirm_count < confirm_needed and not hard_override and not sm_early:
+                blocked = (
+                    f"ожидаем подтверждение "
+                    f"({self._buy_confirm_count}/{confirm_needed}) [грейд {entry_quality}]"
+                )
+
+        # ── Расширенное логирование ────────────────────────────────────
         sm_txt = ""
         if sm and sm.get("basis") != "idle":
-            sm_txt = f" | 🐋 умн.деньги {sm['score']:+.2f} ({sm['label']})"
+            sm_txt = f" | 🐋 {sm['score']:+.2f}({sm['label']})"
         if sm_early:
-            sm_txt += f" | 🟢 ранний вход (умные купили {sm.get('early_buy_ton', 0)} TON)"
+            sm_txt += f" | 🟢 ранний SM"
 
-        # Бейдж грейда
         grade_badge = {"A": "🏆A", "B": "⭐B", "C": "🔸C"}.get(entry_quality, "?")
+        mode_tag = "🤖АВТО" if Config.AI_AUTONOMOUS_MODE else "🔗БЛОК"
         self.log(
-            f"📊 RSI={rsi:.1f} | {regime_name} | "
-            f"Сигнал={signal} | AI={ai_signal}({conf}%) | "
+            f"📊 [{mode_tag}] RSI={rsi:.1f} | {regime_name} | "
+            f"ТА={signal} | AI={ai_signal}({conf}%) | "
+            f"Источник={signal_source or 'HOLD'} | "
             f"Вход {grade_badge}({entry_score}пт)"
             f"{sm_txt} | "
             f"Итог={'HOLD' if blocked else final_signal}",
@@ -452,6 +498,8 @@ class Trader:
             "rsi":     round(rsi, 1),
             "regime":  regime_name,
             "blocked": bool(blocked),
+            "source":  signal_source or "HOLD",
+            "reason":  blocked or "",
         }
         self.decision_log.append(_dec_entry)
         if len(self.decision_log) > 25:
@@ -614,6 +662,26 @@ class Trader:
             amount = stake / price
         else:
             amount = stake / price
+
+        # ── Детальный расчёт комиссий и цели (до исполнения) ────────────
+        if side == "buy" and ton_stake:
+            _fee_pct   = Config.FEE_PCT
+            _buy_gas   = Config.BUY_GAS_TON
+            _sell_gas  = Config.SELL_GAS_TON
+            _min_gross = Config.required_gross_pct_with_gas(ton_stake)
+            _target_net = Config.TARGET_NET_PCT
+            _real_stake = ton_stake
+            _total_cost = _real_stake + _buy_gas
+            self.log(
+                f"💰 Расчёт комиссий и цели:\n"
+                f"   Ставка:       {_real_stake:.3f} TON\n"
+                f"   Газ покупки:  {_buy_gas:.3f} TON  (→ пул, частично вернётся)\n"
+                f"   Газ продажи:  {_sell_gas:.3f} TON  (→ фиксируем заранее)\n"
+                f"   Комиссия DEX: {_fee_pct}% вход + {_fee_pct}% выход = {_fee_pct*2:.1f}% от суммы\n"
+                f"   ИТОГО затрат: ~{_total_cost:.3f} TON\n"
+                f"   Нужно вырасти как минимум: +{_min_gross:.2f}% (gross) для +{_target_net:.0f}% нетто",
+                level="INFO"
+            )
 
         order = self.exchange.place_order(side, amount, ton_stake=ton_stake)
         if not order:

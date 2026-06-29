@@ -1926,12 +1926,18 @@ function renderDecisionLog(log) {
     const cls = result === "BUY" ? "dec-buy" : result === "SELL" ? "dec-sell" : "dec-hold";
     const icon = result === "BUY" ? "▲ BUY" : result === "SELL" ? "▼ SELL" : "— HOLD";
     const gc = gradeColors[d.quality] || "#8892b0";
-    return `<div class="ai-dec-row ${cls}">
+    const src = (d.source || "").replace("AI🤖+ТА✅","🤖+✅").replace("AI🤖","🤖").replace("HOLD","—");
+    const regShort = (d.regime || "").replace("RANGING","RANG").replace("DOWNTREND","DOWN")
+      .replace("UPTREND","UP").replace("BREAKOUT","BRK").replace("VOLATILE","VOLT")
+      .replace("TRANSITION","TRANS");
+    const reasonTip = d.reason ? ` title="${d.reason}"` : "";
+    return `<div class="ai-dec-row ${cls}"${reasonTip}>
       <span class="ai-dec-time">${d.t || "—"}</span>
       <span class="ai-dec-result">${icon}</span>
-      <span class="ai-dec-conf">${d.conf || 0}%</span>
+      <span class="ai-dec-conf" style="color:${result==='BUY'?'#00ff88':result==='SELL'?'#ff4d6d':'#8892b0'}">${d.conf || 0}%</span>
       <span class="ai-dec-rsi">RSI ${d.rsi != null ? d.rsi : "—"}</span>
-      <span class="ai-dec-regime">${(d.regime || "").replace("RANGING","RANG").replace("DOWNTREND","DOWN").replace("UPTREND","UP").replace("BREAKOUT","BREAK").replace("VOLATILE","VOLT")}</span>
+      <span class="ai-dec-regime">${regShort}</span>
+      <span style="font-size:9px;color:rgba(255,255,255,.4);min-width:30px">${src}</span>
       <span class="ai-dec-grade" style="color:${gc}">${d.quality || "C"}(${d.score || 0})</span>
     </div>`;
   }).join("");
