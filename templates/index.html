@@ -438,17 +438,133 @@
         <div id="fi-list" class="fi-list"></div>
       </div>
 
-      <!-- Технические индикаторы -->
-      <div class="card">
-        <div class="card-title">📊 Технические индикаторы</div>
-        <div class="indicators-grid">
-          <div class="ind-item"><span class="ind-label">RSI</span><span class="ind-value" id="rsi">—</span></div>
-          <div class="ind-item"><span class="ind-label">MACD</span><span class="ind-value" id="macd">—</span></div>
-          <div class="ind-item"><span class="ind-label">EMA Fast</span><span class="ind-value" id="ema-fast">—</span></div>
-          <div class="ind-item"><span class="ind-label">EMA Slow</span><span class="ind-value" id="ema-slow">—</span></div>
-          <div class="ind-item"><span class="ind-label">BB Upper</span><span class="ind-value" id="bb-upper">—</span></div>
-          <div class="ind-item"><span class="ind-label">BB Lower</span><span class="ind-value" id="bb-lower">—</span></div>
+      <!-- Полный обзор рынка -->
+      <div class="card" id="market-overview-card">
+        <div class="card-title">
+          🌍 Обзор рынка
+          <span id="mo-regime-badge" class="mo-regime-badge">—</span>
         </div>
+
+        <!-- Строка: режим + S/R -->
+        <div class="mo-top-row">
+          <div class="mo-sr-box">
+            <div class="mo-sr-item">
+              <span class="mo-sr-label">🛡️ Поддержка</span>
+              <span class="mo-sr-val" id="mo-support">—</span>
+            </div>
+            <div class="mo-sr-item">
+              <span class="mo-sr-label">🧱 Сопротивление</span>
+              <span class="mo-sr-val" id="mo-resistance">—</span>
+            </div>
+          </div>
+          <div class="mo-sr-item">
+            <span class="mo-sr-label">📏 EMA50</span>
+            <span class="mo-sr-val" id="mo-ema50-dist">—</span>
+          </div>
+        </div>
+
+        <!-- Сетка индикаторов 2×4 -->
+        <div class="mo-grid">
+          <!-- RSI -->
+          <div class="mo-cell">
+            <div class="mo-cell-header">
+              <span class="mo-cell-name">RSI</span>
+              <span class="mo-cell-val" id="mo-rsi-val">—</span>
+              <span class="mo-cell-zone" id="mo-rsi-zone">—</span>
+            </div>
+            <div class="mo-bar-track"><div class="mo-bar-fill" id="mo-rsi-bar"></div><div class="mo-bar-marker" id="mo-rsi-marker"></div></div>
+          </div>
+          <!-- ADX -->
+          <div class="mo-cell">
+            <div class="mo-cell-header">
+              <span class="mo-cell-name">ADX</span>
+              <span class="mo-cell-val" id="mo-adx-val">—</span>
+              <span class="mo-cell-zone" id="mo-adx-zone">—</span>
+            </div>
+            <div class="mo-bar-track"><div class="mo-bar-fill" id="mo-adx-bar"></div></div>
+            <div class="mo-adx-row">
+              <span style="color:#00ff88;font-size:10px">▲DI+ <span id="mo-di-plus">—</span></span>
+              <span style="color:#ff4d6d;font-size:10px">▼DI− <span id="mo-di-minus">—</span></span>
+            </div>
+          </div>
+          <!-- Volume -->
+          <div class="mo-cell">
+            <div class="mo-cell-header">
+              <span class="mo-cell-name">Объём</span>
+              <span class="mo-cell-val" id="mo-vol-val">—</span>
+              <span class="mo-cell-zone" id="mo-vol-zone">—</span>
+            </div>
+            <div class="mo-bar-track"><div class="mo-bar-fill" id="mo-vol-bar"></div></div>
+          </div>
+          <!-- MACD -->
+          <div class="mo-cell">
+            <div class="mo-cell-header">
+              <span class="mo-cell-name">MACD</span>
+              <span class="mo-cell-val" id="mo-macd-val">—</span>
+              <span class="mo-cell-zone" id="mo-macd-zone">—</span>
+            </div>
+            <div class="mo-bar-track"><div class="mo-bar-fill" id="mo-macd-bar"></div></div>
+          </div>
+          <!-- Stoch RSI -->
+          <div class="mo-cell">
+            <div class="mo-cell-header">
+              <span class="mo-cell-name">StochRSI</span>
+              <span class="mo-cell-val" id="mo-stoch-val">—</span>
+              <span class="mo-cell-zone" id="mo-stoch-zone">—</span>
+            </div>
+            <div class="mo-bar-track"><div class="mo-bar-fill" id="mo-stoch-bar"></div></div>
+          </div>
+          <!-- ATR -->
+          <div class="mo-cell">
+            <div class="mo-cell-header">
+              <span class="mo-cell-name">ATR%</span>
+              <span class="mo-cell-val" id="mo-atr-val">—</span>
+              <span class="mo-cell-zone" id="mo-atr-zone">—</span>
+            </div>
+            <div class="mo-bar-track"><div class="mo-bar-fill" id="mo-atr-bar"></div></div>
+          </div>
+          <!-- BB позиция -->
+          <div class="mo-cell">
+            <div class="mo-cell-header">
+              <span class="mo-cell-name">BB позиция</span>
+              <span class="mo-cell-val" id="mo-bb-val">—</span>
+              <span class="mo-cell-zone" id="mo-bb-zone">—</span>
+            </div>
+            <div class="mo-bar-track mo-bb-track">
+              <div class="mo-bb-low-zone"></div>
+              <div class="mo-bb-high-zone"></div>
+              <div class="mo-bar-marker" id="mo-bb-marker"></div>
+            </div>
+          </div>
+          <!-- EMA выравнивание -->
+          <div class="mo-cell">
+            <div class="mo-cell-header">
+              <span class="mo-cell-name">EMA тренд</span>
+              <span class="mo-cell-val" id="mo-ema-val">—</span>
+              <span class="mo-cell-zone" id="mo-ema-zone">—</span>
+            </div>
+            <div class="mo-ema-dots" id="mo-ema-dots"></div>
+          </div>
+        </div>
+
+        <!-- OBV + Volume trend строчки -->
+        <div class="mo-trends-row">
+          <div class="mo-trend-item"><span class="mo-trend-lbl">OBV</span><span class="mo-trend-val" id="mo-obv">—</span></div>
+          <div class="mo-trend-item"><span class="mo-trend-lbl">Vol тренд</span><span class="mo-trend-val" id="mo-voltrd">—</span></div>
+          <div class="mo-trend-item"><span class="mo-trend-lbl">BB сжатие</span><span class="mo-trend-val" id="mo-bbw">—</span></div>
+        </div>
+
+        <!-- 10 факторов входа -->
+        <div class="mo-factors-title">🎯 Факторы точки входа <span id="mo-eq-grade">—</span> <span id="mo-eq-score" style="color:var(--text2);font-size:11px"></span></div>
+        <div class="mo-factors" id="mo-factors-list"></div>
+
+        <!-- Скрытые элементы совместимости -->
+        <span id="rsi" style="display:none">—</span>
+        <span id="macd" style="display:none">—</span>
+        <span id="ema-fast" style="display:none">—</span>
+        <span id="ema-slow" style="display:none">—</span>
+        <span id="bb-upper" style="display:none">—</span>
+        <span id="bb-lower" style="display:none">—</span>
       </div>
 
       <!-- DEX сделки -->

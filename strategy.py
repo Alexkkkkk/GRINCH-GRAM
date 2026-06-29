@@ -56,7 +56,96 @@ def compute_indicators(ohlcv):
     df["obv"]    = (np.sign(df["close"].diff()) * df["volume"]).fillna(0).cumsum()
     df["obv_ma"] = df["obv"].rolling(10).mean()
 
+    # ADX (Average Directional Index, 14)
+    up_move   = df["high"].diff()
+    down_move = -df["low"].diff()
+    dm_plus   = np.where((up_move > down_move) & (up_move > 0), up_move, 0.0)
+    dm_minus  = np.where((down_move > up_move) & (down_move > 0), down_move, 0.0)
+    df["dm_plus"]  = pd.Series(dm_plus,  index=df.index)
+    df["dm_minus"] = pd.Series(dm_minus, index=df.index)
+    tr = pd.concat([df["high"] - df["low"],
+                    (df["high"] - df["close"].shift(1)).abs(),
+                    (df["low"]  - df["close"].shift(1)).abs()], axis=1).max(axis=1)
+    atr14    = tr.ewm(span=14, adjust=False).mean()
+    di_plus  = 100 * df["dm_plus"].ewm(span=14, adjust=False).mean()  / (atr14 + 1e-10)
+    di_minus = 100 * df["dm_minus"].ewm(span=14, adjust=False).mean() / (atr14 + 1e-10)
+    dx = 100 * (di_plus - di_minus).abs() / (di_plus + di_minus + 1e-10)
+    df["adx"]      = dx.ewm(span=14, adjust=False).mean()
+    df["di_plus"]  = di_plus
+    df["di_minus"] = di_minus
+
+    # BB позиция (0=нижняя полоса, 100=верхняя)
+    bb_range = df["bb_upper"] - df["bb_lower"]
+    df["bb_pct"] = ((df["close"] - df["bb_lower"]) / (bb_range + 1e-10) * 100).clip(0, 100)
+
+    # Volume trend (скользящая 5 vs 20)
+    df["vol_ma5"] = df["volume"].rolling(5).mean()
+
     return df
+
+
+def _get_support_resistance(df, lookback=50):
+    """Находит ближайшие уровни поддержки и сопротивления."""
+    if len(df) < lookback:
+        lookback = len(df)
+    window = df.tail(lookback)
+    price  = df["close"].iloc[-1]
+    highs  = window["high"].values
+    lows   = window["low"].values
+
+    # Кластеризуем уровни (±1% зона)
+    def cluster(vals, tolerance=0.01):
+        vals = sorted(vals)
+        clusters = []
+        for v in vals:
+            placed = False
+            for c in clusters:
+                if abs(v - c[0]) / (c[0] + 1e-10) <= tolerance:
+                    c.append(v)
+                    placed = True
+                    break
+            if not placed:
+                clusters.append([v])
+        return [np.mean(c) for c in clusters]
+
+    all_highs = cluster(highs)
+    all_lows  = cluster(lows)
+
+    # Сопротивление = ближайший уровень выше цены
+    resistances = sorted([h for h in all_highs if h > price * 1.003])
+    # Поддержка = ближайший уровень ниже цены
+    supports = sorted([l for l in all_lows if l < price * 0.997], reverse=True)
+
+    return (
+        round(supports[0],    _pdigits(price)) if supports    else None,
+        round(resistances[0], _pdigits(price)) if resistances else None,
+    )
+
+
+def _get_market_regime(df):
+    """Классифицирует рыночный режим по ADX, BB-ширине и объёму."""
+    if len(df) < 20:
+        return "RANGING", "#ffd166"
+    last = df.iloc[-1]
+    adx       = float(last.get("adx", 20))
+    bb_width  = float(last.get("bb_width", 0))
+    bb_avg    = float(last.get("bb_width_ma", bb_width + 1e-10))
+    vol_ratio = float(last.get("vol_ratio", 1))
+    rsi       = float(last.get("rsi", 50))
+
+    breakout = bb_width > bb_avg * 1.4 and vol_ratio > 1.5
+    trending = adx > 25
+    volatile = float(last.get("atr_pct", 0)) > 3.0
+
+    if breakout:
+        return "BREAKOUT", "#00d4ff"
+    if trending and rsi > 55:
+        return "UPTREND",  "#00ff88"
+    if trending and rsi < 45:
+        return "DOWNTREND", "#ff4d6d"
+    if volatile:
+        return "VOLATILE", "#ffd166"
+    return "RANGING", "#8892b0"
 
 
 # ── Факторы качества входа ─────────────────────────────────────────────────────
@@ -330,30 +419,116 @@ def analyze(ohlcv):
     signal, strength = get_signal(df)
 
     quality, eq_score, eq_reasons = analyze_entry_quality(df)
+    # Детальный скоринг по каждому из 10 факторов
+    factors_detail = []
+    for checker in [
+        _check_volume_surge, _check_bb_squeeze_breakout, _check_bullish_divergence,
+        _check_momentum_candles, _check_stoch_rsi_cross, _check_support_bounce,
+        _check_obv_confirm, _check_ema_confluence, _check_macd_acceleration, _check_rsi_oversold,
+    ]:
+        try:
+            pts, reason = checker(df)
+            factors_detail.append({"pts": pts, "reason": reason or ""})
+        except Exception:
+            factors_detail.append({"pts": 0, "reason": ""})
 
-    last = df.iloc[-1]
+    last   = df.iloc[-1]
+    d      = _pdigits(last["close"])
     candles = df[["timestamp", "open", "high", "low", "close", "volume"]].tail(50).copy()
     candles["timestamp"] = candles["timestamp"].astype(str)
 
-    d = _pdigits(last["close"])
+    # Рыночный режим
+    regime_name, regime_color = _get_market_regime(df)
+
+    # Поддержка / сопротивление из ценового действия
+    try:
+        support_pa, resistance_pa = _get_support_resistance(df)
+    except Exception:
+        support_pa, resistance_pa = None, None
+
+    # RSI зона
+    rsi_val = float(last["rsi"])
+    if rsi_val < 30:      rsi_zone = "OVERSOLD"
+    elif rsi_val > 70:    rsi_zone = "OVERBOUGHT"
+    elif rsi_val < 45:    rsi_zone = "LOW"
+    elif rsi_val > 55:    rsi_zone = "HIGH"
+    else:                 rsi_zone = "NEUTRAL"
+
+    # MACD направление
+    hist_now  = float(last["macd_hist"])
+    hist_prev = float(df["macd_hist"].iloc[-2]) if len(df) > 1 else 0.0
+    if hist_now > hist_prev * 1.05 and hist_now > 0:   macd_dir = "UP"
+    elif hist_now < hist_prev * 1.05 and hist_now < 0:  macd_dir = "DOWN"
+    else:                                                macd_dir = "FLAT"
+
+    # OBV тренд
+    obv = df["obv"]
+    if len(obv) >= 5:
+        if obv.iloc[-1] > obv.iloc[-3] > obv.iloc[-5]:  obv_dir = "UP"
+        elif obv.iloc[-1] < obv.iloc[-3]:                obv_dir = "DOWN"
+        else:                                             obv_dir = "FLAT"
+    else:
+        obv_dir = "FLAT"
+
+    # Volume trend (5-bar MA vs 20-bar MA)
+    vm5  = float(last.get("vol_ma5", last["vol_ma"]))
+    vm20 = float(last["vol_ma"])
+    vol_trend = "UP" if vm5 > vm20 * 1.05 else ("DOWN" if vm5 < vm20 * 0.95 else "FLAT")
+
+    # EMA выравнивание (0=нет, 1=fast>slow, 2=fast>slow>50, 3=цена>fast>slow>50)
+    ema_align = 0
+    if last["ema_fast"] > last["ema_slow"]:              ema_align = 1
+    if last["ema_fast"] > last["ema_slow"] > last["ema_50"]: ema_align = 2
+    if (last["close"] > last["ema_fast"] > last["ema_slow"] > last["ema_50"]): ema_align = 3
+
+    # Расстояние до EMA50 в %
+    price_vs_ema50 = round((last["close"] / last["ema_50"] - 1) * 100, 2) if last["ema_50"] > 0 else 0.0
+
     return {
         "signal":        signal,
         "strength":      round(strength * 100, 1),
         "price":         round(last["close"], d),
-        "rsi":           round(last["rsi"], 2),
+        "rsi":           round(rsi_val, 2),
         "macd":          round(last["macd"],        max(4, d)),
         "macd_signal":   round(last["macd_signal"], max(4, d)),
+        "macd_hist":     round(hist_now, max(4, d)),
+        "macd_dir":      macd_dir,
         "ema_fast":      round(last["ema_fast"],    d),
         "ema_slow":      round(last["ema_slow"],    d),
+        "ema_50":        round(last["ema_50"],      d),
         "bb_upper":      round(last["bb_upper"],    d),
         "bb_lower":      round(last["bb_lower"],    d),
-        # ── Новое: качество точки входа ──────────────────────────────────
-        "entry_quality": quality,       # 'A' / 'B' / 'C'
-        "entry_score":   eq_score,      # итоговый балл
-        "entry_reasons": eq_reasons,    # список причин на русском
-        # ── Дополнительные индикаторы ──────────────────────────────────
+        "bb_mid":        round(last["bb_mid"],      d),
+        "bb_pct":        round(float(last["bb_pct"]), 1),
+        "bb_width_pct":  round(float(last["bb_width"]) / (float(last["bb_width_ma"]) + 1e-10) * 100, 1),
+        # ADX
+        "adx":           round(float(last["adx"]),      1),
+        "di_plus":       round(float(last["di_plus"]),  1),
+        "di_minus":      round(float(last["di_minus"]), 1),
+        # Режим
+        "regime":        regime_name,
+        "regime_color":  regime_color,
+        # RSI
+        "rsi_zone":      rsi_zone,
+        # Объём
         "vol_ratio":     round(float(last["vol_ratio"]), 2),
+        "vol_trend":     vol_trend,
+        # OBV
+        "obv_dir":       obv_dir,
+        # Stoch RSI
         "stoch_rsi":     round(float(last["stoch_rsi"]), 3),
         "atr_pct":       round(float(last["atr_pct"]),   4),
+        # EMA выравнивание
+        "ema_alignment":    ema_align,
+        "price_vs_ema50":   price_vs_ema50,
+        # Поддержка/Сопротивление (из ценового действия)
+        "support_pa":    support_pa,
+        "resistance_pa": resistance_pa,
+        # Качество входа
+        "entry_quality": quality,
+        "entry_score":   eq_score,
+        "entry_reasons": eq_reasons,
+        "factors_detail": factors_detail,
+        # Свечи для графика
         "candles":       candles.to_dict("records"),
     }

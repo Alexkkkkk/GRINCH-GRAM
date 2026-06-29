@@ -180,13 +180,14 @@ function updateUI(data) {
   // Важность признаков
   renderFeatureImportance(ai.feature_importance || []);
 
-  // Индикаторы
+  // Индикаторы (legacy hidden spans + полный обзор рынка)
   document.getElementById("rsi").textContent      = analysis.rsi ?? "—";
   document.getElementById("macd").textContent     = analysis.macd ?? "—";
   document.getElementById("ema-fast").textContent = analysis.ema_fast ?? "—";
   document.getElementById("ema-slow").textContent = analysis.ema_slow ?? "—";
   document.getElementById("bb-upper").textContent = analysis.bb_upper ?? "—";
   document.getElementById("bb-lower").textContent = analysis.bb_lower ?? "—";
+  renderMarketOverview(analysis);
 
   // Статус кнопок
   const running = data.running;
@@ -1561,3 +1562,187 @@ function setLiqThreshold(val) {
     body: JSON.stringify({ pct })
   }).then(() => pollLiquidator()).catch(() => {});
 }
+
+// ═══════════════════════════════════════════════════════════════════
+//  🌍 ПОЛНЫЙ ОБЗОР РЫНКА
+// ═══════════════════════════════════════════════════════════════════
+
+function _g(id) { return document.getElementById(id); }
+
+function _setBar(barId, pct, color) {
+  const el = _g(barId);
+  if (!el) return;
+  el.style.width = Math.min(100, Math.max(0, pct)) + "%";
+  el.style.background = color || "var(--ton)";
+}
+
+function _setMarker(markerId, pct) {
+  const el = _g(markerId);
+  if (!el) return;
+  el.style.left = Math.min(100, Math.max(0, pct)) + "%";
+}
+
+function _zone(el, cls) {
+  if (!el) return;
+  el.className = "mo-cell-zone " + cls;
+}
+
+function _trendColor(dir) {
+  return dir === "UP" ? "#00ff88" : dir === "DOWN" ? "#ff4d6d" : "#8892b0";
+}
+function _trendArrow(dir) {
+  return dir === "UP" ? "▲ UP" : dir === "DOWN" ? "▼ DOWN" : "→ FLAT";
+}
+
+function renderMarketOverview(analysis) {
+  if (!analysis) return;
+  const g = _g;
+
+  // ── Режим рынка ────────────────────────────────────────────────
+  const regime = analysis.regime || "RANGING";
+  const regimeColor = analysis.regime_color || "#8892b0";
+  const regimeBadge = g("mo-regime-badge");
+  if (regimeBadge) {
+    const icons = { UPTREND:"🚀", DOWNTREND:"📉", BREAKOUT:"💥", VOLATILE:"⚡", RANGING:"↔️" };
+    regimeBadge.textContent = (icons[regime] || "") + " " + regime;
+    regimeBadge.style.cssText = `color:${regimeColor};border-color:${regimeColor};background:${regimeColor}18`;
+  }
+
+  // ── Поддержка / Сопротивление ──────────────────────────────────
+  const fmtLvl = v => v != null ? fmtPrice(v) : "—";
+  if (g("mo-support"))    g("mo-support").textContent    = fmtLvl(analysis.support_pa);
+  if (g("mo-resistance")) g("mo-resistance").textContent = fmtLvl(analysis.resistance_pa);
+
+  // EMA50 расстояние
+  const ema50d = Number(analysis.price_vs_ema50 || 0);
+  if (g("mo-ema50-dist")) {
+    g("mo-ema50-dist").textContent = (ema50d >= 0 ? "+" : "") + ema50d.toFixed(2) + "%";
+    g("mo-ema50-dist").style.color = ema50d >= 0 ? "#00ff88" : "#ff4d6d";
+  }
+
+  // ── RSI ────────────────────────────────────────────────────────
+  const rsi = Number(analysis.rsi || 50);
+  const rsiZone = analysis.rsi_zone || "NEUTRAL";
+  if (g("mo-rsi-val")) g("mo-rsi-val").textContent = rsi.toFixed(1);
+  const rsiColors = { OVERSOLD:"#00ff88", LOW:"#5cc8ff", NEUTRAL:"#8892b0", HIGH:"#ffd166", OVERBOUGHT:"#ff4d6d" };
+  const rsiLabels = { OVERSOLD:"перепродан", LOW:"низкий", NEUTRAL:"норма", HIGH:"высокий", OVERBOUGHT:"перекуплен" };
+  const rsiCls    = { OVERSOLD:"zone-up", LOW:"zone-up", NEUTRAL:"zone-neutral", HIGH:"zone-warn", OVERBOUGHT:"zone-down" };
+  if (g("mo-rsi-zone")) { g("mo-rsi-zone").textContent = rsiLabels[rsiZone] || rsiZone; _zone(g("mo-rsi-zone"), rsiCls[rsiZone] || "zone-neutral"); }
+  _setBar("mo-rsi-bar", rsi, rsiColors[rsiZone] || "#8892b0");
+  _setMarker("mo-rsi-marker", rsi);
+
+  // ── ADX ────────────────────────────────────────────────────────
+  const adx = Number(analysis.adx || 0);
+  const diP  = Number(analysis.di_plus  || 0);
+  const diM  = Number(analysis.di_minus || 0);
+  if (g("mo-adx-val"))   g("mo-adx-val").textContent   = adx.toFixed(1);
+  if (g("mo-di-plus"))   g("mo-di-plus").textContent    = diP.toFixed(1);
+  if (g("mo-di-minus"))  g("mo-di-minus").textContent   = diM.toFixed(1);
+  const adxLabel = adx > 40 ? "сильный тренд" : adx > 25 ? "тренд" : adx > 15 ? "слабый" : "флэт";
+  const adxCls   = adx > 25 ? "zone-up" : adx > 15 ? "zone-warn" : "zone-neutral";
+  const adxColor = diP > diM ? "#00ff88" : "#ff4d6d";
+  if (g("mo-adx-zone")) { g("mo-adx-zone").textContent = adxLabel; _zone(g("mo-adx-zone"), adxCls); }
+  _setBar("mo-adx-bar", Math.min(adx * 2, 100), adxColor);
+
+  // ── Volume ─────────────────────────────────────────────────────
+  const volR = Number(analysis.vol_ratio || 1);
+  if (g("mo-vol-val")) g("mo-vol-val").textContent = volR.toFixed(2) + "x";
+  const volLabel = volR >= 2 ? "кит 🔥" : volR >= 1.5 ? "высокий" : volR >= 1.1 ? "норма+" : volR < 0.7 ? "низкий" : "норма";
+  const volCls   = volR >= 1.5 ? "zone-up" : volR < 0.7 ? "zone-down" : "zone-neutral";
+  const volColor = volR >= 1.5 ? "#00ff88" : volR < 0.7 ? "#ff4d6d" : "#ffd166";
+  if (g("mo-vol-zone")) { g("mo-vol-zone").textContent = volLabel; _zone(g("mo-vol-zone"), volCls); }
+  _setBar("mo-vol-bar", Math.min(volR * 40, 100), volColor);
+
+  // ── MACD ───────────────────────────────────────────────────────
+  const macdDir = analysis.macd_dir || "FLAT";
+  const macdH   = Number(analysis.macd_hist || 0);
+  if (g("mo-macd-val")) { g("mo-macd-val").textContent = macdH > 0 ? "▲+" : "▼"; g("mo-macd-val").style.color = macdH >= 0 ? "#00ff88" : "#ff4d6d"; }
+  const macdCls = macdDir === "UP" ? "zone-up" : macdDir === "DOWN" ? "zone-down" : "zone-neutral";
+  if (g("mo-macd-zone")) { g("mo-macd-zone").textContent = macdDir === "UP" ? "рост" : macdDir === "DOWN" ? "падение" : "флэт"; _zone(g("mo-macd-zone"), macdCls); }
+  _setBar("mo-macd-bar", macdDir === "UP" ? 75 : macdDir === "DOWN" ? 25 : 50, macdDir === "UP" ? "#00ff88" : "#ff4d6d");
+
+  // ── Stoch RSI ──────────────────────────────────────────────────
+  const stoch = Number(analysis.stoch_rsi || 0.5);
+  if (g("mo-stoch-val")) g("mo-stoch-val").textContent = (stoch * 100).toFixed(0) + "%";
+  const stochLabel = stoch < 0.2 ? "перепродан" : stoch > 0.8 ? "перекуплен" : "норма";
+  const stochCls   = stoch < 0.2 ? "zone-up" : stoch > 0.8 ? "zone-down" : "zone-neutral";
+  if (g("mo-stoch-zone")) { g("mo-stoch-zone").textContent = stochLabel; _zone(g("mo-stoch-zone"), stochCls); }
+  _setBar("mo-stoch-bar", stoch * 100, stoch < 0.2 ? "#00ff88" : stoch > 0.8 ? "#ff4d6d" : "#5cc8ff");
+
+  // ── ATR% ───────────────────────────────────────────────────────
+  const atr = Number(analysis.atr_pct || 0);
+  if (g("mo-atr-val")) g("mo-atr-val").textContent = atr.toFixed(2) + "%";
+  const atrLabel = atr > 5 ? "высок. волат." : atr > 2 ? "средн." : "низкая";
+  const atrCls   = atr > 5 ? "zone-warn" : atr > 2 ? "zone-neutral" : "zone-neutral";
+  if (g("mo-atr-zone")) { g("mo-atr-zone").textContent = atrLabel; _zone(g("mo-atr-zone"), atrCls); }
+  _setBar("mo-atr-bar", Math.min(atr * 10, 100), atr > 3 ? "#ffd166" : "#5cc8ff");
+
+  // ── BB позиция ─────────────────────────────────────────────────
+  const bbPct = Number(analysis.bb_pct || 50);
+  if (g("mo-bb-val")) g("mo-bb-val").textContent = bbPct.toFixed(0) + "%";
+  const bbLabel = bbPct < 20 ? "у нижней" : bbPct > 80 ? "у верхней" : "середина";
+  const bbCls   = bbPct < 20 ? "zone-up" : bbPct > 80 ? "zone-down" : "zone-neutral";
+  if (g("mo-bb-zone")) { g("mo-bb-zone").textContent = bbLabel; _zone(g("mo-bb-zone"), bbCls); }
+  _setMarker("mo-bb-marker", bbPct);
+
+  // ── EMA выравнивание ───────────────────────────────────────────
+  const emaAlign = Number(analysis.ema_alignment || 0);
+  const emaLabels = ["нет тренда", "EMA 9>21", "9>21>50", "цена>9>21>50"];
+  const emaCls    = emaAlign >= 3 ? "zone-up" : emaAlign >= 2 ? "zone-warn" : "zone-neutral";
+  if (g("mo-ema-val")) g("mo-ema-val").textContent = emaAlign + "/3";
+  if (g("mo-ema-zone")) { g("mo-ema-zone").textContent = emaLabels[emaAlign] || "—"; _zone(g("mo-ema-zone"), emaCls); }
+  const emaDotsEl = g("mo-ema-dots");
+  if (emaDotsEl) {
+    const dotColors = ["#ff4d6d", "#ffd166", "#5cc8ff", "#00ff88"];
+    emaDotsEl.innerHTML = ["EMA9", "EMA21", "EMA50", "Цена"].map((label, i) => {
+      const active = i < emaAlign || (emaAlign === 3 && i === 3);
+      const color = active ? dotColors[emaAlign] : "rgba(255,255,255,.1)";
+      return `<div class="mo-ema-dot" style="background:${color}" title="${label}"></div>`;
+    }).join("") + `<span style="font-size:10px;color:var(--text2);margin-left:4px">${emaLabels[emaAlign]||""}</span>`;
+  }
+
+  // ── OBV / Vol тренд / BB сжатие ────────────────────────────────
+  const obvDir   = analysis.obv_dir   || "FLAT";
+  const volTrd   = analysis.vol_trend || "FLAT";
+  const bbwPct   = Number(analysis.bb_width_pct || 100);
+
+  if (g("mo-obv")) { g("mo-obv").textContent = _trendArrow(obvDir); g("mo-obv").style.color = _trendColor(obvDir); }
+  if (g("mo-voltrd")) { g("mo-voltrd").textContent = _trendArrow(volTrd); g("mo-voltrd").style.color = _trendColor(volTrd); }
+  if (g("mo-bbw")) {
+    const squeezed = bbwPct < 80;
+    g("mo-bbw").textContent = squeezed ? "🔴 сжато " + bbwPct.toFixed(0) + "%" : "🟢 норма";
+    g("mo-bbw").style.color = squeezed ? "#ffd166" : "#8892b0";
+  }
+
+  // ── 10 факторов входа ──────────────────────────────────────────
+  const eq       = analysis.entry_quality || "C";
+  const score    = analysis.entry_score   || 0;
+  const factors  = analysis.factors_detail || [];
+  const gradeColors = { A: "#00ff88", B: "#ffd166", C: "#ff4d6d" };
+  const gradeEl = g("mo-eq-grade");
+  if (gradeEl) {
+    const gc = gradeColors[eq] || "#8892b0";
+    gradeEl.innerHTML = `<span style="color:${gc};font-weight:800;font-size:13px">${eq}</span>`;
+  }
+  if (g("mo-eq-score")) g("mo-eq-score").textContent = score + " очков";
+
+  const factorNames = [
+    "Объём", "BB сжатие→разрыв", "Дивергенция RSI",
+    "Моментум свечи", "Stoch RSI разворот", "Отскок от поддержки",
+    "OBV подтверждение", "EMA выравнивание", "MACD ускорение", "RSI перепродан"
+  ];
+  const listEl = g("mo-factors-list");
+  if (listEl && factors.length) {
+    listEl.innerHTML = factors.map((f, i) => {
+      const active = f.pts > 0;
+      const name   = f.reason || factorNames[i] || "Фактор " + (i+1);
+      const pts    = f.pts;
+      return `<div class="mo-factor ${active ? "active" : "inactive"}">
+        <span>${active ? "✅" : "⬜"}</span>
+        <span style="flex:1">${name}</span>
+        ${pts > 0 ? `<span class="mo-factor-pts">+${pts}</span>` : ""}
+      </div>`;
+    }).join("");
+  }
+}
+
