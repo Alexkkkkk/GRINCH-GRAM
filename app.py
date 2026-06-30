@@ -855,7 +855,7 @@ def api_platform_stats():
         "total_trades":    t,
         "platform_fee":    9.5,
         "platform_wallet": Config.TON_WALLET,
-        "owner_address":   "UQDDgb2BTM-KCjntOoUg6uHllvnu3KGqEquKw6IySVP3hDgM",
+        "owner_address":   "UQBS8W42olUMxuAx-1aj03XDIt4oBD6OxvNQYCzBLFzm0DpS",
     })
 
 
