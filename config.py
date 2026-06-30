@@ -217,7 +217,7 @@ class Config:
     DEMO_MODE  = os.getenv("DEMO_MODE",  "false").lower() == "true"
     SECRET_KEY = os.getenv("SECRET_KEY", "grinch-gram-secret-2024")
     # EQ-адрес выводится из TON_MNEMONIC (WalletV5R1 / W5 — кошелёк TonKeeper)
-    TON_WALLET = os.getenv("TON_WALLET", "UQBS8W42olUMxuAx-1aj03XDIt4oBD6OxvNQYCzBLFzm0DpS")
+    TON_WALLET = os.getenv("TON_WALLET", "EQDDgb2BTM-KCjntOoUg6uHllvnu3KGqEquKw6IySVP3hGXJ")
     # Адрес контракта токена GRINCH (TON-джеттон)
     GRINCH_TOKEN_ADDRESS = os.getenv("GRINCH_TOKEN_ADDRESS", "EQA6G0uVERDZTkLNa0drWBna1F5TSbogy7UXEWU5ERHz4uJL")
     # Реальный ликвидный пул GRINCH/TON на DeDust (нестандартная комиссия 1%).
