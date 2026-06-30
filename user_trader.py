@@ -11,12 +11,11 @@ import hashlib
 import base64
 from datetime import datetime
 from typing import Optional
-from config import Config
 
 log = logging.getLogger(__name__)
 
 PLATFORM_FEE_PCT = 9.5
-OWNER_ADDRESS = Config.TON_WALLET_UQ  # автоматически из TON_MNEMONIC
+OWNER_ADDRESS = "UQDDgb2BTM-KCjntOoUg6uHllvnu3KGqEquKw6IySVP3hDgM"
 
 
 # ── Устаревшее шифрование (для совместимости с legacy-аккаунтами) ─────────────

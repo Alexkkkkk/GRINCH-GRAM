@@ -216,11 +216,8 @@ class Config:
 
     DEMO_MODE  = os.getenv("DEMO_MODE",  "false").lower() == "true"
     SECRET_KEY = os.getenv("SECRET_KEY", "grinch-gram-secret-2024")
-    # Адреса кошелька — автоматически выводятся из TON_MNEMONIC при старте.
-    # TON_WALLET_UQ = non-bounceable (UQ), TON_WALLET = bounceable (EQ).
-    # Можно переопределить через env TON_WALLET, но обычно не нужно.
-    TON_WALLET_UQ: str = os.getenv("TON_WALLET_UQ", "")
-    TON_WALLET:    str = os.getenv("TON_WALLET", "")
+    # EQ-адрес выводится из TON_MNEMONIC (WalletV5R1 / W5 — кошелёк TonKeeper)
+    TON_WALLET = os.getenv("TON_WALLET", "EQDDgb2BTM-KCjntOoUg6uHllvnu3KGqEquKw6IySVP3hGXJ")
     # Адрес контракта токена GRINCH (TON-джеттон)
     GRINCH_TOKEN_ADDRESS = os.getenv("GRINCH_TOKEN_ADDRESS", "EQA6G0uVERDZTkLNa0drWBna1F5TSbogy7UXEWU5ERHz4uJL")
     # Реальный ликвидный пул GRINCH/TON на DeDust (нестандартная комиссия 1%).
@@ -290,37 +287,3 @@ except Exception as _e:  # noqa: BLE001 — настройки не должны
 # Гарантия владельца «не продавать в минус» НЕ конфигурируется и не может быть
 # отключена через settings.json/env — жёстко возвращаем True после загрузки.
 Config.ONLY_PROFIT_EXIT = True
-
-# ── Авто-деривация адреса кошелька из TON_MNEMONIC ───────────────────────────
-# Если TON_WALLET / TON_WALLET_UQ не заданы явно через env — выводим из мнемоника.
-# Тип кошелька: WalletV5R1 (TonKeeper/TonSpace по умолчанию с 2024 г.)
-def _init_wallet_from_mnemonic():
-    try:
-        mraw = Config.TON_MNEMONIC
-        if not mraw or not mraw.strip():
-            print("[Config] ⚠️  TON_MNEMONIC не задан — адрес кошелька не определён")
-            return
-        words = mraw.strip().split()
-        if len(words) != 24:
-            print(f"[Config] ⚠️  TON_MNEMONIC содержит {len(words)} слов, ожидалось 24")
-            return
-        from pytoniq_core.crypto.keys import mnemonic_to_private_key, private_key_to_public_key
-        from pytoniq.contract.wallets.wallet_v5 import WalletV5R1, WALLET_V5_R1_CODE
-        from pytoniq_core import begin_cell, Address as CoreAddr
-        _, priv_k = mnemonic_to_private_key(words)
-        pub_k     = private_key_to_public_key(priv_k)
-        data_cell = WalletV5R1.create_data_cell(pub_k, wc=0, network_global_id=-239)
-        state_init = begin_cell().store_ref(WALLET_V5_R1_CODE).store_ref(data_cell).end_cell()
-        addr = CoreAddr((0, state_init.hash))
-        uq = addr.to_str(is_user_friendly=True, is_url_safe=True, is_bounceable=False)
-        eq = addr.to_str(is_user_friendly=True, is_url_safe=True, is_bounceable=True)
-        # Устанавливаем только если не переопределены через env
-        if not os.getenv("TON_WALLET_UQ"):
-            Config.TON_WALLET_UQ = uq
-        if not os.getenv("TON_WALLET"):
-            Config.TON_WALLET = eq
-        print(f"[Config] ✅ Кошелёк из мнемоника: {uq[:20]}…")
-    except Exception as e:
-        print(f"[Config] ⚠️  Деривация адреса из мнемоника: {e}")
-
-_init_wallet_from_mnemonic()
