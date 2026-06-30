@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>GRINCH-GRAM · QuantumBrain v3</title>
+<title>GRINCH-TON · QuantumBrain v3</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600;700;800&display=swap" rel="stylesheet">
@@ -52,7 +52,7 @@
       <span class="logo-ton">◆</span>
       <span class="logo-x">×</span>
       <span class="logo-grn">🐸</span>
-      <span class="logo-txt">GRINCH-GRAM</span>
+      <span class="logo-txt">GRINCH-TON</span>
     </div>
     <span id="demo-badge" class="badge badge-demo" {% if not demo %}style="display:none"{% endif %}>ДЕМО</span>
     <span id="status-badge" class="badge {{ 'badge-running' if init_running else 'badge-stopped' }}">
@@ -62,7 +62,7 @@
 
   <div class="hdr-price-area">
     <span class="live-dot"></span>
-    <span class="price hdr-price" id="price">{% if init_gram and init_gram > 0 %}{{ "{:,.8f}".format(init_gram).rstrip('0').rstrip('.') }}{% else %}—{% endif %} GRAM</span>
+    <span class="price hdr-price" id="price">{% if init_gram and init_gram > 0 %}{{ "{:,.8f}".format(init_gram).rstrip('0').rstrip('.') }}{% else %}—{% endif %} TON</span>
     <span class="hdr-price-usd" id="price-in-ton">{% if init_price and init_price > 0 %}≈ ${{ "{:,.8f}".format(init_price).rstrip('0').rstrip('.') }}{% else %}≈ $0.00{% endif %}</span>
     <span class="price-change" id="price-change">0.00%</span>
     <div class="signal-block signal-HOLD hdr-sig" id="signal-block">
@@ -73,7 +73,7 @@
       <div class="signal-label" id="ai-signal-text">HOLD</div>
       <div class="signal-strength" id="ai-confidence">AI 0%</div>
     </div>
-    <span id="symbol-label" style="display:none">GRINCH/GRAM</span>
+    <span id="symbol-label" style="display:none">GRINCH/TON</span>
   </div>
 
   <div class="hdr-bal-area">
@@ -372,8 +372,8 @@
       <!-- Price + coin inline -->
       <div class="mkt-hero-row">
         <div class="mkt-price-col">
-          <div class="mkt-price-label"><span class="live-dot"></span> GRINCH/GRAM · DeDust</div>
-          <div class="mkt-price-big" id="price-echo">{% if init_gram and init_gram > 0 %}{{ "{:,.8f}".format(init_gram).rstrip('0').rstrip('.') }} GRAM{% else %}— GRAM{% endif %}</div>
+          <div class="mkt-price-label"><span class="live-dot"></span> GRINCH/TON · DeDust</div>
+          <div class="mkt-price-big" id="price-echo">{% if init_gram and init_gram > 0 %}{{ "{:,.8f}".format(init_gram).rstrip('0').rstrip('.') }} TON{% else %}— TON{% endif %}</div>
           <div class="mkt-price-usd-echo">{% if init_price and init_price > 0 %}≈ ${{ "{:,.8f}".format(init_price).rstrip('0').rstrip('.') }}{% else %}≈ $—{% endif %}</div>
         </div>
         <div class="mkt-coin-row">
@@ -414,7 +414,7 @@
       <!-- Chart -->
       <div class="card card-c">
         <div class="card-title ctit">
-          📈 GRINCH/GRAM <span class="chart-tf">15м</span>
+          📈 GRINCH/TON <span class="chart-tf">15м</span>
           <span class="chart-last" id="chart-last-price">—</span>
           <span id="trades-note" class="coin-source" style="margin-left:auto"></span>
         </div>
@@ -801,7 +801,7 @@
   const vs = chart.addHistogramSeries({ priceFormat:{type:"volume"}, priceScaleId:"vol" });
   chart.priceScale("vol").applyOptions({ scaleMargins:{ top:0.8, bottom:0 } });
   const lastEl = document.getElementById("chart-last-price");
-  function fmtP(p) { return p==null?"—":Number(p).toFixed(8).replace(/0+$/,"").replace(/\.$/,"")+" GRAM"; }
+  function fmtP(p) { return p==null?"—":Number(p).toFixed(8).replace(/0+$/,"").replace(/\.$/,"")+" TON"; }
   function toEpoch(ts) { const ms=Date.parse(String(ts).replace(" ","T")+"Z"); return isNaN(ms)?null:Math.floor(ms/1000); }
   async function refresh() {
     try {
