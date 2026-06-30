@@ -489,30 +489,9 @@ def api_wallets():
     """Мониторинг кошельков пула GRINCH: кто покупает/продаёт, умные деньги."""
     return jsonify(wallet_tracker.get_stats())
 
-def _derive_mnemo_address():
-    """Офлайн-деривация UQ/EQ адреса из TON_MNEMONIC. Возвращает (uq, eq, words_count) или бросает исключение."""
-    from pytoniq_core.crypto.keys import mnemonic_to_private_key, private_key_to_public_key
-    from pytoniq.contract.wallets.wallet_v5 import WalletV5R1, WALLET_V5_R1_CODE
-    from pytoniq_core import begin_cell, Address as CoreAddr
-    mraw = Config.TON_MNEMONIC
-    if not mraw or not mraw.strip():
-        raise ValueError("TON_MNEMONIC не задан")
-    words = mraw.strip().split()
-    if len(words) != 24:
-        raise ValueError(f"Мнемоник должен содержать 24 слова, получено: {len(words)}")
-    _, priv_k = mnemonic_to_private_key(words)
-    pub_k = private_key_to_public_key(priv_k)
-    data_cell = WalletV5R1.create_data_cell(pub_k, wc=0, network_global_id=-239)
-    state_init = begin_cell().store_ref(WALLET_V5_R1_CODE).store_ref(data_cell).end_cell()
-    addr = CoreAddr((0, state_init.hash))
-    uq = addr.to_str(is_user_friendly=True, is_url_safe=True, is_bounceable=False)
-    eq = addr.to_str(is_user_friendly=True, is_url_safe=True, is_bounceable=True)
-    return uq, eq, len(words)
-
-
 @app.route("/api/mnemonic_wallet")
 def api_mnemonic_wallet():
-    """Полный мониторинг кошелька по мнемонику: адрес + балансы + транзакции."""
+    """Полный мониторинг кошелька — адрес, балансы, транзакции — из TON_MNEMONIC."""
     import urllib.request as _ureq, json as _json, time as _time, datetime as _dt
 
     # ── Кэш 60 сек ──────────────────────────────────────────────────────────
@@ -520,10 +499,15 @@ def api_mnemonic_wallet():
     if cache and _time.time() - cache["ts"] < 60:
         return jsonify(cache["data"])
 
+    uq = Config.TON_WALLET_UQ
+    eq = Config.TON_WALLET
+    words_count = len(Config.TON_MNEMONIC.strip().split()) if Config.TON_MNEMONIC else 0
+
     result = {
-        "ok": False, "error": None,
-        "uq": None, "eq": None, "words_count": 0,
-        "matches_config": None,
+        "ok": bool(uq),
+        "error": None if uq else "TON_MNEMONIC не задан или не удалось вывести адрес",
+        "uq": uq, "eq": eq, "words_count": words_count,
+        "matches_config": True,          # адрес всегда из мнемоника — всегда совпадает
         "ton_balance": None, "ton_usd": None,
         "grinch_balance": None, "grinch_usd": None,
         "seqno": None,
@@ -531,15 +515,7 @@ def api_mnemonic_wallet():
         "last_update": int(_time.time()),
     }
 
-    # ── 1. Офлайн-деривация адреса ───────────────────────────────────────────
-    try:
-        uq, eq, wc = _derive_mnemo_address()
-        result.update({"ok": True, "uq": uq, "eq": eq, "words_count": wc})
-        result["matches_config"] = (Config.TON_WALLET and
-            (Config.TON_WALLET.upper() in (uq.upper(), eq.upper()) or
-             uq.upper().endswith(Config.TON_WALLET[-10:].upper())))
-    except Exception as e:
-        result["error"] = str(e)
+    if not uq:
         return jsonify(result)
 
     addr = uq   # используем UQ для запросов
@@ -645,31 +621,31 @@ def api_mnemonic_wallet():
 
 @app.route("/api/external_wallet")
 def api_external_wallet():
-    """Баланс торгового кошелька из TON_MNEMONIC через TonCenter API."""
-    import urllib.request, json as _json, time as _time
+    """Баланс торгового кошелька (TON_MNEMONIC). Берём из кэша mnemonic_wallet."""
+    import time as _time
+    mw_cache = getattr(api_mnemonic_wallet, "_cache", None)
+    if mw_cache:
+        mw = mw_cache["data"]
+        return jsonify({
+            "address": mw.get("uq", Config.TON_WALLET_UQ),
+            "ton":     mw.get("ton_balance"),
+            "usd":     mw.get("ton_usd"),
+            "error":   mw.get("error"),
+        })
+    # Если кэша ещё нет — быстрый прямой запрос
+    import urllib.request, json as _json
     ADDR = Config.TON_WALLET_UQ
-    # Кэш 30 секунд
-    cache = getattr(api_external_wallet, "_cache", None)
-    if cache and _time.time() - cache["ts"] < 30:
-        return jsonify(cache["data"])
     result = {"address": ADDR, "ton": None, "usd": None, "error": None}
     try:
         url = f"https://toncenter.com/api/v2/getAddressBalance?address={ADDR}"
         with urllib.request.urlopen(url, timeout=6) as r:
             d = _json.loads(r.read())
             if d.get("ok"):
-                nano = int(d.get("result", 0))
-                result["ton"] = round(nano / 1e9, 4)
+                result["ton"] = round(int(d.get("result", 0)) / 1e9, 4)
+                ton_price = price_feed.get("TON") or 0
+                result["usd"] = round(result["ton"] * ton_price, 2)
     except Exception as e:
         result["error"] = str(e)
-    # Получаем цену TON
-    try:
-        ton_price = price_feed.get("TON") or 0
-        if result["ton"] is not None:
-            result["usd"] = round(result["ton"] * ton_price, 2)
-    except Exception:
-        pass
-    api_external_wallet._cache = {"ts": _time.time(), "data": result}
     return jsonify(result)
 
 @app.route("/api/liquidator")
