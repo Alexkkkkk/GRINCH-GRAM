@@ -654,6 +654,28 @@
         <div id="ton-error" class="ton-error" style="display:none"></div>
       </div>
 
+      <!-- External wallet tracking -->
+      <div class="card card-c" id="ext-wallet-card">
+        <div class="wallet-title">
+          🔍 Отслеживаемый кошелёк
+          <button class="btn-wallet-refresh" onclick="refreshExtWallet()" title="Обновить">⟳</button>
+        </div>
+        <div class="wallet-balances">
+          <div class="wb-item wb-ton" style="flex:1">
+            <div class="wb-icon">◆</div>
+            <div class="wb-label">TON</div>
+            <div class="wb-amount" id="ext-ton-bal">—</div>
+            <div class="wb-usd" id="ext-ton-usd">≈ $—</div>
+          </div>
+        </div>
+        <div class="wallet-section-lbl" style="margin-top:8px">◆ Адрес кошелька</div>
+        <div class="wallet-addr-row">
+          <code class="wallet-addr" style="font-size:10px;word-break:break-all">UQBS8W42olUMxuAx-1aj03XDIt4oBD6OxvNQYCzBLFzm0DpS</code>
+          <button class="btn-wallet-copy" onclick="navigator.clipboard.writeText('UQBS8W42olUMxuAx-1aj03XDIt4oBD6OxvNQYCzBLFzm0DpS')">📋</button>
+        </div>
+        <div id="ext-wallet-status" style="font-size:10px;color:#4a6080;margin-top:4px;text-align:center"></div>
+      </div>
+
       <!-- Liquidator -->
       <div class="card card-c" id="liquidator-card">
         <div class="card-title ctit">🐸 Авто-ликвидатор GRINCH</div>
@@ -824,6 +846,31 @@
 </script>
 
 <script>
+// ── Внешний кошелёк: отслеживание баланса ──
+async function refreshExtWallet() {
+  const balEl  = document.getElementById('ext-ton-bal');
+  const usdEl  = document.getElementById('ext-ton-usd');
+  const stEl   = document.getElementById('ext-wallet-status');
+  if (stEl) stEl.textContent = 'Обновление…';
+  try {
+    const d = await fetch('/api/external_wallet').then(r => r.json());
+    if (d.ton !== null && d.ton !== undefined) {
+      if (balEl) balEl.textContent = Number(d.ton).toLocaleString('ru-RU', {maximumFractionDigits:4});
+      if (usdEl) usdEl.textContent = d.usd !== null ? '≈ $' + Number(d.usd).toLocaleString('ru-RU', {maximumFractionDigits:2}) : '≈ $—';
+      if (stEl)  stEl.textContent  = 'Обновлено ' + new Date().toLocaleTimeString('ru-RU', {hour:'2-digit',minute:'2-digit'});
+    } else {
+      if (balEl) balEl.textContent = '—';
+      if (usdEl) usdEl.textContent = '≈ $—';
+      if (stEl)  stEl.textContent  = d.error ? '⚠ ' + d.error : 'Нет данных';
+    }
+  } catch(e) {
+    if (stEl) stEl.textContent = '⚠ Ошибка сети';
+  }
+}
+// Загружаем при открытии вкладки КОШЕЛЁК + каждые 30 сек
+refreshExtWallet();
+setInterval(refreshExtWallet, 30000);
+
 function switchMainTab(tab) {
   ['market','trades','wallet','settings'].forEach(t => {
     document.getElementById('tab-'+t).classList.toggle('tab-hidden', t!==tab);

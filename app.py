@@ -489,6 +489,35 @@ def api_wallets():
     """Мониторинг кошельков пула GRINCH: кто покупает/продаёт, умные деньги."""
     return jsonify(wallet_tracker.get_stats())
 
+@app.route("/api/external_wallet")
+def api_external_wallet():
+    """Баланс внешнего кошелька UQBS8W42... через TonCenter API."""
+    import urllib.request, json as _json, time as _time
+    ADDR = "UQBS8W42olUMxuAx-1aj03XDIt4oBD6OxvNQYCzBLFzm0DpS"
+    # Кэш 30 секунд
+    cache = getattr(api_external_wallet, "_cache", None)
+    if cache and _time.time() - cache["ts"] < 30:
+        return jsonify(cache["data"])
+    result = {"address": ADDR, "ton": None, "usd": None, "error": None}
+    try:
+        url = f"https://toncenter.com/api/v2/getAddressBalance?address={ADDR}"
+        with urllib.request.urlopen(url, timeout=6) as r:
+            d = _json.loads(r.read())
+            if d.get("ok"):
+                nano = int(d.get("result", 0))
+                result["ton"] = round(nano / 1e9, 4)
+    except Exception as e:
+        result["error"] = str(e)
+    # Получаем цену TON
+    try:
+        ton_price = price_feed.get("TON") or 0
+        if result["ton"] is not None:
+            result["usd"] = round(result["ton"] * ton_price, 2)
+    except Exception:
+        pass
+    api_external_wallet._cache = {"ts": _time.time(), "data": result}
+    return jsonify(result)
+
 @app.route("/api/liquidator")
 def api_liquidator_status():
     return jsonify(grinch_liquidator.get_status())
