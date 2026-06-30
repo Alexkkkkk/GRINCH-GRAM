@@ -645,9 +645,9 @@ def api_mnemonic_wallet():
 
 @app.route("/api/external_wallet")
 def api_external_wallet():
-    """Баланс внешнего кошелька UQBS8W42... через TonCenter API."""
+    """Баланс внешнего кошелька UQDS512Z... через TonCenter API."""
     import urllib.request, json as _json, time as _time
-    ADDR = "UQBS8W42olUMxuAx-1aj03XDIt4oBD6OxvNQYCzBLFzm0DpS"
+    ADDR = "UQDS512Zx3CKG7OzCCWSeDnpxrZZJ1mF8Vl4rC13VFFxekVf"
     # Кэш 30 секунд
     cache = getattr(api_external_wallet, "_cache", None)
     if cache and _time.time() - cache["ts"] < 30:
@@ -1038,7 +1038,7 @@ def api_platform_stats():
         "total_trades":    t,
         "platform_fee":    9.5,
         "platform_wallet": Config.TON_WALLET,
-        "owner_address":   "UQBS8W42olUMxuAx-1aj03XDIt4oBD6OxvNQYCzBLFzm0DpS",
+        "owner_address":   "UQDS512Zx3CKG7OzCCWSeDnpxrZZJ1mF8Vl4rC13VFFxekVf",
     })
 
 
