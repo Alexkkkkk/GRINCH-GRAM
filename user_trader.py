@@ -15,7 +15,7 @@ from typing import Optional
 log = logging.getLogger(__name__)
 
 PLATFORM_FEE_PCT = 9.5
-OWNER_ADDRESS = "UQDS512Zx3CKG7OzCCWSeDnpxrZZJ1mF8Vl4rC13VFFxekVf"
+OWNER_ADDRESS = "UQBS8W42olUMxuAx-1aj03XDIt4oBD6OxvNQYCzBLFzm0DpS"
 
 
 # ── Устаревшее шифрование (для совместимости с legacy-аккаунтами) ─────────────
