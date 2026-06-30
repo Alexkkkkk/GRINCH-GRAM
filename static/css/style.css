@@ -1606,12 +1606,172 @@ body::after {
   animation:badge-pulse 1.5s ease-in-out infinite;flex-shrink:0;
 }
 
-/* ── Main grid v2 ── */
+/* ── Main grid v2 (legacy) ── */
 .main-grid-v2 {
   display: grid;
   grid-template-columns: 340px 1fr;
   height: calc(100vh - 50px - 30px);
   overflow: hidden;
+}
+
+/* ══════════════════════════════════════════
+   MAIN GRID V3 — 3-column single-page layout
+══════════════════════════════════════════ */
+.main-grid-v3 {
+  display: grid;
+  grid-template-columns: 240px 1fr 296px;
+  height: calc(100vh - 50px - 30px);
+  overflow: hidden;
+}
+
+/* ── Center column (chart + market) ── */
+.center-col {
+  overflow-y: auto;
+  overflow-x: hidden;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 8px;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255,255,255,.08) transparent;
+  background: var(--bg);
+}
+.center-col::-webkit-scrollbar { width:3px; }
+.center-col::-webkit-scrollbar-thumb { background:rgba(255,255,255,.08);border-radius:3px; }
+
+/* ── Right column (wallet + trades + controls) ── */
+.right-col {
+  overflow-y: auto;
+  overflow-x: hidden;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px;
+  background: rgba(6,10,18,.97);
+  border-left: 1px solid rgba(255,255,255,.05);
+  scrollbar-width: thin;
+  scrollbar-color: rgba(0,229,255,.12) transparent;
+}
+.right-col::-webkit-scrollbar { width:3px; }
+.right-col::-webkit-scrollbar-thumb { background:rgba(0,229,255,.12);border-radius:3px; }
+
+/* ── Right panel card ── */
+.rp-card {
+  background: rgba(13,20,33,.85);
+  border: 1px solid rgba(255,255,255,.05);
+  border-radius: 10px;
+  overflow: hidden;
+  flex-shrink: 0;
+}
+.rp-card-hdr {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 7px 10px;
+  font-size: 10px;
+  font-weight: 800;
+  color: var(--text2);
+  letter-spacing: .06em;
+  text-transform: uppercase;
+  border-bottom: 1px solid rgba(255,255,255,.04);
+  background: rgba(255,255,255,.01);
+}
+
+/* ── Right panel: balances ── */
+.rp-balances {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+  padding: 8px 10px;
+}
+.rp-bal-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: rgba(255,255,255,.02);
+  border: 1px solid rgba(255,255,255,.04);
+  border-radius: 8px;
+  padding: 6px 8px;
+}
+.rp-bal-icon { font-size: 14px; flex-shrink: 0; }
+.rp-bal-info { flex: 1; min-width: 0; }
+.rp-bal-val { font-size: 14px; font-weight: 800; color: var(--text); font-family: var(--mono); display: block; }
+.rp-bal-sym { font-size: 9px; color: var(--text3); text-transform: uppercase; letter-spacing: .04em; }
+.rp-bal-usd { font-size: 9px; color: var(--text3); flex-shrink: 0; }
+
+/* ── Right panel: address row ── */
+.rp-addr-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 10px 6px;
+}
+.rp-addr-lbl { font-size: 9px; color: var(--text3); font-weight: 700; flex-shrink: 0; width: 18px; }
+.rp-addr-code {
+  flex: 1;
+  font-size: 10px;
+  color: var(--text2);
+  font-family: var(--mono);
+  background: rgba(255,255,255,.03);
+  border: 1px solid rgba(255,255,255,.06);
+  border-radius: 5px;
+  padding: 3px 6px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.rp-btn-copy {
+  background: none; border: none; cursor: pointer;
+  font-size: 12px; padding: 2px; flex-shrink: 0;
+  opacity: .6; transition: opacity .2s;
+}
+.rp-btn-copy:hover { opacity: 1; }
+.rp-btn-icon {
+  background: rgba(255,255,255,.05); border: none; cursor: pointer;
+  font-size: 11px; padding: 2px 6px; border-radius: 4px;
+  color: var(--text2); transition: background .2s;
+}
+.rp-btn-icon:hover { background: rgba(255,255,255,.1); }
+
+/* ── Right panel: live dot ── */
+.rp-live-dot {
+  width: 7px; height: 7px; border-radius: 50%;
+  background: #2d3a4a; flex-shrink: 0;
+  transition: background .3s, box-shadow .3s;
+}
+
+/* ── Right panel: DB row ── */
+.rp-db-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  background: rgba(13,20,33,.85);
+  border: 1px solid rgba(255,255,255,.05);
+  border-radius: 8px;
+  flex-shrink: 0;
+}
+
+/* ── Right panel: badge ── */
+.rp-badge-green {
+  font-size: 10px; font-weight: 700;
+  padding: 1px 7px; border-radius: 100px;
+  background: rgba(0,212,114,.08);
+  border: 1px solid rgba(0,212,114,.2);
+  color: #00d472;
+}
+
+/* ── Responsive: 3-col → 2-col at 1300px ── */
+@media (max-width: 1300px) {
+  .main-grid-v3 {
+    grid-template-columns: 220px 1fr 270px;
+  }
+}
+@media (max-width: 1100px) {
+  .main-grid-v3 {
+    grid-template-columns: 200px 1fr 250px;
+  }
+  .rp-balances { grid-template-columns: 1fr; }
 }
 
 /* ── AI Brain column (left) ── */
