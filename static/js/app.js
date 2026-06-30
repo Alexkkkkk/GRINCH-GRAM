@@ -654,13 +654,18 @@ function _updatePortfolioTracker(bal, analysis, stats) {
 
   const ptVal = document.getElementById("pt-total");
   if (ptVal) ptVal.textContent = "$" + totalUsd.toFixed(2);
+  const rpPtTotal = document.getElementById("rp-pt-total");
+  if (rpPtTotal) rpPtTotal.textContent = "$" + totalUsd.toFixed(2);
 
   const ptChange = document.getElementById("pt-change");
-  if (ptChange && _portfolioBaseline && _portfolioBaseline > 0) {
+  const rpPtChange = document.getElementById("rp-pt-change");
+  if (_portfolioBaseline && _portfolioBaseline > 0) {
     const chg = ((totalUsd - _portfolioBaseline) / _portfolioBaseline) * 100;
     const sign = chg >= 0 ? "▲ +" : "▼ ";
-    ptChange.textContent = sign + Math.abs(chg).toFixed(2) + "% сессия";
-    ptChange.className = "pt-change " + (chg >= 0 ? "pos" : "neg");
+    const txt = sign + Math.abs(chg).toFixed(2) + "% сессия";
+    const cls = "pt-change " + (chg >= 0 ? "pos" : "neg");
+    if (ptChange) { ptChange.textContent = txt; ptChange.className = cls; }
+    if (rpPtChange) { rpPtChange.textContent = txt; rpPtChange.style.color = chg >= 0 ? "#00ff88" : "#ff5a5a"; }
   }
 
   // ROI ring toward +20% target (uses P&L / baseline to compute progress)

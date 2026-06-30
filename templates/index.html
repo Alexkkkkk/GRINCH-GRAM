@@ -372,6 +372,101 @@
       </div>
     </div>
 
+    <!-- ══ WALLET OVERVIEW CARD ══ -->
+    <div class="card card-c wov-card" id="wallet-overview-card">
+      <div class="card-title ctit">
+        💼 Кошелёк TON × GRINCH
+        <span class="wov-dot" id="wov-dot"></span>
+        <span id="wov-status" class="coin-source" style="font-weight:600"></span>
+        <span id="wov-updated" style="margin-left:auto;font-size:9px;color:var(--text3);font-weight:400"></span>
+        <button class="btn-wallet-refresh" onclick="loadMnemoWallet(true)" style="margin-left:6px" title="Обновить">⟳</button>
+      </div>
+
+      <!-- Балансы двух монет -->
+      <div class="wov-balances">
+        <div class="wov-coin wov-ton">
+          <div class="wov-coin-icon">◆</div>
+          <div class="wov-coin-body">
+            <div class="wov-coin-name">TON</div>
+            <div class="wov-coin-amount" id="wov-ton-bal">—</div>
+            <div class="wov-coin-usd" id="wov-ton-usd">≈ $—</div>
+          </div>
+          <div class="wov-coin-change" id="wov-ton-change"></div>
+        </div>
+        <div class="wov-coin-sep">×</div>
+        <div class="wov-coin wov-grn">
+          <div class="wov-coin-icon">🐸</div>
+          <div class="wov-coin-body">
+            <div class="wov-coin-name">GRINCH</div>
+            <div class="wov-coin-amount" id="wov-grn-bal">—</div>
+            <div class="wov-coin-usd" id="wov-grn-usd">≈ $—</div>
+          </div>
+          <div class="wov-coin-change" id="wov-grn-change"></div>
+        </div>
+        <div class="wov-total-col">
+          <div class="wov-total-label">ИТОГО</div>
+          <div class="wov-total-val" id="pt-total">—</div>
+          <div class="wov-total-sub" id="pt-change">—</div>
+          <div style="margin-top:6px">
+            <svg viewBox="0 0 60 60" style="width:42px;height:42px">
+              <circle cx="30" cy="30" r="23" fill="none" stroke="rgba(255,255,255,.06)" stroke-width="6"/>
+              <circle cx="30" cy="30" r="23" id="roi-ring-arc"
+                fill="none" stroke="#00ff88" stroke-width="6" stroke-dasharray="0 144.5"
+                stroke-linecap="round" transform="rotate(-90 30 30)"
+                style="transition:stroke-dasharray .9s ease,stroke .5s"/>
+              <text x="30" y="34" text-anchor="middle" font-family="monospace" font-size="9" font-weight="900" fill="white" id="roi-ring-pct">0%</text>
+            </svg>
+            <div style="font-size:8px;color:var(--text3);text-align:center;margin-top:2px">к цели +20%</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- График баланса -->
+      <div class="wov-chart-section">
+        <div class="wov-chart-hdr">
+          <span style="font-size:10px;font-weight:700;color:var(--text2)">📈 История баланса TON</span>
+          <span id="eq-range-lbl" style="font-size:9px;color:var(--text3)"></span>
+          <span id="roi-goal-pct" style="font-size:10px;font-weight:700;color:#00d472;margin-left:auto"></span>
+        </div>
+        <div style="position:relative;height:90px;margin:4px 0">
+          <canvas id="eq-chart" style="width:100%;height:90px;display:block;border-radius:8px"></canvas>
+          <div id="eq-empty" style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:10px;color:#4a5568">Накапливаем историю…</div>
+        </div>
+        <div id="roi-goal-sub" style="font-size:9px;color:var(--text3);text-align:right"></div>
+      </div>
+
+      <!-- Прогресс к цели -->
+      <div style="padding:0 12px 8px">
+        <div class="roi-goal-track" style="height:4px;background:rgba(255,255,255,.06);border-radius:100px;overflow:hidden;position:relative">
+          <div class="roi-goal-fill" id="roi-goal-bar" style="width:0%;height:100%;background:linear-gradient(90deg,#0098ea,#00ff88);border-radius:100px;transition:width .8s ease"></div>
+        </div>
+      </div>
+
+      <!-- Адрес кошелька -->
+      <div class="wov-addr-section">
+        <div class="wov-addr-row">
+          <span class="wov-addr-badge">UQ</span>
+          <code id="wov-uq-addr" class="wov-addr-code">—</code>
+          <button class="wov-copy-btn" onclick="wovCopyAddr('uq')" title="Копировать полный адрес">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+          </button>
+        </div>
+        <div class="wov-addr-row" style="margin-top:4px">
+          <span class="wov-addr-badge" style="background:rgba(110,40,200,.12);color:#a78bfa;border-color:rgba(110,40,200,.2)">EQ</span>
+          <code id="wov-eq-addr" class="wov-addr-code">—</code>
+          <button class="wov-copy-btn" onclick="wovCopyAddr('eq')" title="Копировать EQ адрес">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+          </button>
+        </div>
+        <div id="wov-copy-toast" style="display:none;font-size:9px;color:#00d472;margin-top:4px;text-align:center">✓ Скопировано!</div>
+        <div class="wov-seqno-row">
+          <span style="font-size:9px;color:var(--text3)">Seqno (нонс)</span>
+          <span id="wov-seqno" style="font-size:9px;font-weight:700;color:#8892b0;font-family:var(--mono)">—</span>
+          <span id="wov-cfg-badge" style="display:none;font-size:9px;font-weight:700;padding:1px 6px;border-radius:100px;border:1px solid;margin-left:auto"></span>
+        </div>
+      </div>
+    </div>
+
     <!-- Chart -->
     <div class="card card-c">
       <div class="card-title ctit">
@@ -515,40 +610,25 @@
       </div>
     </div>
 
-    <!-- ── Портфель + Equity ── -->
-    <div class="rp-card">
-      <div class="rp-card-hdr"><span>📈 ПОРТФЕЛЬ</span>
-        <span class="rp-badge-green" id="pt-change">—</span>
+    <!-- ── Портфель (compact — подробности в центральной карточке) ── -->
+    <div class="rp-card" style="padding:10px 12px">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
+        <span style="font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.06em;color:var(--text2)">📈 Портфель</span>
+        <span style="font-size:9px;color:var(--text3);margin-left:auto">→ см. Кошелёк</span>
       </div>
-      <div style="display:flex;align-items:center;gap:10px;margin-bottom:6px">
-        <svg viewBox="0 0 72 72" style="width:52px;height:52px;flex-shrink:0">
-          <circle cx="36" cy="36" r="28" fill="none" stroke="rgba(255,255,255,.06)" stroke-width="7"/>
-          <circle cx="36" cy="36" r="28" id="roi-ring-arc"
-            fill="none" stroke="#00ff88" stroke-width="7" stroke-dasharray="0 175.9"
-            stroke-linecap="round" transform="rotate(-90 36 36)"
-            style="transition:stroke-dasharray .9s ease,stroke .5s"/>
-          <text x="36" y="40" text-anchor="middle" font-family="monospace" font-size="11" font-weight="900" fill="white" id="roi-ring-pct">0%</text>
-        </svg>
+      <div style="display:flex;gap:8px;align-items:center">
         <div style="flex:1">
-          <div class="rp-bal-val" id="pt-total" style="font-size:16px">—</div>
-          <div style="font-size:9px;color:var(--text3);margin-top:2px">Прогресс к цели +20%</div>
-          <div class="roi-goal-track" style="margin-top:4px">
-            <div class="roi-goal-fill" id="roi-goal-bar" style="width:0%"></div>
-            <div class="roi-goal-marker" style="left:100%"><div class="roi-goal-flag">🎯 20%</div></div>
-          </div>
-          <div style="font-size:9px;color:var(--text3);margin-top:2px" id="roi-goal-pct">0%</div>
+          <div style="font-size:10px;color:var(--text3)">Итого USD</div>
+          <div id="rp-pt-total" style="font-size:14px;font-weight:900;font-family:var(--mono);color:#00d18f">—</div>
+        </div>
+        <div style="flex:1">
+          <div style="font-size:10px;color:var(--text3)">Доходность</div>
+          <div id="rp-pt-change" style="font-size:11px;font-weight:800;font-family:var(--mono)">—</div>
         </div>
       </div>
-      <div style="position:relative;height:60px;margin:0 0 4px">
-        <canvas id="eq-chart" style="width:100%;height:60px;display:block;border-radius:6px"></canvas>
-        <div id="eq-empty" style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:10px;color:#4a5568">Накапливаем историю…</div>
-      </div>
-      <div id="roi-goal-sub" style="font-size:9px;color:var(--text3)">Накапливаем историю…</div>
-
-      <!-- Скрытые для совместимости с app.js -->
+      <!-- Hidden compat stubs for app.js -->
       <div style="display:none">
         <div id="balance-list"></div>
-        <span id="eq-range-lbl"></span>
         <code id="ton-addr" class="wallet-addr">—</code>
         <div id="ton-deposits"></div>
         <div id="ton-error"></div>
@@ -867,6 +947,20 @@ function _g(id) { return document.getElementById(id); }
 function _fmtN(n, dec=4) { return n == null ? '—' : Number(n).toLocaleString('ru-RU',{maximumFractionDigits:dec}); }
 function _fmtU(n) { return n == null ? '≈ $—' : '≈ $' + Number(n).toLocaleString('ru-RU',{maximumFractionDigits:2}); }
 
+// Copy address from wallet overview card
+async function wovCopyAddr(type) {
+  const el = _g(type === 'uq' ? 'wov-uq-addr' : 'wov-eq-addr');
+  if (!el) return;
+  const text = el.dataset.full || el.textContent;
+  try { await navigator.clipboard.writeText(text); } catch(e) {
+    const ta = document.createElement('textarea');
+    ta.value = text; document.body.appendChild(ta); ta.select();
+    document.execCommand('copy'); document.body.removeChild(ta);
+  }
+  const toast = _g('wov-copy-toast');
+  if (toast) { toast.textContent = '✓ ' + (type==='uq'?'UQ':'EQ') + ' адрес скопирован!'; toast.style.display=''; setTimeout(()=>{toast.style.display='none';}, 2000); }
+}
+
 async function loadMnemoWallet(force) {
   const dot   = _g('mnemo-dot');
   const stTxt = _g('mnemo-status-txt');
@@ -877,15 +971,58 @@ async function loadMnemoWallet(force) {
     const url = force ? '/api/mnemonic_wallet?bust=' + Date.now() : '/api/mnemonic_wallet';
     const d = await fetch(url).then(r => r.json());
 
+    // ── Wallet Overview Card (center column) ──
+    const wovDot = _g('wov-dot');
+    const wovSt  = _g('wov-status');
+    const wovUpd = _g('wov-updated');
+
     if (!d.ok) {
       if (balBl) balBl.style.display = 'none';
       if (errBl) { errBl.style.display = ''; errBl.textContent = '⚠ ' + (d.error || 'Мнемоник не задан'); }
       if (dot) { dot.style.background = '#e8334a'; dot.style.boxShadow = 'none'; }
       if (stTxt) { stTxt.textContent = 'Не подключён'; stTxt.style.color = '#e8334a'; }
       if (badge) badge.style.display = 'none';
+      if (wovDot) { wovDot.style.background='#e8334a'; wovDot.style.boxShadow='none'; }
+      if (wovSt) { wovSt.textContent='⚠ Не подключён'; wovSt.style.color='#e8334a'; }
       return;
     }
 
+    // ── Populate overview card ──
+    if (wovDot) { wovDot.style.background='#00d472'; wovDot.style.boxShadow='0 0 8px #00d472'; }
+    if (wovSt)  { wovSt.textContent='✓ Подключён · '+d.words_count+' слов'; wovSt.style.color='#00d472'; }
+    if (wovUpd && d.last_update) {
+      wovUpd.textContent = 'обновлено ' + new Date(d.last_update*1000).toLocaleTimeString('ru-RU',{hour:'2-digit',minute:'2-digit'});
+    }
+
+    // Balances overview card
+    const tonFmt  = d.ton_balance != null ? _fmtN(d.ton_balance, 4) : '—';
+    const grnFmt  = d.grinch_balance != null ? _fmtN(d.grinch_balance, 0) : '—';
+    const tonUsd  = _fmtU(d.ton_usd);
+    const grnUsd  = _fmtU(d.grinch_usd);
+    const _set = (id, v) => { const e=_g(id); if(e) e.textContent=v; };
+    _set('wov-ton-bal', tonFmt);  _set('wov-ton-usd', tonUsd);
+    _set('wov-grn-bal', grnFmt);  _set('wov-grn-usd', grnUsd);
+
+    // Addresses overview card
+    const uqEl = _g('wov-uq-addr'), eqEl = _g('wov-eq-addr');
+    if (uqEl && d.uq) { uqEl.dataset.full=d.uq; uqEl.textContent=d.uq.slice(0,10)+'…'+d.uq.slice(-8); }
+    if (eqEl && d.eq) { eqEl.dataset.full=d.eq; eqEl.textContent=d.eq.slice(0,10)+'…'+d.eq.slice(-8); }
+
+    // Seqno + config badge
+    _set('wov-seqno', d.seqno != null ? '#'+d.seqno : '—');
+    const wovBadge = _g('wov-cfg-badge');
+    if (wovBadge && d.matches_config !== null) {
+      wovBadge.style.display='';
+      if (d.matches_config) {
+        wovBadge.textContent='✓ адрес совпадает';
+        wovBadge.style.color='#00d472'; wovBadge.style.borderColor='rgba(0,212,114,.3)'; wovBadge.style.background='rgba(0,212,114,.07)';
+      } else {
+        wovBadge.textContent='⚠ адрес ≠ конфигу';
+        wovBadge.style.color='#f0be00'; wovBadge.style.borderColor='rgba(240,190,0,.3)'; wovBadge.style.background='rgba(240,190,0,.07)';
+      }
+    }
+
+    // ── Right panel wallet (compact) ──
     if (dot) { dot.style.background = '#00d472'; dot.style.boxShadow = '0 0 6px #00d472'; }
     if (stTxt) { stTxt.textContent = '✓ ' + d.words_count + ' слов'; stTxt.style.color = '#00d472'; }
     if (errBl) errBl.style.display = 'none';
