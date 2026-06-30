@@ -2091,8 +2091,8 @@ body::after {
   }
   .hdr-price { font-size: 13px; }
   .hdr-price-usd { font-size: 10px; }
-  .hdr-sig { transform: scale(.75); transform-origin: left center; }
-  .logo-txt { display: none; }       /* скрываем "GRINCH-GRAM" текст */
+  .hdr-sig { display: none; }        /* убираем HOLD-бейджи из шапки — они перекрывают табы */
+  .logo-txt { display: none; }       /* скрываем "GRINCH-TON" текст */
   .ai-auto-pill { font-size: 9px; padding: 3px 7px; }
 
   /* Баланс компактнее */
@@ -2174,10 +2174,12 @@ body::after {
 
   /* Hero row адаптация */
   .mkt-hero-row {
-    grid-template-columns: 1fr 1fr !important;
-    gap: 6px;
+    grid-template-columns: 1fr !important;
+    gap: 8px;
   }
-  .mkt-price-big { font-size: 16px; }
+  .mkt-price-col { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+  .mkt-price-big { font-size: 18px; }
+  .mkt-coin-row { align-items: flex-start; }
   .mkt-sm-col { min-width: 0; }
 
   /* Brain sig row */
