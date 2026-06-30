@@ -125,6 +125,21 @@
   </div>
 </div>
 
+<!-- ═══ INFO STRIP ═══ -->
+<div class="info-strip" id="info-strip">
+  <div class="is-item">💼 TON: <b id="is-ton-bal">—</b></div>
+  <div class="is-item">🐸 GRINCH: <b id="is-grn-bal">—</b></div>
+  <div class="is-item">📂 Открыто: <b id="is-open-pos">0</b> поз.</div>
+  <div class="is-item">💰 P&amp;L: <b id="is-pnl" class="is-pos">+0.0000 TON</b></div>
+  <div class="is-item">🎲 Kelly: <b id="is-kelly">—</b></div>
+  <div class="is-item">📊 RSI: <b id="is-rsi">—</b></div>
+  <div class="is-item">🌍 Режим: <b id="is-regime">—</b></div>
+  <div class="is-item">🤖 AI: <b id="is-ai-sig">—</b> <b id="is-ai-conf" style="color:#8892b0">0%</b></div>
+  <div class="is-item">💵 Сумма: <b id="is-trade-amt">—</b> TON</div>
+  <div class="is-item">🎯 TP: <b id="is-tp">—</b>%</div>
+  <div class="is-item">🔒 Мин. AI: <b id="is-minconf">—</b>%</div>
+</div>
+
 <!-- ═══ MAIN 3-COLUMN GRID ═══ -->
 <div class="main-grid-v3">
 
@@ -760,6 +775,26 @@
 
 </div><!-- /.app -->
 
+<!-- ═══ MOBILE BOTTOM NAVIGATION ═══ -->
+<nav class="mob-nav" id="mob-nav">
+  <button class="mob-nav-btn active" id="mnav-chart" onclick="mobNavSwitch('chart')">
+    <span class="mob-nav-icon">📊</span>
+    <span>Рынок</span>
+  </button>
+  <button class="mob-nav-btn" id="mnav-wallet" onclick="mobNavSwitch('wallet')">
+    <span class="mob-nav-icon">💼</span>
+    <span>Кошелёк</span>
+  </button>
+  <button class="mob-nav-btn" id="mnav-settings" onclick="mobNavSwitch('settings')">
+    <span class="mob-nav-icon">⚙️</span>
+    <span>Настройки</span>
+  </button>
+  <button class="mob-nav-btn" id="mnav-ai" onclick="mobNavSwitch('ai')">
+    <span class="mob-nav-icon">🧠</span>
+    <span>AI Brain</span>
+  </button>
+</nav>
+
 <script src="/static/js/socket.io.min.js"></script>
 <script>
   window._socketio_path = "/socket.io";
@@ -952,16 +987,111 @@ function switchMainTab(tab) {
   if (tab === 'market') window.dispatchEvent(new Event('resize'));
 }
 
-// Авто-синхронизация price-echo
+// ══ Мобильная навигация ══
+const _MOB_COLS = {
+  chart:    () => document.querySelector('.center-col'),
+  wallet:   () => document.querySelector('.right-col'),
+  settings: () => document.querySelector('.right-col'),
+  ai:       () => document.querySelector('.ai-brain-col'),
+};
+const _MOB_BTNS = ['chart','wallet','settings','ai'];
+
+function mobNavSwitch(tab) {
+  const isMob = window.innerWidth <= 768;
+  if (!isMob) return;
+
+  // Деактивируем все кнопки и колонки
+  _MOB_BTNS.forEach(t => {
+    const btn = document.getElementById('mnav-' + t);
+    if (btn) btn.classList.remove('active');
+    const col = _MOB_COLS[t]();
+    if (col) col.classList.remove('mob-active');
+  });
+
+  // Активируем нужную
+  const btn = document.getElementById('mnav-' + tab);
+  if (btn) btn.classList.add('active');
+  const col = _MOB_COLS[tab]();
+  if (col) col.classList.add('mob-active');
+
+  // При настройках — автораскрываем секцию настроек и скроллируем к ней
+  if (tab === 'settings') {
+    const sbody = document.getElementById('settings-body-rp');
+    if (sbody) sbody.style.display = '';
+    setTimeout(() => {
+      const card = document.getElementById('settings-body-rp');
+      if (card) card.scrollIntoView({behavior:'smooth', block:'start'});
+    }, 80);
+  }
+
+  setTimeout(() => window.dispatchEvent(new Event('resize')), 60);
+}
+
+// Инициализация мобильного состояния
+function _initMobLayout() {
+  if (window.innerWidth > 768) return;
+  // Показываем центральную колонку по умолчанию
+  const center = document.querySelector('.center-col');
+  if (center && !center.classList.contains('mob-active')) {
+    center.classList.add('mob-active');
+  }
+}
+
+// ══ Info strip — синхронизация данных ══
+function _syncInfoStrip() {
+  function _cp(from, to, transform) {
+    const src = document.getElementById(from);
+    const dst = document.getElementById(to);
+    if (!src || !dst) return;
+    const txt = transform ? transform(src.textContent) : src.textContent;
+    if (txt) dst.textContent = txt;
+    if (src.style.color) dst.style.color = src.style.color;
+  }
+  _cp('hdr-ton-bal',    'is-ton-bal');
+  _cp('hdr-grn-bal',    'is-grn-bal');
+  _cp('stat-open',      'is-open-pos');
+  _cp('stat-pnl',       'is-pnl');
+  _cp('at-kelly-frac',  'is-kelly');
+  _cp('mo-rsi-val',     'is-rsi');
+  _cp('at-regime',      'is-regime');
+  _cp('ai-signal-text', 'is-ai-sig');
+  _cp('ai-confidence',  'is-ai-conf');
+  // Settings values
+  const amt  = document.getElementById('cfg-amount');
+  const tp   = document.getElementById('cfg-tp');
+  const minc = document.getElementById('cfg-minconf');
+  if (amt)  { const el = document.getElementById('is-trade-amt'); if(el) el.textContent = amt.value; }
+  if (tp)   { const el = document.getElementById('is-tp');        if(el) el.textContent = tp.value; }
+  if (minc) { const el = document.getElementById('is-minconf');   if(el) el.textContent = minc.value; }
+
+  // P&L color
+  const pnlEl = document.getElementById('is-pnl');
+  if (pnlEl) {
+    const txt = pnlEl.textContent;
+    pnlEl.className = (txt.startsWith('+') || (!txt.startsWith('-') && txt !== '0')) ? 'is-pos' : 'is-neg';
+  }
+}
+
+// Авто-синхронизация price-echo + info strip
 document.addEventListener('DOMContentLoaded', () => {
+  _initMobLayout();
+
+  // Price echo observer
   const obs = new MutationObserver(() => {
     const p = document.getElementById('price');
     const echo = document.getElementById('price-echo');
     if (p && echo) echo.textContent = p.textContent;
+    _syncInfoStrip();
   });
   const priceEl = document.getElementById('price');
   if (priceEl) obs.observe(priceEl, {childList:true, characterData:true, subtree:true});
+
+  // Poll info strip every 3 seconds
+  setInterval(_syncInfoStrip, 3000);
+  setTimeout(_syncInfoStrip, 1000);
 });
+
+window.addEventListener('resize', _initMobLayout);
 </script>
 
 <!-- Скрытые элементы для полной совместимости с app.js wallet/ext -->

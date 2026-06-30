@@ -2662,3 +2662,265 @@ body::after {
 .sm-score { text-shadow: none !important; }
 .brain-title { text-shadow: none !important; }
 .mkt-price-big { text-shadow: 0 0 12px rgba(0,204,232,.18) !important; }
+
+/* ═══════════════════════════════════════════════════════════════════
+   MAIN-GRID-V3 — MOBILE + TABLET RESPONSIVE
+═══════════════════════════════════════════════════════════════════ */
+
+/* ── Info strip (below ticker, above grid) ── */
+.info-strip {
+  display: flex;
+  align-items: center;
+  gap: 0;
+  height: 28px;
+  background: rgba(4,8,14,.98);
+  border-bottom: 1px solid rgba(255,255,255,.04);
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none;
+  flex-shrink: 0;
+}
+.info-strip::-webkit-scrollbar { display: none; }
+.is-item {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0 10px;
+  font-size: 10px;
+  white-space: nowrap;
+  border-right: 1px solid rgba(255,255,255,.04);
+  height: 100%;
+  color: var(--text2);
+}
+.is-item b { color: var(--text); font-family: var(--mono); }
+.is-item .is-pos { color: #00d472; }
+.is-item .is-neg { color: #e8334a; }
+
+/* ── Mobile bottom navigation ── */
+.mob-nav {
+  display: none;
+}
+
+/* ── Desktop: V3 grid height accounts for info-strip ── */
+@media (min-width: 769px) {
+  .main-grid-v3 {
+    height: calc(100vh - 52px - 30px - 28px) !important;
+  }
+}
+
+/* ── Tablet (769 - 1199px): compress V3 ── */
+@media (max-width: 1199px) and (min-width: 769px) {
+  .main-grid-v3 {
+    grid-template-columns: 200px 1fr 250px !important;
+    height: calc(100vh - 52px - 30px - 28px) !important;
+  }
+  .rp-balances { grid-template-columns: 1fr !important; }
+  .mkt-3col { grid-template-columns: 1fr 1fr !important; }
+  .mo-grid-c { grid-template-columns: repeat(3, 1fr) !important; }
+}
+
+/* ── Mobile (≤768px): full stack + bottom nav ── */
+@media (max-width: 768px) {
+
+  /* Info strip: horizontal scroll on mobile */
+  .info-strip { height: 24px; }
+  .is-item { font-size: 9px; padding: 0 8px; }
+
+  /* Main grid V3 → single column */
+  .main-grid-v3 {
+    display: flex !important;
+    flex-direction: column !important;
+    height: auto !important;
+    overflow: visible !important;
+    padding-bottom: 56px; /* space for bottom nav */
+  }
+
+  /* Columns: show/hide via mobile nav; all auto-height */
+  .center-col {
+    order: 1;
+    height: auto !important;
+    overflow: visible !important;
+    padding: 6px !important;
+    border: none !important;
+  }
+  .right-col {
+    order: 2;
+    height: auto !important;
+    overflow: visible !important;
+    border-left: none !important;
+    border-top: 1px solid rgba(255,255,255,.05);
+    padding: 6px !important;
+    display: none; /* hidden by default, show via mob nav */
+  }
+  .ai-brain-col {
+    order: 3 !important;
+    max-height: none !important;
+    border-right: none !important;
+    border-top: 1px solid rgba(0,229,255,.08);
+    display: none; /* hidden by default, show via mob nav */
+  }
+  /* Classes set by JS */
+  .center-col.mob-active,
+  .right-col.mob-active,
+  .ai-brain-col.mob-active {
+    display: flex !important;
+  }
+  .center-col.mob-active { flex-direction: column; }
+  .ai-brain-col.mob-active { flex-direction: column; overflow-y: auto; max-height: 85vh; }
+
+  /* Bottom navigation bar */
+  .mob-nav {
+    display: flex !important;
+    position: fixed;
+    bottom: 0; left: 0; right: 0;
+    height: 52px;
+    background: rgba(4,8,14,.98);
+    border-top: 1px solid rgba(0,204,232,.12);
+    z-index: 200;
+    backdrop-filter: blur(12px);
+  }
+  .mob-nav-btn {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 2px;
+    background: none;
+    border: none;
+    color: var(--text3);
+    cursor: pointer;
+    transition: color .2s, background .2s;
+    padding: 4px 0;
+    font-size: 18px;
+  }
+  .mob-nav-btn span {
+    font-size: 8px;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: .06em;
+    line-height: 1;
+  }
+  .mob-nav-btn.active {
+    color: var(--cyan);
+    background: rgba(0,204,232,.06);
+  }
+  .mob-nav-btn.active .mob-nav-icon { filter: drop-shadow(0 0 6px var(--cyan)); }
+
+  /* Mobile chart height */
+  #grinch-chart { height: 190px !important; }
+
+  /* Mobile mkt-hero-row: vertical stack */
+  .mkt-hero-row {
+    grid-template-columns: 1fr !important;
+    gap: 6px;
+  }
+  .mkt-coin-row { flex-wrap: wrap; }
+  .mkt-coin-stats { flex-wrap: wrap; gap: 4px 8px; }
+  .mkt-sm-col { min-width: 0; border-top: 1px solid rgba(255,255,255,.04); padding-top: 6px; margin-top: 2px; }
+
+  /* rp-balances: 2-col stays on mobile */
+  .rp-balances { grid-template-columns: 1fr 1fr !important; }
+
+  /* mkt-2col stays 2-col on mobile */
+  .mkt-2col { grid-template-columns: 1fr 1fr !important; }
+
+  /* Settings: auto-open hint */
+  .rp-settings-auto { display: block !important; }
+
+  /* Open trades compact */
+  #open-trades-list, #open-short-trades-list { max-height: 200px !important; }
+  #trades-history { max-height: 200px !important; }
+
+  /* Card spacing on mobile */
+  .rp-card { border-radius: 8px; }
+  .rp-card-hdr { padding: 6px 10px; }
+
+  /* mobile-brain-toggle hidden (using mob-nav instead) */
+  #mobile-brain-toggle { display: none !important; }
+}
+
+/* ── Extra small ≤400px ── */
+@media (max-width: 400px) {
+  .mkt-price-big { font-size: 15px; }
+  .mkt-2col { grid-template-columns: 1fr !important; }
+  .mob-nav-btn span { display: none; }
+  .mob-nav { height: 48px; }
+}
+
+/* ─────────────────────────────────────────────
+   Desktop layout fine-tuning
+───────────────────────────────────────────── */
+
+/* AI DB row: styled */
+.ai-db-icon { font-size: 14px; }
+.ai-db-info { flex: 1; min-width: 0; }
+.ai-db-label {
+  font-size: 10px; font-weight: 800; color: var(--text2);
+  display: block; letter-spacing: .04em; text-transform: uppercase;
+}
+.ai-db-detail {
+  font-size: 9px; color: var(--text3);
+}
+.ai-db-badge {
+  font-size: 9px; font-weight: 800; padding: 2px 7px;
+  border-radius: 100px; border: 1px solid;
+  white-space: nowrap;
+}
+.ai-db-badge.ok   { color:#00d472; border-color:rgba(0,212,114,.25); background:rgba(0,212,114,.07); }
+.ai-db-badge.warn { color:#ffd166; border-color:rgba(255,209,102,.25); background:rgba(255,209,102,.07); }
+.ai-db-badge.err  { color:#e8334a; border-color:rgba(232,51,74,.25); background:rgba(232,51,74,.07); }
+
+/* Manual controls alignment */
+.ai-manual-lock-badge {
+  font-size: 9px; font-weight: 700; color: #ffd166;
+  background: rgba(255,209,102,.06);
+  border: 1px solid rgba(255,209,102,.18);
+  border-radius: 100px; padding: 1px 7px;
+}
+.brain-manual-body {
+  padding: 8px 10px;
+  display: flex; flex-direction: column; gap: 6px;
+}
+.bm-amount-row {
+  display: flex; align-items: center; gap: 4px;
+}
+.ai-manual-adj {
+  background: rgba(255,255,255,.05);
+  border: 1px solid rgba(255,255,255,.08);
+  color: var(--text2); border-radius: 5px;
+  padding: 4px 8px; font-size: 11px; cursor: pointer;
+  transition: background .2s; flex-shrink: 0;
+}
+.ai-manual-adj:hover { background: rgba(255,255,255,.12); }
+.ai-manual-input {
+  flex: 1; min-width: 0; text-align: center;
+  background: rgba(255,255,255,.04);
+  border: 1px solid rgba(255,255,255,.1);
+  color: white; border-radius: 6px;
+  padding: 5px; font-size: 14px; font-weight: 700;
+  font-family: var(--mono);
+}
+.bm-btns {
+  display: grid; grid-template-columns: 1fr 1fr; gap: 6px;
+}
+.ai-manual-buy-btn {
+  padding: 9px 4px; border: 1px solid rgba(0,212,114,.3);
+  background: rgba(0,212,114,.08); color: #00d472;
+  border-radius: 7px; font-size: 11px; font-weight: 800;
+  cursor: pointer; transition: background .2s;
+  letter-spacing: .03em;
+}
+.ai-manual-buy-btn:hover { background: rgba(0,212,114,.18); }
+.ai-manual-buy-btn:disabled { opacity: .4; cursor: not-allowed; }
+.ai-manual-sell-btn {
+  padding: 9px 4px; border: 1px solid rgba(232,51,74,.3);
+  background: rgba(232,51,74,.08); color: #e8334a;
+  border-radius: 7px; font-size: 11px; font-weight: 800;
+  cursor: pointer; transition: background .2s;
+  letter-spacing: .03em;
+}
+.ai-manual-sell-btn:hover { background: rgba(232,51,74,.18); }
+.ai-manual-status {
+  font-size: 10px; color: var(--text2); min-height: 14px; text-align: center;
+}
