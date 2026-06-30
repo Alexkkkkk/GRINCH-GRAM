@@ -1106,10 +1106,27 @@ async function switchPair(symbol) {
   document.getElementById("price-change").textContent = "—";
 }
 
+function cfgSetPair(which) {
+  const bg = document.getElementById("pair-grinch");
+  const bt = document.getElementById("pair-ton");
+  if (bg) bg.classList.toggle("active", which === "grinch");
+  if (bt) bt.classList.toggle("active", which === "ton");
+  const sel = document.getElementById("cfg-symbol");
+  if (sel) sel.value = which === "ton" ? "TON/USDT" : "GRINCH/USDT";
+}
+
+function _cfgStatus(msg, ok) {
+  const el = document.getElementById("cfg-save-status");
+  if (!el) return;
+  el.textContent = msg;
+  el.style.color = ok ? "#00d472" : "#e8334a";
+  setTimeout(() => { el.textContent = ""; }, 3000);
+}
+
 async function saveConfig() {
   const g = id => document.getElementById(id);
   const btn = document.getElementById("btn-save-cfg");
-  if (btn) { btn.disabled = true; btn.textContent = "⏳ Сохраняю…"; }
+  if (btn) { btn.disabled = true; btn.innerHTML = "⏳ Сохраняю…"; }
 
   const cfg = {
     symbol:             g("cfg-symbol").value,
@@ -1121,15 +1138,19 @@ async function saveConfig() {
     max_open_trades:    parseInt(g("cfg-max").value, 10),
     use_dynamic_targets:g("cfg-dyn").checked,
     trend_filter:       g("cfg-trend").checked,
-    // Smart BUY
     smart_buy_enabled:        g("cfg-smart-buy").checked,
     smart_buy_pullback_pct:   parseFloat(g("cfg-sb-pullback").value),
     smart_buy_max_wait_ticks: parseInt(g("cfg-sb-wait").value, 10),
     smart_buy_skip_conf:      parseFloat(g("cfg-sb-skip").value),
-    // Smart TP
     smart_tp_enabled:         g("cfg-smart-tp").checked,
     smart_tp_min_conf:        parseFloat(g("cfg-stp-conf").value),
     smart_tp_tight_trail_pct: parseFloat(g("cfg-stp-trail").value),
+  };
+
+  const _resetBtn = () => {
+    if (!btn) return;
+    btn.disabled = false;
+    btn.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg> Сохранить настройки';
   };
 
   try {
@@ -1141,15 +1162,18 @@ async function saveConfig() {
     const d = await r.json();
     if (d.ok) {
       showToast("✅ " + (d.message || "Настройки сохранены"), "ok");
-      if (btn) { btn.textContent = "✅ Сохранено"; setTimeout(() => { btn.disabled = false; btn.textContent = "💾 Сохранить настройки"; }, 2000); }
+      _cfgStatus("✅ " + (d.message || "Настройки сохранены"), true);
+      if (btn) { btn.innerHTML = "✅ Сохранено!"; setTimeout(_resetBtn, 2000); }
       await loadConfig();
     } else {
-      showToast("❌ " + (d.message || d.error || "Ошибка сохранения"), "err");
-      if (btn) { btn.disabled = false; btn.textContent = "💾 Сохранить настройки"; }
+      showToast("❌ " + (d.message || d.error || "Ошибка"), "err");
+      _cfgStatus("❌ " + (d.message || d.error || "Ошибка сохранения"), false);
+      _resetBtn();
     }
   } catch (e) {
     showToast("❌ Ошибка сети: " + e.message, "err");
-    if (btn) { btn.disabled = false; btn.textContent = "💾 Сохранить настройки"; }
+    _cfgStatus("❌ Ошибка сети", false);
+    _resetBtn();
   }
 }
 
@@ -1157,27 +1181,27 @@ async function loadConfig() {
   const r   = await fetch("/api/config");
   const cfg = await r.json();
   const g = id => document.getElementById(id);
-  g("cfg-symbol").value  = cfg.symbol;
-  g("cfg-amount").value  = cfg.trade_amount;
-  g("cfg-tp").value      = cfg.take_profit_pct;
-  g("cfg-trail").value   = cfg.trailing_stop_pct;
-  g("cfg-fee").value     = cfg.fee_pct;
-  g("cfg-minconf").value = cfg.min_ai_confidence;
-  g("cfg-max").value     = cfg.max_open_trades;
-  g("cfg-dyn").checked   = !!cfg.use_dynamic_targets;
-  g("cfg-trend").checked = !!cfg.trend_filter;
-  // Smart BUY
+  if (g("cfg-symbol")) g("cfg-symbol").value  = cfg.symbol;
+  if (g("cfg-amount")) g("cfg-amount").value  = cfg.trade_amount;
+  if (g("cfg-tp"))     g("cfg-tp").value      = cfg.take_profit_pct;
+  if (g("cfg-trail"))  g("cfg-trail").value   = cfg.trailing_stop_pct;
+  if (g("cfg-fee"))    g("cfg-fee").value     = cfg.fee_pct;
+  if (g("cfg-minconf"))g("cfg-minconf").value = cfg.min_ai_confidence;
+  if (g("cfg-max"))    g("cfg-max").value     = cfg.max_open_trades;
+  if (g("cfg-dyn"))    g("cfg-dyn").checked   = !!cfg.use_dynamic_targets;
+  if (g("cfg-trend"))  g("cfg-trend").checked = !!cfg.trend_filter;
   if (g("cfg-smart-buy"))     g("cfg-smart-buy").checked     = !!cfg.smart_buy_enabled;
   if (g("cfg-sb-pullback"))   g("cfg-sb-pullback").value     = cfg.smart_buy_pullback_pct   ?? 0.8;
   if (g("cfg-sb-wait"))       g("cfg-sb-wait").value         = cfg.smart_buy_max_wait_ticks ?? 3;
   if (g("cfg-sb-skip"))       g("cfg-sb-skip").value         = cfg.smart_buy_skip_conf      ?? 90;
-  // Smart TP
   if (g("cfg-smart-tp"))      g("cfg-smart-tp").checked      = !!cfg.smart_tp_enabled;
   if (g("cfg-stp-conf"))      g("cfg-stp-conf").value        = cfg.smart_tp_min_conf        ?? 75;
   if (g("cfg-stp-trail"))     g("cfg-stp-trail").value       = cfg.smart_tp_tight_trail_pct ?? 1.5;
+  // Pair buttons
+  if (cfg.symbol) cfgSetPair(cfg.symbol.startsWith("TON") ? "ton" : "grinch");
 
-  g("demo-badge").style.display = cfg.demo_mode ? "" : "none";
-  if (cfg.ton_wallet) {
+  if (g("demo-badge")) g("demo-badge").style.display = cfg.demo_mode ? "" : "none";
+  if (cfg.ton_wallet && g("ton-addr")) {
     window._tonWallet = cfg.ton_wallet;
     g("ton-addr").textContent = cfg.ton_wallet;
   }

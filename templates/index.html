@@ -770,35 +770,161 @@
       <div id="fi-list" class="fi-list"></div>
     </div>
 
-    <!-- ── Настройки (сворачиваемые) ── -->
-    <div class="rp-card">
-      <div class="rp-card-hdr" style="cursor:pointer" onclick="toggleSection('settings-body-rp')">
-        <span>⚙️ НАСТРОЙКИ</span>
-        <span style="font-size:10px;color:var(--text3)">▾ развернуть</span>
+    <!-- ── Настройки ── -->
+    <div class="rp-card cfg-card" id="settings-card">
+      <div class="cfg-card-hdr">
+        <span class="cfg-card-title">⚙️ НАСТРОЙКИ ТОРГОВЛИ</span>
+        <span class="cfg-profit-badge">🟢 ТОЛЬКО В ПЛЮС</span>
       </div>
-      <div id="settings-body-rp" style="display:none">
-        <div class="settings-form" style="padding:8px 0">
-          <label>Пара <select id="cfg-symbol" onchange="switchPair(this.value)"><option value="GRINCH/USDT">GRINCH/USDT 🐸</option><option value="TON/USDT">TON/USDT ◆</option></select></label>
-          <label>Сумма сделки (TON) <input type="number" id="cfg-amount" value="5" min="5" step="0.5"></label>
-          <label>Тейк-профит (%) <input type="number" id="cfg-tp" value="4.0" step="0.1" min="0.1" max="1000"></label>
-          <label>Трейлинг-стоп (%) <input type="number" id="cfg-trail" value="1.5" step="0.1" min="0" max="90"></label>
-          <label>Комиссия (%) <input type="number" id="cfg-fee" value="0.3" step="0.05" min="0" max="10"></label>
-          <label>Мин. уверенность AI (%) <input type="number" id="cfg-minconf" value="55" step="1" min="0" max="100"></label>
-          <label>Макс. открытых сделок <input type="number" id="cfg-max" value="3" min="1" max="50"></label>
-          <label class="cfg-check"><input type="checkbox" id="cfg-dyn" checked> Динамические цели по ATR</label>
-          <label class="cfg-check"><input type="checkbox" id="cfg-trend" checked> Не покупать в нисходящем тренде</label>
-          <div class="cfg-section-title">🎯 Smart BUY</div>
-          <label class="cfg-check"><input type="checkbox" id="cfg-smart-buy"> Включить Smart BUY</label>
-          <label>Ждать откат (%) <input type="number" id="cfg-sb-pullback" value="0.8" step="0.1" min="0.1" max="5"></label>
-          <label>Макс. ожидание (тиков) <input type="number" id="cfg-sb-wait" value="3" step="1" min="1" max="20"></label>
-          <label>AI для мгновенной покупки (%) <input type="number" id="cfg-sb-skip" value="90" step="1" min="50" max="100"></label>
-          <div class="cfg-section-title">🧠 Smart TP</div>
-          <label class="cfg-check"><input type="checkbox" id="cfg-smart-tp"> Включить Smart TP</label>
-          <label>Мин. AI для удержания (%) <input type="number" id="cfg-stp-conf" value="75" step="1" min="50" max="100"></label>
-          <label>Тугой трейлинг (%) <input type="number" id="cfg-stp-trail" value="1.5" step="0.1" min="0.5" max="10"></label>
-          <button class="btn btn-blue" id="btn-save-cfg" onclick="saveConfig()">💾 Сохранить</button>
-          <div class="cfg-note">🟢 Режим «только в плюс» · TARGET NET: +20%</div>
+
+      <div id="settings-body-rp">
+
+        <!-- Пара -->
+        <div class="cfg-group">
+          <div class="cfg-group-label">📊 ТОРГОВАЯ ПАРА</div>
+          <div class="cfg-pair-row">
+            <button class="cfg-pair-btn active" id="pair-grinch" onclick="switchPair('GRINCH/USDT');cfgSetPair('grinch')">🐸 GRINCH / GRAM</button>
+            <button class="cfg-pair-btn" id="pair-ton" onclick="switchPair('TON/USDT');cfgSetPair('ton')">◆ TON / USDT</button>
+          </div>
+          <select id="cfg-symbol" style="display:none">
+            <option value="GRINCH/USDT">GRINCH/USDT 🐸</option>
+            <option value="TON/USDT">TON/USDT ◆</option>
+          </select>
         </div>
+
+        <!-- Основные параметры -->
+        <div class="cfg-group">
+          <div class="cfg-group-label">💰 ОСНОВНЫЕ ПАРАМЕТРЫ</div>
+          <div class="cfg-row2">
+            <div class="cfg-field">
+              <div class="cfg-field-lbl">Сумма сделки</div>
+              <div class="cfg-input-wrap">
+                <input type="number" id="cfg-amount" class="cfg-inp" value="5" min="5" step="0.5">
+                <span class="cfg-unit">TON</span>
+              </div>
+            </div>
+            <div class="cfg-field">
+              <div class="cfg-field-lbl">Макс. сделок</div>
+              <div class="cfg-input-wrap">
+                <input type="number" id="cfg-max" class="cfg-inp" value="3" min="1" max="50">
+                <span class="cfg-unit">шт</span>
+              </div>
+            </div>
+          </div>
+          <div class="cfg-row2">
+            <div class="cfg-field">
+              <div class="cfg-field-lbl">Тейк-профит</div>
+              <div class="cfg-input-wrap">
+                <input type="number" id="cfg-tp" class="cfg-inp" value="4.0" step="0.1" min="0.1" max="1000">
+                <span class="cfg-unit">%</span>
+              </div>
+            </div>
+            <div class="cfg-field">
+              <div class="cfg-field-lbl">Трейлинг-стоп</div>
+              <div class="cfg-input-wrap">
+                <input type="number" id="cfg-trail" class="cfg-inp" value="1.5" step="0.1" min="0" max="90">
+                <span class="cfg-unit">%</span>
+              </div>
+            </div>
+          </div>
+          <div class="cfg-row2">
+            <div class="cfg-field">
+              <div class="cfg-field-lbl">Комиссия DEX</div>
+              <div class="cfg-input-wrap">
+                <input type="number" id="cfg-fee" class="cfg-inp" value="0.3" step="0.05" min="0" max="10">
+                <span class="cfg-unit">%</span>
+              </div>
+            </div>
+            <div class="cfg-field">
+              <div class="cfg-field-lbl">Мин. AI (вход)</div>
+              <div class="cfg-input-wrap">
+                <input type="number" id="cfg-minconf" class="cfg-inp" value="55" step="1" min="0" max="100">
+                <span class="cfg-unit">%</span>
+              </div>
+            </div>
+          </div>
+          <div class="cfg-toggles">
+            <label class="cfg-toggle-row">
+              <span class="cfg-toggle-lbl">Динамические цели (ATR)</span>
+              <span class="cfg-sw"><input type="checkbox" id="cfg-dyn" checked class="cfg-sw-inp"><span class="cfg-sw-slider"></span></span>
+            </label>
+            <label class="cfg-toggle-row">
+              <span class="cfg-toggle-lbl">Блокировать вход в тренде ↓</span>
+              <span class="cfg-sw"><input type="checkbox" id="cfg-trend" checked class="cfg-sw-inp"><span class="cfg-sw-slider"></span></span>
+            </label>
+          </div>
+        </div>
+
+        <!-- Smart BUY -->
+        <div class="cfg-group">
+          <div class="cfg-group-label" style="display:flex;align-items:center;gap:8px">
+            🎯 SMART BUY
+            <label class="cfg-sw" style="margin-left:auto">
+              <input type="checkbox" id="cfg-smart-buy" class="cfg-sw-inp">
+              <span class="cfg-sw-slider"></span>
+            </label>
+          </div>
+          <div class="cfg-row2">
+            <div class="cfg-field">
+              <div class="cfg-field-lbl">Ждать откат</div>
+              <div class="cfg-input-wrap">
+                <input type="number" id="cfg-sb-pullback" class="cfg-inp" value="0.8" step="0.1" min="0.1" max="5">
+                <span class="cfg-unit">%</span>
+              </div>
+            </div>
+            <div class="cfg-field">
+              <div class="cfg-field-lbl">Макс. ожидание</div>
+              <div class="cfg-input-wrap">
+                <input type="number" id="cfg-sb-wait" class="cfg-inp" value="3" step="1" min="1" max="20">
+                <span class="cfg-unit">тиков</span>
+              </div>
+            </div>
+          </div>
+          <div class="cfg-field" style="padding:0">
+            <div class="cfg-field-lbl">AI для мгновенной покупки</div>
+            <div class="cfg-input-wrap">
+              <input type="number" id="cfg-sb-skip" class="cfg-inp" value="90" step="1" min="50" max="100">
+              <span class="cfg-unit">%</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Smart TP -->
+        <div class="cfg-group">
+          <div class="cfg-group-label" style="display:flex;align-items:center;gap:8px">
+            🧠 SMART TP
+            <label class="cfg-sw" style="margin-left:auto">
+              <input type="checkbox" id="cfg-smart-tp" class="cfg-sw-inp">
+              <span class="cfg-sw-slider"></span>
+            </label>
+          </div>
+          <div class="cfg-row2">
+            <div class="cfg-field">
+              <div class="cfg-field-lbl">Мин. AI удержания</div>
+              <div class="cfg-input-wrap">
+                <input type="number" id="cfg-stp-conf" class="cfg-inp" value="75" step="1" min="50" max="100">
+                <span class="cfg-unit">%</span>
+              </div>
+            </div>
+            <div class="cfg-field">
+              <div class="cfg-field-lbl">Тугой трейлинг</div>
+              <div class="cfg-input-wrap">
+                <input type="number" id="cfg-stp-trail" class="cfg-inp" value="1.5" step="0.1" min="0.5" max="10">
+                <span class="cfg-unit">%</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Save -->
+        <div style="padding:4px 12px 14px">
+          <button class="cfg-save-btn" id="btn-save-cfg" onclick="saveConfig()">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
+            Сохранить настройки
+          </button>
+          <div id="cfg-save-status" style="text-align:center;font-size:10px;margin-top:6px;min-height:14px;color:var(--text3)"></div>
+        </div>
+
       </div>
     </div>
 
