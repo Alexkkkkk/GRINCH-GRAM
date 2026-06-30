@@ -2292,9 +2292,12 @@ body::after {
 .header {
   background: rgba(3,6,10,.96) !important;
   border-bottom-color: rgba(0,204,232,.08) !important;
-  height: 52px !important;
 }
-.hdr-v2 { height: 52px !important; }
+/* height только на десктопе — на мобиле хедер 2-рядный (auto) */
+@media (min-width: 769px) {
+  .header { height: 52px !important; }
+  .hdr-v2 { height: 52px !important; }
+}
 .header::after {
   background: linear-gradient(90deg, transparent, rgba(0,204,232,.28), transparent) !important;
 }
@@ -2333,9 +2336,11 @@ body::after {
   border-bottom-color: rgba(0,204,232,.06) !important;
 }
 
-/* ── Основная сетка ── */
-.main-grid-v2 {
-  height: calc(100vh - 52px - 30px) !important;
+/* ── Основная сетка — только десктоп ── */
+@media (min-width: 769px) {
+  .main-grid-v2 {
+    height: calc(100vh - 52px - 30px) !important;
+  }
 }
 
 /* ── AI Brain колонка ── */
