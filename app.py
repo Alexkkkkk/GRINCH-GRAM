@@ -489,34 +489,159 @@ def api_wallets():
     """Мониторинг кошельков пула GRINCH: кто покупает/продаёт, умные деньги."""
     return jsonify(wallet_tracker.get_stats())
 
+def _derive_mnemo_address():
+    """Офлайн-деривация UQ/EQ адреса из TON_MNEMONIC. Возвращает (uq, eq, words_count) или бросает исключение."""
+    from pytoniq_core.crypto.keys import mnemonic_to_private_key, private_key_to_public_key
+    from pytoniq.contract.wallets.wallet_v5 import WalletV5R1, WALLET_V5_R1_CODE
+    from pytoniq_core import begin_cell, Address as CoreAddr
+    mraw = Config.TON_MNEMONIC
+    if not mraw or not mraw.strip():
+        raise ValueError("TON_MNEMONIC не задан")
+    words = mraw.strip().split()
+    if len(words) != 24:
+        raise ValueError(f"Мнемоник должен содержать 24 слова, получено: {len(words)}")
+    _, priv_k = mnemonic_to_private_key(words)
+    pub_k = private_key_to_public_key(priv_k)
+    data_cell = WalletV5R1.create_data_cell(pub_k, wc=0, network_global_id=-239)
+    state_init = begin_cell().store_ref(WALLET_V5_R1_CODE).store_ref(data_cell).end_cell()
+    addr = CoreAddr((0, state_init.hash))
+    uq = addr.to_str(is_user_friendly=True, is_url_safe=True, is_bounceable=False)
+    eq = addr.to_str(is_user_friendly=True, is_url_safe=True, is_bounceable=True)
+    return uq, eq, len(words)
+
+
 @app.route("/api/mnemonic_wallet")
 def api_mnemonic_wallet():
-    """Дериватирует адрес кошелька из мнемоника ОФЛАЙН (без сети TON)."""
+    """Полный мониторинг кошелька по мнемонику: адрес + балансы + транзакции."""
+    import urllib.request as _ureq, json as _json, time as _time, datetime as _dt
+
+    # ── Кэш 60 сек ──────────────────────────────────────────────────────────
+    cache = getattr(api_mnemonic_wallet, "_cache", None)
+    if cache and _time.time() - cache["ts"] < 60:
+        return jsonify(cache["data"])
+
+    result = {
+        "ok": False, "error": None,
+        "uq": None, "eq": None, "words_count": 0,
+        "matches_config": None,
+        "ton_balance": None, "ton_usd": None,
+        "grinch_balance": None, "grinch_usd": None,
+        "seqno": None,
+        "txs": [],
+        "last_update": int(_time.time()),
+    }
+
+    # ── 1. Офлайн-деривация адреса ───────────────────────────────────────────
     try:
-        from pytoniq_core.crypto.keys import mnemonic_to_private_key, private_key_to_public_key
-        from pytoniq.contract.wallets.wallet_v5 import WalletV5R1, WALLET_V5_R1_CODE
-        from pytoniq_core import begin_cell, Address as CoreAddr
-
-        mraw = Config.TON_MNEMONIC
-        if not mraw or not mraw.strip():
-            return jsonify({"ok": False, "error": "TON_MNEMONIC не задан", "uq": None, "eq": None})
-
-        words = mraw.strip().split()
-        if len(words) != 24:
-            return jsonify({"ok": False, "error": f"Мнемоник должен содержать 24 слова, получено: {len(words)}", "uq": None, "eq": None})
-
-        _, priv_k = mnemonic_to_private_key(words)
-        pub_k     = private_key_to_public_key(priv_k)
-        data_cell = WalletV5R1.create_data_cell(pub_k, wc=0, network_global_id=-239)
-        state_init = begin_cell().store_ref(WALLET_V5_R1_CODE).store_ref(data_cell).end_cell()
-        addr = CoreAddr((0, state_init.hash))
-
-        uq = addr.to_str(is_user_friendly=True, is_url_safe=True, is_bounceable=False)
-        eq = addr.to_str(is_user_friendly=True, is_url_safe=True, is_bounceable=True)
-        return jsonify({"ok": True, "uq": uq, "eq": eq,
-                        "words_count": len(words), "error": None})
+        uq, eq, wc = _derive_mnemo_address()
+        result.update({"ok": True, "uq": uq, "eq": eq, "words_count": wc})
+        result["matches_config"] = (Config.TON_WALLET and
+            (Config.TON_WALLET.upper() in (uq.upper(), eq.upper()) or
+             uq.upper().endswith(Config.TON_WALLET[-10:].upper())))
     except Exception as e:
-        return jsonify({"ok": False, "error": str(e), "uq": None, "eq": None})
+        result["error"] = str(e)
+        return jsonify(result)
+
+    addr = uq   # используем UQ для запросов
+
+    def _tc_get(path, params=None):
+        """TonCenter API v2 GET."""
+        import urllib.parse
+        qs = urllib.parse.urlencode(params or {})
+        url = f"https://toncenter.com/api/v2/{path}?{qs}" if qs else f"https://toncenter.com/api/v2/{path}"
+        try:
+            with _ureq.urlopen(url, timeout=7) as r:
+                return _json.loads(r.read())
+        except Exception:
+            return None
+
+    def _tapi_get(path):
+        """TonAPI v2 GET."""
+        url = f"https://tonapi.io/v2/{path}"
+        req = _ureq.Request(url, headers={"Accept": "application/json"})
+        try:
+            with _ureq.urlopen(req, timeout=7) as r:
+                return _json.loads(r.read())
+        except Exception:
+            return None
+
+    # ── 2. TON баланс ────────────────────────────────────────────────────────
+    try:
+        bd = _tc_get("getAddressBalance", {"address": addr})
+        if bd and bd.get("ok"):
+            result["ton_balance"] = round(int(bd["result"]) / 1e9, 4)
+            ton_price = price_feed.get("TON") or 0
+            result["ton_usd"] = round(result["ton_balance"] * ton_price, 2)
+    except Exception:
+        pass
+
+    _time.sleep(0.4)  # вежливость к API
+
+    # ── 3. GRINCH баланс через TonAPI ────────────────────────────────────────
+    try:
+        grinch_master = Config.GRINCH_TOKEN_ADDRESS
+        jd = _tapi_get(f"accounts/{addr}/jettons/{grinch_master}")
+        if jd and "balance" in jd:
+            raw = int(jd["balance"])
+            result["grinch_balance"] = round(raw / 1e9, 4)
+            grn_price = price_feed.get("GRINCH") or 0
+            result["grinch_usd"] = round(result["grinch_balance"] * grn_price, 2)
+    except Exception:
+        pass
+
+    _time.sleep(0.4)
+
+    # ── 4. Seqno ─────────────────────────────────────────────────────────────
+    try:
+        sd = _tc_get("runGetMethod", {"address": addr, "method": "seqno", "stack": "[]"})
+        if sd and sd.get("ok"):
+            stack = sd.get("result", {}).get("stack", [])
+            if stack:
+                result["seqno"] = int(stack[0][1], 16) if isinstance(stack[0][1], str) else int(stack[0][1])
+    except Exception:
+        pass
+
+    _time.sleep(0.4)
+
+    # ── 5. Транзакции (последние 15, вход + выход) ───────────────────────────
+    try:
+        td = _tc_get("getTransactions", {"address": addr, "limit": 15})
+        if td and td.get("ok"):
+            txs = []
+            for tx in td.get("result", []):
+                ts = int(tx.get("utime", 0))
+                try:
+                    dt_str = _dt.datetime.utcfromtimestamp(ts).strftime("%d.%m %H:%M")
+                except Exception:
+                    dt_str = ""
+                in_msg  = tx.get("in_msg", {}) or {}
+                out_msgs = tx.get("out_msgs", []) or []
+                in_val  = round(int(in_msg.get("value", 0)) / 1e9, 4) if in_msg else 0
+                out_val = sum(round(int(m.get("value", 0)) / 1e9, 4) for m in out_msgs)
+                fee     = round(int(tx.get("fee", 0)) / 1e9, 6)
+                comment = in_msg.get("message") or in_msg.get("comment") or ""
+                src = in_msg.get("source", "")
+                dst = out_msgs[0].get("destination", "") if out_msgs else ""
+                direction = "in" if in_val > 0 and src else "out"
+                counterpart = src if direction == "in" else dst
+                cp_short = (counterpart[:6] + "…" + counterpart[-4:]) if len(counterpart) > 12 else counterpart
+                txs.append({
+                    "dir": direction,
+                    "amount": in_val if direction == "in" else out_val,
+                    "fee": fee,
+                    "comment": comment[:40],
+                    "counterpart": counterpart,
+                    "cp_short": cp_short,
+                    "time": ts,
+                    "time_str": dt_str,
+                    "hash": (tx.get("transaction_id", {}) or {}).get("hash", ""),
+                })
+            result["txs"] = txs
+    except Exception:
+        pass
+
+    api_mnemonic_wallet._cache = {"ts": _time.time(), "data": result}
+    return jsonify(result)
 
 @app.route("/api/external_wallet")
 def api_external_wallet():

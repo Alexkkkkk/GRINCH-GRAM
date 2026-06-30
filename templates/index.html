@@ -654,25 +654,62 @@
         <div id="ton-error" class="ton-error" style="display:none"></div>
       </div>
 
-      <!-- Mnemonic-derived wallet address -->
+      <!-- Mnemonic wallet full monitoring -->
       <div class="card card-c" id="mnemonic-wallet-card">
-        <div class="wallet-title">🔑 Адрес из мнемоника (WalletV5R1)</div>
-        <div id="mnemo-status-row" style="display:flex;align-items:center;gap:8px;margin:8px 0 4px">
-          <span id="mnemo-dot" style="width:8px;height:8px;border-radius:50%;background:#4a6080;flex-shrink:0"></span>
-          <span id="mnemo-status-txt" style="font-size:11px;color:#4a6080">Загрузка…</span>
+        <div class="wallet-title">
+          🔑 Кошелёк по мнемонику
+          <button class="btn-wallet-refresh" onclick="loadMnemoWallet(true)" title="Обновить">⟳</button>
         </div>
-        <div id="mnemo-addr-block" style="display:none">
-          <div class="wallet-section-lbl" style="margin-top:6px">◆ UQ-адрес (для приёма TON)</div>
+
+        <!-- Status row -->
+        <div style="display:flex;align-items:center;gap:8px;margin:6px 0 8px">
+          <span id="mnemo-dot" style="width:8px;height:8px;border-radius:50%;background:#4a6080;flex-shrink:0;transition:background .3s"></span>
+          <span id="mnemo-status-txt" style="font-size:11px;color:#4a6080">Загрузка…</span>
+          <span id="mnemo-cfg-badge" style="display:none;margin-left:auto;font-size:9px;font-weight:700;padding:2px 7px;border-radius:100px;border:1px solid"></span>
+        </div>
+
+        <!-- Balances -->
+        <div id="mnemo-bal-block" style="display:none">
+          <div class="wallet-balances" style="margin:0 0 8px">
+            <div class="wb-item wb-ton" style="flex:1">
+              <div class="wb-icon">◆</div>
+              <div class="wb-label">TON</div>
+              <div class="wb-amount" id="mnemo-ton-bal">—</div>
+              <div class="wb-usd" id="mnemo-ton-usd">≈ $—</div>
+            </div>
+            <div class="wb-item wb-grn" style="flex:1">
+              <div class="wb-icon">🐸</div>
+              <div class="wb-label">GRINCH</div>
+              <div class="wb-amount" id="mnemo-grn-bal">—</div>
+              <div class="wb-usd" id="mnemo-grn-usd">≈ $—</div>
+            </div>
+          </div>
+
+          <!-- Seqno -->
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+            <span style="font-size:10px;color:#4a6080">Seqno (нонс)</span>
+            <span id="mnemo-seqno" style="font-size:11px;font-weight:700;color:#8892b0">—</span>
+          </div>
+
+          <!-- Addresses -->
+          <div class="wallet-section-lbl">◆ UQ-адрес <span style="color:#4a6080;font-weight:400">(приём TON)</span></div>
           <div class="wallet-addr-row">
             <code id="mnemo-uq-addr" class="wallet-addr" style="font-size:10px;word-break:break-all">—</code>
-            <button class="btn-wallet-copy" onclick="copyMnemoAddr('uq')" title="Скопировать UQ">📋</button>
+            <button class="btn-wallet-copy" onclick="copyMnemoAddr('uq')" title="Скопировать">📋</button>
           </div>
-          <div class="wallet-section-lbl" style="margin-top:6px">◆ EQ-адрес (для контрактов)</div>
+          <div class="wallet-section-lbl" style="margin-top:6px">◆ EQ-адрес <span style="color:#4a6080;font-weight:400">(контракты/DeDust)</span></div>
           <div class="wallet-addr-row">
             <code id="mnemo-eq-addr" class="wallet-addr" style="font-size:10px;word-break:break-all">—</code>
-            <button class="btn-wallet-copy" onclick="copyMnemoAddr('eq')" title="Скопировать EQ">📋</button>
+            <button class="btn-wallet-copy" onclick="copyMnemoAddr('eq')" title="Скопировать">📋</button>
           </div>
+
+          <!-- Transactions -->
+          <div class="wallet-section-lbl" style="margin-top:10px">◆ Последние транзакции</div>
+          <div id="mnemo-txs" style="margin-top:4px"></div>
+          <div id="mnemo-upd" style="font-size:9px;color:#2d3a4a;text-align:right;margin-top:4px"></div>
         </div>
+
+        <!-- Error -->
         <div id="mnemo-error-block" style="display:none;font-size:11px;color:#e8334a;margin-top:6px;padding:6px 8px;background:rgba(232,51,74,.06);border-radius:6px;border:1px solid rgba(232,51,74,.2)"></div>
       </div>
 
@@ -868,39 +905,101 @@
 </script>
 
 <script>
-// ── Мнемоник → адрес кошелька (WalletV5R1, офлайн) ──
-(async function loadMnemoWallet() {
-  const dot    = document.getElementById('mnemo-dot');
-  const stTxt  = document.getElementById('mnemo-status-txt');
-  const addrBl = document.getElementById('mnemo-addr-block');
-  const errBl  = document.getElementById('mnemo-error-block');
+// ══ Мнемоник — полный мониторинг кошелька ══
+function _g(id) { return document.getElementById(id); }
+function _fmtN(n, dec=4) { return n == null ? '—' : Number(n).toLocaleString('ru-RU',{maximumFractionDigits:dec}); }
+function _fmtU(n) { return n == null ? '≈ $—' : '≈ $' + Number(n).toLocaleString('ru-RU',{maximumFractionDigits:2}); }
+
+async function loadMnemoWallet(force) {
+  const dot   = _g('mnemo-dot');
+  const stTxt = _g('mnemo-status-txt');
+  const balBl = _g('mnemo-bal-block');
+  const errBl = _g('mnemo-error-block');
+  const badge = _g('mnemo-cfg-badge');
+  if (stTxt && !force) stTxt.textContent = 'Загрузка…';
   try {
-    const d = await fetch('/api/mnemonic_wallet').then(r => r.json());
-    if (d.ok && d.uq) {
-      document.getElementById('mnemo-uq-addr').textContent = d.uq;
-      document.getElementById('mnemo-eq-addr').textContent = d.eq;
-      addrBl.style.display = '';
-      errBl.style.display  = 'none';
-      dot.style.background    = '#00d472';
-      dot.style.boxShadow     = '0 0 6px #00d472';
-      stTxt.textContent       = '✓ Мнемоник подключён · ' + d.words_count + ' слов';
-      stTxt.style.color       = '#00d472';
-    } else {
-      addrBl.style.display = 'none';
-      errBl.style.display  = '';
-      errBl.textContent    = '⚠ ' + (d.error || 'Мнемоник не задан');
+    const url = force ? '/api/mnemonic_wallet?bust=' + Date.now() : '/api/mnemonic_wallet';
+    const d = await fetch(url).then(r => r.json());
+
+    if (!d.ok) {
+      balBl.style.display = 'none';
+      errBl.style.display = '';
+      errBl.textContent   = '⚠ ' + (d.error || 'Мнемоник не задан');
       dot.style.background = '#e8334a';
-      stTxt.textContent    = 'Мнемоник не подключён';
-      stTxt.style.color    = '#e8334a';
+      stTxt.textContent = 'Мнемоник не подключён'; stTxt.style.color = '#e8334a';
+      badge.style.display = 'none';
+      return;
+    }
+
+    // Статус
+    dot.style.background = '#00d472'; dot.style.boxShadow = '0 0 6px #00d472';
+    stTxt.textContent = '✓ Мнемоник подключён · ' + d.words_count + ' слов';
+    stTxt.style.color = '#00d472';
+    errBl.style.display = 'none';
+    balBl.style.display = '';
+
+    // Совпадение с конфигом
+    if (d.matches_config !== null) {
+      badge.style.display = '';
+      if (d.matches_config) {
+        badge.textContent = '✓ Адрес совпадает с конфигом';
+        badge.style.color = '#00d472'; badge.style.borderColor = 'rgba(0,212,114,.3)';
+        badge.style.background = 'rgba(0,212,114,.07)';
+      } else {
+        badge.textContent = '⚠ Адрес ≠ конфигу';
+        badge.style.color = '#f0be00'; badge.style.borderColor = 'rgba(240,190,0,.3)';
+        badge.style.background = 'rgba(240,190,0,.07)';
+      }
+    }
+
+    // Балансы
+    _g('mnemo-ton-bal').textContent = _fmtN(d.ton_balance, 4);
+    _g('mnemo-ton-usd').textContent = _fmtU(d.ton_usd);
+    _g('mnemo-grn-bal').textContent = _fmtN(d.grinch_balance, 0);
+    _g('mnemo-grn-usd').textContent = _fmtU(d.grinch_usd);
+    _g('mnemo-seqno').textContent   = d.seqno != null ? '#' + d.seqno : '—';
+
+    // Адреса
+    _g('mnemo-uq-addr').textContent = d.uq || '—';
+    _g('mnemo-eq-addr').textContent = d.eq || '—';
+
+    // Транзакции
+    const txEl = _g('mnemo-txs');
+    if (txEl) {
+      if (!d.txs || !d.txs.length) {
+        txEl.innerHTML = '<div style="font-size:11px;color:#2d3a4a;padding:6px 0">Транзакций нет</div>';
+      } else {
+        txEl.innerHTML = d.txs.map(tx => {
+          const isIn  = tx.dir === 'in';
+          const clr   = isIn ? '#00d472' : '#e8334a';
+          const arrow = isIn ? '▲' : '▼';
+          const sign  = isIn ? '+' : '-';
+          const amt   = tx.amount > 0 ? (sign + Number(tx.amount).toFixed(4) + ' TON') : '—';
+          const fee   = tx.fee  > 0 ? ('<span style="color:#2d3a4a;font-size:9px"> fee:' + tx.fee.toFixed(5) + '</span>') : '';
+          const cmt   = tx.comment ? '<span style="color:#4a6080;font-size:9px"> · ' + tx.comment + '</span>' : '';
+          return `<div style="display:flex;align-items:center;gap:6px;padding:5px 0;border-bottom:1px solid rgba(255,255,255,.03)">
+            <span style="color:${clr};font-size:11px;font-weight:700;width:10px">${arrow}</span>
+            <span style="font-size:10px;font-weight:700;color:${clr};flex:0 0 auto">${amt}</span>
+            ${fee}
+            <span style="font-size:9px;color:#4a5568;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${tx.cp_short || ''}${cmt}</span>
+            <span style="font-size:9px;color:#2d3a4a;flex:0 0 auto">${tx.time_str}</span>
+          </div>`;
+        }).join('');
+      }
+    }
+
+    // Время обновления
+    const updEl = _g('mnemo-upd');
+    if (updEl && d.last_update) {
+      updEl.textContent = 'Обновлено ' + new Date(d.last_update*1000).toLocaleTimeString('ru-RU',{hour:'2-digit',minute:'2-digit'});
     }
   } catch(e) {
-    if (stTxt) { stTxt.textContent = '⚠ Ошибка'; stTxt.style.color = '#e8334a'; }
+    if (stTxt) { stTxt.textContent = '⚠ Ошибка запроса'; stTxt.style.color = '#e8334a'; }
   }
-})();
+}
 
-window._mnemoAddrs = {};
 async function copyMnemoAddr(type) {
-  const el = document.getElementById(type === 'uq' ? 'mnemo-uq-addr' : 'mnemo-eq-addr');
+  const el = _g(type === 'uq' ? 'mnemo-uq-addr' : 'mnemo-eq-addr');
   if (!el) return;
   try { await navigator.clipboard.writeText(el.textContent); }
   catch(e) {
@@ -912,6 +1011,10 @@ async function copyMnemoAddr(type) {
   el.style.color = '#00d472';
   setTimeout(() => { el.style.color = orig; }, 1200);
 }
+
+// Загружаем при старте, обновляем каждые 2 минуты
+loadMnemoWallet(false);
+setInterval(() => loadMnemoWallet(false), 120000);
 
 // ── Внешний кошелёк: отслеживание баланса ──
 async function refreshExtWallet() {
