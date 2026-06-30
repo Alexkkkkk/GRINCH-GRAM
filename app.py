@@ -489,6 +489,35 @@ def api_wallets():
     """Мониторинг кошельков пула GRINCH: кто покупает/продаёт, умные деньги."""
     return jsonify(wallet_tracker.get_stats())
 
+@app.route("/api/mnemonic_wallet")
+def api_mnemonic_wallet():
+    """Дериватирует адрес кошелька из мнемоника ОФЛАЙН (без сети TON)."""
+    try:
+        from pytoniq_core.crypto.keys import mnemonic_to_private_key, private_key_to_public_key
+        from pytoniq.contract.wallets.wallet_v5 import WalletV5R1, WALLET_V5_R1_CODE
+        from pytoniq_core import begin_cell, Address as CoreAddr
+
+        mraw = Config.TON_MNEMONIC
+        if not mraw or not mraw.strip():
+            return jsonify({"ok": False, "error": "TON_MNEMONIC не задан", "uq": None, "eq": None})
+
+        words = mraw.strip().split()
+        if len(words) != 24:
+            return jsonify({"ok": False, "error": f"Мнемоник должен содержать 24 слова, получено: {len(words)}", "uq": None, "eq": None})
+
+        _, priv_k = mnemonic_to_private_key(words)
+        pub_k     = private_key_to_public_key(priv_k)
+        data_cell = WalletV5R1.create_data_cell(pub_k, wc=0, network_global_id=-239)
+        state_init = begin_cell().store_ref(WALLET_V5_R1_CODE).store_ref(data_cell).end_cell()
+        addr = CoreAddr((0, state_init.hash))
+
+        uq = addr.to_str(is_user_friendly=True, is_url_safe=True, is_bounceable=False)
+        eq = addr.to_str(is_user_friendly=True, is_url_safe=True, is_bounceable=True)
+        return jsonify({"ok": True, "uq": uq, "eq": eq,
+                        "words_count": len(words), "error": None})
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e), "uq": None, "eq": None})
+
 @app.route("/api/external_wallet")
 def api_external_wallet():
     """Баланс внешнего кошелька UQBS8W42... через TonCenter API."""

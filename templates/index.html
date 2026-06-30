@@ -654,6 +654,28 @@
         <div id="ton-error" class="ton-error" style="display:none"></div>
       </div>
 
+      <!-- Mnemonic-derived wallet address -->
+      <div class="card card-c" id="mnemonic-wallet-card">
+        <div class="wallet-title">🔑 Адрес из мнемоника (WalletV5R1)</div>
+        <div id="mnemo-status-row" style="display:flex;align-items:center;gap:8px;margin:8px 0 4px">
+          <span id="mnemo-dot" style="width:8px;height:8px;border-radius:50%;background:#4a6080;flex-shrink:0"></span>
+          <span id="mnemo-status-txt" style="font-size:11px;color:#4a6080">Загрузка…</span>
+        </div>
+        <div id="mnemo-addr-block" style="display:none">
+          <div class="wallet-section-lbl" style="margin-top:6px">◆ UQ-адрес (для приёма TON)</div>
+          <div class="wallet-addr-row">
+            <code id="mnemo-uq-addr" class="wallet-addr" style="font-size:10px;word-break:break-all">—</code>
+            <button class="btn-wallet-copy" onclick="copyMnemoAddr('uq')" title="Скопировать UQ">📋</button>
+          </div>
+          <div class="wallet-section-lbl" style="margin-top:6px">◆ EQ-адрес (для контрактов)</div>
+          <div class="wallet-addr-row">
+            <code id="mnemo-eq-addr" class="wallet-addr" style="font-size:10px;word-break:break-all">—</code>
+            <button class="btn-wallet-copy" onclick="copyMnemoAddr('eq')" title="Скопировать EQ">📋</button>
+          </div>
+        </div>
+        <div id="mnemo-error-block" style="display:none;font-size:11px;color:#e8334a;margin-top:6px;padding:6px 8px;background:rgba(232,51,74,.06);border-radius:6px;border:1px solid rgba(232,51,74,.2)"></div>
+      </div>
+
       <!-- External wallet tracking -->
       <div class="card card-c" id="ext-wallet-card">
         <div class="wallet-title">
@@ -846,6 +868,51 @@
 </script>
 
 <script>
+// ── Мнемоник → адрес кошелька (WalletV5R1, офлайн) ──
+(async function loadMnemoWallet() {
+  const dot    = document.getElementById('mnemo-dot');
+  const stTxt  = document.getElementById('mnemo-status-txt');
+  const addrBl = document.getElementById('mnemo-addr-block');
+  const errBl  = document.getElementById('mnemo-error-block');
+  try {
+    const d = await fetch('/api/mnemonic_wallet').then(r => r.json());
+    if (d.ok && d.uq) {
+      document.getElementById('mnemo-uq-addr').textContent = d.uq;
+      document.getElementById('mnemo-eq-addr').textContent = d.eq;
+      addrBl.style.display = '';
+      errBl.style.display  = 'none';
+      dot.style.background    = '#00d472';
+      dot.style.boxShadow     = '0 0 6px #00d472';
+      stTxt.textContent       = '✓ Мнемоник подключён · ' + d.words_count + ' слов';
+      stTxt.style.color       = '#00d472';
+    } else {
+      addrBl.style.display = 'none';
+      errBl.style.display  = '';
+      errBl.textContent    = '⚠ ' + (d.error || 'Мнемоник не задан');
+      dot.style.background = '#e8334a';
+      stTxt.textContent    = 'Мнемоник не подключён';
+      stTxt.style.color    = '#e8334a';
+    }
+  } catch(e) {
+    if (stTxt) { stTxt.textContent = '⚠ Ошибка'; stTxt.style.color = '#e8334a'; }
+  }
+})();
+
+window._mnemoAddrs = {};
+async function copyMnemoAddr(type) {
+  const el = document.getElementById(type === 'uq' ? 'mnemo-uq-addr' : 'mnemo-eq-addr');
+  if (!el) return;
+  try { await navigator.clipboard.writeText(el.textContent); }
+  catch(e) {
+    const ta = document.createElement('textarea');
+    ta.value = el.textContent; document.body.appendChild(ta); ta.select();
+    document.execCommand('copy'); document.body.removeChild(ta);
+  }
+  const orig = el.style.color;
+  el.style.color = '#00d472';
+  setTimeout(() => { el.style.color = orig; }, 1200);
+}
+
 // ── Внешний кошелёк: отслеживание баланса ──
 async function refreshExtWallet() {
   const balEl  = document.getElementById('ext-ton-bal');
