@@ -1449,9 +1449,30 @@ class Trader:
         if now - self._balance_cache_ts < self._balance_cache_ttl and self._balance_cache:
             return self._balance_cache
         bal = self.exchange.get_balance()
-        if bal and not bal.get("error"):
+        # Кешируем только если оба баланса ненулевые — нули могут быть из-за сбоя API
+        if bal and not bal.get("error") and (bal.get("TON", 0) > 0 or bal.get("GRINCH", 0) > 0):
             self._balance_cache    = bal
             self._balance_cache_ts = now
+        elif bal and not self._balance_cache:
+            # Если кеш пустой — сохраняем даже нули (лучше чем ничего)
+            self._balance_cache    = bal
+            self._balance_cache_ts = now
+        # Если GRINCH=0 но ликвидатор уже знает баланс — берём из ликвидатора
+        try:
+            from grinch_liquidator import liquidator as _liq
+            if bal and bal.get("GRINCH", 0) == 0:
+                liq_st = _liq.get_status()
+                grn = liq_st.get("grinch_balance", 0) or 0
+                ton = liq_st.get("ton_balance")
+                if grn > 0:
+                    bal = dict(bal)
+                    bal["GRINCH"] = grn
+                    if ton is not None and bal.get("TON", 0) == 0:
+                        bal["TON"] = ton
+                    self._balance_cache    = bal
+                    self._balance_cache_ts = now
+        except Exception:
+            pass
         return bal
 
     def _enriched_open_trades(self, grinch_ton):

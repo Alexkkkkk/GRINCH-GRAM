@@ -120,35 +120,67 @@ class DedustClient:
         return None
 
     def _get_grinch_balance_http(self) -> float:
-        """GRINCH баланс через HTTP. Приоритет: TonCenter v3 → TonAPI v2.
-        НЕ использует SDK/liteserver — при сбое даёт неверный jetton-адрес.
+        """GRINCH баланс через HTTP.
+        Приоритет: TonCenter v3 → TonAPI прямой эндпоинт → TonAPI список (с нормализацией адреса).
         """
         wallet = Config.TON_WALLET
-        token = Config.GRINCH_TOKEN_ADDRESS
+        token  = Config.GRINCH_TOKEN_ADDRESS
+
+        # 1. TonCenter v3 (jetton/wallets)
         try:
             r = requests.get(
                 "https://toncenter.com/api/v3/jetton/wallets",
                 params={"owner_address": wallet, "jetton_address": token, "limit": 1},
                 timeout=8,
             )
-            wallets = r.json().get("jetton_wallets", [])
-            if wallets:
-                bal = wallets[0].get("balance")
+            if r.status_code == 200:
+                wallets = r.json().get("jetton_wallets", [])
+                if wallets:
+                    bal = wallets[0].get("balance")
+                    if bal is not None:
+                        return float(bal) / (10 ** 9)
+            else:
+                log.warning(f"[DeDust] GRINCH balance TonCenter v3: HTTP {r.status_code}")
+        except Exception as e:
+            log.warning(f"[DeDust] GRINCH balance TonCenter v3: {e}")
+
+        # 2. TonAPI прямой эндпоинт для конкретного жетона — без поиска по списку
+        try:
+            r = requests.get(
+                f"https://tonapi.io/v2/accounts/{wallet}/jettons/{token}",
+                headers={"Accept": "application/json"}, timeout=8,
+            )
+            if r.status_code == 200:
+                data = r.json()
+                bal  = data.get("balance")
                 if bal is not None:
                     return float(bal) / (10 ** 9)
+            else:
+                log.warning(f"[DeDust] GRINCH balance TonAPI direct: HTTP {r.status_code}")
         except Exception as e:
-            log.debug(f"[DeDust] GRINCH balance TonCenter v3: {e}")
+            log.warning(f"[DeDust] GRINCH balance TonAPI direct: {e}")
+
+        # 3. TonAPI список жетонов — нормализуем адреса через raw hex (как в ликвидаторе)
         try:
             r = requests.get(
                 f"https://tonapi.io/v2/accounts/{wallet}/jettons",
                 headers={"Accept": "application/json"}, timeout=8,
             )
-            for b in r.json().get("balances", []):
-                jaddr = (b.get("jetton", {}) or {}).get("address", "")
-                if self._same_addr(jaddr, token):
-                    return float(b.get("balance", 0)) / (10 ** 9)
+            if r.status_code == 200:
+                def _norm(addr: str) -> str:
+                    try:
+                        from pytoniq_core import Address as _Addr
+                        return _Addr(addr.strip()).to_str(is_user_friendly=False).lower()
+                    except Exception:
+                        return (addr.split(":", 1)[-1] if ":" in addr else addr).lower()
+                token_raw = _norm(token)
+                for b in r.json().get("balances", []):
+                    jaddr = (b.get("jetton", {}) or {}).get("address", "")
+                    if _norm(jaddr) == token_raw:
+                        return float(b.get("balance", 0)) / (10 ** 9)
         except Exception as e:
-            log.debug(f"[DeDust] GRINCH balance TonAPI: {e}")
+            log.warning(f"[DeDust] GRINCH balance TonAPI list: {e}")
+
         return 0.0
 
     async def _get_balance_async(self) -> dict:
