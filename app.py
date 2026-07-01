@@ -626,6 +626,20 @@ def api_config_get():
         "smart_tp_enabled":         Config.SMART_TP_ENABLED,
         "smart_tp_min_conf":        Config.SMART_TP_MIN_CONF,
         "smart_tp_tight_trail_pct": Config.SMART_TP_TIGHT_TRAIL_PCT,
+        # Авто-TP от ИИ
+        "min_profit_ton":       Config.MIN_PROFIT_TON,
+        "ai_tp_adapt_min_trades": Config.AI_TP_ADAPT_MIN_TRADES,
+        "ai_tp_cap_pct":        Config.AI_TP_CAP_PCT,
+        "ai_tp_report": (lambda ctrl: {
+            "adapted":       ctrl.get("ai_tp_adapted", False),
+            "take_profit_pct": ctrl.get("take_profit_pct", Config.TAKE_PROFIT_PCT),
+            "avg_win_pct":   ctrl.get("ai_avg_win_pct", 0.0),
+            "floor_pct":     ctrl.get("min_profit_floor_pct", 0.0),
+            "trades_used":   ctrl.get("ai_tp_trades_used", 0),
+        })(
+            (lambda em: em.data.get("control", {}) if hasattr(em, "data") else {})
+            (__import__("experience_manager").experience_manager)
+        ),
         # DCA стратегия
         "dca_mode":             Config.DCA_MODE,
         "dca_stake_ton":        Config.DCA_STAKE_TON,
@@ -688,6 +702,14 @@ def api_config_set():
     if (v := num("smart_tp_min_conf",        50,  100)) is not None: Config.SMART_TP_MIN_CONF        = v
     if (v := num("smart_tp_tight_trail_pct", 0.5, 10))  is not None: Config.SMART_TP_TIGHT_TRAIL_PCT = v
 
+    # Авто-TP: пользователь задаёт минимальную прибыль в TON
+    if (v := num("min_profit_ton", 0.1, 1000)) is not None:
+        Config.MIN_PROFIT_TON = v
+    if (v := num("ai_tp_adapt_min_trades", 1, 100)) is not None:
+        Config.AI_TP_ADAPT_MIN_TRADES = int(v)
+    if (v := num("ai_tp_cap_pct", 5, 500)) is not None:
+        Config.AI_TP_CAP_PCT = v
+
     # DCA стратегия
     if "dca_mode" in data:
         new_dca = bool(data["dca_mode"])
@@ -735,6 +757,10 @@ def api_config_set():
             "SMART_TP_ENABLED":         Config.SMART_TP_ENABLED,
             "SMART_TP_MIN_CONF":        Config.SMART_TP_MIN_CONF,
             "SMART_TP_TIGHT_TRAIL_PCT": Config.SMART_TP_TIGHT_TRAIL_PCT,
+            # Авто-TP от ИИ
+            "MIN_PROFIT_TON":          Config.MIN_PROFIT_TON,
+            "AI_TP_ADAPT_MIN_TRADES":  Config.AI_TP_ADAPT_MIN_TRADES,
+            "AI_TP_CAP_PCT":           Config.AI_TP_CAP_PCT,
             # DCA стратегия
             "DCA_MODE":             Config.DCA_MODE,
             "DCA_STAKE_TON":        Config.DCA_STAKE_TON,

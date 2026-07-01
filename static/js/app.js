@@ -1212,6 +1212,10 @@ async function saveConfig() {
     smart_tp_enabled:         g("cfg-smart-tp").checked,
     smart_tp_min_conf:        parseFloat(g("cfg-stp-conf").value),
     smart_tp_tight_trail_pct: parseFloat(g("cfg-stp-trail").value),
+    // Авто-TP от ИИ
+    min_profit_ton:       parseFloat(g("cfg-min-profit-ton")?.value || 5),
+    ai_tp_adapt_min_trades: parseInt(g("cfg-ai-tp-min-trades")?.value || 5, 10),
+    ai_tp_cap_pct:        parseFloat(g("cfg-ai-tp-cap")?.value || 80),
   };
 
   try {
@@ -1257,6 +1261,19 @@ async function loadConfig() {
   if (g("cfg-smart-tp"))      g("cfg-smart-tp").checked      = !!cfg.smart_tp_enabled;
   if (g("cfg-stp-conf"))      g("cfg-stp-conf").value        = cfg.smart_tp_min_conf        ?? 75;
   if (g("cfg-stp-trail"))     g("cfg-stp-trail").value       = cfg.smart_tp_tight_trail_pct ?? 1.5;
+  // Авто-TP от ИИ
+  if (g("cfg-min-profit-ton"))   g("cfg-min-profit-ton").value   = cfg.min_profit_ton          ?? 5;
+  if (g("cfg-ai-tp-min-trades")) g("cfg-ai-tp-min-trades").value = cfg.ai_tp_adapt_min_trades  ?? 5;
+  if (g("cfg-ai-tp-cap"))        g("cfg-ai-tp-cap").value        = cfg.ai_tp_cap_pct           ?? 80;
+  // Обновляем статус-панель авто-TP
+  const tpr = cfg.ai_tp_report || {};
+  const modeEl = g("ai-tp-mode-label");
+  if (modeEl) modeEl.textContent = tpr.adapted ? "🎯 ИИ-адаптивный" : "📌 Ручной (обучается…)";
+  if (g("ai-tp-current")) g("ai-tp-current").textContent = tpr.take_profit_pct ? tpr.take_profit_pct.toFixed(1) + "%" : "—";
+  if (g("ai-tp-floor"))   g("ai-tp-floor").textContent   = tpr.floor_pct ? tpr.floor_pct.toFixed(1) + "%" : "—";
+  if (g("ai-tp-avg-win")) g("ai-tp-avg-win").textContent = tpr.avg_win_pct ? "+" + tpr.avg_win_pct.toFixed(1) + "%" : "—";
+  if (g("ai-tp-trades"))  g("ai-tp-trades").textContent  = tpr.trades_used != null ? tpr.trades_used + " / " + (cfg.ai_tp_adapt_min_trades ?? 5) + " мин." : "—";
+
   // DCA стратегия
   if (g("cfg-dca-mode")) {
     g("cfg-dca-mode").checked = !!cfg.dca_mode;

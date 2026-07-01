@@ -104,6 +104,11 @@ class ExperienceManager:
             "loss_streak":       0,
             "last_note":         "init",
             "updated":           None,
+            # Авто-TP: ИИ сам подбирает оптимальный тейк-профит по истории
+            "take_profit_pct":        float(Config.TAKE_PROFIT_PCT),
+            "ai_tp_adapted":          False,    # True когда ИИ уже адаптировал TP
+            "ai_tp_trades_used":      0,        # сколько сделок учтено в последней адаптации
+            "ai_avg_win_pct":         0.0,      # средний % прибыли в выигрышных сделках
         }
 
     # ── Чтение / запись ──────────────────────────────────────────────────────
@@ -306,6 +311,13 @@ class ExperienceManager:
         try:
             Config.MIN_AI_CONFIDENCE = float(ctrl["min_conf"])
             Config.TRADE_AMOUNT      = float(ctrl["trade_amount"])
+            # Применяем авто-TP только если ИИ уже адаптировал его по реальной истории
+            if ctrl.get("ai_tp_adapted") and ctrl.get("take_profit_pct"):
+                new_tp = float(ctrl["take_profit_pct"])
+                if new_tp > 0:
+                    Config.TAKE_PROFIT_PCT = new_tp
+                    # TARGET_NET_PCT = TP - комиссия (оба пула по 1%)
+                    Config.TARGET_NET_PCT = max(1.0, new_tp - Config.FEE_ROUND_TRIP)
         except Exception:  # noqa: BLE001
             pass
 
@@ -492,20 +504,85 @@ class ExperienceManager:
             elif drawdown <= DD_RESUME:
                 paused = False
 
+            # ── Авто-адаптация тейк-профита по реальной истории ──────────────
+            # Пол: минимум MIN_PROFIT_TON от текущей ставки (например, 5 TON с 100 TON = 5%)
+            min_profit_floor_pct = round(
+                (Config.MIN_PROFIT_TON / amt) * 100.0, 2
+            ) if amt > 0 else 5.0
+            # Добавляем комиссию: чтобы НЕТТО был ≥ порогу, gross = нетто + fee_round_trip
+            min_tp_gross = min_profit_floor_pct + Config.FEE_ROUND_TRIP
+
+            new_tp = float(ctrl.get("take_profit_pct") or Config.TAKE_PROFIT_PCT)
+            ai_tp_adapted = bool(ctrl.get("ai_tp_adapted"))
+            avg_win_pct = float(ctrl.get("ai_avg_win_pct") or 0.0)
+
+            if len(trades) >= Config.AI_TP_ADAPT_MIN_TRADES:
+                # Берём последние 30 закрытых сделок для статистики
+                recent_closed = [t for t in trades[-30:] if (t.get("pnl") is not None)]
+                win_trades = [t for t in recent_closed if (t.get("pnl") or 0) > 0]
+
+                if win_trades:
+                    # Средний возврат выигрышных сделок (в % от ставки)
+                    returns = []
+                    for t in win_trades:
+                        stake = t.get("stake_ton") or t.get("amount") or amt
+                        pnl   = float(t.get("pnl") or 0)
+                        if stake and stake > 0:
+                            returns.append(pnl / stake * 100.0)
+                    if returns:
+                        avg_win_pct = round(sum(returns) / len(returns), 2)
+                        wr = len(win_trades) / max(len(recent_closed), 1)
+
+                        # Оптимальный TP: медианная прибыль × поправка на win rate
+                        # Высокий WR → можем поставить цель выше (рынок предсказуем)
+                        # Низкий WR → нужно брать прибыль быстрее (ниже, но не ниже пола)
+                        if wr >= 0.65:
+                            # ≥65% WR: ставим цель 85% от средней прибыли (с запасом)
+                            optimal_tp = avg_win_pct * 0.85
+                        elif wr >= 0.5:
+                            # 50-64% WR: целимся в 70% от средней прибыли
+                            optimal_tp = avg_win_pct * 0.70
+                        else:
+                            # < 50% WR: берём быстро — 55% от средней прибыли
+                            optimal_tp = avg_win_pct * 0.55
+
+                        # Ограничиваем диапазон: не ниже пола + комиссия, не выше потолка
+                        optimal_tp = max(min_tp_gross, min(optimal_tp, Config.AI_TP_CAP_PCT))
+
+                        # Плавная адаптация: не прыгаем резко, смешиваем с текущим TP
+                        # При первой адаптации — берём вычисленное значение сразу
+                        if ai_tp_adapted:
+                            new_tp = round(new_tp * 0.7 + optimal_tp * 0.3, 2)
+                        else:
+                            new_tp = round(optimal_tp, 2)
+                        ai_tp_adapted = True
+
+            # Гарантируем пол в любом случае (даже если история пустая)
+            new_tp = max(min_tp_gross, new_tp)
+            new_tp = round(new_tp, 2)
+            tp_changed = abs(new_tp - float(ctrl.get("take_profit_pct") or 0)) > 0.1
+
             changed = (
                 round(conf, 2) != round(ctrl["min_conf"], 2)
                 or round(amt, 4) != round(ctrl["trade_amount"], 4)
                 or paused != ctrl["paused"]
+                or tp_changed
             )
 
-            ctrl["min_conf"]     = round(conf, 2)
-            ctrl["trade_amount"] = round(amt, 4)
-            ctrl["paused"]       = paused
-            ctrl["drawdown_pct"] = round(drawdown, 2)
-            ctrl["loss_streak"]  = streak
-            ctrl["last_note"]    = (
+            ctrl["min_conf"]           = round(conf, 2)
+            ctrl["trade_amount"]       = round(amt, 4)
+            ctrl["paused"]             = paused
+            ctrl["drawdown_pct"]       = round(drawdown, 2)
+            ctrl["loss_streak"]        = streak
+            ctrl["take_profit_pct"]    = new_tp
+            ctrl["ai_tp_adapted"]      = ai_tp_adapted
+            ctrl["ai_tp_trades_used"]  = len(trades)
+            ctrl["ai_avg_win_pct"]     = avg_win_pct
+            ctrl["min_profit_floor_pct"] = min_profit_floor_pct
+            ctrl["last_note"]          = (
                 f"DD={drawdown:.1f}% loss={streak} win={win_streak} "
-                f"recent_net={recent_net:+.4f}"
+                f"recent_net={recent_net:+.4f} "
+                f"TP={new_tp:.1f}% (пол={min_profit_floor_pct:.1f}%)"
             )
             self._apply_control_to_config()
             self._save_locked()
@@ -513,9 +590,12 @@ class ExperienceManager:
 
         if changed and trader is not None:
             try:
+                tp_note = f"TP={report['take_profit_pct']:.1f}% (пол {report.get('min_profit_floor_pct',0):.1f}%)"
+                adapted_note = " 🎯 авто-TP" if report.get("ai_tp_adapted") else ""
                 trader.log(
                     f"🤖 ИИ-управление: порог={report['min_conf']:.0f}% "
                     f"ставка={report['trade_amount']:.3f} TON "
+                    f"{tp_note}{adapted_note} "
                     f"{'⏸️ ПАУЗА покупок' if report['paused'] else '▶️ активна'} "
                     f"| {report['last_note']}",
                     "INFO",

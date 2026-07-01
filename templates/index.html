@@ -720,6 +720,30 @@
           <label class="cfg-check"><input type="checkbox" id="cfg-smart-tp"> Включить Smart TP</label>
           <label>Мин. AI для удержания (%) <input type="number" id="cfg-stp-conf" value="75" step="1" min="50" max="100"></label>
           <label>Тугой трейлинг при удержании (%) <input type="number" id="cfg-stp-trail" value="1.5" step="0.1" min="0.5" max="10"></label>
+          <div class="cfg-section-title">🤖 Авто-TP — ИИ сам подбирает цель прибыли</div>
+          <label>Мин. прибыль на сделку (TON)
+            <input type="number" id="cfg-min-profit-ton" value="5" min="0.1" step="0.5">
+            <small style="color:#8892b0">Жёсткий пол: со 100 TON ставки — минимум 5 TON прибыли (5%). Со 200 TON — те же 5 TON абсолюта</small>
+          </label>
+          <label>Стартовать авто-TP со сделки №
+            <input type="number" id="cfg-ai-tp-min-trades" value="5" min="1" max="100" step="1">
+            <small style="color:#8892b0">Сколько сделок нужно закрыть прежде чем ИИ начнёт адаптировать процент</small>
+          </label>
+          <label>Потолок авто-TP (%)
+            <input type="number" id="cfg-ai-tp-cap" value="80" min="5" max="500" step="1">
+            <small style="color:#8892b0">ИИ не поставит цель выше этого % (защита от нереалистичных целей)</small>
+          </label>
+          <!-- Статус авто-TP -->
+          <div id="ai-tp-status" style="margin:10px 0 4px;padding:10px 12px;background:rgba(0,255,136,.06);border:1px solid rgba(0,255,136,.18);border-radius:8px;font-size:11px">
+            <div style="font-weight:700;color:#00ff88;margin-bottom:6px">🎯 Авто-TP статус</div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:4px 12px;color:#8892b0">
+              <span>Режим:</span>        <span id="ai-tp-mode-label" style="color:#ffd166;font-weight:700">Загружаю…</span>
+              <span>Текущий TP:</span>   <span id="ai-tp-current" style="font-weight:700;color:#00d4ff">—</span>
+              <span>Пол (мин.):</span>   <span id="ai-tp-floor" style="font-weight:700;color:#00ff88">—</span>
+              <span>Ср. прибыль:</span>  <span id="ai-tp-avg-win" style="font-weight:700">—</span>
+              <span>Обучено сделок:</span><span id="ai-tp-trades" style="font-weight:700">—</span>
+            </div>
+          </div>
           <button class="btn btn-blue" id="btn-save-cfg" onclick="saveConfig()">💾 Сохранить настройки</button>
           <div class="cfg-note">🟢 Режим «только в плюс»: бот никогда не продаёт в минус. TARGET NET: +20%</div>
           <div class="cfg-note">◆ Реальный DEX DeDust: 1% вход + 1% выход. Каждая сделка — реальная транзакция TON.</div>
