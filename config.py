@@ -245,6 +245,14 @@ class Config:
     # Максимальное количество DCA-входов за один цикл (защита от бесконечного усреднения)
     DCA_MAX_ENTRIES     = int(os.getenv("DCA_MAX_ENTRIES", "10"))
 
+    # ── DCA AI авто-адаптация: поднимает проценты только ВВЕРХ ───────────────
+    # Срабатывает после N полных циклов (купил → продал всё → ждёт), анализируя
+    # суммарную стоимость кошелька (TON + GRINCH в TON). Только рост, никаких снижений.
+    DCA_AI_ADAPT_MIN_CYCLES = int(os.getenv("DCA_AI_ADAPT_MIN_CYCLES", "3"))
+    DCA_AI_TARGET_CAP       = float(os.getenv("DCA_AI_TARGET_CAP",   "60"))  # макс. цель %
+    DCA_AI_DROP_CAP         = float(os.getenv("DCA_AI_DROP_CAP",     "50"))  # макс. порог докупки %
+    DCA_AI_PULLBACK_CAP     = float(os.getenv("DCA_AI_PULLBACK_CAP", "50"))  # макс. ожидание отката %
+
     DEMO_MODE  = os.getenv("DEMO_MODE",  "false").lower() == "true"
     SECRET_KEY = os.getenv("SECRET_KEY", "grinch-gram-secret-2024")
     # EQ-адрес выводится из TON_MNEMONIC (WalletV5R1 / W5 — кошелёк TonKeeper)
