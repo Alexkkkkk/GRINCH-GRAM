@@ -242,6 +242,8 @@ def start_background():
         threading.Thread(target=_load_users_bg,  daemon=True).start()
         wallet_tracker.start()
         ton.start()
+        import db_backup
+        db_backup.start()
 
 start_background()
 

@@ -1,0 +1,7 @@
+[
+  {
+    "key": "control",
+    "value": "{\"base_min_conf\": 62.0, \"base_trade_amount\": 30.0, \"min_conf\": 62.0, \"trade_amount\": 30.0, \"paused\": false, \"peak_equity\": 320.512821, \"drawdown_pct\": 0.0, \"loss_streak\": 0, \"last_note\": \"init\", \"updated\": null}",
+    "updated_at": "2026-07-01T10:24:33.837039"
+  }
+]
