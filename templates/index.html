@@ -721,9 +721,9 @@
           <label>Мин. AI для удержания (%) <input type="number" id="cfg-stp-conf" value="75" step="1" min="50" max="100"></label>
           <label>Тугой трейлинг при удержании (%) <input type="number" id="cfg-stp-trail" value="1.5" step="0.1" min="0.5" max="10"></label>
           <div class="cfg-section-title">🤖 Авто-TP — ИИ сам подбирает цель прибыли</div>
-          <label>Мин. прибыль на сделку (TON)
-            <input type="number" id="cfg-min-profit-ton" value="5" min="0.1" step="0.5">
-            <small style="color:#8892b0">Жёсткий пол: со 100 TON ставки — минимум 5 TON прибыли (5%). Со 200 TON — те же 5 TON абсолюта</small>
+          <label>Мин. прибыль (% от ставки)
+            <input type="number" id="cfg-min-profit-ton" value="5" min="0.1" max="100" step="0.5">
+            <small style="color:#8892b0">5 = 5% от любой ставки: 100 TON → 5 TON мин., 200 TON → 10 TON мин., 500 TON → 25 TON мин. и так далее</small>
           </label>
           <label>Стартовать авто-TP со сделки №
             <input type="number" id="cfg-ai-tp-min-trades" value="5" min="1" max="100" step="1">

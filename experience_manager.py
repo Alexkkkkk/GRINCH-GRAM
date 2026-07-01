@@ -505,10 +505,9 @@ class ExperienceManager:
                 paused = False
 
             # ── Авто-адаптация тейк-профита по реальной истории ──────────────
-            # Пол: минимум MIN_PROFIT_TON от текущей ставки (например, 5 TON с 100 TON = 5%)
-            min_profit_floor_pct = round(
-                (Config.MIN_PROFIT_TON / amt) * 100.0, 2
-            ) if amt > 0 else 5.0
+            # Пол: MIN_PROFIT_TON задаётся как ПРОЦЕНТ от ставки (5 = 5% всегда).
+            # 100 TON × 5% = 5 TON минимум; 200 TON × 5% = 10 TON минимум и т.д.
+            min_profit_floor_pct = float(Config.MIN_PROFIT_TON)   # трактуем как %
             # Добавляем комиссию: чтобы НЕТТО был ≥ порогу, gross = нетто + fee_round_trip
             min_tp_gross = min_profit_floor_pct + Config.FEE_ROUND_TRIP
 
