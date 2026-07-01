@@ -216,6 +216,22 @@ class Config:
     # Применяется ТОЛЬКО если AI_FULL_RIGHTS=False или уверенность AI ниже порога.
     AI_ATR_FEASIBILITY_MULT = float(os.getenv("AI_ATR_FEASIBILITY_MULT", "1.2"))
 
+    # ── DCA (Усреднение позиции) стратегия ───────────────────────────
+    # Когда включена — ИИ и технический анализ отключаются.
+    # Бот торгует по чистым ценовым уровням: фиксированная ставка на вход,
+    # докупка при падении, продажа всего при достижении цели по портфелю.
+    DCA_MODE            = bool(int(os.getenv("DCA_MODE", "0")))
+    # TON за каждый вход (первая покупка и каждая докупка)
+    DCA_STAKE_TON       = float(os.getenv("DCA_STAKE_TON", "100"))
+    # Продать ВСЁ когда общая стоимость GRINCH выросла на N% относительно суммарных затрат
+    DCA_TARGET_PROFIT_PCT = float(os.getenv("DCA_TARGET_PROFIT_PCT", "20"))
+    # Докупать ещё когда цена упала N% от цены ПОСЛЕДНЕЙ покупки
+    DCA_DROP_TRIGGER_PCT  = float(os.getenv("DCA_DROP_TRIGGER_PCT", "25"))
+    # После продажи: ждать падения цены на N% от пика перед следующей покупкой
+    DCA_PULLBACK_WAIT_PCT = float(os.getenv("DCA_PULLBACK_WAIT_PCT", "25"))
+    # Максимальное количество DCA-входов за один цикл (защита от бесконечного усреднения)
+    DCA_MAX_ENTRIES     = int(os.getenv("DCA_MAX_ENTRIES", "10"))
+
     DEMO_MODE  = os.getenv("DEMO_MODE",  "false").lower() == "true"
     SECRET_KEY = os.getenv("SECRET_KEY", "grinch-gram-secret-2024")
     # EQ-адрес выводится из TON_MNEMONIC (WalletV5R1 / W5 — кошелёк TonKeeper)

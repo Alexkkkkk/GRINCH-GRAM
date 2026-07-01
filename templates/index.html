@@ -726,6 +726,62 @@
         </div>
       </div>
 
+      <!-- DCA Strategy Card -->
+      <div class="card card-c" id="dca-settings-card">
+        <div class="card-title ctit">📉 DCA Стратегия — Усреднение позиции</div>
+        <div class="settings-form">
+          <div class="cfg-section-title" style="color:#ffd166">⚠️ При включении DCA — ИИ отключается. Бот торгует по ценовым уровням.</div>
+          <label class="cfg-check" style="margin-bottom:12px">
+            <input type="checkbox" id="cfg-dca-mode">
+            <span style="font-weight:700;color:#00ff88">Включить DCA стратегию</span>
+          </label>
+
+          <div id="dca-params" style="display:none">
+            <label>Ставка за вход (TON)
+              <input type="number" id="cfg-dca-stake" value="100" min="1" step="5">
+              <small style="color:#8892b0">Сколько TON тратить на каждую покупку (первую и каждую докупку)</small>
+            </label>
+            <label>Цель прибыли портфеля (%)
+              <input type="number" id="cfg-dca-target" value="20" min="1" max="200" step="1">
+              <small style="color:#8892b0">Продать ВСЁ когда суммарный GRINCH вырос на N% от вложенных TON</small>
+            </label>
+            <label>Докупка при падении (%)
+              <input type="number" id="cfg-dca-drop" value="25" min="5" max="90" step="1">
+              <small style="color:#8892b0">Купить ещё если цена упала на N% от цены последней покупки</small>
+            </label>
+            <label>Ждать откат после продажи (%)
+              <input type="number" id="cfg-dca-pullback" value="25" min="5" max="90" step="1">
+              <small style="color:#8892b0">После продажи — ждать падения на N% от пика перед новым входом</small>
+            </label>
+            <label>Макс. докупок за цикл
+              <input type="number" id="cfg-dca-max-entries" value="10" min="1" max="50" step="1">
+              <small style="color:#8892b0">Максимум раз докупиться в одном цикле (защита от бесконечного усреднения)</small>
+            </label>
+          </div>
+
+          <!-- DCA Status Panel -->
+          <div id="dca-status-panel" style="display:none;margin-top:14px;padding:12px;background:rgba(0,212,255,.07);border:1px solid rgba(0,212,255,.2);border-radius:10px">
+            <div style="font-size:11px;font-weight:700;color:#00d4ff;margin-bottom:8px">📊 DCA — ТЕКУЩИЙ ЦИКЛ</div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px 12px;font-size:11px">
+              <span style="color:#8892b0">Фаза:</span>          <span id="dca-phase" style="font-weight:700">—</span>
+              <span style="color:#8892b0">Входов в цикле:</span><span id="dca-entries" style="font-weight:700">—</span>
+              <span style="color:#8892b0">Вложено TON:</span>   <span id="dca-stake" style="font-weight:700">—</span>
+              <span style="color:#8892b0">Прибыль порт.:</span><span id="dca-profit" style="font-weight:700">—</span>
+              <span style="color:#8892b0">Цена входа:</span>    <span id="dca-last-buy" style="font-weight:700">—</span>
+              <span style="color:#8892b0">Пик (откат от):</span><span id="dca-peak" style="font-weight:700">—</span>
+            </div>
+            <div style="margin-top:8px">
+              <div style="font-size:10px;color:#8892b0;margin-bottom:3px">Прогресс к цели <span id="dca-target-label">+20%</span></div>
+              <div style="background:rgba(255,255,255,.08);border-radius:4px;height:6px;overflow:hidden">
+                <div id="dca-progress-bar" style="height:100%;background:linear-gradient(90deg,#00ff88,#00d4ff);border-radius:4px;transition:width .5s;width:0%"></div>
+              </div>
+            </div>
+          </div>
+
+          <button class="btn btn-blue" id="btn-save-dca" onclick="saveDcaConfig()" style="margin-top:14px">💾 Сохранить DCA настройки</button>
+        </div>
+      </div>
+
       <!-- Logs -->
       <div class="card card-c">
         <div class="card-title ctit">📝 Логи бота <button class="btn-tiny" onclick="clearLogs()">Очистить</button></div>

@@ -626,6 +626,13 @@ def api_config_get():
         "smart_tp_enabled":         Config.SMART_TP_ENABLED,
         "smart_tp_min_conf":        Config.SMART_TP_MIN_CONF,
         "smart_tp_tight_trail_pct": Config.SMART_TP_TIGHT_TRAIL_PCT,
+        # DCA стратегия
+        "dca_mode":             Config.DCA_MODE,
+        "dca_stake_ton":        Config.DCA_STAKE_TON,
+        "dca_target_profit_pct": Config.DCA_TARGET_PROFIT_PCT,
+        "dca_drop_trigger_pct": Config.DCA_DROP_TRIGGER_PCT,
+        "dca_pullback_wait_pct": Config.DCA_PULLBACK_WAIT_PCT,
+        "dca_max_entries":      Config.DCA_MAX_ENTRIES,
     })
 
 @app.route("/api/config", methods=["POST"])
@@ -681,6 +688,26 @@ def api_config_set():
     if (v := num("smart_tp_min_conf",        50,  100)) is not None: Config.SMART_TP_MIN_CONF        = v
     if (v := num("smart_tp_tight_trail_pct", 0.5, 10))  is not None: Config.SMART_TP_TIGHT_TRAIL_PCT = v
 
+    # DCA стратегия
+    if "dca_mode" in data:
+        new_dca = bool(data["dca_mode"])
+        if new_dca != Config.DCA_MODE:
+            if trader.open_trades:
+                return jsonify({"ok": False, "message": "Нельзя переключить DCA при открытых сделках."}), 409
+            Config.DCA_MODE = new_dca
+            # Сброс DCA-состояния при смене режима
+            trader.dca_wait_pullback  = False
+            trader.dca_peak_price     = 0.0
+            trader.dca_last_buy_price = 0.0
+            trader.dca_entries_count  = 0
+            trader.dca_total_stake    = 0.0
+            trader.log(f"🔄 DCA режим {'включён' if new_dca else 'выключен'}", "INFO")
+    if (v := num("dca_stake_ton",         1,   10000)) is not None: Config.DCA_STAKE_TON         = v
+    if (v := num("dca_target_profit_pct", 1,   200))   is not None: Config.DCA_TARGET_PROFIT_PCT = v
+    if (v := num("dca_drop_trigger_pct",  5,   90))    is not None: Config.DCA_DROP_TRIGGER_PCT  = v
+    if (v := num("dca_pullback_wait_pct", 5,   90))    is not None: Config.DCA_PULLBACK_WAIT_PCT = v
+    if (v := num("dca_max_entries",       1,   50))    is not None: Config.DCA_MAX_ENTRIES       = int(v)
+
     if "symbol" in data and data["symbol"] != Config.SYMBOL:
         if trader.open_trades:
             return jsonify({"ok": False, "message": "Нельзя сменить пару при открытых сделках."}), 409
@@ -708,6 +735,13 @@ def api_config_set():
             "SMART_TP_ENABLED":         Config.SMART_TP_ENABLED,
             "SMART_TP_MIN_CONF":        Config.SMART_TP_MIN_CONF,
             "SMART_TP_TIGHT_TRAIL_PCT": Config.SMART_TP_TIGHT_TRAIL_PCT,
+            # DCA стратегия
+            "DCA_MODE":             Config.DCA_MODE,
+            "DCA_STAKE_TON":        Config.DCA_STAKE_TON,
+            "DCA_TARGET_PROFIT_PCT": Config.DCA_TARGET_PROFIT_PCT,
+            "DCA_DROP_TRIGGER_PCT": Config.DCA_DROP_TRIGGER_PCT,
+            "DCA_PULLBACK_WAIT_PCT": Config.DCA_PULLBACK_WAIT_PCT,
+            "DCA_MAX_ENTRIES":      Config.DCA_MAX_ENTRIES,
         })
     except Exception as e:  # noqa: BLE001
         return jsonify({"ok": True, "message": f"Настройки применены, но не сохранены на диск: {e}"})

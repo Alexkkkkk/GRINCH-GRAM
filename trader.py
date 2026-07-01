@@ -46,6 +46,18 @@ class Trader:
             "quality": "C", "score": 0, "reasons": [],
             "vol_ratio": 1.0, "stoch_rsi": 0.5,
         }
+        # ── DCA стратегия: состояние цикла ─────────────────────────────
+        # dca_wait_pullback: True — ждём отката цены после продажи
+        # dca_peak_price:    максимальная цена после последней продажи (база для отката)
+        # dca_last_buy_price: цена последней DCA-покупки (база для докупки при падении)
+        # dca_entries_count:  сколько DCA-входов сделано в текущем цикле
+        # dca_total_stake:    суммарные затраты в TON за все входы текущего цикла
+        self.dca_wait_pullback  = False
+        self.dca_peak_price     = 0.0
+        self.dca_last_buy_price = 0.0
+        self.dca_entries_count  = 0
+        self.dca_total_stake    = 0.0
+
         # Кеш баланса: не долбим блокчейн при каждом /api/status (TTL 180 сек)
         self._balance_cache     = {}
         self._balance_cache_ts  = 0
@@ -241,10 +253,361 @@ class Trader:
             except Exception:
                 pass
 
+    # ══════════════════════════════════════════════════════════════════
+    # DCA (Усреднение позиции) стратегия
+    # ══════════════════════════════════════════════════════════════════
+    def _tick_dca(self):
+        """
+        DCA-стратегия торговли GRINCH/TON:
+
+        Правила:
+        1. Первый вход: покупаем DCA_STAKE_TON (100 TON) по рынку.
+        2. Рост → когда суммарная стоимость GRINCH >= +DCA_TARGET_PROFIT_PCT%
+           от суммарных затрат → продаём ВСЁ одной сделкой.
+           После продажи: ждём отката на DCA_PULLBACK_WAIT_PCT% от пика.
+        3. Падение → если цена упала на DCA_DROP_TRIGGER_PCT% от цены
+           ПОСЛЕДНЕЙ покупки → докупаем ещё DCA_STAKE_TON.
+        4. После достижения цели и продажи всего: ждём отката 25-30%
+           от максимальной цены, затем начинаем новый цикл.
+        """
+        from price_feed import price_feed
+
+        price_usd = price_feed.get("GRINCH") or 0.0
+        if price_usd <= 0:
+            self.log("⚠️ DCA: нет цены GRINCH, пропускаем тик", "WARN")
+            return
+
+        grinch_ton = price_feed.get_grinch_ton_price() or 0.0
+
+        # ── Фаза 1: Ожидание отката после продажи ───────────────────
+        if self.dca_wait_pullback:
+            # Обновляем пик
+            if price_usd > self.dca_peak_price:
+                self.dca_peak_price = price_usd
+
+            if self.dca_peak_price <= 0:
+                self.dca_peak_price = price_usd
+                self.log("📌 DCA: зафиксировали пик для отслеживания отката", "INFO")
+                return
+
+            drop_from_peak_pct = (self.dca_peak_price - price_usd) / self.dca_peak_price * 100
+            pullback_needed    = Config.DCA_PULLBACK_WAIT_PCT
+
+            self.log(
+                f"⏳ DCA ожидание отката: пик ${self.dca_peak_price:.8f} → "
+                f"сейчас ${price_usd:.8f} | "
+                f"откат {drop_from_peak_pct:.1f}% / нужно {pullback_needed:.0f}%",
+                "INFO"
+            )
+
+            if drop_from_peak_pct >= pullback_needed:
+                self.log(
+                    f"✅ DCA: откат {drop_from_peak_pct:.1f}% ≥ {pullback_needed:.0f}% — "
+                    f"запускаем новый цикл покупок!",
+                    "INFO"
+                )
+                self.dca_wait_pullback  = False
+                self.dca_peak_price     = 0.0
+                self.dca_entries_count  = 0
+                self.dca_total_stake    = 0.0
+                # Совершаем первую покупку нового цикла
+                self._dca_buy(price_usd, grinch_ton, "новый цикл после отката")
+            return
+
+        # ── Фаза 2: Проверка целевой прибыли портфеля ────────────────
+        if self.open_trades:
+            total_cost_ton, total_value_ton = self._dca_portfolio_value(grinch_ton)
+
+            if total_cost_ton > 0 and total_value_ton > 0:
+                portfolio_pct = (total_value_ton - total_cost_ton) / total_cost_ton * 100
+                entries       = len(self.open_trades)
+                total_grinch  = sum(t.get("amount", 0) for t in self.open_trades)
+
+                self.log(
+                    f"📊 DCA портфель: {entries} позиций | "
+                    f"вложено {total_cost_ton:.2f} TON | "
+                    f"сейчас {total_value_ton:.2f} TON | "
+                    f"прибыль {portfolio_pct:+.1f}% / цель +{Config.DCA_TARGET_PROFIT_PCT:.0f}%",
+                    "INFO"
+                )
+
+                # Цель достигнута → продаём ВСЁ
+                if portfolio_pct >= Config.DCA_TARGET_PROFIT_PCT:
+                    self.log(
+                        f"🎯 DCA ЦЕЛЬ: портфель +{portfolio_pct:.1f}% ≥ "
+                        f"+{Config.DCA_TARGET_PROFIT_PCT:.0f}% — продаём ВСЁ одной сделкой! "
+                        f"({total_grinch:.2f} GRINCH)",
+                        "INFO"
+                    )
+                    closed = self._dca_sell_all(price_usd, grinch_ton, portfolio_pct)
+                    if closed:
+                        self.dca_wait_pullback = True
+                        self.dca_peak_price    = price_usd
+                        self._emit_signal("SELL", price_usd, self.last_ai)
+                        self.log(
+                            f"⏳ DCA: продали всё, ждём откат -{Config.DCA_PULLBACK_WAIT_PCT:.0f}% "
+                            f"от текущего пика ${price_usd:.8f}",
+                            "INFO"
+                        )
+                    return
+
+                # Проверяем DCA-докупку при падении цены
+                if self.dca_last_buy_price > 0:
+                    drop_from_last_pct = (
+                        (self.dca_last_buy_price - price_usd) / self.dca_last_buy_price * 100
+                    )
+                    if drop_from_last_pct >= Config.DCA_DROP_TRIGGER_PCT:
+                        if self.dca_entries_count < Config.DCA_MAX_ENTRIES:
+                            self.log(
+                                f"📉 DCA ДОКУПКА: цена упала {drop_from_last_pct:.1f}% "
+                                f"от последней покупки ${self.dca_last_buy_price:.8f} → "
+                                f"${price_usd:.8f} | вход #{self.dca_entries_count + 1}",
+                                "INFO"
+                            )
+                            self._dca_buy(price_usd, grinch_ton,
+                                          f"докупка #{self.dca_entries_count + 1} "
+                                          f"(падение {drop_from_last_pct:.1f}%)")
+                        else:
+                            self.log(
+                                f"⏸️ DCA: достигнут лимит входов ({Config.DCA_MAX_ENTRIES}), "
+                                f"ждём восстановления портфеля",
+                                "WARN"
+                            )
+            return
+
+        # ── Фаза 3: Нет позиций, не ждём — первый вход ───────────────
+        if self.dca_entries_count == 0:
+            self.log(
+                f"🚀 DCA: нет позиций — открываем первый вход "
+                f"({Config.DCA_STAKE_TON:.0f} TON @ ${price_usd:.8f})",
+                "INFO"
+            )
+            self._dca_buy(price_usd, grinch_ton, "первый вход")
+
+    def _dca_portfolio_value(self, grinch_ton_price):
+        """Возвращает (суммарные затраты в TON, текущая стоимость в TON)."""
+        fee      = Config.FEE_PCT / 100.0
+        sell_gas = Config.SELL_GAS_TON
+        buy_gas  = Config.BUY_GAS_TON
+
+        total_cost_ton  = 0.0
+        total_value_ton = 0.0
+
+        for trade in self.open_trades:
+            stake_ton = trade.get("stake_ton", 0) or 0
+            amount    = trade.get("amount", 0) or 0
+            total_cost_ton  += stake_ton + buy_gas
+            # Ожидаемая выручка от продажи (за вычетом DEX-комиссии и газа)
+            if grinch_ton_price > 0 and amount > 0:
+                proceeds = amount * grinch_ton_price * (1 - fee) - sell_gas
+                total_value_ton += max(proceeds, 0.0)
+
+        return total_cost_ton, total_value_ton
+
+    def _dca_buy(self, price_usd, grinch_ton, reason=""):
+        """Открывает одну DCA позицию на DCA_STAKE_TON."""
+        stake_ton = Config.DCA_STAKE_TON
+
+        # Проверяем баланс
+        bal     = self.exchange.get_balance() or {}
+        ton_bal = bal.get("TON", 0) or 0
+        buy_gas = 0.30
+        reserve = Config.GAS_RESERVE_TON
+        spendable = ton_bal - buy_gas - reserve
+
+        if bal.get("error") or spendable < Config.MIN_STAKE_TON:
+            why = bal.get("error") or (
+                f"на кошельке {ton_bal:.3f} TON: после газа {buy_gas} + резерва "
+                f"{reserve} TON остаётся {spendable:.3f} < мин {Config.MIN_STAKE_TON} TON"
+            )
+            self.log(f"⛔ DCA: нет средств для покупки ({reason}) — {why}", "WARN")
+            return False
+
+        if stake_ton > spendable:
+            self.log(
+                f"✂️ DCA: ставка {stake_ton:.0f} TON → урезаем до {spendable:.3f} TON "
+                f"(недостаточный баланс)",
+                "WARN"
+            )
+            stake_ton = spendable
+
+        # Изменяем TRADE_AMOUNT_TON временно для _open_trade
+        orig_amount = getattr(Config, "TRADE_AMOUNT", Config.DCA_STAKE_TON)
+        try:
+            Config.TRADE_AMOUNT = stake_ton
+            # Используем price_usd как entry price; amount считается через stake/price
+            amount = stake_ton / price_usd if price_usd > 0 else 0
+
+            order = self.exchange.place_order("buy", amount, ton_stake=stake_ton)
+            if not order or order.get("error"):
+                err = (order or {}).get("error", "нет ответа")
+                self.log(f"⚠️ DCA: ордер покупки не прошёл ({reason}) — {err}", "WARN")
+                return False
+
+            # Реальное количество GRINCH после свопа
+            actual_grinch = (order.get("info") or {}).get("grinch_received", 0)
+            if actual_grinch and actual_grinch > 0:
+                amount = actual_grinch
+
+            # SL/TP не нужны в DCA-режиме — сами управляем выходом
+            sl = 0.0
+            tp = price_usd * 100  # практически бесконечный TP (выход только через _dca_sell_all)
+
+            trade = {
+                "id":              order["id"],
+                "symbol":          Config.SYMBOL,
+                "side":            "buy",
+                "entry_price":     price_usd,
+                "entry_price_ton": grinch_ton,
+                "amount":          round(amount, 6),
+                "stake_ton":       round(stake_ton, 4),
+                "stop_loss":       sl,
+                "take_profit":     tp,
+                "trail_pct":       0.0,
+                "high_water":      price_usd,
+                "opened_at":       datetime.utcnow().isoformat(),
+                "pnl":             0.0,
+                "status":          "open",
+                "ai_confidence":   0.0,
+                "dca_entry":       True,
+                "dca_index":       self.dca_entries_count + 1,
+                "breakeven_price": price_usd,
+                "min_gross_pct":   Config.required_gross_pct_with_gas(stake_ton),
+                "entry_regime":    "DCA",
+                "entry_rsi":       0.0,
+                "entry_atr_pct":   0.0,
+                "entry_anomaly":   False,
+                "entry_sm_score":  0.0,
+                "entry_sm_label":  "",
+                "entry_sm_buys_1h": 0,
+                "entry_sm_sells_1h": 0,
+                "entry_bo_signal": "FLAT",
+                "entry_bo_score":  0.0,
+                "entry_mom_signal": "CALM",
+            }
+            self.open_trades.append(trade)
+            self.trades.append(trade)
+            self.stats["total_trades"] += 1
+
+            # Обновляем DCA-состояние
+            self.dca_last_buy_price  = price_usd
+            self.dca_entries_count  += 1
+            self.dca_total_stake    += stake_ton
+
+            self._emit_signal("BUY", price_usd, self.last_ai)
+
+            self.log(
+                f"✅ DCA вход #{self.dca_entries_count}: "
+                f"{amount:.2f} GRINCH за {stake_ton:.2f} TON @ ${price_usd:.8f} "
+                f"| итого вложено: {self.dca_total_stake:.2f} TON | {reason}",
+                "INFO"
+            )
+            return True
+        finally:
+            Config.TRADE_AMOUNT = orig_amount
+
+    def _dca_sell_all(self, price_usd, grinch_ton, portfolio_pct):
+        """Продаёт все DCA позиции одной продажей суммарного GRINCH."""
+        if not self.open_trades:
+            return False
+
+        total_grinch = sum(t.get("amount", 0) for t in self.open_trades)
+        total_stake  = sum(t.get("stake_ton", 0) for t in self.open_trades)
+
+        if total_grinch <= 0:
+            return False
+
+        self.log(
+            f"💸 DCA: продаём {total_grinch:.4f} GRINCH "
+            f"(прибыль портфеля {portfolio_pct:+.1f}%)...",
+            "INFO"
+        )
+
+        if self.exchange.mode == "dedust":
+            sell_result = self.exchange.place_order("sell", total_grinch)
+            if not sell_result or sell_result.get("error"):
+                err = (sell_result or {}).get("error", "нет ответа")
+                self.log(f"⚠️ DCA: продажа не исполнена — {err}. Позиции остаются.", "WARN")
+                return False
+            self.log(
+                f"✅ DCA: продажа GRINCH → TON исполнена | "
+                f"id={sell_result.get('id', '—')}",
+                "INFO"
+            )
+
+        # Закрываем все позиции виртуально
+        fee      = Config.FEE_PCT / 100.0
+        buy_gas  = Config.BUY_GAS_TON
+        sell_gas = Config.SELL_GAS_TON
+
+        total_pnl = 0.0
+        for trade in list(self.open_trades):
+            amount    = trade.get("amount", 0) or 0
+            stake_ton = trade.get("stake_ton", 0) or 0
+            if grinch_ton > 0 and amount > 0:
+                proceeds   = amount * grinch_ton * (1 - fee) - sell_gas
+                total_cost = stake_ton + buy_gas
+                pnl_ton    = round(proceeds - total_cost, 6)
+            else:
+                pnl_ton = 0.0
+            trade["pnl"]          = pnl_ton
+            trade["exit_price"]   = price_usd
+            trade["closed_at"]    = datetime.utcnow().isoformat()
+            trade["close_reason"] = f"dca_target_{portfolio_pct:.1f}pct"
+            trade["status"]       = "closed"
+            trade["outcome"]      = "win" if pnl_ton > 0 else "loss"
+            total_pnl            += pnl_ton
+            self.stats["total_pnl"] = round(self.stats["total_pnl"] + pnl_ton, 6)
+            if pnl_ton > 0:
+                self.stats["winning_trades"] += 1
+            # AI feedback
+            try:
+                self.ai.feedback(outcome=trade["outcome"], pnl=float(pnl_ton))
+            except Exception:
+                pass
+            # Сохраняем в историю
+            for t in self.trades:
+                if t["id"] == trade["id"]:
+                    t.update(trade)
+                    break
+
+        self.open_trades = []
+        self.dca_entries_count = 0
+        self.dca_total_stake   = 0.0
+
+        self.log(
+            f"🟩 DCA цикл завершён: продано {total_grinch:.4f} GRINCH | "
+            f"суммарный PNL ≈ {total_pnl:+.4f} TON | "
+            f"портфель был +{portfolio_pct:.1f}%",
+            "SELL"
+        )
+
+        # Обновляем память
+        try:
+            self.exp.save_open_trades([])
+            from price_feed import price_feed as _pf
+            self.exp.record_balance(
+                self._get_balance_cached(),
+                _pf.get("GRINCH") or price_usd,
+                force=True,
+            )
+        except Exception:
+            pass
+
+        return True
+
     # ──────────────────────────────────────────
     # Торговый тик
     # ──────────────────────────────────────────
     def _tick(self):
+        # ── DCA режим: полностью заменяет AI-логику ─────────────────
+        if Config.DCA_MODE:
+            try:
+                self._tick_dca()
+            except Exception as e:
+                self.log(f"⚠️ DCA тик: {e}", "ERROR")
+            return
+
         ohlcv  = self.exchange.get_ohlcv(limit=100)
         result = analyze(ohlcv)
         ai     = self.ai.analyze(ohlcv)
@@ -1582,6 +1945,16 @@ class Trader:
             getattr(Config, "AI_FULL_RIGHTS", True) and
             _ai_conf >= getattr(Config, "AI_FULL_RIGHTS_MIN_CONF", 68.0)
         )
+        # ── DCA статус ───────────────────────────────────────────────
+        dca_portfolio_pct = None
+        if Config.DCA_MODE and self.open_trades and grinch_ton:
+            try:
+                cost_ton, val_ton = self._dca_portfolio_value(grinch_ton)
+                if cost_ton > 0:
+                    dca_portfolio_pct = round((val_ton - cost_ton) / cost_ton * 100, 2)
+            except Exception:
+                pass
+
         return {
             "running":       self.running,
             "training":      self.training,
@@ -1613,4 +1986,19 @@ class Trader:
                 "entry_quality": pb.get("entry_quality", "B"),
                 "pullback_pct":  pb.get("pullback_pct", Config.SMART_BUY_PULLBACK_PCT),
             } if pb else None,
+            # ── DCA стратегия ──────────────────────────────────────────
+            "dca_mode":             Config.DCA_MODE,
+            "dca_state": {
+                "wait_pullback":   self.dca_wait_pullback,
+                "peak_price":      self.dca_peak_price,
+                "last_buy_price":  self.dca_last_buy_price,
+                "entries_count":   self.dca_entries_count,
+                "total_stake":     self.dca_total_stake,
+                "portfolio_pct":   dca_portfolio_pct,
+                "target_pct":      Config.DCA_TARGET_PROFIT_PCT,
+                "drop_trigger_pct": Config.DCA_DROP_TRIGGER_PCT,
+                "pullback_wait_pct": Config.DCA_PULLBACK_WAIT_PCT,
+                "stake_ton":       Config.DCA_STAKE_TON,
+                "max_entries":     Config.DCA_MAX_ENTRIES,
+            } if Config.DCA_MODE else None,
         }

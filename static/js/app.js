@@ -284,6 +284,48 @@ function updateUI(data) {
   // Умные деньги + AI-управление (защита капитала, просадка)
   renderSmartMoneyBar(data.smart_money || null);
   renderAIManagement(data.ai_management || null);
+
+  // DCA стратегия — статус текущего цикла
+  if (data.dca_mode) renderDcaState(data.dca_state || null, data.dca_mode);
+}
+
+function renderDcaState(st, active) {
+  const panel = document.getElementById("dca-status-panel");
+  if (!panel) return;
+  panel.style.display = active ? "" : "none";
+  if (!active || !st) return;
+
+  const g = id => document.getElementById(id);
+  // Фаза: поля из get_status() — wait_pullback, entries_count
+  const phaseMap = {
+    "idle":    "⏳ Ожидание входа",
+    "buying":  "🟢 Набор позиции",
+    "waiting": "📉 Ожидание отката",
+  };
+  const phase = st.wait_pullback ? "waiting" : (st.entries_count > 0 ? "buying" : "idle");
+  if (g("dca-phase"))   g("dca-phase").textContent  = phaseMap[phase] || phase;
+  if (g("dca-entries")) g("dca-entries").textContent = (st.entries_count ?? "—") + " / " + (st.max_entries ?? "—");
+  if (g("dca-stake"))   g("dca-stake").textContent   = st.total_stake != null ? Number(st.total_stake).toFixed(2) + " TON" : "—";
+
+  // Прибыль портфеля (поле portfolio_pct из get_status)
+  const profit = st.portfolio_pct;
+  const target = st.target_pct ?? 20;
+  if (g("dca-profit"))       g("dca-profit").textContent      = profit != null ? (profit >= 0 ? "+" : "") + Number(profit).toFixed(2) + "%" : "—";
+  if (g("dca-target-label")) g("dca-target-label").textContent = "+" + target + "%";
+
+  // Прогресс-бар
+  const bar = document.getElementById("dca-progress-bar");
+  if (bar && profit != null) {
+    const pct = Math.max(0, Math.min(100, (Number(profit) / target) * 100));
+    bar.style.width = pct + "%";
+    bar.style.background = pct >= 100 ? "linear-gradient(90deg,#00ff88,#ffd166)" : "linear-gradient(90deg,#00ff88,#00d4ff)";
+  }
+
+  // Цены (поля last_buy_price, peak_price из get_status)
+  if (g("dca-last-buy")) g("dca-last-buy").textContent = st.last_buy_price > 0
+    ? fmtGram(st.last_buy_price) : "—";
+  if (g("dca-peak"))     g("dca-peak").textContent     = st.peak_price > 0
+    ? fmtGram(st.peak_price) : "—";
 }
 
 function renderSmartBuy(pb) {
@@ -1101,6 +1143,51 @@ async function switchPair(symbol) {
   document.getElementById("price-change").textContent = "—";
 }
 
+// ── DCA toggle visibility ────────────────────────────────────────────────────
+function onDcaModeChange() {
+  const checked = document.getElementById("cfg-dca-mode")?.checked;
+  const params  = document.getElementById("dca-params");
+  const panel   = document.getElementById("dca-status-panel");
+  if (params) params.style.display  = checked ? "" : "none";
+  if (panel)  panel.style.display   = checked ? "" : "none";
+}
+// Wire up toggle after DOM ready
+document.addEventListener("DOMContentLoaded", () => {
+  const cb = document.getElementById("cfg-dca-mode");
+  if (cb) cb.addEventListener("change", onDcaModeChange);
+});
+
+async function saveDcaConfig() {
+  const g   = id => document.getElementById(id);
+  const btn = document.getElementById("btn-save-dca");
+  if (btn) { btn.disabled = true; btn.textContent = "⏳ Сохраняю…"; }
+  const cfg = {
+    dca_mode:             g("cfg-dca-mode")?.checked ?? false,
+    dca_stake_ton:        parseFloat(g("cfg-dca-stake")?.value  || 100),
+    dca_target_profit_pct: parseFloat(g("cfg-dca-target")?.value || 20),
+    dca_drop_trigger_pct: parseFloat(g("cfg-dca-drop")?.value   || 25),
+    dca_pullback_wait_pct: parseFloat(g("cfg-dca-pullback")?.value || 25),
+    dca_max_entries:      parseInt(g("cfg-dca-max-entries")?.value || 10, 10),
+  };
+  try {
+    const r = await fetch("/api/config", {
+      method: "POST", headers: {"Content-Type":"application/json"},
+      body: JSON.stringify(cfg)
+    });
+    const d = await r.json();
+    if (d.ok) {
+      showToast("✅ DCA настройки сохранены", "ok");
+      if (btn) { btn.textContent = "✅ Сохранено"; setTimeout(() => { btn.disabled = false; btn.textContent = "💾 Сохранить DCA настройки"; }, 2000); }
+    } else {
+      showToast("❌ " + (d.message || "Ошибка"), "err");
+      if (btn) { btn.disabled = false; btn.textContent = "💾 Сохранить DCA настройки"; }
+    }
+  } catch (e) {
+    showToast("❌ Ошибка сети: " + e.message, "err");
+    if (btn) { btn.disabled = false; btn.textContent = "💾 Сохранить DCA настройки"; }
+  }
+}
+
 async function saveConfig() {
   const g = id => document.getElementById(id);
   const btn = document.getElementById("btn-save-cfg");
@@ -1170,6 +1257,16 @@ async function loadConfig() {
   if (g("cfg-smart-tp"))      g("cfg-smart-tp").checked      = !!cfg.smart_tp_enabled;
   if (g("cfg-stp-conf"))      g("cfg-stp-conf").value        = cfg.smart_tp_min_conf        ?? 75;
   if (g("cfg-stp-trail"))     g("cfg-stp-trail").value       = cfg.smart_tp_tight_trail_pct ?? 1.5;
+  // DCA стратегия
+  if (g("cfg-dca-mode")) {
+    g("cfg-dca-mode").checked = !!cfg.dca_mode;
+    onDcaModeChange();
+  }
+  if (g("cfg-dca-stake"))       g("cfg-dca-stake").value       = cfg.dca_stake_ton          ?? 100;
+  if (g("cfg-dca-target"))      g("cfg-dca-target").value      = cfg.dca_target_profit_pct  ?? 20;
+  if (g("cfg-dca-drop"))        g("cfg-dca-drop").value        = cfg.dca_drop_trigger_pct   ?? 25;
+  if (g("cfg-dca-pullback"))    g("cfg-dca-pullback").value    = cfg.dca_pullback_wait_pct  ?? 25;
+  if (g("cfg-dca-max-entries")) g("cfg-dca-max-entries").value = cfg.dca_max_entries        ?? 10;
 
   g("demo-badge").style.display = cfg.demo_mode ? "" : "none";
   if (cfg.ton_wallet) {
