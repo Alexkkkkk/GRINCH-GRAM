@@ -79,7 +79,7 @@
   <div class="hdr-bal-area">
     <div class="hdr-bal hdr-bal-ton">
       <span class="hdr-bal-icon">◆</span>
-      <span class="hdr-bal-val" id="hdr-ton-bal">{{ "%.2f"|format(init_balance.get('TON', 0)) if init_balance.get('TON') else '—' }}</span>
+      <span class="hdr-bal-val" id="hdr-ton-bal">{{ "%.2f"|format(init_balance.get('TON', 0)) if init_balance.get('TON') is not none else '—' }}</span>
       <span class="hdr-bal-sym">TON</span>
     </div>
     <div class="hdr-bal hdr-bal-grn">
