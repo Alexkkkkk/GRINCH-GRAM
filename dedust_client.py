@@ -121,8 +121,102 @@ class DedustClient:
 
     # ───────────── низкоуровневые балансы для проверки исполнения ─────────────
 
+    @staticmethod
+    def _clean_addr_str(addr) -> str:
+        """Возвращает чистую строку адреса (EQ.../UQ... или 0:xxx).
+
+        str(pytoniq_core.Address) возвращает 'Address<EQ...>' — этот формат
+        TonCenter v3 не принимает (422). Метод извлекает чистый адрес.
+        """
+        s = str(addr)
+        if s.startswith("Address<") and s.endswith(">"):
+            return s[8:-1]
+        return s
+
+    def _grinch_jetton_wallet_addr_via_api(self, owner_addr_str: str) -> Optional[str]:
+        """Получает реальный адрес GRINCH jetton-кошелька (надёжно, несколько источников).
+
+        Порядок: TonCenter v3 (стабильный, без rate-limit) → TonAPI → None.
+        SDK JettonRoot.get_wallet() намеренно исключён: при сбое liteserver он
+        вычисляет адрес локально и для нестандартных jetton-контрактов (GRINCH)
+        возвращает неверный адрес.
+        """
+        # ── TonCenter v3 (первичный) ─────────────────────────────────────────
+        try:
+            r = requests.get(
+                "https://toncenter.com/api/v3/jetton/wallets",
+                params={
+                    "owner_address": owner_addr_str,
+                    "jetton_address": Config.GRINCH_TOKEN_ADDRESS,
+                    "limit": 1,
+                },
+                timeout=8,
+            )
+            wallets = r.json().get("jetton_wallets", [])
+            if wallets:
+                addr = wallets[0].get("address", "")
+                if addr:
+                    return addr.lower()  # raw hex 0:xxxx
+        except Exception as e:
+            log.debug(f"[DeDust] jetton wallet TonCenter v3: {e}")
+
+        # ── TonAPI (резервный) ───────────────────────────────────────────────
+        try:
+            r = requests.get(
+                f"https://tonapi.io/v2/accounts/{owner_addr_str}/jettons",
+                headers={"Accept": "application/json"}, timeout=8,
+            )
+            for b in r.json().get("balances", []):
+                jaddr = (b.get("jetton", {}) or {}).get("address", "")
+                if self._same_addr(jaddr, Config.GRINCH_TOKEN_ADDRESS):
+                    return (b.get("wallet_address") or {}).get("address")
+        except Exception as e:
+            log.debug(f"[DeDust] jetton wallet TonAPI: {e}")
+
+        return None
+
     async def _grinch_balance_nano(self, provider, addr) -> int:
-        """GRINCH-баланс кошелька в нанотокенах (0, если jetton-кошелёк не задеплоен)."""
+        """GRINCH-баланс кошелька в нанотокенах (0, если jetton-кошелёк не задеплоен).
+
+        Порядок: TonCenter v3 (стабильный) → TonAPI → SDK liteserver.
+        SDK исключён как первичный: возвращает неверный адрес jetton-кошелька
+        для нестандартных jetton-контрактов при сбое liteserver.
+        """
+        addr_str = self._clean_addr_str(addr)
+
+        # ── TonCenter v3 (первичный, надёжный) ──────────────────────────────
+        try:
+            r = requests.get(
+                "https://toncenter.com/api/v3/jetton/wallets",
+                params={
+                    "owner_address": addr_str,
+                    "jetton_address": Config.GRINCH_TOKEN_ADDRESS,
+                    "limit": 1,
+                },
+                timeout=6,
+            )
+            wallets = r.json().get("jetton_wallets", [])
+            if wallets:
+                bal = wallets[0].get("balance")
+                if bal is not None:
+                    return int(bal)
+        except Exception as e:
+            log.debug(f"[DeDust] grinch balance TonCenter v3: {e}")
+
+        # ── TonAPI (резервный) ───────────────────────────────────────────────
+        try:
+            r = requests.get(
+                f"https://tonapi.io/v2/accounts/{addr_str}/jettons",
+                headers={"Accept": "application/json"}, timeout=5,
+            )
+            for b in r.json().get("balances", []):
+                jaddr = (b.get("jetton", {}) or {}).get("address", "")
+                if self._same_addr(jaddr, Config.GRINCH_TOKEN_ADDRESS):
+                    return int(b.get("balance", 0))
+        except Exception as e:
+            log.debug(f"[DeDust] grinch balance TonAPI: {e}")
+
+        # ── SDK liteserver (последний резерв) ───────────────────────────────
         try:
             grinch_root = JettonRoot.create_from_address(Config.GRINCH_TOKEN_ADDRESS)
             gw = await grinch_root.get_wallet(addr, provider)
@@ -130,7 +224,7 @@ class DedustClient:
             if getattr(g_state, "state", None) and g_state.state.type_ == "active":
                 return await gw.get_balance(provider)
         except Exception as e:
-            log.debug(f"[DeDust] grinch balance poll: {e}")
+            log.debug(f"[DeDust] grinch balance SDK: {e}")
         return 0
 
     async def _wait_for_settlement(self, provider, addr, *, direction: str,
@@ -584,23 +678,19 @@ class DedustClient:
         try:
             pool, _, grinch_asset = await self._get_pool(provider)
 
-            grinch_root   = JettonRoot.create_from_address(Config.GRINCH_TOKEN_ADDRESS)
-            grinch_wallet = await grinch_root.get_wallet(wallet.address, provider)
-
-            amount_nano = int(grinch_amount * (10 ** 9))
-            # Продажа: jetton-transfer GRINCH НАПРЯМУЮ в пул с forward-payload
-            # свопа. Реальные сделки форвардят 0.25 TON; суммарно к сообщению
-            # прикладываем 0.35 TON газа (излишек возвращается на кошелёк).
-            gas_nano = int(0.35 * TON)
-            fwd_nano = int(0.25 * TON)
+            # ── Газ для sell ────────────────────────────────────────────────
+            # gas_nano = total attached to jetton wallet transfer.
+            # fwd_nano = forwarded from jetton wallet → pool (gas for pool execution).
+            # Реальные сделки: пул получает ~0.20 TON fwd и возвращает излишек.
+            # Буфер 0.05 TON не нужен: sell ВОЗВРАЩАЕТ TON из резервов пула.
+            gas_nano = int(0.25 * TON)
+            fwd_nano = int(0.18 * TON)
 
             # ── Preflight: хватает ли TON на газ? ──────────────────────────
-            # Своп-сообщение несёт gas_nano TON и форвардит fwd_nano в пул.
-            # Если на кошельке меньше газа, транзакция уйдёт, но своп в пуле
-            # упадёт (нечем оплатить forward) → GRINCH вернётся, газ сгорит.
             state = await provider.get_account_state(wallet.address)
             ton_nano = getattr(state, "balance", 0) or 0
-            needed_nano = gas_nano + int(0.05 * TON)  # газ + запас на комиссии сети
+            # Минимум: gas_nano + 0.01 TON на сетевую комиссию wallet.transfer
+            needed_nano = gas_nano + int(0.01 * TON)
             if ton_nano < needed_nano:
                 return {
                     "ok": False,
@@ -614,6 +704,38 @@ class DedustClient:
                     "have_ton": round(ton_nano / TON, 3),
                 }
 
+            # ── Адрес GRINCH jetton-кошелька ────────────────────────────────
+            # TonCenter v3 → TonAPI; SDK намеренно последний резерв.
+            owner_addr_str = self._clean_addr_str(wallet.address)
+            jw_addr_str = self._grinch_jetton_wallet_addr_via_api(owner_addr_str)
+            if jw_addr_str:
+                from pytoniq_core import Address as _CoreAddr
+                grinch_jw_address = _CoreAddr(jw_addr_str)
+                log.info(f"[DeDust] GRINCH jetton wallet: {jw_addr_str}")
+            else:
+                # Оба API не ответили → SDK fallback (адрес может быть неверным!)
+                grinch_root   = JettonRoot.create_from_address(Config.GRINCH_TOKEN_ADDRESS)
+                grinch_wallet = await grinch_root.get_wallet(wallet.address, provider)
+                grinch_jw_address = grinch_wallet.address
+                log.warning(f"[DeDust] GRINCH jetton wallet (SDK FALLBACK): {grinch_jw_address}")
+
+            # ── Точный GRINCH-баланс on-chain ДО свопа ──────────────────────
+            # КРИТИЧНО: используем on-chain нано-баланс, а НЕ float grinch_amount!
+            # int(float * 1e9) может дать значение ВЫШЕ реального баланса из-за
+            # потери точности, и jetton-кошелёк отвергнет transfer с exit_code=27.
+            baseline_nano = await self._grinch_balance_nano(provider, wallet.address)
+
+            # Сумма продажи: либо запрошенная сумма, либо весь баланс — берём MIN
+            # чтобы избежать превышения баланса из-за float-округления.
+            amount_nano = min(int(grinch_amount * (10 ** 9)), baseline_nano)
+            if amount_nano <= 0:
+                return {
+                    "ok": False,
+                    "side": "sell",
+                    "error": f"GRINCH-баланс на кошельке равен 0 (нечего продавать).",
+                }
+            log.info(f"[DeDust] SELL {amount_nano/1e9:.6f} GRINCH (requested={grinch_amount:.6f}, on-chain={baseline_nano/1e9:.6f})")
+
             deadline = int(time.time()) + 600   # 10 мин
             transfer_body = self._build_sell_transfer_body(
                 recipient=wallet.address,
@@ -624,14 +746,11 @@ class DedustClient:
                 fwd_nano=fwd_nano,
             )
 
-            # Базовый GRINCH-баланс ДО свопа — для проверки реального исполнения.
-            baseline_nano = await self._grinch_balance_nano(provider, wallet.address)
-
             # GRINCH уходит jetton-transfer'ом В ПУЛ (destination=пул); своп
             # исполняется внутри пула по forward-payload. Сообщение шлём на наш
             # GRINCH jetton-кошелёк, он маршрутизирует жетоны в пул.
             await wallet.transfer(
-                destination=grinch_wallet.address,
+                destination=grinch_jw_address,
                 amount=gas_nano,
                 body=transfer_body,
             )

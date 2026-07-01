@@ -86,8 +86,9 @@ from parsed fields → BOC matched original bit-for-bit).** Builders live in
   `uint32=0xa5a7cbf8, query_id:uint64(random), amount:Coins, ^ref0, ^ref1`.
 - **SELL body** = standard jetton-transfer `op 0x0f8a7ea5` of GRINCH sent to OUR grinch
   jetton-wallet, with `destination=POOL`, `response=wallet`, `custom_payload=none`,
-  `forward_ton=0.25 TON`, forward_payload (in ref) = `{uint32=0xcbc33949, ^ref0, ^ref1}`.
-  NOT via the dedust jetton-vault. Attach ~0.35 TON gas total.
+  `forward_ton=0.18 TON`, forward_payload (in ref) = `{uint32=0xcbc33949, ^ref0, ^ref1}`.
+  NOT via the dedust jetton-vault. Attach **0.25 TON gas total** (was 0.35; pool returns
+  excess). Confirmed working 2026-07-01: 314.53 GRINCH → 0.09 TON received.
 
 **Why:** the `dedust` 1.1.4 native/jetton-vault flow (legacy pool-op `0x61ee542d`) is the
 WRONG protocol for this CPMM-v2 pool → exit 65535 bounce. The hand-built `0xa5a7cbf8`
