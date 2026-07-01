@@ -48,3 +48,4 @@ run = ["gunicorn", "--bind", "0.0.0.0:5000", "main:app"]
 [userenv.shared]
 TRADE_MODE = "dedust"
 DEMO_MODE = "false"
+MIN_STAKE_TON = "5"
