@@ -1033,12 +1033,44 @@ function renderOpenTrades(trades, curPrice, gramPrice) {
         <span>Безубыток (газ обоих свопов + 2% DEX): <b style="color:#ffd166">$${be}</b></span>
         ${t.min_gross_pct ? `<span style="color:#718096">нужен рост <b style="color:#ffd166">+${t.min_gross_pct}%</b></span>` : ""}
       </div>` : ""}
-      <button onclick='closeTrade(this, ${JSON.stringify(String(t.id))})'
-        style="margin-top:8px;width:100%;padding:9px;border:none;border-radius:8px;cursor:pointer;font-weight:800;font-size:12px;color:#fff;background:${inProfit ? "linear-gradient(90deg,#00b894,#00ff88)" : "linear-gradient(90deg,#ff4d6d,#ff7a3d)"}">
-        ${inProfit ? "✅ Продать с прибылью" : "✖ Продать сейчас"}
-      </button>
+      <div style="display:flex;gap:6px;margin-top:8px">
+        <button onclick='closeTrade(this, ${JSON.stringify(String(t.id))})'
+          style="flex:1;padding:9px;border:none;border-radius:8px;cursor:pointer;font-weight:800;font-size:12px;color:#fff;background:${inProfit ? "linear-gradient(90deg,#00b894,#00ff88)" : "linear-gradient(90deg,#ff4d6d,#ff7a3d)"}">
+          ${inProfit ? "✅ Продать с прибылью" : "✖ Продать сейчас"}
+        </button>
+        <button onclick='deleteTrade(this, ${JSON.stringify(String(t.id))})'
+          title="Удалить позицию без продажи"
+          style="padding:9px 12px;border:1px solid rgba(255,255,255,0.15);border-radius:8px;cursor:pointer;font-size:14px;color:#8892b0;background:rgba(255,255,255,0.05);flex-shrink:0"
+          onmouseover="this.style.background='rgba(255,77,109,0.15)';this.style.color='#ff4d6d';this.style.borderColor='rgba(255,77,109,0.4)'"
+          onmouseout="this.style.background='rgba(255,255,255,0.05)';this.style.color='#8892b0';this.style.borderColor='rgba(255,255,255,0.15)'">
+          🗑
+        </button>
+      </div>
     </div>`;
   }).join("");
+}
+
+async function deleteTrade(btn, id) {
+  if (!confirm("Удалить позицию из списка БЕЗ продажи на DeDust?\n\nGRINCH останется на кошельке — позиция просто исчезнет из трекера.")) return;
+  if (btn) { btn.disabled = true; btn.textContent = "⏳"; }
+  try {
+    const r = await fetch("/api/trade/delete", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id })
+    });
+    const d = await r.json().catch(() => ({ ok: false, error: "ошибка ответа" }));
+    if (!d.ok) {
+      showToast("❌ Не удалось удалить: " + (d.error || "ошибка"), "err");
+      if (btn) { btn.disabled = false; btn.textContent = "🗑"; }
+    } else {
+      showToast("🗑 Позиция удалена из трекера", "ok");
+    }
+  } catch (e) {
+    showToast("❌ Ошибка сети при удалении позиции", "err");
+    if (btn) { btn.disabled = false; btn.textContent = "🗑"; }
+  }
+  fetch("/api/status").then(r => r.json()).then(updateUI).catch(() => {});
 }
 
 async function closeTrade(btn, id) {

@@ -398,6 +398,15 @@ def api_stop():
     trader.stop()
     return jsonify({"ok": True, "message": "Агент остановлен"})
 
+@app.route("/api/trade/delete", methods=["POST"])
+def api_trade_delete():
+    data = request.get_json(silent=True) or {}
+    tid = data.get("id")
+    if tid is None or tid == "":
+        return jsonify({"ok": False, "error": "не указан id позиции"}), 400
+    result = trader.delete_trade(tid)
+    return jsonify(result), (200 if result.get("ok") else 400)
+
 @app.route("/api/trade/close", methods=["POST"])
 def api_trade_close():
     data = request.get_json(silent=True) or {}
