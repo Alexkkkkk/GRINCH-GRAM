@@ -115,7 +115,7 @@ class Config:
     # Если откат не пришёл за SMART_BUY_MAX_WAIT_TICKS → берём по рынку.
     # При AI >= SMART_BUY_SKIP_CONF% — покупаем сразу (слишком сильный сигнал).
     SMART_BUY_ENABLED       = bool(int(os.getenv("SMART_BUY_ENABLED", "1")))
-    SMART_BUY_PULLBACK_PCT  = float(os.getenv("SMART_BUY_PULLBACK_PCT", "0.8"))  # ждём откат -0.8%
+    SMART_BUY_PULLBACK_PCT  = float(os.getenv("SMART_BUY_PULLBACK_PCT", "15"))  # ждём откат -0.8%
     SMART_BUY_MAX_WAIT_TICKS = int(os.getenv("SMART_BUY_MAX_WAIT_TICKS", "3"))   # макс 3 тика (~90 сек)
     SMART_BUY_SKIP_CONF     = float(os.getenv("SMART_BUY_SKIP_CONF", "90.0"))    # ≥90% → сразу
 
