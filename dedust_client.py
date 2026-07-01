@@ -25,6 +25,130 @@ TON = 1_000_000_000
 # Адрес мастер-контракта DeDust Factory в мейннете
 _FACTORY_ADDR = "EQBfBWT7X2BHg9tXAxzhz2aKiNTU1tSvKBUIB6mmAR0096nr"
 
+# ── Глобальный кеш баланса (TTL 150 сек) — все модули читают отсюда ──────────
+# Предотвращает шторм 429 от TonCenter: трейдер, ликвидатор, deposit monitor
+# делают независимые запросы каждые 30–60 сек. Общий кеш сводит фактические
+# HTTP-вызовы к одному раз в 150 секунд, независимо от числа читателей.
+_BAL_CACHE: dict         = {}          # {"TON": float, "GRINCH": float}
+_BAL_CACHE_TS: float     = 0.0         # timestamp последнего успешного обновления
+_BAL_CACHE_TTL: float    = 150.0       # секунды
+_BAL_CACHE_LOCK          = threading.Lock()
+_BAL_BACKOFF_UNTIL: float = 0.0        # не стучать раньше этого timestamp при 429
+
+
+def get_shared_balance(force: bool = False) -> dict:
+    """Возвращает кешированный баланс {TON, GRINCH} из глобального кеша.
+
+    force=True обновляет даже если TTL не истёк (используется после свопа).
+    При 429-backoff возвращает последний известный кеш не долбя API.
+    """
+    global _BAL_CACHE, _BAL_CACHE_TS, _BAL_BACKOFF_UNTIL
+    now = time.time()
+
+    # Если backoff ещё не истёк — возвращаем кеш без запроса
+    if not force and now < _BAL_BACKOFF_UNTIL:
+        with _BAL_CACHE_LOCK:
+            return dict(_BAL_CACHE) if _BAL_CACHE else {}
+
+    # Если кеш свежий — возвращаем без запроса
+    with _BAL_CACHE_LOCK:
+        if not force and _BAL_CACHE and (now - _BAL_CACHE_TS) < _BAL_CACHE_TTL:
+            return dict(_BAL_CACHE)
+
+    # Нужно обновить — делаем HTTP запросы
+    wallet = Config.TON_WALLET
+    token  = Config.GRINCH_TOKEN_ADDRESS
+
+    ton_val: Optional[float] = None
+    grn_val: float = 0.0
+    hit_429 = False
+
+    # TON balance: TonCenter v2 → TonAPI v2
+    try:
+        r = requests.get(
+            "https://toncenter.com/api/v2/getAddressBalance",
+            params={"address": wallet}, timeout=8,
+        )
+        if r.status_code == 429:
+            hit_429 = True
+        elif r.status_code == 200:
+            result = r.json().get("result")
+            if result is not None:
+                ton_val = float(result) / TON
+    except Exception:
+        pass
+
+    if ton_val is None and not hit_429:
+        try:
+            r = requests.get(
+                f"https://tonapi.io/v2/accounts/{wallet}",
+                headers={"Accept": "application/json"}, timeout=8,
+            )
+            if r.status_code == 429:
+                hit_429 = True
+            elif r.status_code == 200:
+                bal = r.json().get("balance")
+                if bal is not None:
+                    ton_val = float(bal) / TON
+        except Exception:
+            pass
+
+    # GRINCH balance: TonCenter v3 → TonAPI direct → TonAPI list
+    if not hit_429:
+        try:
+            r = requests.get(
+                "https://toncenter.com/api/v3/jetton/wallets",
+                params={"owner_address": wallet, "jetton_address": token, "limit": 1},
+                timeout=8,
+            )
+            if r.status_code == 429:
+                hit_429 = True
+            elif r.status_code == 200:
+                wallets = r.json().get("jetton_wallets", [])
+                if wallets:
+                    bal = wallets[0].get("balance")
+                    if bal is not None:
+                        grn_val = float(bal) / (10 ** 9)
+        except Exception:
+            pass
+
+    if grn_val == 0.0 and not hit_429:
+        try:
+            r = requests.get(
+                f"https://tonapi.io/v2/accounts/{wallet}/jettons/{token}",
+                headers={"Accept": "application/json"}, timeout=8,
+            )
+            if r.status_code == 429:
+                hit_429 = True
+            elif r.status_code == 200:
+                bal = r.json().get("balance")
+                if bal is not None:
+                    grn_val = float(bal) / (10 ** 9)
+        except Exception:
+            pass
+
+    if hit_429:
+        # Применяем backoff: не долбим API 90 секунд после 429
+        with _BAL_CACHE_LOCK:
+            _BAL_BACKOFF_UNTIL = now + 90.0
+            log.warning("[Balance] 429 от TonCenter/TonAPI — пауза 90с, возвращаем кеш")
+            return dict(_BAL_CACHE) if _BAL_CACHE else {"TON": 0.0, "GRINCH": 0.0}
+
+    # Обновляем кеш только если получили хотя бы одно реальное значение
+    if ton_val is not None or grn_val > 0:
+        new_cache: dict = {
+            "TON":    round(ton_val, 6) if ton_val is not None else _BAL_CACHE.get("TON", 0.0),
+            "GRINCH": round(grn_val, 4),
+        }
+        with _BAL_CACHE_LOCK:
+            _BAL_CACHE    = new_cache
+            _BAL_CACHE_TS = now
+        return dict(new_cache)
+
+    # Ничего не получили, но и 429 не было — возвращаем старый кеш
+    with _BAL_CACHE_LOCK:
+        return dict(_BAL_CACHE) if _BAL_CACHE else {"TON": 0.0, "GRINCH": 0.0}
+
 
 def _run(coro):
     """Запускает async-корутину синхронно в новом event loop."""
@@ -320,19 +444,14 @@ class DedustClient:
                 return cur
         return None
 
-    def get_balance(self) -> dict:
-        """Надёжный баланс через HTTP (не liteserver).
+    def get_balance(self, force: bool = False) -> dict:
+        """Надёжный баланс через глобальный кеш (не liteserver).
 
-        Liteserver даёт 'remote get method result is not provable' и может
-        вернуть garbage значения (например 6.9 TON вместо реальных 0.91).
-        TonCenter v2/v3 возвращают точные on-chain данные без этой проблемы.
+        Использует get_shared_balance() — единственный источник баланса для
+        всего приложения. Исключает шторм 429 от параллельных читателей.
+        force=True сбрасывает кеш (вызывается сразу после свопа).
         """
-        ton = self._get_ton_balance_http()
-        grinch = self._get_grinch_balance_http()
-        if ton is None:
-            log.warning("[DeDust] get_balance: HTTP-запрос TON не вернул данных")
-            return {"TON": 0.0, "GRINCH": round(grinch, 4), "error": "ton_balance_unavailable"}
-        return {"TON": round(ton, 6), "GRINCH": round(grinch, 4)}
+        return get_shared_balance(force=force)
 
     # ─────────────────────────── price / estimate ──────────────────────────
 

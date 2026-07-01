@@ -244,8 +244,10 @@ class GrinchLiquidator:
 
     def _refresh_balance(self):
         try:
-            grinch = self._fetch_grinch_balance_http()
-            ton    = self._fetch_ton_balance_http()
+            from dedust_client import get_shared_balance
+            bal   = get_shared_balance()
+            grinch = bal.get("GRINCH", 0.0)
+            ton    = bal.get("TON")   # None если недоступно
 
             with self._lock:
                 old = self._grinch_bal

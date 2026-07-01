@@ -46,10 +46,10 @@ class Trader:
             "quality": "C", "score": 0, "reasons": [],
             "vol_ratio": 1.0, "stoch_rsi": 0.5,
         }
-        # Кеш баланса: не долбим блокчейн при каждом /api/status (TTL 30 сек)
+        # Кеш баланса: не долбим блокчейн при каждом /api/status (TTL 180 сек)
         self._balance_cache     = {}
         self._balance_cache_ts  = 0
-        self._balance_cache_ttl = 30  # секунд
+        self._balance_cache_ttl = 180  # секунд — снижает нагрузку на TonCenter
         # ── Долговременная память + само-управление ИИ ───────────────────
         self.exp = experience_manager
         self.exp.restore_trader(self)
