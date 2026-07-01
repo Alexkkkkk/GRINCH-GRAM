@@ -5,7 +5,7 @@ stack = "FLASK_VANILLA_JS"
 
 [nix]
 channel = "stable-25_05"
-packages = ["glibcLocales", "iana-etc", "openssl", "postgresql"]
+packages = ["cargo", "glibcLocales", "iana-etc", "libiconv", "libxcrypt", "openssl", "pkg-config", "postgresql", "rustc"]
 
 [workflows]
 runButton = "Project"
@@ -28,7 +28,7 @@ outputType = "webview"
 
 [[workflows.workflow.tasks]]
 task = "shell.exec"
-args = "python3 -m gunicorn --bind 0.0.0.0:5000 --reuse-port --reload --worker-class eventlet -w 1 main:app"
+args = "gunicorn --bind 0.0.0.0:5000 --worker-class eventlet -w 1 --reuse-port --reload main:app"
 waitForPort = 5000
 
 [[ports]]
