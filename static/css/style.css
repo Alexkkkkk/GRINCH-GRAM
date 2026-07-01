@@ -1052,7 +1052,11 @@ body::after {
 .ton-dep-item .dep-memo { color: var(--text3); flex: 1; }
 .ton-dep-item .dep-time { color: var(--text3); font-family: var(--mono); }
 .ton-empty { font-size: 11px; color: var(--text3); text-align: center; padding: 8px 0; }
-.ton-error { font-size: 10px; color: var(--red); padding: 6px 0; }
+.ton-error {
+  font-size: 10px; color: var(--orange); padding: 6px 8px;
+  background: rgba(255,122,69,.06); border: 1px solid rgba(255,122,69,.2);
+  border-radius: var(--r3); margin-top: 4px;
+}
 
 /* ════════════════════════════════════════════════════════════
    ЛИКВИДАТОР GRINCH
@@ -1564,9 +1568,15 @@ body::after {
 .price-flash { animation: price-flash .6s ease-out; }
 
 /* ════ Wallet card deposit chip ════ */
-.ton-deposit-item {
-  border-left: 2px solid rgba(0,152,234,.4);
+.ton-dep-item {
+  display: flex; align-items: center; gap: 7px; padding: 7px 10px;
+  border-radius: var(--r3); background: rgba(0,152,234,.04);
+  border: 1px solid rgba(0,152,234,.12); border-left: 2px solid rgba(0,152,234,.4);
+  font-size: 10px;
 }
+.ton-dep-item .dep-amt  { font-weight: 700; color: var(--ton2); font-family: var(--mono); flex-shrink: 0; }
+.ton-dep-item .dep-memo { color: var(--text3); flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ton-dep-item .dep-time { color: var(--text3); font-family: var(--mono); flex-shrink: 0; }
 
 /* ══════════════════════════════════════════════════════════════════
    V2 LAYOUT — Compact 2-Panel Design

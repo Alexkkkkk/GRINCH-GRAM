@@ -1215,12 +1215,10 @@ function renderTon(d) {
   }
   box.innerHTML = d.deposits.slice(0, 15).map(dep => {
     const dt = dep.time ? new Date(dep.time * 1000).toLocaleString("ru-RU", {day:"2-digit",month:"2-digit",hour:"2-digit",minute:"2-digit"}) : "";
-    return `<div class="ton-dep">
-      <div class="ton-dep-top">
-        <span class="ton-dep-amount">+${dep.amount} TON</span>
-        <span class="ton-dep-time">${dt}</span>
-      </div>
-      <div class="ton-dep-from">от ${escapeHtml(dep.from_short || "")}</div>
+    return `<div class="ton-dep-item">
+      <span class="dep-amt">+${dep.amount} TON</span>
+      <span class="dep-memo">от ${escapeHtml(dep.from_short || "")}</span>
+      <span class="dep-time">${dt}</span>
     </div>`;
   }).join("");
 }
