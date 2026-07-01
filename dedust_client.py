@@ -92,32 +92,68 @@ class DedustClient:
 
     # ─────────────────────────── balance ───────────────────────────────────
 
-    async def _get_balance_async(self) -> dict:
-        provider = await self._make_provider()
+    def _get_ton_balance_http(self) -> Optional[float]:
+        """TON баланс через HTTP. Приоритет: TonCenter v2 → TonAPI v2.
+        НЕ использует liteserver — он даёт 'not provable' garbage значения.
+        """
+        wallet = Config.TON_WALLET
         try:
-            wallet = await WalletV5R1.from_mnemonic(provider=provider, mnemonics=self._mnemonic, network_global_id=-239)
-            wallet_addr = wallet.address
+            r = requests.get(
+                "https://toncenter.com/api/v2/getAddressBalance",
+                params={"address": wallet}, timeout=8,
+            )
+            result = r.json().get("result")
+            if result is not None:
+                return float(result) / TON
+        except Exception as e:
+            log.debug(f"[DeDust] TON balance TonCenter v2: {e}")
+        try:
+            r = requests.get(
+                f"https://tonapi.io/v2/accounts/{wallet}",
+                headers={"Accept": "application/json"}, timeout=8,
+            )
+            bal = r.json().get("balance")
+            if bal is not None:
+                return float(bal) / TON
+        except Exception as e:
+            log.debug(f"[DeDust] TON balance TonAPI: {e}")
+        return None
 
-            # TON баланс
-            state = await provider.get_account_state(wallet_addr)
-            ton_nano = getattr(state, "balance", 0) or 0
-            ton_bal = ton_nano / TON
+    def _get_grinch_balance_http(self) -> float:
+        """GRINCH баланс через HTTP. Приоритет: TonCenter v3 → TonAPI v2.
+        НЕ использует SDK/liteserver — при сбое даёт неверный jetton-адрес.
+        """
+        wallet = Config.TON_WALLET
+        token = Config.GRINCH_TOKEN_ADDRESS
+        try:
+            r = requests.get(
+                "https://toncenter.com/api/v3/jetton/wallets",
+                params={"owner_address": wallet, "jetton_address": token, "limit": 1},
+                timeout=8,
+            )
+            wallets = r.json().get("jetton_wallets", [])
+            if wallets:
+                bal = wallets[0].get("balance")
+                if bal is not None:
+                    return float(bal) / (10 ** 9)
+        except Exception as e:
+            log.debug(f"[DeDust] GRINCH balance TonCenter v3: {e}")
+        try:
+            r = requests.get(
+                f"https://tonapi.io/v2/accounts/{wallet}/jettons",
+                headers={"Accept": "application/json"}, timeout=8,
+            )
+            for b in r.json().get("balances", []):
+                jaddr = (b.get("jetton", {}) or {}).get("address", "")
+                if self._same_addr(jaddr, token):
+                    return float(b.get("balance", 0)) / (10 ** 9)
+        except Exception as e:
+            log.debug(f"[DeDust] GRINCH balance TonAPI: {e}")
+        return 0.0
 
-            # GRINCH баланс через Jetton-кошелёк
-            grinch_bal = 0.0
-            try:
-                grinch_root = JettonRoot.create_from_address(Config.GRINCH_TOKEN_ADDRESS)
-                grinch_wallet = await grinch_root.get_wallet(wallet_addr, provider)
-                g_state = await provider.get_account_state(grinch_wallet.address)
-                if getattr(g_state, "state", None) and g_state.state.type_ == "active":
-                    raw = await grinch_wallet.get_balance(provider)
-                    grinch_bal = raw / (10 ** 9)  # GRINCH использует 9 знаков
-            except Exception as e:
-                log.debug(f"[DeDust] GRINCH баланс недоступен: {e}")
-
-            return {"TON": round(ton_bal, 6), "GRINCH": round(grinch_bal, 4)}
-        finally:
-            await provider.close_all()
+    async def _get_balance_async(self) -> dict:
+        """Делегирует в get_balance() (HTTP-based). Оставлен для совместимости."""
+        return self.get_balance()
 
     # ───────────── низкоуровневые балансы для проверки исполнения ─────────────
 
@@ -253,13 +289,18 @@ class DedustClient:
         return None
 
     def get_balance(self) -> dict:
-        if not self._ready:
-            return {"TON": 0.0, "GRINCH": 0.0, "error": self._error}
-        try:
-            return _run(self._get_balance_async())
-        except Exception as e:
-            log.error(f"[DeDust] get_balance ошибка: {e}")
-            return {"TON": 0.0, "GRINCH": 0.0, "error": str(e)}
+        """Надёжный баланс через HTTP (не liteserver).
+
+        Liteserver даёт 'remote get method result is not provable' и может
+        вернуть garbage значения (например 6.9 TON вместо реальных 0.91).
+        TonCenter v2/v3 возвращают точные on-chain данные без этой проблемы.
+        """
+        ton = self._get_ton_balance_http()
+        grinch = self._get_grinch_balance_http()
+        if ton is None:
+            log.warning("[DeDust] get_balance: HTTP-запрос TON не вернул данных")
+            return {"TON": 0.0, "GRINCH": round(grinch, 4), "error": "ton_balance_unavailable"}
+        return {"TON": round(ton, 6), "GRINCH": round(grinch, 4)}
 
     # ─────────────────────────── price / estimate ──────────────────────────
 

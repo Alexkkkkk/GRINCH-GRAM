@@ -735,7 +735,7 @@ class Trader:
         if self.exchange.mode == "dedust" and side == "buy":
             bal     = self.exchange.get_balance() or {}
             ton_bal = bal.get("TON", 0) or 0
-            buy_gas = 0.45                      # газ BUY-свопа + запас на сеть
+            buy_gas = 0.30                      # газ BUY-свопа (0.3 TON attach, подтверждено on-chain)
             reserve = Config.GAS_RESERVE_TON    # неприкосновенный резерв на комиссию продажи
             spendable = ton_bal - buy_gas - reserve
             if bal.get("error") or spendable < Config.MIN_STAKE_TON:

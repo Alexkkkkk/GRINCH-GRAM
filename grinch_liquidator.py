@@ -10,6 +10,7 @@ import logging
 import urllib.parse
 from datetime import datetime
 from typing import Optional
+import requests as _requests
 from config import Config
 from price_feed import price_feed
 
@@ -38,11 +39,11 @@ def _addresses_match(a: str, b: str) -> bool:
     except Exception:
         return a.strip().lower() == b.strip().lower()
 
-MIN_GRINCH_TO_SELL = 0.5    # меньше этого — не стоит тратить 0.6 TON на газ
-BAL_CHECK_INTERVAL = 150    # секунд между on-chain запросами баланса
+MIN_GRINCH_TO_SELL = 0.5    # меньше этого — не стоит тратить TON на газ
+BAL_CHECK_INTERVAL = 60     # секунд между on-chain запросами баланса
 PRICE_TICK_SECS    = 30     # секунд между проверками цены (из кэша price_feed)
-START_DELAY        = 20     # задержка запуска — баланс берём из TonAPI (jettons), не конкурирует с TonCenter-поллерами
-GAS_NEEDED_TON     = 0.65   # газ на DeDust-своп GRINCH→TON (0.6 газ + 0.05 запас); меньше — своп отскочит (Bounce)
+START_DELAY        = 20     # задержка запуска
+GAS_NEEDED_TON     = 0.40   # минимум TON на кошельке для свопа GRINCH→TON (attach 0.25+0.18=0.43, часть вернётся)
 
 
 class GrinchLiquidator:
@@ -172,59 +173,74 @@ class GrinchLiquidator:
 
     def _fetch_grinch_balance_http(self) -> float:
         """
-        Получаем GRINCH баланс через TonAPI HTTP (без pytoniq/liteserver).
-        Надёжнее — не зависит от liteserver sync, нет ошибок 651.
+        Получаем GRINCH баланс. Приоритет: TonCenter v3 (стабильный, без rate-limit)
+        → TonAPI v2 (запасной).
         """
         import urllib.request, json as _json
         wallet = Config.TON_WALLET
         token  = Config.GRINCH_TOKEN_ADDRESS
-        # TonAPI v2: все жеттоны аккаунта
-        url = f"https://tonapi.io/v2/accounts/{wallet}/jettons"
-        try:
-            req = urllib.request.Request(url, headers={"Accept": "application/json"})
-            with urllib.request.urlopen(req, timeout=10) as r:
-                data = _json.loads(r.read())
-            balances = data.get("balances", [])
-            for item in balances:
-                master = (item.get("jetton", {}) or {}).get("address", "")
-                # TonAPI возвращает адрес в raw (0:...) или friendly форме
-                # GRINCH_TOKEN_ADDRESS начинается с EQ — конвертируем для сравнения
-                if _addresses_match(master, token):
-                    raw = item.get("balance", "0")
-                    return float(raw) / (10 ** 9)
-        except Exception as e:
-            self._log(f"TonAPI jetton balance ошибка: {e}", "WARN")
 
-        # Запасной вариант: TonCenter v3
+        # Приоритет 1: TonCenter v3 (без rate-limit, прямой запрос)
         try:
-            url2 = (
+            url = (
                 f"https://toncenter.com/api/v3/jetton/wallets"
                 f"?owner_address={urllib.parse.quote(wallet)}"
                 f"&jetton_address={urllib.parse.quote(token)}&limit=1"
             )
-            req2 = urllib.request.Request(url2, headers={"Accept": "application/json"})
-            with urllib.request.urlopen(req2, timeout=10) as r2:
-                d2 = _json.loads(r2.read())
-            wallets = d2.get("jetton_wallets", [])
+            req = urllib.request.Request(url, headers={"Accept": "application/json"})
+            with urllib.request.urlopen(req, timeout=10) as r:
+                d = _json.loads(r.read())
+            wallets = d.get("jetton_wallets", [])
             if wallets:
                 return float(wallets[0].get("balance", 0)) / (10 ** 9)
+        except Exception as e:
+            self._log(f"TonCenter v3 GRINCH balance ошибка: {e}", "WARN")
+
+        # Запасной: TonAPI v2
+        try:
+            url2 = f"https://tonapi.io/v2/accounts/{wallet}/jettons"
+            req2 = urllib.request.Request(url2, headers={"Accept": "application/json"})
+            with urllib.request.urlopen(req2, timeout=10) as r2:
+                data = _json.loads(r2.read())
+            for item in data.get("balances", []):
+                master = (item.get("jetton", {}) or {}).get("address", "")
+                if _addresses_match(master, token):
+                    return float(item.get("balance", "0")) / (10 ** 9)
         except Exception as e2:
-            self._log(f"TonCenter v3 jetton balance ошибка: {e2}", "WARN")
+            self._log(f"TonAPI jetton balance ошибка: {e2}", "WARN")
 
         return 0.0
 
     def _fetch_ton_balance_http(self) -> Optional[float]:
-        """Баланс TON кошелька через TonAPI HTTP (без pytoniq/liteserver)."""
+        """Баланс TON кошелька. Приоритет: TonCenter v2 → TonAPI v2."""
         import urllib.request, json as _json
-        url = f"https://tonapi.io/v2/accounts/{Config.TON_WALLET}"
+        wallet = Config.TON_WALLET
+
+        # Приоритет 1: TonCenter v2 (стабильный, без rate-limit)
         try:
+            url = f"https://toncenter.com/api/v2/getAddressBalance?address={urllib.parse.quote(wallet)}"
             req = urllib.request.Request(url, headers={"Accept": "application/json"})
-            with urllib.request.urlopen(req, timeout=10) as r:
+            with urllib.request.urlopen(req, timeout=8) as r:
                 data = _json.loads(r.read())
-            return float(data.get("balance", 0)) / (10 ** 9)
+            result = data.get("result")
+            if result is not None:
+                return float(result) / (10 ** 9)
         except Exception as e:
-            self._log(f"TonAPI TON balance ошибка: {e}", "WARN")
-            return None
+            self._log(f"TonCenter v2 TON balance ошибка: {e}", "WARN")
+
+        # Запасной: TonAPI v2
+        try:
+            url2 = f"https://tonapi.io/v2/accounts/{wallet}"
+            req2 = urllib.request.Request(url2, headers={"Accept": "application/json"})
+            with urllib.request.urlopen(req2, timeout=8) as r2:
+                data2 = _json.loads(r2.read())
+            bal = data2.get("balance")
+            if bal is not None:
+                return float(bal) / (10 ** 9)
+        except Exception as e2:
+            self._log(f"TonAPI TON balance ошибка: {e2}", "WARN")
+
+        return None
 
     def _refresh_balance(self):
         try:
