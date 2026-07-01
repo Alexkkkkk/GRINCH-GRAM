@@ -16,8 +16,7 @@ python-telegram-bot==21.1.1
 sqlalchemy==2.0.30
 psycopg2-binary==2.9.9
 email_validator
-flask
-flask-sqlalchemy
-gunicorn
-psycopg2-binary
+xgboost
+cryptography
+ccxt
 pytoniq-core
