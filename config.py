@@ -115,9 +115,9 @@ class Config:
     # Если откат не пришёл за SMART_BUY_MAX_WAIT_TICKS → берём по рынку.
     # При AI >= SMART_BUY_SKIP_CONF% — покупаем сразу (слишком сильный сигнал).
     SMART_BUY_ENABLED       = bool(int(os.getenv("SMART_BUY_ENABLED", "1")))
-    SMART_BUY_PULLBACK_PCT  = float(os.getenv("SMART_BUY_PULLBACK_PCT", "15"))  # ждём откат -0.8%
+    SMART_BUY_PULLBACK_PCT  = float(os.getenv("SMART_BUY_PULLBACK_PCT", "0.8"))  # ждём откат -0.8%
     SMART_BUY_MAX_WAIT_TICKS = int(os.getenv("SMART_BUY_MAX_WAIT_TICKS", "3"))   # макс 3 тика (~90 сек)
-    SMART_BUY_SKIP_CONF     = float(os.getenv("SMART_BUY_SKIP_CONF", "90.0"))    # ≥90% → сразу
+    SMART_BUY_SKIP_CONF     = float(os.getenv("SMART_BUY_SKIP_CONF", "88.0"))    # ≥88% → сразу
 
     # ── Smart TP: умная продажа с ИИ ─────────────────────────────────────
     # Когда позиция достигает минимального порога прибыли, бот проверяет сигнал
@@ -125,29 +125,29 @@ class Config:
     # с тугим трейлингом (SMART_TP_TIGHT_TRAIL_PCT%), давая цене расти дальше.
     # Как только ИИ слабеет — переключаемся на обычный трейлинг и фиксируем.
     SMART_TP_ENABLED        = bool(int(os.getenv("SMART_TP_ENABLED", "1")))
-    SMART_TP_MIN_CONF       = float(os.getenv("SMART_TP_MIN_CONF", "75.0"))   # мин. уверенность ИИ для удержания
-    SMART_TP_TIGHT_TRAIL_PCT = float(os.getenv("SMART_TP_TIGHT_TRAIL_PCT", "1.5"))  # тугой трейл при сильном BUY
+    SMART_TP_MIN_CONF       = float(os.getenv("SMART_TP_MIN_CONF", "70.0"))   # мин. уверенность ИИ для удержания
+    SMART_TP_TIGHT_TRAIL_PCT = float(os.getenv("SMART_TP_TIGHT_TRAIL_PCT", "1.2"))  # тугой трейл при сильном BUY
 
     # ── Прогрессивный трейлинг-стоп (защита прибыли на пути к +20%) ─────
     # Лестница масштабирована под цель +20% нетто, строго ниже TP-пола (22%):
-    # Этап 1 (прибыль > 5%):  стоп в безубыток (покрывает комиссию — не теряем)
-    # Этап 2 (прибыль > 10%): трейлинг 6% от максимума
-    # Этап 3 (прибыль > 15%): трейлинг 4% от максимума
+    # Этап 1 (прибыль > 4%):  стоп в безубыток (покрывает комиссию — не теряем)
+    # Этап 2 (прибыль > 8%):  трейлинг 5% от максимума
+    # Этап 3 (прибыль > 14%): трейлинг 3.5% от максимума
     # Этап 4 (прибыль > 20%): трейлинг 2% от максимума → фиксируем прибыль
-    TRAIL_BREAKEVEN_AT  = float(os.getenv("TRAIL_BREAKEVEN_AT", "5.0"))    # % прибыли → стоп в безубыток
-    TRAIL_STAGE2_AT     = float(os.getenv("TRAIL_STAGE2_AT",    "10.0"))   # % → трейлинг 6%
-    TRAIL_STAGE2_PCT    = float(os.getenv("TRAIL_STAGE2_PCT",    "6.0"))
-    TRAIL_STAGE3_AT     = float(os.getenv("TRAIL_STAGE3_AT",    "15.0"))   # % → трейлинг 4%
-    TRAIL_STAGE3_PCT    = float(os.getenv("TRAIL_STAGE3_PCT",    "4.0"))
+    TRAIL_BREAKEVEN_AT  = float(os.getenv("TRAIL_BREAKEVEN_AT", "4.0"))    # % прибыли → стоп в безубыток
+    TRAIL_STAGE2_AT     = float(os.getenv("TRAIL_STAGE2_AT",    "8.0"))    # % → трейлинг 5%
+    TRAIL_STAGE2_PCT    = float(os.getenv("TRAIL_STAGE2_PCT",    "5.0"))
+    TRAIL_STAGE3_AT     = float(os.getenv("TRAIL_STAGE3_AT",    "14.0"))   # % → трейлинг 3.5%
+    TRAIL_STAGE3_PCT    = float(os.getenv("TRAIL_STAGE3_PCT",    "3.5"))
     TRAIL_STAGE4_AT     = float(os.getenv("TRAIL_STAGE4_AT",    "20.0"))   # % → трейлинг 2%
     TRAIL_STAGE4_PCT    = float(os.getenv("TRAIL_STAGE4_PCT",    "2.0"))
-    TRAILING_STOP_PCT   = float(os.getenv("TRAILING_STOP_PCT",   "7.0"))   # начальный трейлинг (до безубытка)
+    TRAILING_STOP_PCT   = float(os.getenv("TRAILING_STOP_PCT",   "6.5"))   # начальный трейлинг (до безубытка)
     # ── Адаптивный трейлинг по силе тренда (даём прибыли разрастись) ────────
     # В сильном восходящем тренде стоп идёт ШИРЕ (winner runs), в боковике/
     # слабости — ТУЖЕ (быстрее фиксируем). Нижний пол прибыли НЕ затрагивается.
-    TRAIL_TREND_WIDEN   = float(os.getenv("TRAIL_TREND_WIDEN",   "2.5"))    # множитель в сильном тренде
-    TRAIL_CHOP_TIGHTEN  = float(os.getenv("TRAIL_CHOP_TIGHTEN",  "0.6"))    # множитель в боковике/слабости
-    TRAIL_TREND_ADX     = float(os.getenv("TRAIL_TREND_ADX",    "30.0"))    # ADX ≥ → тренд «сильный»
+    TRAIL_TREND_WIDEN   = float(os.getenv("TRAIL_TREND_WIDEN",   "3.0"))    # множитель в сильном тренде
+    TRAIL_CHOP_TIGHTEN  = float(os.getenv("TRAIL_CHOP_TIGHTEN",  "0.55"))   # множитель в боковике/слабости
+    TRAIL_TREND_ADX     = float(os.getenv("TRAIL_TREND_ADX",    "28.0"))    # ADX ≥ → тренд «сильный»
 
     # ── ATR-цели: динамические ────────────────────────────────────────────
     USE_DYNAMIC_TARGETS = os.getenv("USE_DYNAMIC_TARGETS", "true").lower() == "true"
@@ -162,7 +162,7 @@ class Config:
     # RSI 78 — для мем-монеты GRINCH RSI 68-75 это норма в памп; блокируем только экстремум
     RSI_OVERBOUGHT = float(os.getenv("RSI_OVERBOUGHT", "78"))
     # AI уверенность мин 62% — только высококонвикционные сигналы
-    MIN_AI_CONFIDENCE = float(os.getenv("MIN_AI_CONFIDENCE", "62"))
+    MIN_AI_CONFIDENCE = float(os.getenv("MIN_AI_CONFIDENCE", "63"))
     # AI-овверрайд только при 78%+ — очень сильный сигнал против тренда
     AI_OVERRIDE_CONFIDENCE = float(os.getenv("AI_OVERRIDE_CONFIDENCE", "78"))
     # AI жёсткий овверрайд: при ≥93% уверенности игнорируем RSI/аномалию (только DOWNTREND блокирует)
