@@ -39,7 +39,13 @@ _ext = os.getenv("EXTERNAL_DATABASE_URL", "")
 # Если в секрете оказался только пароль (без полного URL) — собираем URL сами
 if _ext and not _ext.startswith("postgresql://"):
     _ext = f"postgresql://bothost_db_bf4fb06bbd60:{_ext}@node1.pghost.ru:15529/bothost_db_bf4fb06bbd60"
-DATABASE_URL = _ext or os.getenv("DATABASE_URL", "")
+# Внешняя БД pghost.ru — основное хранилище (дефолт если env не задан)
+_DEFAULT_DB = (
+    "postgresql://bothost_db_bf4fb06bbd60:"
+    "b0dqQSV7PsGK465oK4h3oPUtJjM5rjKtGQis_YXHXvM"
+    "@node1.pghost.ru:15529/bothost_db_bf4fb06bbd60"
+)
+DATABASE_URL = _ext or _DEFAULT_DB  # pghost.ru всегда приоритет над Replit DATABASE_URL
 
 _pool: psycopg2.pool.ThreadedConnectionPool | None = None
 _pool_lock = threading.Lock()
