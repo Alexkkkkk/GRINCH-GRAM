@@ -16,15 +16,15 @@
       "trail_pct": 7.0,
       "high_water": 0.00049041,
       "entry_price": 0.00049041,
-      "net_pct_now": -7.66,
-      "net_ton_now": -1.432142,
+      "net_pct_now": -6.17,
+      "net_ton_now": -1.153132,
       "take_profit": 0.00056026,
       "entry_regime": "VOLATILE",
       "ai_confidence": 84.7,
       "entry_anomaly": false,
       "entry_atr_pct": 0.495,
-      "min_gross_pct": 14.2,
-      "value_ton_now": 17.697129,
+      "min_gross_pct": 17.3,
+      "value_ton_now": 17.978957,
       "entry_bo_score": 10.7,
       "entry_sm_label": "",
       "entry_sm_score": 0.0,
@@ -36,7 +36,7 @@
       "entry_sm_buys_1h": 0,
       "entry_sm_sells_1h": 0
     },
-    "updated_at": "2026-07-01T17:15:01.330874"
+    "updated_at": "2026-07-01T20:05:09.659488"
   },
   {
     "trade_id": "dedust_1782913871",
@@ -55,15 +55,15 @@
       "trail_pct": 7.0,
       "high_water": 0.00051999,
       "entry_price": 0.00051999,
-      "net_pct_now": -13.6,
-      "net_ton_now": -12.559119,
+      "net_pct_now": -12.22,
+      "net_ton_now": -11.284711,
       "take_profit": 0.00058571,
       "entry_regime": "SQUEEZE",
       "ai_confidence": 91.3,
       "entry_anomaly": false,
       "entry_atr_pct": 0.511,
-      "min_gross_pct": 12.6,
-      "value_ton_now": 80.833617,
+      "min_gross_pct": 15.7,
+      "value_ton_now": 82.120898,
       "entry_bo_score": 42.2,
       "entry_sm_label": "",
       "entry_sm_score": 0.0,
@@ -75,7 +75,7 @@
       "entry_sm_buys_1h": 0,
       "entry_sm_sells_1h": 0
     },
-    "updated_at": "2026-07-01T17:15:01.330874"
+    "updated_at": "2026-07-01T20:05:09.659488"
   },
   {
     "trade_id": "dedust_1782914151",
@@ -94,15 +94,15 @@
       "trail_pct": 7.0,
       "high_water": 0.0005502,
       "entry_price": 0.0005502,
-      "net_pct_now": -11.87,
-      "net_ton_now": -10.957526,
+      "net_pct_now": -10.46,
+      "net_ton_now": -9.657613,
       "take_profit": 0.00061974,
       "entry_regime": "RANGING",
       "ai_confidence": 82.4,
       "entry_anomaly": false,
       "entry_atr_pct": 0.554,
-      "min_gross_pct": 12.6,
-      "value_ton_now": 82.451388,
+      "min_gross_pct": 15.7,
+      "value_ton_now": 83.764432,
       "entry_bo_score": 15.3,
       "entry_sm_label": "",
       "entry_sm_score": 0.0,
@@ -114,7 +114,7 @@
       "entry_sm_buys_1h": 0,
       "entry_sm_sells_1h": 0
     },
-    "updated_at": "2026-07-01T17:15:01.330874"
+    "updated_at": "2026-07-01T20:05:09.659488"
   },
   {
     "trade_id": "dedust_1782914260",
@@ -133,15 +133,15 @@
       "trail_pct": 7.0,
       "high_water": 0.00053944,
       "entry_price": 0.00053944,
-      "net_pct_now": -13.35,
-      "net_ton_now": -14.608998,
+      "net_pct_now": -11.97,
+      "net_ton_now": -13.095352,
       "take_profit": 0.00060728,
       "entry_regime": "SQUEEZE",
       "ai_confidence": 88.2,
       "entry_anomaly": false,
       "entry_atr_pct": 0.53,
-      "min_gross_pct": 12.6,
-      "value_ton_now": 96.008083,
+      "min_gross_pct": 15.6,
+      "value_ton_now": 97.537018,
       "entry_bo_score": 48.4,
       "entry_sm_label": "",
       "entry_sm_score": 0.0,
@@ -153,7 +153,7 @@
       "entry_sm_buys_1h": 0,
       "entry_sm_sells_1h": 0
     },
-    "updated_at": "2026-07-01T17:15:01.330874"
+    "updated_at": "2026-07-01T20:05:09.659488"
   },
   {
     "trade_id": "dedust_1782766735",
@@ -172,15 +172,15 @@
       "trail_pct": 7.0,
       "high_water": 0.00046485,
       "entry_price": 0.00046485,
-      "net_pct_now": -3.77,
-      "net_ton_now": -0.173301,
+      "net_pct_now": -2.15,
+      "net_ton_now": -0.098757,
       "take_profit": 0.00060885,
       "entry_regime": "RANGING",
       "ai_confidence": 71.5,
       "entry_anomaly": false,
       "entry_atr_pct": 0.475,
-      "min_gross_pct": 20.5,
-      "value_ton_now": 4.728181,
+      "min_gross_pct": 23.7,
+      "value_ton_now": 4.803477,
       "entry_bo_score": 17.7,
       "entry_sm_label": "",
       "entry_sm_score": 0.0,
@@ -191,7 +191,7 @@
       "entry_sm_buys_1h": 0,
       "entry_sm_sells_1h": 0
     },
-    "updated_at": "2026-07-01T17:15:01.330874"
+    "updated_at": "2026-07-01T20:05:09.659488"
   },
   {
     "trade_id": "dedust_1782903043",
@@ -210,15 +210,15 @@
       "trail_pct": 7.0,
       "high_water": 0.0004732,
       "entry_price": 0.0004732,
-      "net_pct_now": -7.83,
-      "net_ton_now": -0.37391,
+      "net_pct_now": -6.28,
+      "net_ton_now": -0.299782,
       "take_profit": 0.00061828,
       "entry_regime": "SQUEEZE",
       "ai_confidence": 91.3,
       "entry_anomaly": false,
       "entry_atr_pct": 0.535,
-      "min_gross_pct": 20.2,
-      "value_ton_now": 4.701808,
+      "min_gross_pct": 23.4,
+      "value_ton_now": 4.776684,
       "entry_bo_score": 30.9,
       "entry_sm_label": "",
       "entry_sm_score": 0.0,
@@ -230,6 +230,6 @@
       "entry_sm_buys_1h": 0,
       "entry_sm_sells_1h": 0
     },
-    "updated_at": "2026-07-01T17:15:01.330874"
+    "updated_at": "2026-07-01T20:05:09.659488"
   }
 ]
