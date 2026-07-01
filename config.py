@@ -25,7 +25,7 @@ class Config:
     # ── Цели: +20% НЕТТО минимум (после всех комиссий) ──────────────────
     # Gross TP = 20% + 2% комиссии (1%+1%) = 22% от цены входа.
     # Никогда не фиксируем прибыль меньше +20% нетто.
-    TARGET_NET_PCT  = float(os.getenv("TARGET_NET_PCT",  "5.0"))  # минимальная нетто-прибыль
+    TARGET_NET_PCT  = float(os.getenv("TARGET_NET_PCT",  "10.0"))  # минимальная нетто-прибыль
     TAKE_PROFIT_PCT = float(os.getenv("TAKE_PROFIT_PCT", "22.0"))  # gross = net + комиссии
     STOP_LOSS_PCT   = float(os.getenv("STOP_LOSS_PCT",   "5.0"))   # запасной стоп (не используется при ONLY_PROFIT_EXIT)
 
