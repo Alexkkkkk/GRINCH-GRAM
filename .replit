@@ -40,8 +40,8 @@ localPort = 5000
 externalPort = 80
 
 [deployment]
-deploymentTarget = "autoscale"
-run = ["gunicorn", "--bind", "0.0.0.0:5000", "main:app"]
+deploymentTarget = "vm"
+run = ["gunicorn", "--bind=0.0.0.0:5000", "--reuse-port", "--reload", "--worker-class", "eventlet", "-w", "1", "main:app"]
 
 [userenv]
 
