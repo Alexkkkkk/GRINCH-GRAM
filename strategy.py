@@ -150,7 +150,7 @@ def _get_support_resistance(df, lookback=50):
 
 
 def _get_market_regime(df):
-    """Классифицирует рыночный режим по ADX, BB-ширине и объёму."""
+    """Классифицирует рыночный режим по ADX, BB-ширине, объёму, Ichimoku и DI±."""
     if len(df) < 20:
         return "RANGING", "#ffd166"
     last = df.iloc[-1]
@@ -159,17 +159,36 @@ def _get_market_regime(df):
     bb_avg    = float(last.get("bb_width_ma", bb_width + 1e-10))
     vol_ratio = float(last.get("vol_ratio", 1))
     rsi       = float(last.get("rsi", 50))
+    di_plus   = float(last.get("di_plus",  20))
+    di_minus  = float(last.get("di_minus", 20))
+    atr_pct   = float(last.get("atr_pct",  0))
+    ichi_gap  = float(last.get("ichi_gap", 0)) if "ichi_gap" in last.index else 0
 
-    breakout = bb_width > bb_avg * 1.4 and vol_ratio > 1.5
-    trending = adx > 25
-    volatile = float(last.get("atr_pct", 0)) > 3.0
+    # Дополнительные подтверждения направления тренда
+    di_bull  = di_plus > di_minus * 1.15   # DI+ доминирует
+    di_bear  = di_minus > di_plus * 1.15   # DI- доминирует
+    ichi_ok  = ichi_gap > 0                # tenkan > kijun
 
+    breakout = bb_width > bb_avg * 1.35 and vol_ratio > 1.4
+    trending = adx > 23
+    volatile = atr_pct > 3.0
+
+    # Пробой: BB расширяется + объём
+    if breakout and vol_ratio > 2.0:
+        return "BREAKOUT", "#00d4ff"
+    # Восходящий тренд: ADX сильный + DI+ ведёт + RSI выше нейтрали + Ichimoku
+    if trending and di_bull and rsi > 52 and ichi_ok:
+        return "UPTREND", "#00ff88"
+    # Восходящий тренд (менее подтверждённый)
+    if trending and rsi > 55 and (di_bull or ichi_ok):
+        return "UPTREND", "#00ff88"
+    # Нисходящий тренд: ADX сильный + DI- ведёт + RSI ниже нейтрали
+    if trending and di_bear and rsi < 48:
+        return "DOWNTREND", "#ff4d6d"
+    if trending and rsi < 45 and di_bear:
+        return "DOWNTREND", "#ff4d6d"
     if breakout:
         return "BREAKOUT", "#00d4ff"
-    if trending and rsi > 55:
-        return "UPTREND",  "#00ff88"
-    if trending and rsi < 45:
-        return "DOWNTREND", "#ff4d6d"
     if volatile:
         return "VOLATILE", "#ffd166"
     return "RANGING", "#8892b0"
@@ -336,6 +355,84 @@ def _check_rsi_oversold(df):
     return 0, None
 
 
+def _check_ichimoku_bull(df):
+    """Ichimoku: tenkan > kijun + цена выше kijun — бычий облачный сигнал."""
+    if len(df) < 30 or "tenkan" not in df.columns:
+        return 0, None
+    last = df.iloc[-1]
+    tenkan = float(last.get("tenkan", 0))
+    kijun  = float(last.get("kijun",  0))
+    price  = float(last["close"])
+    if tenkan <= 0 or kijun <= 0:
+        return 0, None
+    tk_cross = tenkan > kijun
+    above    = price > kijun
+    cloud_ok = bool(last.get("above_cloud", False))
+    if tk_cross and above and cloud_ok:
+        return 3, f"☁️ Ichimoku: цена над облаком, tenkan>kijun (мощный тренд)"
+    if tk_cross and above:
+        return 2, f"☁️ Ichimoku: tenkan>kijun + цена выше kijun"
+    if tk_cross:
+        return 1, f"☁️ Ichimoku: tenkan пересёк kijun вверх"
+    return 0, None
+
+
+def _check_williams_oversold(df):
+    """Williams %R разворот из зоны перепроданности < -80."""
+    if len(df) < 5 or "willr" not in df.columns:
+        return 0, None
+    willr     = df["willr"]
+    now       = float(willr.iloc[-1])
+    prev      = float(willr.iloc[-2])
+    was_low   = float(willr.iloc[-4:-1].min())
+    # Был глубоко перепродан и разворачивается вверх
+    was_oversold = was_low < -80
+    turning_up   = now > prev + 3 and now > -85
+    if was_oversold and turning_up and now < -50:
+        return 2, f"📉 Williams %R разворот из перепроданности ({now:.0f})"
+    if now < -85:
+        return 1, f"📉 Williams %R экстремальная перепроданность ({now:.0f})"
+    return 0, None
+
+
+def _check_cci_momentum(df):
+    """CCI выходит из перепроданности (< -100) — нарастающий импульс покупок."""
+    if len(df) < 5 or "cci" not in df.columns:
+        return 0, None
+    cci   = df["cci"]
+    now   = float(cci.iloc[-1])
+    prev  = float(cci.iloc[-2])
+    prev2 = float(cci.iloc[-3])
+    # Пересечение -100 снизу вверх → сильный разворот
+    cross_up = prev2 < -100 and prev < -100 and now > -100
+    if cross_up:
+        return 2, f"📊 CCI пересёк -100 снизу вверх ({now:.0f}) — разворот"
+    if now < -120 and now > prev:
+        return 1, f"📊 CCI отскок от перепроданности ({now:.0f})"
+    # CCI строит положительный импульс (нарастает выше 0)
+    if now > 0 and prev > 0 and now > prev > prev2:
+        return 1, f"📊 CCI нарастающий бычий импульс ({now:.0f})"
+    return 0, None
+
+
+def _check_heiken_ashi_bull(df):
+    """Heiken Ashi: несколько подряд бычьих свечей — конвикция тренда."""
+    if len(df) < 6 or "ha_body" not in df.columns:
+        return 0, None
+    ha = df["ha_body"].iloc[-6:]
+    bull_streak = 0
+    for v in reversed(ha.values):
+        if v > 0:
+            bull_streak += 1
+        else:
+            break
+    if bull_streak >= 5:
+        return 2, f"🕯️ Heiken Ashi: {bull_streak} бычьих свечей подряд — сильный тренд"
+    if bull_streak >= 3:
+        return 1, f"🕯️ Heiken Ashi: {bull_streak} бычьих свечей подряд"
+    return 0, None
+
+
 # ── Итоговый грейд входа ───────────────────────────────────────────────────────
 
 def analyze_entry_quality(df):
@@ -364,6 +461,11 @@ def analyze_entry_quality(df):
         _check_ema_confluence,
         _check_macd_acceleration,
         _check_rsi_oversold,
+        # Новые чекеры v2
+        _check_ichimoku_bull,
+        _check_williams_oversold,
+        _check_cci_momentum,
+        _check_heiken_ashi_bull,
     ]:
         try:
             pts, reason = checker(df)
@@ -418,11 +520,45 @@ def get_signal(df):
     elif last["close"] > last["bb_upper"]:
         score -= 1
 
-    strength = min(abs(score) / 5.0, 1.0)
+    # Williams %R (новый фактор)
+    if "willr" in last.index:
+        willr = float(last["willr"])
+        if willr < -80:
+            score += 1
+        elif willr > -20:
+            score -= 1
 
-    if score >= 2:
+    # CCI (новый фактор)
+    if "cci" in last.index:
+        cci = float(last["cci"])
+        if cci < -100:
+            score += 1
+        elif cci > 150:
+            score -= 1
+
+    # Ichimoku (новый фактор)
+    if "ichi_gap" in last.index and "tenkan" in last.index:
+        tenkan = float(last["tenkan"])
+        kijun  = float(last["kijun"])
+        price  = float(last["close"])
+        if tenkan > kijun and price > kijun:
+            score += 1
+        elif tenkan < kijun and price < kijun:
+            score -= 1
+
+    # Heiken Ashi тренд (новый фактор)
+    if "ha_trend" in last.index:
+        ha = float(last["ha_trend"])
+        if ha > 0 and float(df["ha_trend"].iloc[-2]) > 0:
+            score += 1
+        elif ha < 0 and float(df["ha_trend"].iloc[-2]) < 0:
+            score -= 1
+
+    strength = min(abs(score) / 8.0, 1.0)
+
+    if score >= 3:
         return "BUY", strength
-    elif score <= -2:
+    elif score <= -3:
         return "SELL", strength
     else:
         return "HOLD", strength
@@ -446,12 +582,13 @@ def analyze(ohlcv):
     signal, strength = get_signal(df)
 
     quality, eq_score, eq_reasons = analyze_entry_quality(df)
-    # Детальный скоринг по каждому из 10 факторов
+    # Детальный скоринг по всем 14 факторам
     factors_detail = []
     for checker in [
         _check_volume_surge, _check_bb_squeeze_breakout, _check_bullish_divergence,
         _check_momentum_candles, _check_stoch_rsi_cross, _check_support_bounce,
         _check_obv_confirm, _check_ema_confluence, _check_macd_acceleration, _check_rsi_oversold,
+        _check_ichimoku_bull, _check_williams_oversold, _check_cci_momentum, _check_heiken_ashi_bull,
     ]:
         try:
             pts, reason = checker(df)
@@ -530,12 +667,18 @@ def analyze(ohlcv):
         hist = float(sl["macd_hist"])
         ema_cross = sl["ema_fast"] > sl["ema_slow"]
         stoch = float(sl["stoch_rsi"])
-        bull = sum([rsi < 65, rsi > 38, hist > 0, ema_cross, stoch < 0.75])
-        bear = sum([rsi > 35, rsi < 62, hist < 0, not ema_cross, stoch > 0.25])
-        if bull >= 4: return "ПОКУПКА", min(50 + bull * 8, 95), "#00ff88"
-        if bear >= 4: return "ПРОДАЖА", min(50 + bear * 8, 95), "#ff4d6d"
-        if bull > bear: return "СЛАБЫЙ ↗", 40 + bull * 5, "#5cc8ff"
-        if bear > bull: return "СЛАБЫЙ ↘", 40 + bear * 5, "#ffd166"
+        willr = float(sl.get("willr", -50))
+        cci   = float(sl.get("cci", 0))
+        ha    = float(sl.get("ha_trend", 0))
+        ichi  = float(sl.get("ichi_gap", 0))
+        bull = sum([rsi < 65, rsi > 38, hist > 0, ema_cross, stoch < 0.75,
+                    willr < -20, cci > -50, ha > 0, ichi > 0])
+        bear = sum([rsi > 35, rsi < 62, hist < 0, not ema_cross, stoch > 0.25,
+                    willr > -80, cci < 50, ha < 0, ichi < 0])
+        if bull >= 6: return "ПОКУПКА", min(50 + bull * 5, 95), "#00ff88"
+        if bear >= 6: return "ПРОДАЖА", min(50 + bear * 5, 95), "#ff4d6d"
+        if bull > bear: return "СЛАБЫЙ ↗", 40 + bull * 4, "#5cc8ff"
+        if bear > bull: return "СЛАБЫЙ ↘", 40 + bear * 4, "#ffd166"
         return "НЕЙТРАЛ", 50, "#8892b0"
 
     signals_mtf = [
@@ -625,4 +768,13 @@ def analyze(ohlcv):
         "ai_components":     ai_components,
         # Свечи для графика
         "candles":       candles.to_dict("records"),
+        # Новые индикаторы v2
+        "willr":         round(float(last.get("willr",  -50)), 2),
+        "cci":           round(float(last.get("cci",      0)), 1),
+        "ichi_gap":      round(float(last.get("ichi_gap", 0)), 3),
+        "ha_trend":      int(float(last.get("ha_trend",   0))),
+        "vwap_dev":      round(float(last.get("vwap_dev", 0)), 3),
+        "tenkan":        round(float(last.get("tenkan", last["close"])), d),
+        "kijun":         round(float(last.get("kijun",  last["close"])), d),
+        "above_cloud":   bool(last.get("above_cloud", False)),
     }

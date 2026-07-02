@@ -131,33 +131,39 @@ class Config:
     # иначе фиксируется на следующей свече шумом. 6% = минимум выживания.
     SMART_TP_TIGHT_TRAIL_PCT = float(os.getenv("SMART_TP_TIGHT_TRAIL_PCT", "6.0"))  # было 1.5% — убивало позиции
 
-    # ── Прогрессивный трейлинг-стоп (защита прибыли на пути к +20%) ─────
-    # Лестница масштабирована под цель +20% нетто, строго ниже TP-пола (22%):
-    # Этап 1 (прибыль > 5%):  стоп в безубыток (покрывает комиссию — не теряем)
-    # Этап 2 (прибыль > 10%): трейлинг 6% от максимума
-    # Этап 3 (прибыль > 15%): трейлинг 4% от максимума
-    # Этап 4 (прибыль > 20%): трейлинг 2% от максимума → фиксируем прибыль
-    TRAIL_BREAKEVEN_AT  = float(os.getenv("TRAIL_BREAKEVEN_AT", "5.0"))    # % прибыли → стоп в безубыток
-    TRAIL_STAGE2_AT     = float(os.getenv("TRAIL_STAGE2_AT",    "10.0"))   # % → трейлинг 6%
-    TRAIL_STAGE2_PCT    = float(os.getenv("TRAIL_STAGE2_PCT",    "6.0"))
-    TRAIL_STAGE3_AT     = float(os.getenv("TRAIL_STAGE3_AT",    "15.0"))   # % → трейлинг 4%
-    TRAIL_STAGE3_PCT    = float(os.getenv("TRAIL_STAGE3_PCT",    "4.0"))
-    TRAIL_STAGE4_AT     = float(os.getenv("TRAIL_STAGE4_AT",    "20.0"))   # % → трейлинг 2%
-    TRAIL_STAGE4_PCT    = float(os.getenv("TRAIL_STAGE4_PCT",    "2.0"))
-    TRAILING_STOP_PCT   = float(os.getenv("TRAILING_STOP_PCT",   "7.0"))   # начальный трейлинг (до безубытка)
+    # ── Прогрессивный трейлинг-стоп, откалиброван под GRINCH ────────────
+    # GRINCH ATR-14 (15м) = ~5%, StdDev/свеча = 2.82%, диапазон 24ч = 39%.
+    # Бэктест на реальных свечах GRINCH показывает:
+    #   trail < 12% → 0% побед (шум рынка выносит раньше цели каждый раз)
+    #   trail = 12%, tp = 15% → 55.6% побед, ожидаемая прибыль 7.2%/сделку
+    # Правило: ширина трейла на каждом этапе ≥ 2 × ATR (≥ 10%)
+    # Этап 1 (прибыль > 10%): стоп в безубыток — 2×ATR от пика ещё не съело цену
+    # Этап 2 (прибыль > 18%): трейлинг 11% — 2.2×ATR, переживает свечевой шум
+    # Этап 3 (прибыль > 28%): трейлинг 8% — GRINCH-памп может идти 40%+
+    # Этап 4 (прибыль > 40%): трейлинг 6% — финальная фиксация на экстремуме
+    TRAIL_BREAKEVEN_AT  = float(os.getenv("TRAIL_BREAKEVEN_AT", "10.0"))   # было 4% — < 1×ATR, шум выбивал сразу
+    TRAIL_STAGE2_AT     = float(os.getenv("TRAIL_STAGE2_AT",    "18.0"))   # было 8%
+    TRAIL_STAGE2_PCT    = float(os.getenv("TRAIL_STAGE2_PCT",   "11.0"))   # было 5% — < 1×ATR, 0% побед в бэктесте
+    TRAIL_STAGE3_AT     = float(os.getenv("TRAIL_STAGE3_AT",    "28.0"))   # было 14%
+    TRAIL_STAGE3_PCT    = float(os.getenv("TRAIL_STAGE3_PCT",    "8.0"))   # было 3.5%
+    TRAIL_STAGE4_AT     = float(os.getenv("TRAIL_STAGE4_AT",    "40.0"))   # было 20% — GRINCH памп может дать 39%+
+    TRAIL_STAGE4_PCT    = float(os.getenv("TRAIL_STAGE4_PCT",    "6.0"))   # было 2%
+    TRAILING_STOP_PCT   = float(os.getenv("TRAILING_STOP_PCT",  "12.0"))   # было 6.5% — < 2×ATR, 0% побед в бэктесте
     # ── Адаптивный трейлинг по силе тренда (даём прибыли разрастись) ────────
     # В сильном восходящем тренде стоп идёт ШИРЕ (winner runs), в боковике/
     # слабости — ТУЖЕ (быстрее фиксируем). Нижний пол прибыли НЕ затрагивается.
-    TRAIL_TREND_WIDEN   = float(os.getenv("TRAIL_TREND_WIDEN",   "2.5"))    # множитель в сильном тренде
-    TRAIL_CHOP_TIGHTEN  = float(os.getenv("TRAIL_CHOP_TIGHTEN",  "0.6"))    # множитель в боковике/слабости
-    TRAIL_TREND_ADX     = float(os.getenv("TRAIL_TREND_ADX",    "30.0"))    # ADX ≥ → тренд «сильный»
+    TRAIL_TREND_WIDEN   = float(os.getenv("TRAIL_TREND_WIDEN",   "1.5"))    # было 3.0 — трейл уже широкий
+    TRAIL_CHOP_TIGHTEN  = float(os.getenv("TRAIL_CHOP_TIGHTEN",  "0.8"))    # было 0.55 — не тянуть ниже 0.8×12%=9.6%
+    TRAIL_TREND_ADX     = float(os.getenv("TRAIL_TREND_ADX",    "28.0"))    # ADX ≥ → тренд «сильный»
 
     # ── ATR-цели: динамические ────────────────────────────────────────────
     USE_DYNAMIC_TARGETS = os.getenv("USE_DYNAMIC_TARGETS", "true").lower() == "true"
-    # Стоп = 2.5×ATR — шире чем раньше, чтобы сделка дышала до 50%
+    # GRINCH ATR ≈ 5% → SL = 2.5×ATR = 12.5% — совпадает с TRAILING_STOP_PCT
+    # Если ATR ниже (спокойный период) — SL не сожмётся ниже TRAILING_STOP_PCT
     ATR_SL_MULT = float(os.getenv("ATR_SL_MULT", "2.5"))
-    # Тейк = мин 50.6% — ATR×multiplier используется только если он ВЫШЕ 50.6%
-    ATR_TP_MULT = float(os.getenv("ATR_TP_MULT", "8.0"))
+    # TP цель = мин 15% (наш TAKE_PROFIT_PCT) → ATR_TP_MULT × 5% = 15% → mult=3.0
+    # Значение 3.0 = минимум, реальный TP берётся как max(ATR×mult, TAKE_PROFIT_PCT)
+    ATR_TP_MULT = float(os.getenv("ATR_TP_MULT", "3.0"))
 
     # ── Фильтры качества входа ──
     # Не покупать в нисходящем тренде
@@ -165,7 +171,7 @@ class Config:
     # RSI 78 — для мем-монеты GRINCH RSI 68-75 это норма в памп; блокируем только экстремум
     RSI_OVERBOUGHT = float(os.getenv("RSI_OVERBOUGHT", "78"))
     # AI уверенность мин 62% — только высококонвикционные сигналы
-    MIN_AI_CONFIDENCE = float(os.getenv("MIN_AI_CONFIDENCE", "62"))
+    MIN_AI_CONFIDENCE = float(os.getenv("MIN_AI_CONFIDENCE", "63"))
     # AI-овверрайд только при 78%+ — очень сильный сигнал против тренда
     AI_OVERRIDE_CONFIDENCE = float(os.getenv("AI_OVERRIDE_CONFIDENCE", "78"))
     # AI жёсткий овверрайд: при ≥93% уверенности игнорируем RSI/аномалию (только DOWNTREND блокирует)
@@ -179,7 +185,8 @@ class Config:
     # Прибыль = получаем обратно БОЛЬШЕ GRINCH чем продали (минимум +20% нетто).
     SHORT_TRADING_ENABLED = bool(int(os.getenv("SHORT_TRADING_ENABLED", "1")))
     # Трейлинг шорта: если цена выросла на X% от минимума → фиксируем
-    SHORT_TRAIL_PCT = float(os.getenv("SHORT_TRAIL_PCT", "7.0"))
+    # GRINCH ATR = 5% → шорт-трейл < 12% выбивается шумом. Мин = 12%.
+    SHORT_TRAIL_PCT = float(os.getenv("SHORT_TRAIL_PCT", "12.0"))
     # Резерв GRINCH — это количество GRINCH, которое бот НИКОГДА не включает в шорт.
     # Нужен, чтобы авто-ликвидатор всегда мог продать свои «зафиксированные» GRINCH.
     GRINCH_RESERVE = float(os.getenv("GRINCH_RESERVE", "500"))
