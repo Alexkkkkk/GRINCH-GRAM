@@ -56,14 +56,14 @@ log = logging.getLogger(__name__)
 
 
 # ─── Константы ────────────────────────────────────────────────────────────────
-LOOK_AHEADS       = [2, 3, 5, 8]       # мульти-горизонт голосования (добавлен 8)
-ATR_LABEL_MULT    = 0.5                 # порог = 0.5 × ATR_pct (чуть агрессивнее)
-CONFIRM_WEIGHT    = 7.0                 # вес подтверждённой сделки (был 5)
-REPLAY_SIZE       = 1200                # размер буфера опыта (был 600)
-ACCURACY_WINDOW   = 60                  # окно rolling accuracy (был 40)
-META_MIN_SAMPLES  = 20                  # мин. сделок для мета-слоя (был 30)
-RETRAIN_EVERY     = 3                   # полный рефит каждые N тиков (был 5)
-KELLY_LOOKBACK    = 50                  # окно для расчёта Kelly fraction
+LOOK_AHEADS       = [3, 5, 8, 13]      # мульти-горизонт для 15м GRINCH (более длинный горизонт)
+ATR_LABEL_MULT    = 0.7                 # порог = 0.7 × ATR_pct (качественнее, меньше шума)
+CONFIRM_WEIGHT    = 15.0               # вес реальной сделки ×15 — доминирует над историей
+REPLAY_SIZE       = 2000               # больший буфер опыта
+ACCURACY_WINDOW   = 100                # длиннее окно = стабильнее веса моделей
+META_MIN_SAMPLES  = 8                  # мета-слой активируется раньше (с 8 сделок)
+RETRAIN_EVERY     = 2                  # переобучение каждые 2 тика — быстрая адаптация
+KELLY_LOOKBACK    = 100                # стабильный Kelly на 100 сделках
 
 
 # ─── Momentum Engine — детектор взрывного движения GRINCH ─────────────────────
@@ -421,45 +421,46 @@ class AIEngine:
         self._slots = [
             _ModelSlot("RF", _make_pipeline(
                 RandomForestClassifier(
-                    n_estimators=250, max_depth=9, min_samples_split=4,
+                    n_estimators=300, max_depth=10, min_samples_split=3,
                     min_samples_leaf=2, max_features="sqrt",
                     class_weight="balanced", random_state=42, n_jobs=1)
             )),
             _ModelSlot("ET", _make_pipeline(
                 ExtraTreesClassifier(
-                    n_estimators=200, max_depth=8, min_samples_split=4,
+                    n_estimators=250, max_depth=9, min_samples_split=3,
                     class_weight="balanced", random_state=7, n_jobs=1)
             )),
             _ModelSlot("GB", _make_pipeline(
                 GradientBoostingClassifier(
-                    n_estimators=150, max_depth=4, learning_rate=0.04,
-                    subsample=0.8, min_samples_leaf=3, random_state=42)
+                    n_estimators=200, max_depth=5, learning_rate=0.03,
+                    subsample=0.75, min_samples_leaf=2, random_state=42)
             )),
         ]
         if _HAS_HGB:
             self._slots.append(_ModelSlot("HGB", Pipeline([
                 ("clf", HistGradientBoostingClassifier(
-                    max_iter=200, max_depth=6, learning_rate=0.04,
-                    min_samples_leaf=8, l2_regularization=0.1, random_state=42))
+                    max_iter=300, max_depth=7, learning_rate=0.03,
+                    min_samples_leaf=5, l2_regularization=0.05, random_state=42))
             ])))
         if _HAS_XGB:
             self._slots.append(_ModelSlot("XGB", Pipeline([
                 ("scaler", StandardScaler()),
                 ("clf", XGBClassifier(
-                    n_estimators=300, max_depth=5, learning_rate=0.04,
-                    subsample=0.8, colsample_bytree=0.8, min_child_weight=3,
-                    gamma=0.1, reg_alpha=0.05, reg_lambda=1.0,
+                    n_estimators=400, max_depth=6, learning_rate=0.03,
+                    subsample=0.75, colsample_bytree=0.75, min_child_weight=2,
+                    gamma=0.05, reg_alpha=0.1, reg_lambda=0.8,
                     eval_metric="mlogloss", verbosity=0,
                     random_state=42))
             ])))
+        # MLP v2: глубже + Dropout-эффект через higher alpha
         self._slots.append(_ModelSlot("MLP", Pipeline([
             ("scaler", RobustScaler()),
             ("clf", MLPClassifier(
-                hidden_layer_sizes=(128, 64, 32),
+                hidden_layer_sizes=(256, 128, 64, 32),
                 activation="relu", solver="adam",
-                alpha=1e-3, learning_rate_init=0.001,
-                max_iter=300, early_stopping=True, n_iter_no_change=15,
-                validation_fraction=0.1, random_state=42))
+                alpha=5e-4, learning_rate="adaptive", learning_rate_init=0.001,
+                max_iter=500, early_stopping=True, n_iter_no_change=20,
+                validation_fraction=0.15, random_state=42))
         ])))
         # Kelly trade history
         self._kelly_wins:   deque = deque(maxlen=KELLY_LOOKBACK)
@@ -721,18 +722,30 @@ class AIEngine:
     # Обратная связь от трейдера (вызывается когда сделка закрывается)
     # ─────────────────────────────────────────────────────────────────────────
 
-    def feedback(self, outcome: str, pnl: float):
+    def feedback(self, outcome: str, pnl: float, regime: str = "UNKNOWN", conf: float = 0.0):
         """
         outcome: "win" | "loss"
-        pnl: P&L в TON (может быть отрицательным)
+        pnl:     P&L в TON (может быть отрицательным)
+        regime:  рыночный режим при входе (UPTREND / DOWNTREND / ...)
+        conf:    уверенность AI при входе (%)
         """
         if self._last_buy_features is None:
             return
         with self._lock:
-            label  = 1 if outcome == "win" else -1
-            # Больший вес — для крупных выигрышей (Kelly-обратная связь)
-            pnl_abs = min(abs(pnl), 5.0)
-            weight = CONFIRM_WEIGHT * (1.0 + pnl_abs * 0.5)
+            label   = 1 if outcome == "win" else -1
+            is_win  = (outcome == "win")
+
+            # Адаптивный вес: крупная прибыль важнее, потери тоже учатся
+            pnl_abs  = min(abs(pnl), 50.0)   # cap на 50 TON (для 100 TON ставки)
+            pnl_norm = pnl_abs / 50.0         # нормировано к [0..1]
+
+            # Выигрыш с высокой уверенностью = самый ценный пример
+            # Проигрыш с высокой уверенностью = тоже очень ценный (надо учиться)
+            conf_factor = 1.0 + (conf - 60.0) / 40.0 if conf > 60 else 1.0
+            conf_factor = max(0.5, min(conf_factor, 2.0))
+
+            weight = CONFIRM_WEIGHT * (1.0 + pnl_norm * 1.5) * conf_factor
+
             self._confirmed_X.append(self._last_buy_features.copy())
             self._confirmed_y.append(label)
             self._confirmed_w.append(weight)
@@ -740,21 +753,26 @@ class AIEngine:
             self._new_confirms += 1
 
             # Kelly history
-            self._kelly_wins.append(1 if outcome == "win" else 0)
+            self._kelly_wins.append(1 if is_win else 0)
             self._kelly_pnls.append(float(pnl))
 
-            # Обновляем accuracy для всех моделей
+            # Обновляем accuracy для всех моделей (с учётом режима)
             for slot in self._slots:
-                slot.record(outcome == "win")
+                slot.record(is_win)
 
-            # Если накопилось много подтверждённых — обучаем мета
-            if len(self._confirmed_X) >= META_MIN_SAMPLES:
+            # Мета-слой: обновляем каждые META_MIN_SAMPLES/2 новых сделок
+            n_conf = len(self._confirmed_X)
+            if n_conf >= META_MIN_SAMPLES and n_conf % max(META_MIN_SAMPLES // 2, 1) == 0:
                 try:
                     self._try_fit_meta_confirmed()
                 except Exception as e:
                     log.debug(f"[AI] meta fit error: {e}")
 
-        log.info(f"[AI] Feedback: {outcome} PNL={pnl:.4f} → {len(self._confirmed_X)} подтверждённых примеров")
+        log.info(
+            f"[AI] Feedback: {outcome}({regime}) PNL={pnl:+.4f} TON conf={conf:.0f}% "
+            f"→ {len(self._confirmed_X)} подтверждённых примеров "
+            f"(вес={weight:.1f})"
+        )
 
     # ─────────────────────────────────────────────────────────────────────────
     # Персистентность опыта (переживает перезапуск)
@@ -826,20 +844,35 @@ class AIEngine:
     # ─────────────────────────────────────────────────────────────────────────
 
     def _refit_all(self):
-        """Полный рефит всех моделей = исторические данные + подтверждённые сделки."""
+        """Полный рефит всех моделей = история + реальные сделки (с затуханием по давности)."""
+        # ── Recency decay: более свежий опыт важнее ──────────────────────
+        # Исторические данные: равный вес 1.0
+        n_hist = len(self._replay_X)
+        hist_w = list(self._replay_w)
+
+        # Подтверждённые сделки: затухание по давности (последние = ×1.5, старые = ×0.5)
+        n_conf = len(self._confirmed_X)
+        conf_w = []
+        for i, w in enumerate(self._confirmed_w):
+            age_factor = 0.5 + 1.0 * (i / max(n_conf - 1, 1))  # 0.5 → 1.5
+            conf_w.append(w * age_factor)
+
         X_all = list(self._replay_X) + list(self._confirmed_X)
         y_all = list(self._replay_y) + list(self._confirmed_y)
-        w_all = list(self._replay_w) + list(self._confirmed_w)
+        w_all = hist_w + conf_w
 
-        # Ограничиваем буфер
-        if len(X_all) > REPLAY_SIZE + len(self._confirmed_X):
-            trim = len(X_all) - (REPLAY_SIZE + len(self._confirmed_X))
+        # Ограничиваем буфер (подтверждённые всегда сохраняем целиком)
+        max_hist = REPLAY_SIZE
+        if len(X_all) > max_hist + n_conf:
+            trim = len(X_all) - (max_hist + n_conf)
             X_all = X_all[trim:]
             y_all = y_all[trim:]
             w_all = w_all[trim:]
 
-        X_arr = np.array(X_all)
-        y_arr = np.array(y_all)
+        X_arr = np.array(X_all, dtype=float)
+        y_arr = np.array(y_all, dtype=int)
+        w_arr = np.array(w_all, dtype=float)
+        w_arr = w_arr / (w_arr.mean() + 1e-10)  # нормируем веса
 
         classes = np.unique(y_arr)
         if len(classes) < 2:
@@ -854,47 +887,87 @@ class AIEngine:
         self._trained = True
         self._new_confirms = 0
 
+        # Переобучаем мета-слой при каждом рефите, если есть подтверждённые данные
+        if len(self._confirmed_X) >= META_MIN_SAMPLES:
+            try:
+                self._try_fit_meta_confirmed()
+            except Exception as e:
+                log.debug(f"[AI] meta refit error: {e}")
+
         # Отражаем непрерывное самообучение в UI (банер обучения)
         self._retrains += 1
         try:
             accs = [s.accuracy for s in self._slots if s.accuracy is not None]
             avg_acc = round(sum(accs) / len(accs) * 100, 1) if accs else 0.0
+            sharpe = self._compute_sharpe()
             self._set_progress(
                 "ready", 100,
                 f"🟢 Самообучение активно · переобучений: {self._retrains} · "
-                f"подтверждённых сделок: {len(self._confirmed_X)} · точность {avg_acc}%",
+                f"подтверждённых сделок: {len(self._confirmed_X)} · "
+                f"точность {avg_acc}% · Sharpe {sharpe:.2f}",
                 len(X_arr),
             )
             self.training_progress["retrains"]   = self._retrains
             self.training_progress["confirmed"]  = len(self._confirmed_X)
             self.training_progress["accuracy"]   = avg_acc
+            self.training_progress["sharpe"]     = sharpe
         except Exception:
             pass
 
     def _try_fit_meta(self, X, y):
-        """Первый запуск мета-слоя на исторических данных."""
+        """Первый запуск мета-слоя на исторических данных.
+        Использует GB как мета-лернер — лучше улавливает нелинейные взаимодействия."""
         try:
             meta_X = self._stack_features(X)
+            # GB-мета: лучше LogisticRegression для нелинейных ансамблей
             self._meta = Pipeline([
                 ("scaler", StandardScaler()),
-                ("clf",    LogisticRegression(C=1.0, max_iter=300, random_state=42))
+                ("clf", GradientBoostingClassifier(
+                    n_estimators=80, max_depth=3, learning_rate=0.05,
+                    subsample=0.8, random_state=42))
             ])
             self._meta.fit(meta_X, y)
         except Exception as e:
             log.debug(f"[AI] meta init error: {e}")
-            self._meta = None
+            # Фолбэк: LogisticRegression
+            try:
+                meta_X = self._stack_features(X)
+                self._meta = Pipeline([
+                    ("scaler", StandardScaler()),
+                    ("clf",    LogisticRegression(C=2.0, max_iter=500, random_state=42))
+                ])
+                self._meta.fit(meta_X, y)
+            except Exception as e2:
+                log.debug(f"[AI] meta fallback error: {e2}")
+                self._meta = None
 
     def _try_fit_meta_confirmed(self):
-        """Переобучаем мета-слой на подтверждённых сделках."""
-        X_arr = np.array(self._confirmed_X)
-        y_arr = np.array(self._confirmed_y)
+        """Переобучаем мета-слой ТОЛЬКО на подтверждённых реальных сделках.
+        Приоритет: GB если данных хватает, иначе LogReg."""
+        X_arr  = np.array(self._confirmed_X)
+        y_arr  = np.array(self._confirmed_y)
         meta_X = self._stack_features(X_arr)
-        if self._meta is None:
-            self._meta = Pipeline([
-                ("scaler", StandardScaler()),
-                ("clf",    LogisticRegression(C=1.0, max_iter=300, random_state=42))
-            ])
-        self._meta.fit(meta_X, y_arr)
+
+        n = len(X_arr)
+        use_gb = n >= 30   # GB требует больше данных
+
+        try:
+            if use_gb:
+                self._meta = Pipeline([
+                    ("scaler", StandardScaler()),
+                    ("clf", GradientBoostingClassifier(
+                        n_estimators=60, max_depth=3, learning_rate=0.08,
+                        subsample=0.8, random_state=42))
+                ])
+            else:
+                self._meta = Pipeline([
+                    ("scaler", StandardScaler()),
+                    ("clf",    LogisticRegression(C=2.0, max_iter=500, random_state=42))
+                ])
+            self._meta.fit(meta_X, y_arr)
+            log.info(f"[AI] Мета-слой обновлён на {n} реальных сделках ({'GB' if use_gb else 'LogReg'})")
+        except Exception as e:
+            log.debug(f"[AI] meta_confirmed error: {e}")
 
     def _stack_features(self, X: np.ndarray) -> np.ndarray:
         """Формирует матрицу для мета-слоя: вероятности всех базовых моделей."""
@@ -1159,24 +1232,33 @@ class AIEngine:
         n       = len(c)
         max_la  = max(LOOK_AHEADS)
 
-        # Мульти-горизонт: голосование по [2, 3, 5] барам
+        # ── Мульти-горизонт адаптивная разметка v2 ───────────────────────
+        # Для GRINCH (ATR=5%/свеча):
+        #   - Порог 0.7×ATR фильтрует шум лучше чем 0.5×ATR
+        #   - Горизонты [3,5,8,13] дают более стабильные сигналы
+        #   - Требуем СТРОГОЕ большинство (≥3 из 4) для уменьшения шума
+        #   - Взвешенное голосование: дальние горизонты важнее (тренд > импульс)
+        HORIZON_WEIGHTS = [1.0, 1.5, 2.0, 2.5]   # веса по горизонтам LOOK_AHEADS
         y = np.zeros(n, dtype=int)
         for i in range(n - max_la):
             thresh = ATR_LABEL_MULT * (atr_pct[i] + 1e-10)
-            votes = []
-            for la in LOOK_AHEADS:
+            # Строже для очень волатильных свечей (ATR>5% → порог выше)
+            if atr_pct[i] > 0.05:
+                thresh = thresh * 1.3  # ещё жёстче фильтр в пики волатильности
+            weighted_sum = 0.0
+            total_w = 0.0
+            for la, w in zip(LOOK_AHEADS, HORIZON_WEIGHTS):
                 ret = (c[i + la] - c[i]) / (c[i] + 1e-10)
                 if ret > thresh:
-                    votes.append(1)
+                    weighted_sum += w
                 elif ret < -thresh:
-                    votes.append(-1)
-                else:
-                    votes.append(0)
-            # Большинство голосов
-            vote_sum = sum(votes)
-            if vote_sum >= 2:
+                    weighted_sum -= w
+                total_w += w
+            # Взвешенное решение: >50% веса за сторону → сигнал
+            ratio = weighted_sum / (total_w + 1e-10)
+            if ratio > 0.5:       # >50% совокупного веса за рост
                 y[i] = 1
-            elif vote_sum <= -2:
+            elif ratio < -0.5:    # >50% за падение
                 y[i] = -1
 
         X = X[:n - max_la]
@@ -1329,26 +1411,53 @@ class AIEngine:
             "description": "⚡ Аномальное движение!" if anom else "Норма",
         }
 
+    def _compute_sharpe(self) -> float:
+        """Sharpe ratio по истории Kelly PnL-ов (безразмерный)."""
+        try:
+            pnls = list(self._kelly_pnls)
+            if len(pnls) < 5:
+                return 0.0
+            arr  = np.array(pnls, dtype=float)
+            mu   = arr.mean()
+            std  = arr.std() + 1e-10
+            return round(float(mu / std * (len(pnls) ** 0.5)), 2)
+        except Exception:
+            return 0.0
+
     def _compute_kelly(self) -> dict:
         """
-        Kelly Criterion: оптимальная доля ставки от капитала.
-        f* = W - (1-W)/R, где W = win_rate, R = avg_win / avg_loss
-        Возвращаем «half-Kelly» для безопасности (0.5×f*).
+        Kelly Criterion v2: оптимальная доля ставки с поправкой на Sharpe.
+        f* = W - (1-W)/R  (base Kelly)
+        Sharpe > 1 → разрешаем чуть выше 0.5× Kelly
+        Sharpe < 0 → понижаем долю (осторожность)
         """
         try:
             wins = list(self._kelly_wins)
             pnls = list(self._kelly_pnls)
-            n = len(wins)
+            n    = len(wins)
             if n < 5:
-                return {"fraction": 0.5, "win_rate": 0.5, "rr_ratio": 1.0, "trades": n, "ev": 0.0}
-            win_rate = sum(wins) / n
+                return {"fraction": 0.5, "win_rate": 50.0, "rr_ratio": 1.0,
+                        "trades": n, "ev": 0.0, "sharpe": 0.0}
+            win_rate  = sum(wins) / n
             win_pnls  = [p for w, p in zip(wins, pnls) if w == 1 and p > 0]
             loss_pnls = [abs(p) for w, p in zip(wins, pnls) if w == 0 and p < 0]
-            avg_win  = sum(win_pnls)  / max(len(win_pnls),  1)
-            avg_loss = sum(loss_pnls) / max(len(loss_pnls), 1)
-            rr = avg_win / max(avg_loss, 0.01)
-            kelly = win_rate - (1 - win_rate) / max(rr, 0.01)
-            half_kelly = max(0.1, min(kelly * 0.5, 2.0))   # half-kelly, capped 0.1-2.0
+            avg_win   = sum(win_pnls)  / max(len(win_pnls),  1)
+            avg_loss  = sum(loss_pnls) / max(len(loss_pnls), 1)
+            rr        = avg_win / max(avg_loss, 0.01)
+            kelly_raw = win_rate - (1 - win_rate) / max(rr, 0.01)
+            sharpe    = self._compute_sharpe()
+
+            # Sharpe-взвешенный Kelly: Sharpe>1 → 0.6×, Sharpe>2 → 0.7×, иначе 0.5×
+            if sharpe > 2.0:
+                kelly_mult = 0.70
+            elif sharpe > 1.0:
+                kelly_mult = 0.60
+            elif sharpe < 0:
+                kelly_mult = 0.35   # осторожность при отрицательном Sharpe
+            else:
+                kelly_mult = 0.50   # классический half-Kelly
+
+            half_kelly = max(0.1, min(kelly_raw * kelly_mult, 2.0))
             ev = win_rate * avg_win - (1 - win_rate) * avg_loss
             return {
                 "fraction": round(half_kelly, 3),
@@ -1358,9 +1467,11 @@ class AIEngine:
                 "ev":       round(ev, 4),
                 "avg_win":  round(avg_win, 4),
                 "avg_loss": round(avg_loss, 4),
+                "sharpe":   sharpe,
             }
         except Exception:
-            return {"fraction": 0.5, "win_rate": 50.0, "rr_ratio": 1.0, "trades": 0, "ev": 0.0}
+            return {"fraction": 0.5, "win_rate": 50.0, "rr_ratio": 1.0,
+                    "trades": 0, "ev": 0.0, "sharpe": 0.0}
 
     def _model_stats(self) -> list:
         icons = {"RF": "🌲", "ET": "⚡", "GB": "🚀", "HGB": "💥", "XGB": "🔥", "MLP": "🧠"}

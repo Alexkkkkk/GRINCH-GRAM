@@ -9,10 +9,10 @@ class Config:
     API_SECRET = os.getenv("API_SECRET", "")
     SYMBOL = os.getenv("SYMBOL", "GRINCH/USDT")
     TIMEFRAME = os.getenv("TIMEFRAME", "1h")
-    TRADE_AMOUNT = float(os.getenv("TRADE_AMOUNT", "5"))
+    # Начальная ставка 100 TON — полный боевой режим
+    TRADE_AMOUNT = float(os.getenv("TRADE_AMOUNT", "100"))
 
-    # ── 1 сделка за раз: весь капитал в одну позицию ──
-    # Торговля по 5 TON на сделку — концентрируемся на одном лучшем входе
+    # ── 1 сделка за раз: весь капитал в одну лучшую позицию ──
     MAX_OPEN_TRADES = int(os.getenv("MAX_OPEN_TRADES", "1"))
 
     # ── Комиссия DEX (реальный пул GRINCH/TON — 1% за сторону) ──
@@ -109,7 +109,8 @@ class Config:
     # Минимальная осмысленная ставка: после резерва на комиссию покупка
     # меньше этого порога не открывается (пыль не оправдывает газ свопа).
     # 0.1 TON — минимум, подтверждённый рабочим BUY on-chain.
-    MIN_STAKE_TON = float(os.getenv("MIN_STAKE_TON", "0.1"))
+    # Минимальная ставка пропорциональна базовой (100 TON × 5% = 5 TON)
+    MIN_STAKE_TON = float(os.getenv("MIN_STAKE_TON", "5.0"))
 
     # ── Smart BUY: умная покупка с откатом ───────────────────────────────
     # Когда все условия для покупки выполнены, бот НЕ покупает сразу по рынку.
@@ -173,7 +174,8 @@ class Config:
     # RSI 78 — для мем-монеты GRINCH RSI 68-75 это норма в памп; блокируем только экстремум
     RSI_OVERBOUGHT = float(os.getenv("RSI_OVERBOUGHT", "78"))
     # AI уверенность мин 62% — только высококонвикционные сигналы
-    MIN_AI_CONFIDENCE = float(os.getenv("MIN_AI_CONFIDENCE", "63"))
+    # Минимальная уверенность для BUY — AI торгует при 60%+
+    MIN_AI_CONFIDENCE = float(os.getenv("MIN_AI_CONFIDENCE", "60"))
     # AI-овверрайд только при 78%+ — очень сильный сигнал против тренда
     AI_OVERRIDE_CONFIDENCE = float(os.getenv("AI_OVERRIDE_CONFIDENCE", "78"))
     # AI жёсткий овверрайд: при ≥93% уверенности игнорируем RSI/аномалию (только DOWNTREND блокирует)
@@ -212,7 +214,8 @@ class Config:
     AI_AUTONOMOUS_MODE = True
 
     # Минимальная уверенность AI для самостоятельного входа в автономном режиме
-    AI_AUTONOMOUS_MIN_CONF = float(os.getenv("AI_AUTONOMOUS_MIN_CONF", "58.0"))
+    # Снижен порог входа: AI доверяем больше — 55% уже достаточно для сигнала
+    AI_AUTONOMOUS_MIN_CONF = float(os.getenv("AI_AUTONOMOUS_MIN_CONF", "55.0"))
 
     # ── ПОЛНЫЕ ПРАВА ТОРГОВЛИ ──────────────────────────────────────────
     # Когда True и уверенность AI >= AI_FULL_RIGHTS_MIN_CONF%, AI имеет полные
@@ -221,7 +224,8 @@ class Config:
     # Это даёт AI реальную автономию — торгует при высокой уверенности,
     # даже если рынок сейчас «спокойный» по ATR.
     AI_FULL_RIGHTS = bool(int(os.getenv("AI_FULL_RIGHTS", "1")))
-    AI_FULL_RIGHTS_MIN_CONF = float(os.getenv("AI_FULL_RIGHTS_MIN_CONF", "68.0"))
+    # При 62%+ AI получает полные права — без ATR-фильтра (был 68%)
+    AI_FULL_RIGHTS_MIN_CONF = float(os.getenv("AI_FULL_RIGHTS_MIN_CONF", "62.0"))
 
     # Коэффициент «реалистичности» входа: минимальный ATR в % от цены, при котором
     # рынок способен дать нужный gross-% (если ATR × mult < required_gross → не входим).
