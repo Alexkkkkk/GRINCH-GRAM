@@ -57,6 +57,8 @@ class Trader:
         self.dca_last_buy_price = 0.0
         self.dca_entries_count  = 0
         self.dca_total_stake    = 0.0
+        # Детектор крупных продаж: время последней безусловной покупки по этому триггеру
+        self._last_large_sell_buy_ts = 0.0
 
         # Кеш баланса: не долбим блокчейн при каждом /api/status (TTL 180 сек)
         self._balance_cache     = {}
@@ -264,6 +266,58 @@ class Trader:
         except Exception:
             pass
 
+    def _check_large_sell_dca(self, price_usd: float, grinch_ton: float) -> bool:
+        """
+        Детектор крупных продаж. Если в пуле зафиксирована крупная продажа
+        (>= Config.LARGE_SELL_MIN_TON) за последние 2 минуты — безусловно
+        покупаем на LARGE_SELL_DCA_TON TON. Возвращает True если покупка выполнена.
+
+        Безопасность: уважает ONLY_PROFIT_EXIT (не продаём в убыток), но
+        покупку совершает ВСЕГДА — обходя AI-фильтры и DCA-ожидание отката.
+        """
+        if not Config.LARGE_SELL_DCA_ENABLED:
+            return False
+        now = time.time()
+        # Выдерживаем cooldown между безусловными покупками
+        if now - self._last_large_sell_buy_ts < Config.LARGE_SELL_COOLDOWN_SEC:
+            return False
+        try:
+            from app import wallet_tracker
+        except Exception:
+            return False
+        large_sells = wallet_tracker.get_large_sell_events(
+            window_sec=120.0,
+            min_ton=Config.LARGE_SELL_MIN_TON,
+        )
+        if not large_sells:
+            return False
+        total_ton = sum(e["ton"] for e in large_sells)
+        max_sell  = max(e["ton"] for e in large_sells)
+        self.log(
+            f"🚨 КРУПНАЯ ПРОДАЖА в пуле: {len(large_sells)} сделок | "
+            f"итого {total_ton:.1f} TON | макс. {max_sell:.1f} TON | "
+            f"порог {Config.LARGE_SELL_MIN_TON:.0f} TON — "
+            f"безусловно покупаем {Config.LARGE_SELL_DCA_TON:.0f} TON",
+            "INFO"
+        )
+        import config as _cfg
+        orig = _cfg.Config.TRADE_AMOUNT_TON
+        _cfg.Config.TRADE_AMOUNT_TON = float(Config.LARGE_SELL_DCA_TON)
+        ai = self.last_ai or {}
+        result = self._get_analysis_snapshot()
+        opened = self._open_trade("buy", price_usd, result or {}, ai)
+        _cfg.Config.TRADE_AMOUNT_TON = orig
+        if opened:
+            self._last_large_sell_buy_ts = now
+            self._emit_signal("BUY", price_usd, ai)
+            self.log(
+                f"✅ Large Sell DCA: куплено {Config.LARGE_SELL_DCA_TON:.0f} TON @ ${price_usd:.8f}",
+                "INFO"
+            )
+            return True
+        self.log("⚠️ Large Sell DCA: _open_trade вернул False (позиция уже есть или нет цены)", "WARN")
+        return False
+
     def force_buy(self, amount_ton=None):
         """Ручная покупка — обходит сигнальную логику, открывает по текущей цене."""
         try:
@@ -348,6 +402,13 @@ class Trader:
             return
 
         grinch_ton = price_feed.get_grinch_ton_price() or 0.0
+
+        # ── Детектор крупных продаж (работает в любом режиме) ───────
+        # Покупаем безусловно при крупной продаже в пуле — даже в фазе ожидания отката
+        try:
+            self._check_large_sell_dca(price_usd, grinch_ton)
+        except Exception as _lse:
+            self.log(f"⚠️ Large Sell DCA check error: {_lse}", "WARN")
 
         # ── Фаза 1: Ожидание отката после продажи ───────────────────
         if self.dca_wait_pullback:
@@ -683,6 +744,18 @@ class Trader:
             except Exception as e:
                 self.log(f"⚠️ DCA тик: {e}", "ERROR")
             return
+
+        # ── Детектор крупных продаж в AI-режиме ─────────────────────
+        # Проверяем ДО AI-анализа, чтобы безусловная покупка не блокировалась
+        # AI HOLD или низкой уверенностью. После успешной покупки — выходим.
+        try:
+            from price_feed import price_feed as _pf
+            _ls_price = _pf.get("GRINCH") or 0.0
+            _ls_gton  = _pf.get_grinch_ton_price() or 0.0
+            if _ls_price > 0:
+                self._check_large_sell_dca(_ls_price, _ls_gton)
+        except Exception as _lse:
+            self.log(f"⚠️ Large Sell DCA check (AI mode): {_lse}", "WARN")
 
         ohlcv  = self.exchange.get_ohlcv(limit=100)
         result = analyze(ohlcv)

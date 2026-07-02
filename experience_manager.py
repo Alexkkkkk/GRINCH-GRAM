@@ -567,6 +567,7 @@ class ExperienceManager:
             min_tp_gross = min_profit_floor_pct + Config.FEE_ROUND_TRIP
 
             new_tp = float(ctrl.get("take_profit_pct") or Config.TAKE_PROFIT_PCT)
+            prev_tp = new_tp   # запоминаем ДО адаптации — TP может только расти
             ai_tp_adapted = bool(ctrl.get("ai_tp_adapted"))
             avg_win_pct = float(ctrl.get("ai_avg_win_pct") or 0.0)
 
@@ -613,6 +614,9 @@ class ExperienceManager:
 
             # Гарантируем пол в любом случае (даже если история пустая)
             new_tp = max(min_tp_gross, new_tp)
+            # ТОЛЬКО В ПЛЮС: TP никогда не понижается автоматически.
+            # Если адаптация дала бы меньший TP — оставляем текущий.
+            new_tp = max(prev_tp, new_tp)
             new_tp = round(new_tp, 2)
             tp_changed = abs(new_tp - float(ctrl.get("take_profit_pct") or 0)) > 0.1
 

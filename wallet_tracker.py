@@ -287,6 +287,23 @@ class WalletTracker:
 
     WINDOW_24H = 86400      # окно для списка кошельков (последние сутки)
 
+    def get_large_sell_events(self, window_sec: float = 120.0, min_ton: float = 500.0):
+        """
+        Возвращает список крупных продаж в пуле за последние window_sec секунд,
+        где объём продажи >= min_ton TON. Используется детектором крупных продаж.
+
+        Возвращает список dict: {addr, ton, grinch, price, usd, ts}
+        """
+        now = time.time()
+        with self._lock:
+            recent = [
+                e for e in self.events
+                if e["kind"] == "sell"
+                and (now - e["ts"]) <= window_sec
+                and e["ton"] >= min_ton
+            ]
+        return list(recent)
+
     def get_stats(self, top=20):
         """Полная статистика для дашборда (список — за последние 24 часа)."""
         with self._lock:

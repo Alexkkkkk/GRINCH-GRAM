@@ -656,6 +656,11 @@ def api_config_get():
         "dca_drop_trigger_pct": Config.DCA_DROP_TRIGGER_PCT,
         "dca_pullback_wait_pct": Config.DCA_PULLBACK_WAIT_PCT,
         "dca_max_entries":      Config.DCA_MAX_ENTRIES,
+        # Детектор крупных продаж
+        "large_sell_dca_enabled":  Config.LARGE_SELL_DCA_ENABLED,
+        "large_sell_dca_ton":      Config.LARGE_SELL_DCA_TON,
+        "large_sell_min_ton":      Config.LARGE_SELL_MIN_TON,
+        "large_sell_cooldown_sec": Config.LARGE_SELL_COOLDOWN_SEC,
     })
 
 @app.route("/api/config", methods=["POST"])
@@ -739,6 +744,13 @@ def api_config_set():
     if (v := num("dca_pullback_wait_pct", 5,   90))    is not None: Config.DCA_PULLBACK_WAIT_PCT = v
     if (v := num("dca_max_entries",       1,   50))    is not None: Config.DCA_MAX_ENTRIES       = int(v)
 
+    # Детектор крупных продаж
+    if "large_sell_dca_enabled" in data:
+        Config.LARGE_SELL_DCA_ENABLED = bool(data["large_sell_dca_enabled"])
+    if (v := num("large_sell_dca_ton",      10, 100000)) is not None: Config.LARGE_SELL_DCA_TON      = v
+    if (v := num("large_sell_min_ton",      50, 100000)) is not None: Config.LARGE_SELL_MIN_TON      = v
+    if (v := num("large_sell_cooldown_sec", 30, 86400))  is not None: Config.LARGE_SELL_COOLDOWN_SEC = int(v)
+
     if "symbol" in data and data["symbol"] != Config.SYMBOL:
         if trader.open_trades:
             return jsonify({"ok": False, "message": "Нельзя сменить пару при открытых сделках."}), 409
@@ -777,6 +789,11 @@ def api_config_set():
             "DCA_DROP_TRIGGER_PCT": Config.DCA_DROP_TRIGGER_PCT,
             "DCA_PULLBACK_WAIT_PCT": Config.DCA_PULLBACK_WAIT_PCT,
             "DCA_MAX_ENTRIES":      Config.DCA_MAX_ENTRIES,
+            # Детектор крупных продаж
+            "LARGE_SELL_DCA_ENABLED":  Config.LARGE_SELL_DCA_ENABLED,
+            "LARGE_SELL_DCA_TON":      Config.LARGE_SELL_DCA_TON,
+            "LARGE_SELL_MIN_TON":      Config.LARGE_SELL_MIN_TON,
+            "LARGE_SELL_COOLDOWN_SEC": Config.LARGE_SELL_COOLDOWN_SEC,
         })
     except Exception as e:  # noqa: BLE001
         return jsonify({"ok": True, "message": f"Настройки применены, но не сохранены на диск: {e}"})

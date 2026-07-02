@@ -806,6 +806,44 @@
         </div>
       </div>
 
+      <!-- Large Sell DCA Card -->
+      <div class="card card-c" id="large-sell-dca-card">
+        <div class="card-title ctit">🚨 Детектор крупных продаж — Безусловная закупка</div>
+        <div class="settings-form">
+          <div class="cfg-section-title" style="color:#00d4ff">
+            Когда в пуле фиксируется крупная продажа GRINCH — бот <strong>автоматически покупает</strong>,
+            игнорируя AI-сигнал. Работает и в AI-режиме, и в DCA-режиме.
+          </div>
+          <label class="cfg-check" style="margin-bottom:12px">
+            <input type="checkbox" id="cfg-lsd-enabled">
+            <span style="font-weight:700;color:#00ff88">Включить детектор крупных продаж</span>
+          </label>
+
+          <div id="lsd-params">
+            <label>Сумма покупки (TON)
+              <input type="number" id="cfg-lsd-buy-ton" value="100" min="10" step="10">
+              <small style="color:#8892b0">Сколько TON тратить на каждую безусловную покупку при срабатывании детектора</small>
+            </label>
+            <label>Порог продажи в пуле (TON)
+              <input type="number" id="cfg-lsd-min-ton" value="500" min="50" step="50">
+              <small style="color:#8892b0">Минимальный объём одной продажи в пуле (TON) для срабатывания триггера</small>
+            </label>
+            <label>Пауза между сигналами (сек)
+              <input type="number" id="cfg-lsd-cooldown" value="300" min="30" step="30">
+              <small style="color:#8892b0">Минимальная пауза (секунды) между двумя безусловными покупками по этому сигналу</small>
+            </label>
+          </div>
+
+          <!-- Статус последнего срабатывания -->
+          <div id="lsd-status-panel" style="margin-top:12px;padding:10px;background:rgba(255,69,58,.07);border:1px solid rgba(255,69,58,.2);border-radius:10px;font-size:11px;display:none">
+            <div style="font-weight:700;color:#ff453a;margin-bottom:4px">🚨 ПОСЛЕДНЕЕ СРАБАТЫВАНИЕ</div>
+            <div style="color:#8892b0">Куплено: <span id="lsd-last-buy" style="color:#fff;font-weight:700">—</span></div>
+          </div>
+
+          <button class="btn btn-blue" onclick="saveLargeSellConfig()" style="margin-top:14px">💾 Сохранить настройки детектора</button>
+        </div>
+      </div>
+
       <!-- Logs -->
       <div class="card card-c">
         <div class="card-title ctit">📝 Логи бота <button class="btn-tiny" onclick="clearLogs()">Очистить</button></div>

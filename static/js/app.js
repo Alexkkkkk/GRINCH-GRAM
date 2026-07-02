@@ -1220,6 +1220,30 @@ async function saveDcaConfig() {
   }
 }
 
+async function saveLargeSellConfig() {
+  const g = id => document.getElementById(id);
+  const cfg = {
+    large_sell_dca_enabled:  g("cfg-lsd-enabled")?.checked ?? true,
+    large_sell_dca_ton:      parseFloat(g("cfg-lsd-buy-ton")?.value  || 100),
+    large_sell_min_ton:      parseFloat(g("cfg-lsd-min-ton")?.value  || 500),
+    large_sell_cooldown_sec: parseInt(g("cfg-lsd-cooldown")?.value   || 300, 10),
+  };
+  try {
+    const r = await fetch("/api/config", {
+      method: "POST", headers: {"Content-Type":"application/json"},
+      body: JSON.stringify(cfg)
+    });
+    const d = await r.json();
+    if (d.ok) {
+      showToast("✅ Детектор крупных продаж сохранён", "ok");
+    } else {
+      showToast("❌ " + (d.message || "Ошибка"), "err");
+    }
+  } catch (e) {
+    showToast("❌ Ошибка сети: " + e.message, "err");
+  }
+}
+
 async function saveConfig() {
   const g = id => document.getElementById(id);
   const btn = document.getElementById("btn-save-cfg");
@@ -1316,6 +1340,12 @@ async function loadConfig() {
   if (g("cfg-dca-drop"))        g("cfg-dca-drop").value        = cfg.dca_drop_trigger_pct   ?? 25;
   if (g("cfg-dca-pullback"))    g("cfg-dca-pullback").value    = cfg.dca_pullback_wait_pct  ?? 25;
   if (g("cfg-dca-max-entries")) g("cfg-dca-max-entries").value = cfg.dca_max_entries        ?? 10;
+
+  // Детектор крупных продаж
+  if (g("cfg-lsd-enabled"))  g("cfg-lsd-enabled").checked   = cfg.large_sell_dca_enabled  ?? true;
+  if (g("cfg-lsd-buy-ton"))  g("cfg-lsd-buy-ton").value     = cfg.large_sell_dca_ton       ?? 100;
+  if (g("cfg-lsd-min-ton"))  g("cfg-lsd-min-ton").value     = cfg.large_sell_min_ton       ?? 500;
+  if (g("cfg-lsd-cooldown")) g("cfg-lsd-cooldown").value    = cfg.large_sell_cooldown_sec  ?? 300;
 
   g("demo-badge").style.display = cfg.demo_mode ? "" : "none";
   if (cfg.ton_wallet) {

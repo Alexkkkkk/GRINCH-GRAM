@@ -269,6 +269,16 @@ class Config:
     DCA_AI_DROP_CAP         = float(os.getenv("DCA_AI_DROP_CAP",     "50"))  # макс. порог докупки %
     DCA_AI_PULLBACK_CAP     = float(os.getenv("DCA_AI_PULLBACK_CAP", "50"))  # макс. ожидание отката %
 
+    # ── Детектор крупных продаж: автоматическая контрарная закупка ──────────
+    # Когда в пуле кто-то продаёт крупный объём GRINCH — бот немедленно
+    # покупает на LARGE_SELL_DCA_TON. Покупка безусловная (обходит AI-фильтры).
+    # Работает и в AI-режиме, и в DCA-режиме. Между двумя такими покупками
+    # выдерживается пауза LARGE_SELL_COOLDOWN_SEC секунд.
+    LARGE_SELL_DCA_ENABLED  = bool(int(os.getenv("LARGE_SELL_DCA_ENABLED",  "1")))
+    LARGE_SELL_DCA_TON      = float(os.getenv("LARGE_SELL_DCA_TON",         "100.0"))   # TON на покупку
+    LARGE_SELL_MIN_TON      = float(os.getenv("LARGE_SELL_MIN_TON",         "500.0"))   # мин. TON продажи
+    LARGE_SELL_COOLDOWN_SEC = int(os.getenv("LARGE_SELL_COOLDOWN_SEC",      "300"))     # пауза между сигналами
+
     DEMO_MODE  = os.getenv("DEMO_MODE",  "false").lower() == "true"
     SECRET_KEY = os.getenv("SECRET_KEY", "grinch-gram-secret-2024")
     # EQ-адрес выводится из TON_MNEMONIC (WalletV5R1 / W5 — кошелёк TonKeeper)
