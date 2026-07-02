@@ -609,11 +609,12 @@ class AIEngine:
 
         prob_up, prob_hold, prob_down = float(ens[2]), float(ens[1]), float(ens[0])
 
+        # Требуем минимальный перевес вероятности для сигнала (было 0.42, теперь 0.43)
         max_prob = max(prob_up, prob_down, prob_hold)
-        if max_prob == prob_up and prob_up > 0.42:
+        if max_prob == prob_up and prob_up > 0.43:
             ai_signal = "BUY"
             self._last_buy_features = X[-1].copy()
-        elif max_prob == prob_down and prob_down > 0.42:
+        elif max_prob == prob_down and prob_down > 0.43:
             ai_signal = "SELL"
         else:
             ai_signal = "HOLD"
@@ -636,20 +637,56 @@ class AIEngine:
         # ── Breakout Engine: предсказатель GRINCH-пампа ──────────────────
         breakout = _breakout_engine.detect(df)
 
-        # ── Комбинированный буст уверенности AI ──────────────────────────
-        # Momentum буст + Breakout буст суммируются (но только при BUY)
+        # ── Режимно-зависимая коррекция + Momentum/Breakout буст ────────
+        # Все три источника (режим, momentum, breakout) комбинируются с cap,
+        # чтобы коррелированные сигналы не накапливались бесконтрольно.
+        # Правила:
+        #   1. DOWNTREND жёстко блокирует BUY-бусты — пенальти применяется
+        #      последним и не может быть перекрыт momentum/breakout.
+        #   2. Режим и Breakout могут дублировать одно состояние рынка →
+        #      используем max(one_of_them), не сумму.
+        #   3. Суммарный положительный сдвиг ограничен +12% (hard cap).
+        regime_name = regime.get("name", "UNKNOWN")
         total_boost = 0.0
+
         if ai_signal == "BUY":
-            total_boost = momentum.get("boost", 0.0) + breakout.get("conf_boost", 0.0)
-            if total_boost > 0:
-                boosted_conf = min(99.0, confidence + total_boost)
-                if boosted_conf > confidence:
-                    log.debug(
-                        f"[AI Boost] Momentum={momentum['signal']}(+{momentum['boost']:.1f}%) "
-                        f"Breakout={breakout['signal']}(+{breakout['conf_boost']:.1f}%) "
-                        f"→ conf {confidence}% → {boosted_conf}%"
-                    )
-                    confidence = boosted_conf
+            mom_boost = float(momentum.get("boost", 0.0))
+            bo_boost  = float(breakout.get("conf_boost", 0.0))
+            reg_boost = 0.0
+            if regime_name == "UPTREND":
+                reg_boost = 5.0
+            elif regime_name == "BREAKOUT":
+                reg_boost = 8.0
+            elif regime_name == "SQUEEZE":
+                reg_boost = 3.0
+
+            # Momentum — независим; Breakout vs Regime — берём max (не суммируем)
+            combined_pos = mom_boost + max(bo_boost, reg_boost)
+            combined_pos = min(combined_pos, 12.0)   # hard cap +12%
+
+            # Штраф за неблагоприятный режим (применяется ПОСЛЕ бустов)
+            penalty = 0.0
+            if regime_name == "DOWNTREND":
+                penalty = -12.0
+            elif regime_name == "VOLATILE":
+                penalty = -4.0
+
+            total_boost = combined_pos + penalty
+            if total_boost != 0.0:
+                old_conf = confidence
+                confidence = round(max(1.0, min(99.0, confidence + total_boost)), 1)
+                log.debug(
+                    f"[AI Boost] Regime={regime_name} mom={mom_boost:.1f} "
+                    f"bo={bo_boost:.1f} reg={reg_boost:.1f} "
+                    f"penalty={penalty:.1f} total={total_boost:+.1f} "
+                    f"→ {old_conf}%→{confidence}%"
+                )
+
+        elif ai_signal == "SELL" and regime_name == "DOWNTREND":
+            old_conf = confidence
+            confidence = round(min(99.0, confidence + 5.0), 1)
+            total_boost = 5.0
+            log.debug(f"[AI Boost] SELL+DOWNTREND +5% → {old_conf}%→{confidence}%")
 
         return {
             "ai_signal":    ai_signal,

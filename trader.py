@@ -1840,6 +1840,29 @@ class Trader:
         return {"ok": True} if ok else {
             "ok": False, "error": "Продажа не исполнена — попробуйте ещё раз позже"}
 
+    def delete_trade(self, trade_id):
+        """Удалить позицию из списка БЕЗ продажи на блокчейне (только из памяти/БД)."""
+        with self._close_lock:
+            trade = next((t for t in self.open_trades
+                          if str(t.get("id")) == str(trade_id)), None)
+            if not trade:
+                return {"ok": False, "error": "Позиция не найдена или уже удалена"}
+            self.open_trades = [t for t in self.open_trades
+                                if str(t.get("id")) != str(trade_id)]
+            self.trades = [t for t in self.trades
+                           if str(t.get("id")) != str(trade_id)]
+        self.log(f"🗑 Позиция {trade_id} удалена вручную (без продажи)", "WARNING")
+        try:
+            import db_store
+            db_store.open_trades_save(self.open_trades)
+        except Exception:
+            pass
+        try:
+            self.exp.save_open_trades(self.open_trades)
+        except Exception:
+            pass
+        return {"ok": True}
+
     def _close_trade(self, trade, price, reason):
         """Сериализует закрытие (лок) и защищает от двойной продажи позиции."""
         with self._close_lock:

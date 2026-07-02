@@ -22,11 +22,12 @@ class Config:
     FEE_PCT = float(os.getenv("FEE_PCT", "1.0"))
     FEE_ROUND_TRIP = FEE_PCT * 2   # = 2.0%
 
-    # ── Цели: +20% НЕТТО минимум (после всех комиссий) ──────────────────
-    # Gross TP = 20% + 2% комиссии (1%+1%) = 22% от цены входа.
-    # Никогда не фиксируем прибыль меньше +20% нетто.
-    TARGET_NET_PCT  = float(os.getenv("TARGET_NET_PCT",  "10.0"))  # минимальная нетто-прибыль
-    TAKE_PROFIT_PCT = float(os.getenv("TAKE_PROFIT_PCT", "22.0"))  # gross = net + комиссии
+    # ── Цели: +13% НЕТТО минимум (после всех комиссий) ──────────────────
+    # GRINCH специфика: ATR 5%/свеча, диапазон 39%/24ч → цель должна быть
+    # достижима (~3-4 свечи), но не настолько маленькой чтобы выбивало шумом.
+    # Бэктест: trail=12%, tp=15% → 55.6% побед, ожид. прибыль 7.2%/сделку.
+    TARGET_NET_PCT  = float(os.getenv("TARGET_NET_PCT",  "13.0"))  # минимальная нетто-прибыль (было 10%)
+    TAKE_PROFIT_PCT = float(os.getenv("TAKE_PROFIT_PCT", "15.0"))  # gross: 13% нетто + 2% DEX комиссий (было 22%)
     STOP_LOSS_PCT   = float(os.getenv("STOP_LOSS_PCT",   "5.0"))   # запасной стоп (не используется при ONLY_PROFIT_EXIT)
 
     @classmethod
@@ -115,9 +116,9 @@ class Config:
     # Если откат не пришёл за SMART_BUY_MAX_WAIT_TICKS → берём по рынку.
     # При AI >= SMART_BUY_SKIP_CONF% — покупаем сразу (слишком сильный сигнал).
     SMART_BUY_ENABLED       = bool(int(os.getenv("SMART_BUY_ENABLED", "1")))
-    SMART_BUY_PULLBACK_PCT  = float(os.getenv("SMART_BUY_PULLBACK_PCT", "15"))  # ждём откат -0.8%
+    SMART_BUY_PULLBACK_PCT  = float(os.getenv("SMART_BUY_PULLBACK_PCT", "0.8"))  # ждём откат -0.8%
     SMART_BUY_MAX_WAIT_TICKS = int(os.getenv("SMART_BUY_MAX_WAIT_TICKS", "3"))   # макс 3 тика (~90 сек)
-    SMART_BUY_SKIP_CONF     = float(os.getenv("SMART_BUY_SKIP_CONF", "90.0"))    # ≥90% → сразу
+    SMART_BUY_SKIP_CONF     = float(os.getenv("SMART_BUY_SKIP_CONF", "88.0"))    # ≥88% → сразу
 
     # ── Smart TP: умная продажа с ИИ ─────────────────────────────────────
     # Когда позиция достигает минимального порога прибыли, бот проверяет сигнал
@@ -125,8 +126,10 @@ class Config:
     # с тугим трейлингом (SMART_TP_TIGHT_TRAIL_PCT%), давая цене расти дальше.
     # Как только ИИ слабеет — переключаемся на обычный трейлинг и фиксируем.
     SMART_TP_ENABLED        = bool(int(os.getenv("SMART_TP_ENABLED", "1")))
-    SMART_TP_MIN_CONF       = float(os.getenv("SMART_TP_MIN_CONF", "75.0"))   # мин. уверенность ИИ для удержания
-    SMART_TP_TIGHT_TRAIL_PCT = float(os.getenv("SMART_TP_TIGHT_TRAIL_PCT", "1.5"))  # тугой трейл при сильном BUY
+    SMART_TP_MIN_CONF       = float(os.getenv("SMART_TP_MIN_CONF", "70.0"))   # мин. уверенность ИИ для удержания
+    # GRINCH ATR = 5%/свеча → тугой трейл НЕ может быть < 2×ATR = 10%
+    # иначе фиксируется на следующей свече шумом. 6% = минимум выживания.
+    SMART_TP_TIGHT_TRAIL_PCT = float(os.getenv("SMART_TP_TIGHT_TRAIL_PCT", "6.0"))  # было 1.5% — убивало позиции
 
     # ── Прогрессивный трейлинг-стоп (защита прибыли на пути к +20%) ─────
     # Лестница масштабирована под цель +20% нетто, строго ниже TP-пола (22%):
