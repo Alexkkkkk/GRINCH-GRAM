@@ -1104,118 +1104,174 @@ document.addEventListener('DOMContentLoaded', () => {
   advLoadStatus();
 });
 
-// ─── AI Советник (Groq LLaMA) ───────────────────────────────────────────────
+// ─── AI Советник — Полная Автономия ──────────────────────────────────────────
+const ADV_COLORS = {'НАКАПЛИВАТЬ':'#00ff88','АКТИВНО_ТОРГОВАТЬ':'#00d4ff','ОСТОРОЖНО':'#ffd166','ПАУЗА':'#ff6b6b'};
+let _advCountdownTimer = null;
+let _advNextRunSec = 0;
+
 function advLoadStatus() {
   fetch('/api/advisor/status').then(r => r.json()).then(s => {
     const dot = document.getElementById('adv-status-dot');
-    if (dot) dot.style.background = s.enabled ? '#00ff88' : '#555';
+    if (dot) dot.style.background = s.enabled ? '#00ff88' : '#444';
+
+    const autoBadge = document.getElementById('adv-auto-badge');
+    const autoLbl   = document.getElementById('adv-auto-label');
+    if (autoBadge) autoBadge.style.display = s.auto_apply ? 'inline-block' : 'none';
+    if (autoLbl)   autoLbl.textContent = s.auto_apply ? 'ВКЛ' : 'ВЫКЛ';
+
+    const runBadge = document.getElementById('adv-running-badge');
+    if (runBadge) runBadge.style.display = s.running ? 'inline-block' : 'none';
+
+    const cnt = document.getElementById('adv-adapt-count');
+    if (cnt) cnt.textContent = (s.total_adaptations || 0) + ' адаптаций';
+
+    const tc = document.getElementById('adv-trades-count');
+    if (tc) tc.textContent = (s.trades_since_last || 0) + ' / ' + (s.trades_trigger || 3);
+
+    // Обратный отсчёт
+    if (s.next_run_in_sec > 0) {
+      _advNextRunSec = s.next_run_in_sec;
+      advStartCountdown();
+    }
+
     if (s.last_advice) advRenderResult(s.last_advice);
     if (s.history && s.history.length) advRenderHistory(s.history);
-    const autoLbl = document.getElementById('adv-auto-label');
-    if (autoLbl) autoLbl.textContent = s.auto_apply ? 'ВКЛ' : 'ВЫКЛ';
+    if (s.adaptation_log && s.adaptation_log.length) advRenderAdaptLog(s.adaptation_log);
+
+    // Заполняем cfg inputs
+    const intEl = document.getElementById('adv-cfg-interval');
+    const trEl  = document.getElementById('adv-cfg-trades');
+    if (intEl) intEl.value = s.interval_min || 15;
+    if (trEl)  trEl.value  = s.trades_trigger || 3;
   }).catch(() => {});
 }
 
-function advRun(apply) {
-  const btn1  = document.getElementById('adv-btn-run');
-  const btn2  = document.getElementById('adv-btn-apply');
-  const spin  = document.getElementById('adv-spinner');
-  const errEl = document.getElementById('adv-error-msg');
-  const msg   = (document.getElementById('adv-user-msg') || {}).value || '';
+function advStartCountdown() {
+  if (_advCountdownTimer) clearInterval(_advCountdownTimer);
+  _advCountdownTimer = setInterval(() => {
+    _advNextRunSec = Math.max(0, _advNextRunSec - 1);
+    const el = document.getElementById('adv-countdown');
+    if (!el) return;
+    if (_advNextRunSec <= 0) { el.textContent = '⚡ скоро'; return; }
+    const m = Math.floor(_advNextRunSec / 60);
+    const s = _advNextRunSec % 60;
+    el.textContent = (m > 0 ? m + 'м ' : '') + s + 'с';
+  }, 1000);
+}
 
-  if (btn1) btn1.disabled = true;
-  if (btn2) btn2.disabled = true;
+function advRun(apply) {
+  const btn1 = document.getElementById('adv-btn-run');
+  const btn2 = document.getElementById('adv-btn-apply');
+  const spin = document.getElementById('adv-spinner');
+  const errEl= document.getElementById('adv-error-msg');
+  const msg  = (document.getElementById('adv-user-msg') || {}).value || '';
+  [btn1,btn2].forEach(b => b && (b.disabled = true));
   if (spin)  spin.style.display  = 'block';
   if (errEl) errEl.style.display = 'none';
-
   fetch('/api/advisor/run', {
-    method: 'POST',
-    headers: {'Content-Type': 'application/json'},
+    method:'POST', headers:{'Content-Type':'application/json'},
     body: JSON.stringify({auto_apply: apply, message: msg})
   }).then(r => r.json()).then(res => {
-    if (spin)  spin.style.display  = 'none';
-    if (btn1) btn1.disabled = false;
-    if (btn2) btn2.disabled = false;
+    if (spin) spin.style.display = 'none';
+    [btn1,btn2].forEach(b => b && (b.disabled = false));
     if (!res.ok) {
-      if (errEl) { errEl.textContent = '⚠️ ' + (res.error || 'Ошибка'); errEl.style.display = 'block'; }
+      if (errEl) { errEl.textContent = '⚠️ ' + (res.error||'Ошибка'); errEl.style.display = 'block'; }
       return;
     }
     advRenderResult(res);
-    advLoadStatus();
-    if (apply && res.applied && res.applied.length)
-      showToast('✅ AI советник применил ' + res.applied.length + ' изменений', 'success');
+    if (res.applied && res.applied.length)
+      showToast('⚡ AI советник применил ' + res.applied.length + ' изменений', 'success');
+    setTimeout(advLoadStatus, 500);
   }).catch(e => {
-    if (spin)  spin.style.display  = 'none';
-    if (btn1) btn1.disabled = false;
-    if (btn2) btn2.disabled = false;
-    if (errEl) { errEl.textContent = '⚠️ Сетевая ошибка: ' + e; errEl.style.display = 'block'; }
+    if (spin) spin.style.display = 'none';
+    [btn1,btn2].forEach(b => b && (b.disabled = false));
+    if (errEl) { errEl.textContent = '⚠️ ' + e; errEl.style.display = 'block'; }
   });
 }
 
 function advRenderResult(res) {
-  const verdictColors = {
-    'НАКАПЛИВАТЬ': '#00ff88', 'АКТИВНО_ТОРГОВАТЬ': '#00d4ff',
-    'ОСТОРОЖНО': '#ffd166', 'ПАУЗА': '#ff6b6b'
-  };
-  const vRow    = document.getElementById('adv-verdict-row');
-  const vBadge  = document.getElementById('adv-verdict-badge');
-  const vConf   = document.getElementById('adv-conf-label');
-  const vTime   = document.getElementById('adv-time-label');
-  const vText   = document.getElementById('adv-analysis-text');
-  const recsWrap= document.getElementById('adv-recs-wrap');
-  const recsList= document.getElementById('adv-recs-list');
-  const appWrap = document.getElementById('adv-applied-wrap');
-  const appList = document.getElementById('adv-applied-list');
+  const vRow  = document.getElementById('adv-verdict-row');
+  const vBadge= document.getElementById('adv-verdict-badge');
+  const vMini = document.getElementById('adv-verdict-mini');
+  const vConf = document.getElementById('adv-conf-label');
+  const vTrig = document.getElementById('adv-trigger-label');
+  const vTime = document.getElementById('adv-time-label');
+  const vText = document.getElementById('adv-analysis-text');
+  const recsW = document.getElementById('adv-recs-wrap');
+  const recsL = document.getElementById('adv-recs-list');
+  const appW  = document.getElementById('adv-applied-wrap');
+  const appL  = document.getElementById('adv-applied-list');
 
-  if (vRow)   vRow.style.display   = 'block';
-  if (vBadge) {
-    const v = res.market_verdict || 'ОСТОРОЖНО';
-    vBadge.textContent = v;
-    vBadge.style.color = verdictColors[v] || '#ffd166';
-    vBadge.style.background = (verdictColors[v] || '#ffd166').replace(')', ',.15)').replace('rgb', 'rgba');
-  }
-  if (vConf)  vConf.textContent  = res.confidence ? 'уверенность: ' + Math.round(res.confidence * 100) + '%' : '';
-  if (vTime)  vTime.textContent  = res.timestamp ? res.timestamp + ' · ' + (res.elapsed_s || '') + 's' : '';
+  const v = res.market_verdict || 'ОСТОРОЖНО';
+  const col = ADV_COLORS[v] || '#ffd166';
+  if (vRow)   vRow.style.display = 'block';
+  if (vBadge) { vBadge.textContent = v; vBadge.style.color = col; vBadge.style.background = col+'22'; }
+  if (vMini)  { vMini.textContent = v; vMini.style.color = col; }
+  if (vConf)  vConf.textContent  = res.confidence ? 'уверенность ' + Math.round(res.confidence*100)+'%' : '';
+  if (vTrig)  vTrig.textContent  = res.trigger ? '· триггер: ' + res.trigger : '';
+  if (vTime)  vTime.textContent  = (res.timestamp||'') + (res.elapsed_s ? ' · '+res.elapsed_s+'s' : '');
   if (vText)  vText.textContent  = res.analysis || '';
 
   const recs = res.recommendations || [];
-  if (recsWrap) recsWrap.style.display = recs.length ? 'block' : 'none';
-  if (recsList) {
-    recsList.innerHTML = recs.map(r => {
-      const up = parseFloat(r.suggested) > parseFloat(r.current);
-      return `<div style="background:rgba(255,255,255,.04);border-radius:7px;padding:7px 10px;font-size:11px">
-        <div style="display:flex;align-items:center;gap:6px;margin-bottom:3px">
-          <code style="color:#00d4ff;font-size:10px">${r.param}</code>
-          <span style="color:#8892b0">${r.current} → </span>
-          <strong style="color:${up ? '#00ff88' : '#ffd166'}">${r.suggested}</strong>
-          <span style="font-size:13px">${up ? '↑' : '↓'}</span>
-        </div>
-        <div style="color:#8892b0;line-height:1.45">${r.reason || ''}</div>
-      </div>`;
-    }).join('');
-  }
+  if (recsW) recsW.style.display = recs.length ? 'block' : 'none';
+  if (recsL) recsL.innerHTML = recs.map(r => {
+    const up = parseFloat(r.suggested) > parseFloat(r.current);
+    return `<div style="background:rgba(255,255,255,.04);border-radius:7px;padding:6px 10px">
+      <div style="display:flex;align-items:center;gap:6px;margin-bottom:2px">
+        <code style="color:#00d4ff;font-size:10px">${r.param}</code>
+        <span style="color:#666;font-size:10px">${r.current} →</span>
+        <strong style="color:${up?'#00ff88':'#ffd166'};font-size:11px">${r.suggested} ${up?'↑':'↓'}</strong>
+      </div>
+      <div style="font-size:10px;color:#8892b0;line-height:1.45">${r.reason||''}</div>
+    </div>`;
+  }).join('');
 
   const applied = res.applied || [];
-  if (appWrap)  appWrap.style.display = applied.length ? 'block' : 'none';
-  if (appList)  appList.innerHTML = applied.map(a => `<div>• ${a}</div>`).join('');
+  if (appW) appW.style.display = applied.length ? 'block' : 'none';
+  if (appL) appL.innerHTML = applied.map(a => `<div style="padding:1px 0">✅ ${a}</div>`).join('');
 }
 
 function advRenderHistory(history) {
   const wrap = document.getElementById('adv-history-wrap');
   const list = document.getElementById('adv-history-list');
-  if (!wrap || !list) return;
+  if (!wrap||!list) return;
   wrap.style.display = 'block';
   list.innerHTML = [...history].reverse().map(h => {
-    const applied = h.applied && h.applied.length ? ` · ✅ ${h.applied.length} изм.` : '';
-    return `<div style="font-size:10px;color:#8892b0;padding:2px 0">${h.ts} — <strong style="color:#ccd6f6">${h.verdict || ''}</strong>${applied}</div>`;
+    const col = ADV_COLORS[h.verdict] || '#ffd166';
+    const app = h.applied&&h.applied.length ? ` <span style="color:#00ff88">✅${h.applied.length}</span>` : '';
+    return `<div style="font-size:10px;color:#666;padding:1px 0">${h.ts} <span style="color:${col};font-weight:700">${h.verdict||''}</span> ·${h.trigger||'manual'}${app}</div>`;
   }).join('');
+}
+
+function advRenderAdaptLog(log) {
+  const wrap = document.getElementById('adv-adapt-log-wrap');
+  const list = document.getElementById('adv-adapt-log-list');
+  if (!wrap||!list||!log.length) return;
+  wrap.style.display = 'block';
+  list.innerHTML = [...log].reverse().map(l =>
+    `<div style="font-size:10px;color:#8892b0;padding:1px 0">${l.ts} <span style="color:#00ff88">✅</span> ${l.change}</div>`
+  ).join('');
 }
 
 function advToggleAuto() {
   fetch('/api/advisor/toggle_auto', {method:'POST'}).then(r => r.json()).then(res => {
-    const lbl = document.getElementById('adv-auto-label');
-    if (lbl) lbl.textContent = res.auto_apply ? 'ВКЛ' : 'ВЫКЛ';
-    showToast('Авто-применение: ' + (res.auto_apply ? 'ВКЛЮЧЕНО' : 'ВЫКЛЮЧЕНО'), 'info');
+    const lbl   = document.getElementById('adv-auto-label');
+    const badge = document.getElementById('adv-auto-badge');
+    if (lbl)   lbl.textContent = res.auto_apply ? 'ВКЛ' : 'ВЫКЛ';
+    if (badge) badge.style.display = res.auto_apply ? 'inline-block' : 'none';
+    showToast('AI автономия: ' + (res.auto_apply ? '⚡ ВКЛЮЧЕНА — советник адаптирует бот самостоятельно' : '⏸ ВЫКЛЮЧЕНА'), res.auto_apply?'success':'info');
+  });
+}
+
+function advSaveCfg() {
+  const intv = parseInt(document.getElementById('adv-cfg-interval')?.value||15);
+  const trig = parseInt(document.getElementById('adv-cfg-trades')?.value||3);
+  fetch('/api/advisor/config', {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({interval_min: intv, trades_trigger: trig})
+  }).then(r => r.json()).then(res => {
+    showToast('⚙️ Настройки автономии сохранены: каждые ' + res.interval_min + ' мин / ' + res.trades_trigger + ' сделок', 'info');
+    advLoadStatus();
   });
 }
 
@@ -1224,11 +1280,14 @@ function showToast(msg, type) {
   if (!c) return;
   const t = document.createElement('div');
   const colors = {success:'#00ff88', info:'#00d4ff', error:'#ff6b6b'};
-  t.style.cssText = `background:#1a1a2e;border:1px solid ${colors[type]||'#555'};color:${colors[type]||'#fff'};padding:10px 16px;border-radius:8px;font-size:12px;margin-top:6px;animation:fadeIn .3s ease`;
+  t.style.cssText = `background:#0d1117;border:1px solid ${colors[type]||'#555'};color:${colors[type]||'#fff'};padding:10px 16px;border-radius:8px;font-size:12px;margin-top:6px;box-shadow:0 4px 20px rgba(0,0,0,.5)`;
   t.textContent = msg;
   c.appendChild(t);
-  setTimeout(() => t.remove(), 3500);
+  setTimeout(() => t.remove(), 4000);
 }
+
+// Авто-обновление статуса советника каждые 15 секунд
+setInterval(advLoadStatus, 15000);
 </script>
 
 <div id="toast-container"></div>
