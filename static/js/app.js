@@ -311,7 +311,7 @@ function renderDcaState(st, active) {
   const profit = st.portfolio_pct;
   const target = st.target_pct ?? 20;
   if (g("dca-profit"))       g("dca-profit").textContent      = profit != null ? (profit >= 0 ? "+" : "") + Number(profit).toFixed(2) + "%" : "—";
-  if (g("dca-target-label")) g("dca-target-label").textContent = "+" + target + "%";
+  if (g("dca-target-label")) g("dca-target-label").textContent = "+" + Number(target).toFixed(1) + "%";
 
   // Прогресс-бар
   const bar = document.getElementById("dca-progress-bar");
@@ -326,6 +326,47 @@ function renderDcaState(st, active) {
     ? fmtGram(st.last_buy_price) : "—";
   if (g("dca-peak"))     g("dca-peak").textContent     = st.peak_price > 0
     ? fmtGram(st.peak_price) : "—";
+
+  // ── DCA AI авто-адаптация ─────────────────────────────────────────────
+  const aiBlock = document.getElementById("dca-ai-adapt-block");
+  if (!aiBlock) return;
+  // Показываем блок всегда когда есть хоть один цикл или базовый баланс
+  const showAi = (st.ai_cycles > 0) || (st.ai_baseline_ton > 0);
+  aiBlock.style.display = showAi ? "" : "none";
+  if (!showAi) return;
+
+  const cycles    = st.ai_cycles    ?? 0;
+  const minCycles = st.ai_min_cycles ?? 3;
+  const adapted   = st.ai_adapted   ?? false;
+
+  if (g("dca-ai-cycles")) g("dca-ai-cycles").textContent = cycles + " / " + minCycles;
+
+  if (g("dca-ai-status")) {
+    if (adapted) {
+      g("dca-ai-status").textContent  = "✅ активна";
+      g("dca-ai-status").style.color  = "#00ff88";
+    } else {
+      g("dca-ai-status").textContent  = "⏳ учится (" + (minCycles - cycles) + " цикл.)";
+      g("dca-ai-status").style.color  = "#ffd166";
+    }
+  }
+
+  // Текущие адаптированные значения (если 0 — ещё не адаптировалось, берём target_pct)
+  const aiTarget   = st.ai_adapted_target   > 0 ? st.ai_adapted_target   : st.target_pct;
+  const aiDrop     = st.ai_adapted_drop     > 0 ? st.ai_adapted_drop     : st.drop_trigger_pct;
+  const aiPullback = st.ai_adapted_pullback > 0 ? st.ai_adapted_pullback : st.pullback_wait_pct;
+
+  if (g("dca-ai-target"))   g("dca-ai-target").textContent   = "+" + Number(aiTarget   ?? 0).toFixed(1) + "%"
+    + (adapted && st.ai_adapted_target > 0 ? " ⬆️" : "");
+  if (g("dca-ai-drop"))     g("dca-ai-drop").textContent     = "-" + Number(aiDrop     ?? 0).toFixed(1) + "%"
+    + (adapted && st.ai_adapted_drop > 0 ? " ⬆️" : "");
+  if (g("dca-ai-pullback")) g("dca-ai-pullback").textContent = "-" + Number(aiPullback ?? 0).toFixed(1) + "%"
+    + (adapted && st.ai_adapted_pullback > 0 ? " ⬆️" : "");
+
+  if (g("dca-ai-baseline")) {
+    const base = st.ai_baseline_ton;
+    g("dca-ai-baseline").textContent = base > 0 ? Number(base).toFixed(2) + " TON" : "—";
+  }
 }
 
 function renderSmartBuy(pb) {

@@ -57,6 +57,14 @@ class Trader:
         self.dca_last_buy_price = 0.0
         self.dca_entries_count  = 0
         self.dca_total_stake    = 0.0
+        # ── DCA AI авто-адаптация: поднимает проценты только ВВЕРХ ──────────
+        # После каждого завершённого цикла ИИ анализирует суммарную стоимость
+        # кошелька (TON + GRINCH в TON) и если кошелёк вырос — поднимает пороги.
+        self.dca_cycles_completed     = 0    # количество завершённых buy→sell циклов
+        self.dca_baseline_ton         = 0.0  # суммарный баланс кошелька при старте
+        self.dca_adapted_target_pct   = 0.0  # 0 = ещё не адаптировано (берём из Config)
+        self.dca_adapted_drop_pct     = 0.0
+        self.dca_adapted_pullback_pct = 0.0
 
         # Кеш баланса: не долбим блокчейн при каждом /api/status (TTL 180 сек)
         self._balance_cache     = {}
@@ -65,6 +73,31 @@ class Trader:
         # ── Долговременная память + само-управление ИИ ───────────────────
         self.exp = experience_manager
         self.exp.restore_trader(self)
+        # ── Восстанавливаем DCA AI адаптацию из settings_store ───────────────
+        try:
+            from settings_store import get_section as _ss_get
+            _da = _ss_get("dca_adapt")
+            self.dca_cycles_completed     = int(_da.get("cycles", 0))
+            self.dca_baseline_ton         = float(_da.get("baseline_ton", 0.0))
+            self.dca_adapted_target_pct   = float(_da.get("adapted_target", 0.0))
+            self.dca_adapted_drop_pct     = float(_da.get("adapted_drop", 0.0))
+            self.dca_adapted_pullback_pct = float(_da.get("adapted_pullback", 0.0))
+            # Применяем к Config — только если адаптация выше текущих значений
+            if self.dca_adapted_target_pct > Config.DCA_TARGET_PROFIT_PCT:
+                Config.DCA_TARGET_PROFIT_PCT = self.dca_adapted_target_pct
+            if self.dca_adapted_drop_pct > Config.DCA_DROP_TRIGGER_PCT:
+                Config.DCA_DROP_TRIGGER_PCT = self.dca_adapted_drop_pct
+            if self.dca_adapted_pullback_pct > Config.DCA_PULLBACK_WAIT_PCT:
+                Config.DCA_PULLBACK_WAIT_PCT = self.dca_adapted_pullback_pct
+            if self.dca_cycles_completed > 0:
+                logger.info(
+                    f"[DCA AI] ♻️ Адаптация восстановлена: {self.dca_cycles_completed} циклов | "
+                    f"цель={Config.DCA_TARGET_PROFIT_PCT:.1f}% "
+                    f"докупка={Config.DCA_DROP_TRIGGER_PCT:.1f}% "
+                    f"откат={Config.DCA_PULLBACK_WAIT_PCT:.1f}%"
+                )
+        except Exception:
+            pass
         # Восстанавливаем Smart BUY из DB (если был при перезапуске)
         # Примечание: ai/analysis не сохраняются (тяжёлые объекты), поэтому
         # восстановленный ордер помечаем флагом restored=True — в _tick()
@@ -404,8 +437,164 @@ class Trader:
 
         return total_cost_ton, total_value_ton
 
+    def _dca_record_baseline(self):
+        """Запоминает суммарную стоимость кошелька (TON + GRINCH в TON) при первом входе.
+        Вызывается один раз при первой DCA-покупке — как точка отсчёта роста."""
+        if self.dca_baseline_ton > 0:
+            return  # уже зафиксировали
+        try:
+            from price_feed import price_feed as _pf
+            bal        = self._get_balance_cached()
+            ton_bal    = float(bal.get("TON", 0) or 0)
+            grinch_bal = float(bal.get("GRINCH", 0) or 0)
+            grinch_ton = float(_pf.get_grinch_ton_price() or 0)
+            self.dca_baseline_ton = ton_bal + grinch_bal * grinch_ton
+            self.log(
+                f"📌 DCA AI: базовый баланс кошелька зафиксирован: "
+                f"{self.dca_baseline_ton:.3f} TON "
+                f"(TON={ton_bal:.3f} + GRINCH≈{grinch_bal * grinch_ton:.3f} TON)",
+                "INFO"
+            )
+            # Сохраняем базовую линию чтобы пережить перезапуск
+            from settings_store import update_section as _ss_upd
+            _ss_upd("dca_adapt", {"baseline_ton": self.dca_baseline_ton})
+        except Exception as e:
+            self.log(f"⚠️ DCA AI: не удалось зафиксировать базовый баланс — {e}", "WARN")
+
+    def _dca_adapt_after_cycle(self, portfolio_pct: float):
+        """Вызывается после каждого завершённого DCA-цикла (продали всё).
+
+        Анализирует рост суммарного баланса кошелька (TON + GRINCH в TON):
+        - если кошелёк вырос → поднимаем DCA-проценты (цель, докупка, откат);
+        - никогда не снижаем — только вверх;
+        - применяет изменения к живому Config и сохраняет в settings_store.
+        """
+        self.dca_cycles_completed += 1
+        min_cycles = Config.DCA_AI_ADAPT_MIN_CYCLES
+
+        self.log(
+            f"🤖 DCA AI: цикл #{self.dca_cycles_completed} завершён "
+            f"(прибыль цикла +{portfolio_pct:.1f}% | "
+            f"нужно ≥{min_cycles} циклов для адаптации)",
+            "INFO"
+        )
+
+        if self.dca_cycles_completed < min_cycles:
+            # Ещё недостаточно данных — только сохраняем счётчик
+            try:
+                from settings_store import update_section as _ss_upd
+                _ss_upd("dca_adapt", {"cycles": self.dca_cycles_completed})
+            except Exception:
+                pass
+            return
+
+        # ── Получаем текущий баланс обоих монет ──────────────────────────────
+        try:
+            from price_feed import price_feed as _pf
+            bal        = self._get_balance_cached()
+            ton_bal    = float(bal.get("TON", 0) or 0)
+            grinch_bal = float(bal.get("GRINCH", 0) or 0)
+            grinch_ton = float(_pf.get_grinch_ton_price() or 0)
+            current_total = ton_bal + grinch_bal * grinch_ton
+        except Exception as e:
+            self.log(f"⚠️ DCA AI адаптация: ошибка получения баланса — {e}", "WARN")
+            return
+
+        if self.dca_baseline_ton <= 0 or current_total <= 0:
+            self.log("⚠️ DCA AI: нет базового баланса — пропускаем адаптацию", "WARN")
+            return
+
+        wallet_growth_pct = (current_total - self.dca_baseline_ton) / self.dca_baseline_ton * 100
+
+        self.log(
+            f"🤖 DCA AI анализ кошелька: "
+            f"TON={ton_bal:.3f} + GRINCH≈{grinch_bal * grinch_ton:.3f} TON "
+            f"= {current_total:.3f} TON | "
+            f"база={self.dca_baseline_ton:.3f} TON | "
+            f"рост={wallet_growth_pct:+.2f}%",
+            "INFO"
+        )
+
+        if wallet_growth_pct <= 0:
+            self.log("🤖 DCA AI: кошелёк не вырос — проценты не меняем", "INFO")
+            try:
+                from settings_store import update_section as _ss_upd
+                _ss_upd("dca_adapt", {
+                    "cycles": self.dca_cycles_completed,
+                    "wallet_growth_pct": round(wallet_growth_pct, 2),
+                })
+            except Exception:
+                pass
+            return
+
+        # ── Шаг адаптации: от 0.5% до 5% пропорционально росту кошелька ──────
+        step = max(0.5, min(5.0, wallet_growth_pct / 5.0))
+
+        # Текущие значения (из адаптации или из Config)
+        cur_target   = self.dca_adapted_target_pct   or Config.DCA_TARGET_PROFIT_PCT
+        cur_drop     = self.dca_adapted_drop_pct     or Config.DCA_DROP_TRIGGER_PCT
+        cur_pullback = self.dca_adapted_pullback_pct or Config.DCA_PULLBACK_WAIT_PCT
+
+        # Новые значения — только вверх, с потолком из Config
+        new_target   = min(round(cur_target   + step,       1), Config.DCA_AI_TARGET_CAP)
+        new_drop     = min(round(cur_drop     + step * 0.5, 1), Config.DCA_AI_DROP_CAP)
+        new_pullback = min(round(cur_pullback + step * 0.5, 1), Config.DCA_AI_PULLBACK_CAP)
+
+        changed = []
+        if new_target > cur_target:
+            self.dca_adapted_target_pct  = new_target
+            Config.DCA_TARGET_PROFIT_PCT = new_target
+            changed.append(f"цель {cur_target:.1f}%→{new_target:.1f}%")
+        if new_drop > cur_drop:
+            self.dca_adapted_drop_pct    = new_drop
+            Config.DCA_DROP_TRIGGER_PCT  = new_drop
+            changed.append(f"докупка {cur_drop:.1f}%→{new_drop:.1f}%")
+        if new_pullback > cur_pullback:
+            self.dca_adapted_pullback_pct = new_pullback
+            Config.DCA_PULLBACK_WAIT_PCT  = new_pullback
+            changed.append(f"откат {cur_pullback:.1f}%→{new_pullback:.1f}%")
+
+        if changed:
+            self.log(
+                f"🤖 DCA AI ⬆️ ПОДНИМАЕМ (шаг +{step:.1f}%): {' | '.join(changed)} "
+                f"(рост кошелька +{wallet_growth_pct:.1f}%)",
+                "INFO"
+            )
+        else:
+            self.log(
+                f"🤖 DCA AI: все параметры уже на максимуме "
+                f"(цель≤{Config.DCA_AI_TARGET_CAP}%, докупка≤{Config.DCA_AI_DROP_CAP}%)",
+                "INFO"
+            )
+
+        # ── Сохраняем адаптированные значения ────────────────────────────────
+        try:
+            from settings_store import update_section as _ss_upd
+            _ss_upd("config", {
+                "DCA_TARGET_PROFIT_PCT": Config.DCA_TARGET_PROFIT_PCT,
+                "DCA_DROP_TRIGGER_PCT":  Config.DCA_DROP_TRIGGER_PCT,
+                "DCA_PULLBACK_WAIT_PCT": Config.DCA_PULLBACK_WAIT_PCT,
+            })
+            _ss_upd("dca_adapt", {
+                "cycles":            self.dca_cycles_completed,
+                "baseline_ton":      self.dca_baseline_ton,
+                "adapted_target":    self.dca_adapted_target_pct,
+                "adapted_drop":      self.dca_adapted_drop_pct,
+                "adapted_pullback":  self.dca_adapted_pullback_pct,
+                "wallet_growth_pct": round(wallet_growth_pct, 2),
+                "last_step":         round(step, 2),
+                "ton_bal":           round(ton_bal, 4),
+                "grinch_val_ton":    round(grinch_bal * grinch_ton, 4),
+            })
+        except Exception as e:
+            self.log(f"⚠️ DCA AI: ошибка сохранения адаптации — {e}", "WARN")
+
     def _dca_buy(self, price_usd, grinch_ton, reason=""):
         """Открывает одну DCA позицию на DCA_STAKE_TON."""
+        # При самой первой покупке фиксируем базовый баланс кошелька
+        if self.dca_entries_count == 0 and self.dca_cycles_completed == 0:
+            self._dca_record_baseline()
+
         stake_ton = Config.DCA_STAKE_TON
 
         # Проверяем баланс
@@ -581,6 +770,12 @@ class Trader:
             f"портфель был +{portfolio_pct:.1f}%",
             "SELL"
         )
+
+        # ── DCA AI: анализируем рост кошелька и поднимаем проценты ──────────
+        try:
+            self._dca_adapt_after_cycle(portfolio_pct)
+        except Exception as _ae:
+            self.log(f"⚠️ DCA AI адаптация: {_ae}", "WARN")
 
         # Обновляем память
         try:
@@ -2000,5 +2195,14 @@ class Trader:
                 "pullback_wait_pct": Config.DCA_PULLBACK_WAIT_PCT,
                 "stake_ton":       Config.DCA_STAKE_TON,
                 "max_entries":     Config.DCA_MAX_ENTRIES,
+                # ── DCA AI авто-адаптация ────────────────────────────────
+                "ai_cycles":           self.dca_cycles_completed,
+                "ai_min_cycles":       Config.DCA_AI_ADAPT_MIN_CYCLES,
+                "ai_adapted":          self.dca_cycles_completed >= Config.DCA_AI_ADAPT_MIN_CYCLES,
+                "ai_adapted_target":   self.dca_adapted_target_pct,
+                "ai_adapted_drop":     self.dca_adapted_drop_pct,
+                "ai_adapted_pullback": self.dca_adapted_pullback_pct,
+                "ai_baseline_ton":     self.dca_baseline_ton,
+                "ai_target_cap":       Config.DCA_AI_TARGET_CAP,
             } if Config.DCA_MODE else None,
         }

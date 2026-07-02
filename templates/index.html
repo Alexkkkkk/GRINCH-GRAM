@@ -800,6 +800,21 @@
                 <div id="dca-progress-bar" style="height:100%;background:linear-gradient(90deg,#00ff88,#00d4ff);border-radius:4px;transition:width .5s;width:0%"></div>
               </div>
             </div>
+            <!-- DCA AI адаптация -->
+            <div id="dca-ai-adapt-block" style="margin-top:10px;padding:8px;background:rgba(167,139,250,.07);border:1px solid rgba(167,139,250,.2);border-radius:8px;display:none">
+              <div style="font-size:10px;font-weight:700;color:#a78bfa;margin-bottom:6px">🤖 DCA AI — авто-адаптация процентов</div>
+              <div style="display:grid;grid-template-columns:1fr 1fr;gap:4px 10px;font-size:10px">
+                <span style="color:#8892b0">Завершено циклов:</span><span id="dca-ai-cycles" style="font-weight:700;color:#e2e8f0">—</span>
+                <span style="color:#8892b0">Статус:</span>          <span id="dca-ai-status" style="font-weight:700">⏳ накапливает</span>
+                <span style="color:#8892b0">Цель прибыли:</span>   <span id="dca-ai-target" style="font-weight:700;color:#00ff88">—</span>
+                <span style="color:#8892b0">Порог докупки:</span>  <span id="dca-ai-drop" style="font-weight:700;color:#ffd166">—</span>
+                <span style="color:#8892b0">Ожид. отката:</span>   <span id="dca-ai-pullback" style="font-weight:700;color:#00d4ff">—</span>
+                <span style="color:#8892b0">База кошелька:</span>  <span id="dca-ai-baseline" style="font-weight:700;color:#8892b0">—</span>
+              </div>
+              <div style="margin-top:5px;font-size:9px;color:#6b7280">
+                ИИ поднимает проценты только вверх — анализирует TON + GRINCH на кошельке после каждого цикла
+              </div>
+            </div>
           </div>
 
           <button class="btn btn-blue" id="btn-save-dca" onclick="saveDcaConfig()" style="margin-top:14px">💾 Сохранить DCA настройки</button>
