@@ -114,6 +114,8 @@ class Trader:
             self.log(f"⚠️ Ошибка предобучения: {e}", "WARN")
         self.training = False
         self.log("✅ Предобучение завершено. Запускаю торговый цикл.", "INFO")
+        # Объединяем позиции, восстановленные с диска, в одну
+        self._merge_long_trades()
 
         # СВЕРКА + восстановление сохранённого опыта (тёплый старт обучения).
         # Сначала показываем, что реально лежит на диске, затем подхватываем —
@@ -193,6 +195,75 @@ class Trader:
         except Exception:
             pass  # молча: live-синк не критичен
 
+    def _merge_long_trades(self):
+        """Объединяет все открытые LONG-позиции в одну с взвешенной средней ценой.
+        Вызывается после каждой новой покупки GRINCH.
+        SHORT-позиции не трогает."""
+        long_trades = [t for t in self.open_trades if t.get("side") == "buy"]
+        if len(long_trades) < 2:
+            return
+
+        total_amount = sum(t.get("amount", 0) for t in long_trades)
+        total_stake  = sum(t.get("stake_ton", 0) for t in long_trades)
+        if total_amount <= 0:
+            return
+
+        # Взвешенная средняя цена входа
+        avg_entry_usd = sum(t.get("entry_price", 0) * t.get("amount", 0) for t in long_trades) / total_amount
+        avg_entry_ton = sum(t.get("entry_price_ton", 0) * t.get("amount", 0) for t in long_trades) / total_amount
+
+        # Пересчёт безубытка для объединённой позиции
+        fee           = Config.FEE_PCT / 100.0
+        sell_gas      = Config.SELL_GAS_TON
+        buy_gas_each  = getattr(Config, "BUY_GAS_TON", 0.103)
+        total_buy_gas = buy_gas_each * len(long_trades)
+        total_cost    = total_stake + total_buy_gas
+        be_ton  = (total_cost + sell_gas) / (total_amount * (1 - fee)) if total_amount > 0 else 0
+        entry_ton_avg = total_stake / total_amount if total_amount > 0 else avg_entry_ton
+        be_usd  = round(avg_entry_usd * be_ton / entry_ton_avg, 8) if (entry_ton_avg > 0 and avg_entry_usd > 0) else 0
+
+        min_gross = Config.required_gross_pct_with_gas(total_stake)
+        tp        = round(avg_entry_usd * (1 + Config.TAKE_PROFIT_PCT / 100), 8)
+
+        # Основа — новейшая (последняя) позиция
+        newest = long_trades[-1]
+        merged = dict(newest)
+        merged["amount"]          = round(total_amount, 6)
+        merged["stake_ton"]       = round(total_stake, 4)
+        merged["entry_price"]     = round(avg_entry_usd, 8)
+        merged["entry_price_ton"] = round(avg_entry_ton, 8)
+        merged["breakeven_price"] = be_usd
+        merged["min_gross_pct"]   = round(min_gross, 1)
+        merged["high_water"]      = max(t.get("high_water", avg_entry_usd) for t in long_trades)
+        merged["take_profit"]     = tp
+        merged["stop_loss"]       = 0.0
+        merged["trail_pct"]       = Config.TRAILING_STOP_PCT
+        merged["opened_at"]       = min((t.get("opened_at") or "") for t in long_trades) or newest["opened_at"]
+        merged["ai_confidence"]   = max(t.get("ai_confidence", 0) for t in long_trades)
+        merged["merged"]          = True
+        merged["merged_count"]    = len(long_trades)
+
+        # Оставляем SHORT-позиции, заменяем все LONG на одну объединённую
+        shorts = [t for t in self.open_trades if t.get("side") != "buy"]
+        self.open_trades = shorts + [merged]
+
+        # Обновляем запись в полном журнале сделок
+        for t in self.trades:
+            if t.get("id") == newest["id"]:
+                t.update(merged)
+                break
+
+        self.log(
+            f"🔀 Объединено {len(long_trades)} позиций → 1: "
+            f"{total_amount:.2f} GRINCH @ ср.цена ${avg_entry_usd:.8f} | "
+            f"ставка {total_stake:.2f} TON | BE ${be_usd:.8f} | TP ${tp:.8f}",
+            "INFO"
+        )
+        try:
+            self.exp.save_open_trades(self.open_trades)
+        except Exception:
+            pass
+
     def force_buy(self, amount_ton=None):
         """Ручная покупка — обходит сигнальную логику, открывает по текущей цене."""
         try:
@@ -200,8 +271,7 @@ class Trader:
             price = price_feed.get("GRINCH") or 0
             if price <= 0:
                 return {"ok": False, "error": "Нет цены"}
-            if len(self.open_trades) >= getattr(__import__("config"), "Config").MAX_OPEN_TRADES:
-                return {"ok": False, "error": "Достигнут лимит открытых позиций"}
+            # Не блокируем — если уже есть лонги, новая покупка объединится с ними
             if amount_ton:
                 import config as _cfg
                 orig = _cfg.Config.TRADE_AMOUNT_TON
@@ -488,6 +558,8 @@ class Trader:
             self.open_trades.append(trade)
             self.trades.append(trade)
             self.stats["total_trades"] += 1
+            # Объединяем с уже открытыми LONG-позициями в одну
+            self._merge_long_trades()
 
             # Обновляем DCA-состояние
             self.dca_last_buy_price  = price_usd
@@ -896,7 +968,7 @@ class Trader:
 
         if final_signal == "BUY" and blocked:
             self.log(f"⏸️ Вход отменён: {blocked}", "WARN")
-        elif final_signal == "BUY" and len(self.open_trades) < Config.MAX_OPEN_TRADES:
+        elif final_signal == "BUY" and not self.open_short_trades:
             # ── Smart BUY: ждём откат или покупаем сразу ──────────────────
             # Грейд A при высокой уверенности — покупаем сразу (не ждём откат)
             is_elite_instant = (entry_quality == "A" and conf >= Config.SMART_BUY_SKIP_CONF - 10)
@@ -1230,6 +1302,8 @@ class Trader:
         self.open_trades.append(trade)
         self.trades.append(dict(trade))
         self.stats["total_trades"] += 1
+        # Если уже есть другие LONG-позиции — объединяем всё в одну
+        self._merge_long_trades()
         # АВТО-СОХРАНЕНИЕ: цена покупки + цель продажи на диск, чтобы после
         # перезапуска бот знал почём купил и не продал дешевле.
         try:
