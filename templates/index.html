@@ -879,6 +879,80 @@
         </div>
       </div>
 
+      <!-- ─── AI Советник (Groq LLaMA) ─── -->
+      <div class="card card-c" id="advisor-card">
+        <div class="card-title ctit">
+          🤖 AI Советник
+          <span id="adv-model-badge" style="font-size:10px;font-weight:600;color:#a0f;background:rgba(160,0,255,.13);padding:2px 8px;border-radius:10px;margin-left:8px">LLaMA 3.3-70B · Groq</span>
+          <span id="adv-status-dot" style="display:inline-block;width:8px;height:8px;border-radius:50%;background:#444;margin-left:8px;vertical-align:middle"></span>
+        </div>
+
+        <div style="padding:0 4px 8px;font-size:11px;color:#8892b0;line-height:1.5">
+          Советник общается с бесплатным LLaMA 3.3-70B (Groq), анализирует рыночную ситуацию и оптимизирует параметры торговли для работы <strong style="color:#00ff88">только в плюс</strong>.
+        </div>
+
+        <!-- Статус / последний вердикт -->
+        <div id="adv-verdict-row" style="display:none;margin:0 0 10px;padding:10px 14px;border-radius:10px;background:rgba(0,212,255,.08);border:1px solid rgba(0,212,255,.2)">
+          <div style="display:flex;align-items:center;gap:10px;margin-bottom:6px">
+            <span id="adv-verdict-badge" style="font-size:12px;font-weight:700;padding:3px 10px;border-radius:8px;background:rgba(0,255,136,.15);color:#00ff88">—</span>
+            <span id="adv-conf-label" style="font-size:11px;color:#8892b0"></span>
+            <span id="adv-time-label" style="font-size:10px;color:#555;margin-left:auto"></span>
+          </div>
+          <div id="adv-analysis-text" style="font-size:11px;color:#ccd6f6;line-height:1.55"></div>
+        </div>
+
+        <!-- Рекомендации -->
+        <div id="adv-recs-wrap" style="display:none;margin-bottom:10px">
+          <div style="font-size:10px;font-weight:700;color:#ffd166;margin-bottom:6px;letter-spacing:.5px">РЕКОМЕНДАЦИИ ПАРАМЕТРОВ</div>
+          <div id="adv-recs-list" style="display:flex;flex-direction:column;gap:5px"></div>
+        </div>
+
+        <!-- Применённые изменения -->
+        <div id="adv-applied-wrap" style="display:none;margin-bottom:10px;padding:8px 12px;background:rgba(0,255,136,.07);border:1px solid rgba(0,255,136,.18);border-radius:8px">
+          <div style="font-size:10px;font-weight:700;color:#00ff88;margin-bottom:4px">✅ ПРИМЕНЕНО</div>
+          <div id="adv-applied-list" style="font-size:11px;color:#ccd6f6"></div>
+        </div>
+
+        <!-- Чат с советником -->
+        <div style="margin-bottom:8px">
+          <div style="font-size:10px;color:#8892b0;margin-bottom:4px">Задай вопрос или уточнение (необязательно):</div>
+          <div style="display:flex;gap:6px">
+            <input id="adv-user-msg" type="text" placeholder="Например: сейчас нисходящий тренд, что делать?" style="flex:1;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.1);border-radius:8px;padding:7px 10px;font-size:11px;color:#ccd6f6;outline:none">
+          </div>
+        </div>
+
+        <!-- Кнопки -->
+        <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+          <button class="btn btn-blue" id="adv-btn-run" onclick="advRun(false)" style="flex:1;min-width:120px">
+            🔍 Анализировать
+          </button>
+          <button class="btn" id="adv-btn-apply" onclick="advRun(true)" style="flex:1;min-width:140px;background:rgba(0,255,136,.15);border:1px solid rgba(0,255,136,.35);color:#00ff88">
+            ⚡ Анализ + Применить
+          </button>
+          <button class="btn-tiny" id="adv-btn-auto" onclick="advToggleAuto()" style="padding:6px 12px;font-size:10px">
+            🔄 Авто: <span id="adv-auto-label">ВЫКЛ</span>
+          </button>
+        </div>
+
+        <!-- Спиннер -->
+        <div id="adv-spinner" style="display:none;text-align:center;padding:14px;font-size:12px;color:#8892b0">
+          <span style="animation:spin 1s linear infinite;display:inline-block;margin-right:6px">⚙️</span>
+          Советник думает… (обычно 3-8 сек)
+        </div>
+
+        <!-- История сессии -->
+        <div id="adv-history-wrap" style="display:none;margin-top:10px">
+          <div style="font-size:10px;color:#555;font-weight:700;margin-bottom:4px">ИСТОРИЯ СЕССИИ</div>
+          <div id="adv-history-list" style="display:flex;flex-direction:column;gap:3px;max-height:120px;overflow-y:auto"></div>
+        </div>
+
+        <div id="adv-error-msg" style="display:none;margin-top:8px;padding:8px 12px;background:rgba(255,69,58,.1);border:1px solid rgba(255,69,58,.3);border-radius:8px;font-size:11px;color:#ff6b6b"></div>
+
+        <div style="margin-top:10px;padding:8px 12px;background:rgba(160,0,255,.07);border:1px solid rgba(160,0,255,.2);border-radius:8px;font-size:10px;color:#8892b0">
+          🔑 Нужен бесплатный Groq API ключ: <strong style="color:#a0f">console.groq.com</strong> → API Keys → Create → добавить в Secrets как <code style="color:#00d4ff">GROQ_API_KEY</code>
+        </div>
+      </div>
+
       <!-- Logs -->
       <div class="card card-c">
         <div class="card-title ctit">📝 Логи бота <button class="btn-tiny" onclick="clearLogs()">Очистить</button></div>
@@ -1002,7 +1076,134 @@ document.addEventListener('DOMContentLoaded', () => {
   });
   const priceEl = document.getElementById('price');
   if (priceEl) obs.observe(priceEl, {childList:true, characterData:true, subtree:true});
+  advLoadStatus();
 });
+
+// ─── AI Советник (Groq LLaMA) ───────────────────────────────────────────────
+function advLoadStatus() {
+  fetch('/api/advisor/status').then(r => r.json()).then(s => {
+    const dot = document.getElementById('adv-status-dot');
+    if (dot) dot.style.background = s.enabled ? '#00ff88' : '#555';
+    if (s.last_advice) advRenderResult(s.last_advice);
+    if (s.history && s.history.length) advRenderHistory(s.history);
+    const autoLbl = document.getElementById('adv-auto-label');
+    if (autoLbl) autoLbl.textContent = s.auto_apply ? 'ВКЛ' : 'ВЫКЛ';
+  }).catch(() => {});
+}
+
+function advRun(apply) {
+  const btn1  = document.getElementById('adv-btn-run');
+  const btn2  = document.getElementById('adv-btn-apply');
+  const spin  = document.getElementById('adv-spinner');
+  const errEl = document.getElementById('adv-error-msg');
+  const msg   = (document.getElementById('adv-user-msg') || {}).value || '';
+
+  if (btn1) btn1.disabled = true;
+  if (btn2) btn2.disabled = true;
+  if (spin)  spin.style.display  = 'block';
+  if (errEl) errEl.style.display = 'none';
+
+  fetch('/api/advisor/run', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({auto_apply: apply, message: msg})
+  }).then(r => r.json()).then(res => {
+    if (spin)  spin.style.display  = 'none';
+    if (btn1) btn1.disabled = false;
+    if (btn2) btn2.disabled = false;
+    if (!res.ok) {
+      if (errEl) { errEl.textContent = '⚠️ ' + (res.error || 'Ошибка'); errEl.style.display = 'block'; }
+      return;
+    }
+    advRenderResult(res);
+    advLoadStatus();
+    if (apply && res.applied && res.applied.length)
+      showToast('✅ AI советник применил ' + res.applied.length + ' изменений', 'success');
+  }).catch(e => {
+    if (spin)  spin.style.display  = 'none';
+    if (btn1) btn1.disabled = false;
+    if (btn2) btn2.disabled = false;
+    if (errEl) { errEl.textContent = '⚠️ Сетевая ошибка: ' + e; errEl.style.display = 'block'; }
+  });
+}
+
+function advRenderResult(res) {
+  const verdictColors = {
+    'НАКАПЛИВАТЬ': '#00ff88', 'АКТИВНО_ТОРГОВАТЬ': '#00d4ff',
+    'ОСТОРОЖНО': '#ffd166', 'ПАУЗА': '#ff6b6b'
+  };
+  const vRow    = document.getElementById('adv-verdict-row');
+  const vBadge  = document.getElementById('adv-verdict-badge');
+  const vConf   = document.getElementById('adv-conf-label');
+  const vTime   = document.getElementById('adv-time-label');
+  const vText   = document.getElementById('adv-analysis-text');
+  const recsWrap= document.getElementById('adv-recs-wrap');
+  const recsList= document.getElementById('adv-recs-list');
+  const appWrap = document.getElementById('adv-applied-wrap');
+  const appList = document.getElementById('adv-applied-list');
+
+  if (vRow)   vRow.style.display   = 'block';
+  if (vBadge) {
+    const v = res.market_verdict || 'ОСТОРОЖНО';
+    vBadge.textContent = v;
+    vBadge.style.color = verdictColors[v] || '#ffd166';
+    vBadge.style.background = (verdictColors[v] || '#ffd166').replace(')', ',.15)').replace('rgb', 'rgba');
+  }
+  if (vConf)  vConf.textContent  = res.confidence ? 'уверенность: ' + Math.round(res.confidence * 100) + '%' : '';
+  if (vTime)  vTime.textContent  = res.timestamp ? res.timestamp + ' · ' + (res.elapsed_s || '') + 's' : '';
+  if (vText)  vText.textContent  = res.analysis || '';
+
+  const recs = res.recommendations || [];
+  if (recsWrap) recsWrap.style.display = recs.length ? 'block' : 'none';
+  if (recsList) {
+    recsList.innerHTML = recs.map(r => {
+      const up = parseFloat(r.suggested) > parseFloat(r.current);
+      return `<div style="background:rgba(255,255,255,.04);border-radius:7px;padding:7px 10px;font-size:11px">
+        <div style="display:flex;align-items:center;gap:6px;margin-bottom:3px">
+          <code style="color:#00d4ff;font-size:10px">${r.param}</code>
+          <span style="color:#8892b0">${r.current} → </span>
+          <strong style="color:${up ? '#00ff88' : '#ffd166'}">${r.suggested}</strong>
+          <span style="font-size:13px">${up ? '↑' : '↓'}</span>
+        </div>
+        <div style="color:#8892b0;line-height:1.45">${r.reason || ''}</div>
+      </div>`;
+    }).join('');
+  }
+
+  const applied = res.applied || [];
+  if (appWrap)  appWrap.style.display = applied.length ? 'block' : 'none';
+  if (appList)  appList.innerHTML = applied.map(a => `<div>• ${a}</div>`).join('');
+}
+
+function advRenderHistory(history) {
+  const wrap = document.getElementById('adv-history-wrap');
+  const list = document.getElementById('adv-history-list');
+  if (!wrap || !list) return;
+  wrap.style.display = 'block';
+  list.innerHTML = [...history].reverse().map(h => {
+    const applied = h.applied && h.applied.length ? ` · ✅ ${h.applied.length} изм.` : '';
+    return `<div style="font-size:10px;color:#8892b0;padding:2px 0">${h.ts} — <strong style="color:#ccd6f6">${h.verdict || ''}</strong>${applied}</div>`;
+  }).join('');
+}
+
+function advToggleAuto() {
+  fetch('/api/advisor/toggle_auto', {method:'POST'}).then(r => r.json()).then(res => {
+    const lbl = document.getElementById('adv-auto-label');
+    if (lbl) lbl.textContent = res.auto_apply ? 'ВКЛ' : 'ВЫКЛ';
+    showToast('Авто-применение: ' + (res.auto_apply ? 'ВКЛЮЧЕНО' : 'ВЫКЛЮЧЕНО'), 'info');
+  });
+}
+
+function showToast(msg, type) {
+  const c = document.getElementById('toast-container');
+  if (!c) return;
+  const t = document.createElement('div');
+  const colors = {success:'#00ff88', info:'#00d4ff', error:'#ff6b6b'};
+  t.style.cssText = `background:#1a1a2e;border:1px solid ${colors[type]||'#555'};color:${colors[type]||'#fff'};padding:10px 16px;border-radius:8px;font-size:12px;margin-top:6px;animation:fadeIn .3s ease`;
+  t.textContent = msg;
+  c.appendChild(t);
+  setTimeout(() => t.remove(), 3500);
+}
 </script>
 
 <div id="toast-container"></div>

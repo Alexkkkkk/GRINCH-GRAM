@@ -421,6 +421,28 @@ def api_ai_decisions():
     log = getattr(trader, "decision_log", [])
     return jsonify(list(reversed(log))[:15])
 
+# ─── AI Советник (Groq LLaMA) ───────────────────────────────────────────────
+@app.route("/api/advisor/status")
+def api_advisor_status():
+    from ai_advisor import get_status
+    return jsonify(get_status())
+
+@app.route("/api/advisor/run", methods=["POST"])
+def api_advisor_run():
+    from ai_advisor import run_advisor, reload_key
+    reload_key()
+    data        = request.json or {}
+    auto_apply  = bool(data.get("auto_apply", False))
+    user_msg    = str(data.get("message", ""))[:500]
+    result = run_advisor(auto_apply=auto_apply, user_message=user_msg)
+    return jsonify(result)
+
+@app.route("/api/advisor/toggle_auto", methods=["POST"])
+def api_advisor_toggle_auto():
+    from ai_advisor import toggle_auto_apply
+    state = toggle_auto_apply()
+    return jsonify({"auto_apply": state})
+
 @app.route("/api/trade/manual_buy", methods=["POST"])
 def api_manual_buy():
     data   = request.get_json(silent=True) or {}
