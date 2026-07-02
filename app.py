@@ -244,6 +244,12 @@ def start_background():
         ton.start()
         import db_backup
         db_backup.start()
+        # ── AI Советник: запуск фонового потока автономии ──────────────
+        try:
+            from ai_advisor import start_background as _adv_start
+            _adv_start()
+        except Exception as _adv_ex:
+            print(f"[Advisor] не запущен: {_adv_ex}")
 
 start_background()
 
@@ -442,6 +448,23 @@ def api_advisor_toggle_auto():
     from ai_advisor import toggle_auto_apply
     state = toggle_auto_apply()
     return jsonify({"auto_apply": state})
+
+@app.route("/api/advisor/config", methods=["GET", "POST"])
+def api_advisor_config():
+    from ai_advisor import set_config, AUTO_INTERVAL_MIN, AUTO_TRADES_TRIGGER
+    if request.method == "POST":
+        data = request.json or {}
+        result = set_config(
+            interval_min   = data.get("interval_min"),
+            trades_trigger = data.get("trades_trigger"),
+        )
+        return jsonify({"ok": True, **result})
+    return jsonify({"interval_min": AUTO_INTERVAL_MIN, "trades_trigger": AUTO_TRADES_TRIGGER})
+
+@app.route("/api/advisor/log")
+def api_advisor_log():
+    from ai_advisor import get_adaptation_log
+    return jsonify(get_adaptation_log())
 
 @app.route("/api/trade/manual_buy", methods=["POST"])
 def api_manual_buy():

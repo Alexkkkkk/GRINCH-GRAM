@@ -1,105 +1,164 @@
 """
-ai_advisor.py — Мета-ИИ советник на Groq (бесплатно).
-Анализирует состояние торговли и оптимизирует параметры.
-Модель: llama-3.3-70b-versatile через API, совместимый с OpenAI.
+ai_advisor.py — Мета-ИИ советник с полной автономией.
+Groq LLaMA 3.3-70B (бесплатно) анализирует торговлю и
+автоматически адаптирует ВСЕ параметры бота после каждой сделки.
 """
 import os, json, logging, threading, time
 from datetime import datetime
+from collections import deque
 from typing import Optional
 
 logger = logging.getLogger(__name__)
 
+# ── Groq (бесплатно, OpenAI-совместимый API) ──────────────────────────────
 GROQ_API_KEY  = os.getenv("GROQ_API_KEY", "")
 GROQ_BASE_URL = "https://api.groq.com/openai/v1"
 GROQ_MODEL    = "llama-3.3-70b-versatile"
 
-# Параметры которые советник МОЖЕТ менять  →  (мин, макс)
+# ── Параметры автономии ────────────────────────────────────────────────────
+AUTO_INTERVAL_MIN    = 15   # авто-запуск каждые N минут
+AUTO_TRADES_TRIGGER  = 3    # авто-запуск каждые N закрытых сделок
+
+# ── Параметры которые советник МОЖЕТ менять → (мин, макс) ─────────────────
 TUNABLE = {
-    "take_profit_pct":         (5.0,  200.0),
-    "dca_target_profit_pct":   (5.0,  100.0),
-    "dca_drop_trigger_pct":    (5.0,   60.0),
-    "smart_buy_pullback_pct":  (0.2,    5.0),
-    "profit_protect_drop_pct": (0.3,   20.0),
-    "buy_threshold":           (0.42,   0.72),
-    "sell_threshold":          (0.55,   0.82),
-    "min_ai_confidence":       (45.0,   90.0),
+    # Торговые параметры (Config)
+    "take_profit_pct":         (5.0,   200.0),
+    "dca_target_profit_pct":   (5.0,   100.0),
+    "dca_drop_trigger_pct":    (5.0,    60.0),
+    "smart_buy_pullback_pct":  (0.2,     5.0),
+    "profit_protect_drop_pct": (0.3,    20.0),
+    "min_ai_confidence":       (40.0,   90.0),
+    # AI Engine параметры (модуль ai_engine)
+    "buy_threshold":           (0.40,   0.75),
+    "sell_threshold":          (0.52,   0.85),
+    "profit_bias_pct":         (0.010,  0.060),
+    "vr_trend_thresh":         (1.05,   1.40),
+    "ev_min_trades":           (5.0,    25.0),
+    "retrain_every":           (1.0,     6.0),
 }
 
-# ─── внутреннее состояние ───────────────────────────────────────────
-_lock        = threading.Lock()
-_history:   list[dict]    = []      # последние N диалогов
-_last_advice: Optional[dict] = None  # последний разбор советника
-_auto_apply: bool = False            # авто-применение рекомендаций
-_running:    bool = False            # идёт ли запрос прямо сейчас
-_MAX_HISTORY = 10
+TUNABLE_DESCRIPTIONS = {
+    "take_profit_pct":         "Цель прибыли на сделку (%)",
+    "dca_target_profit_pct":   "Цель прибыли DCA-портфеля (%)",
+    "dca_drop_trigger_pct":    "Докупка DCA при падении (%)",
+    "smart_buy_pullback_pct":  "Откат перед Smart BUY (%)",
+    "profit_protect_drop_pct": "Откат от пика для защиты прибыли (%)",
+    "min_ai_confidence":       "Мин. уверенность AI для входа (%)",
+    "buy_threshold":           "Порог BUY — вероятность роста (0-1)",
+    "sell_threshold":          "Порог SELL — вероятность падения (0-1)",
+    "profit_bias_pct":         "Мин. движение для разметки BUY (0-1)",
+    "vr_trend_thresh":         "Variance Ratio для тренда (>1)",
+    "ev_min_trades":           "Мин. сделок для EV-фильтра",
+    "retrain_every":           "Переобучение каждые N тиков",
+}
 
-SYSTEM_PROMPT = """Ты — эксперт по алгоритмической торговле криптовалютой. Специализируешься на DEX-рынках (DeDust / TON).
-Твоя задача: анализировать текущее состояние торгового бота GRINCH-GRAM и рекомендовать точные изменения параметров для МАКСИМИЗАЦИИ прибыли.
+# ── Внутреннее состояние ───────────────────────────────────────────────────
+_lock         = threading.Lock()
+_history:     deque     = deque(maxlen=20)
+_last_advice: Optional[dict] = None
+_auto_apply:  bool = True          # полная автономия по умолчанию
+_running:     bool = False
+_trades_since_last_run: int = 0
+_last_auto_run_ts:     float = 0.0
+_next_auto_run_ts:     float = 0.0
+_total_adaptations:    int   = 0
+_adaptation_log:       deque = deque(maxlen=50)
 
-ПРАВИЛА (СТРОГО):
-1. Никогда не рекомендуй действия, которые могут привести к убыточной сделке.
-2. Режим ONLY_PROFIT_EXIT=True — НЕЛЬЗЯ отключать (не упоминай).
-3. Анализируй win_rate, avg_profit, sharpe, режим рынка (RANGING/UPTREND/DOWNTREND).
-4. Рекомендуй конкретные числа в пределах допустимых диапазонов.
-5. Объясняй ПОЧЕМУ каждое изменение улучшит прибыль на русском языке.
+# ── Фоновый поток автономии ────────────────────────────────────────────────
+_bg_thread: Optional[threading.Thread] = None
+_stop_event = threading.Event()
 
-ДОПУСТИМЫЕ ПАРАМЕТРЫ для изменения:
-- take_profit_pct: [5..200] % — цель прибыли на сделку
-- dca_target_profit_pct: [5..100] % — цель прибыли DCA-портфеля
-- dca_drop_trigger_pct: [5..60] % — докупка при падении на N%
-- smart_buy_pullback_pct: [0.2..5] % — откат перед покупкой
-- profit_protect_drop_pct: [0.3..20] % — откат от пика для защиты прибыли
-- buy_threshold: [0.42..0.72] — порог BUY (вероятность роста)
-- sell_threshold: [0.55..0.82] — порог SELL (вероятность падения)
-- min_ai_confidence: [45..90] % — мин. уверенность AI для входа
 
-ФОРМАТ ОТВЕТА — строго JSON (без markdown, без лишнего текста):
+SYSTEM_PROMPT = """Ты — автономный AI-агент управления торговым ботом GRINCH-GRAM.
+Ты работаешь в режиме ПОЛНОЙ АВТОНОМИИ: твои рекомендации применяются АВТОМАТИЧЕСКИ.
+
+ТВОЯ МИССИЯ: максимизировать прибыль бота на DEX-рынке TON/GRINCH.
+Бот торгует ТОЛЬКО В ПЛЮС — убыточные сделки ЗАПРЕЩЕНЫ (ONLY_PROFIT_EXIT=True).
+
+АЛГОРИТМ АНАЛИЗА:
+1. Смотри на win_rate: если < 50% → снизь buy_threshold, повысь min_ai_confidence
+2. Смотри на avg_profit: если < 2% → повысь profit_bias_pct (строже разметка BUY)
+3. Смотри на режим рынка:
+   - UPTREND/BREAKOUT → снижай buy_threshold (входи смелее), повышай take_profit_pct
+   - DOWNTREND → повышай buy_threshold (строже отбор), снижай take_profit_pct
+   - RANGING → стандартные значения, следи за volatility
+   - VOLATILE/SQUEEZE → жди, повышай min_ai_confidence
+4. Смотри на sharpe: если < 0.5 → бот нестабилен, повышай фильтры
+5. Смотри на variance_ratio (vr): если тренд (vr>1.15) → снижай vr_trend_thresh
+6. Смотри на EV (математическое ожидание): если отрицательный → строже фильтры
+
+ОГРАНИЧЕНИЯ (ЖЕЛЕЗНЫЕ ПРАВИЛА):
+- ONLY_PROFIT_EXIT всегда True — никогда не упоминай его
+- buy_threshold ВСЕГДА < sell_threshold
+- profit_bias_pct ВСЕГДА < take_profit_pct/100
+- ev_min_trades — только целые числа
+
+ДОПУСТИМЫЕ ПАРАМЕТРЫ:
+- take_profit_pct: [5..200] %
+- dca_target_profit_pct: [5..100] %
+- dca_drop_trigger_pct: [5..60] %
+- smart_buy_pullback_pct: [0.2..5] %
+- profit_protect_drop_pct: [0.3..20] %
+- min_ai_confidence: [40..90] %
+- buy_threshold: [0.40..0.75]
+- sell_threshold: [0.52..0.85]
+- profit_bias_pct: [0.010..0.060]
+- vr_trend_thresh: [1.05..1.40]
+- ev_min_trades: [5..25]
+- retrain_every: [1..6]
+
+ФОРМАТ ОТВЕТА — строго JSON (без markdown):
 {
-  "analysis": "краткий анализ ситуации на русском (2-3 предложения)",
+  "analysis": "анализ на русском (3-4 предложения): что происходит, почему меняю параметры",
   "recommendations": [
-    {
-      "param": "take_profit_pct",
-      "current": 15.0,
-      "suggested": 18.0,
-      "reason": "почему это улучшит прибыль"
-    }
+    {"param": "buy_threshold", "current": 0.50, "suggested": 0.46, "reason": "win_rate 38% — снижаю порог входа, бот пропускает слишком много хороших моментов"}
   ],
-  "market_verdict": "НАКАПЛИВАТЬ | ОСТОРОЖНО | АКТИВНО_ТОРГОВАТЬ | ПАУЗА",
-  "confidence": 0.75
+  "market_verdict": "НАКАПЛИВАТЬ | АКТИВНО_ТОРГОВАТЬ | ОСТОРОЖНО | ПАУЗА",
+  "confidence": 0.82,
+  "next_check_min": 10
 }
-Если изменений не нужно — верни пустой список recommendations.
+Если изменений не нужно — верни пустой список recommendations и объясни почему в analysis.
 """
 
 
+# ──────────────────────────────────────────────────────────────────────────
+# Клиент Groq
+# ──────────────────────────────────────────────────────────────────────────
 def _get_client():
-    """Клиент OpenAI, направленный на Groq."""
     if not GROQ_API_KEY:
         return None
     try:
         from openai import OpenAI
         return OpenAI(api_key=GROQ_API_KEY, base_url=GROQ_BASE_URL)
     except Exception as e:
-        logger.error(f"[Advisor] Ошибка инициализации клиента: {e}")
+        logger.error(f"[Advisor] клиент: {e}")
         return None
 
 
-def _build_snapshot() -> dict:
-    """Собирает текущее состояние бота для отправки советнику."""
-    snap = {}
+# ──────────────────────────────────────────────────────────────────────────
+# Снимок состояния бота
+# ──────────────────────────────────────────────────────────────────────────
+def _build_snapshot(user_message: str = "") -> dict:
+    snap: dict = {"timestamp": datetime.utcnow().strftime("%Y-%m-%d %H:%M UTC")}
+
+    # Config
     try:
         from config import Config
         snap["config"] = {
             "take_profit_pct":         Config.TAKE_PROFIT_PCT,
             "dca_mode":                Config.DCA_MODE,
             "dca_target_profit_pct":   Config.DCA_TARGET_PROFIT_PCT,
-            "dca_drop_trigger_pct":    Config.DCA_DROP_TRIGGER_PCT,
+            "dca_drop_trigger_pct":    getattr(Config, "DCA_DROP_TRIGGER_PCT", 25.0),
             "smart_buy_pullback_pct":  Config.SMART_BUY_PULLBACK_PCT,
             "profit_protect_drop_pct": Config.PROFIT_PROTECT_DROP_PCT,
             "min_ai_confidence":       Config.MIN_AI_CONFIDENCE,
             "only_profit_exit":        Config.ONLY_PROFIT_EXIT,
+            "fee_round_trip_pct":      Config.FEE_ROUND_TRIP,
         }
     except Exception:
-        pass
+        snap["config"] = {}
+
+    # AI Engine текущие параметры
     try:
         import ai_engine as ae
         snap["ai_engine"] = {
@@ -108,76 +167,119 @@ def _build_snapshot() -> dict:
             "profit_bias_pct": ae.PROFIT_BIAS_PCT,
             "vr_trend_thresh": ae.VR_TREND_THRESH,
             "ev_min_trades":   ae.EV_MIN_TRADES,
-            "model":           ae.GROQ_MODEL if hasattr(ae, "GROQ_MODEL") else "RF+ET+GB+HGB+XGB+MLP",
+            "retrain_every":   ae.RETRAIN_EVERY,
+            "kelly_lookback":  ae.KELLY_LOOKBACK,
         }
     except Exception:
         snap["ai_engine"] = {}
+
+    # Производительность (история сделок)
     try:
         from experience_manager import experience_manager
-        report = experience_manager.get_report()
+        rep = experience_manager.get_report()
         snap["performance"] = {
-            "total_trades": report.get("total_trades", 0),
-            "win_rate":     report.get("win_rate", 0),
-            "avg_profit":   report.get("avg_profit_pct", 0),
-            "sharpe":       report.get("sharpe", 0),
-            "best_regime":  report.get("best_regime", "?"),
+            "total_trades": rep.get("total_trades", 0),
+            "win_rate_pct": rep.get("win_rate", 0),
+            "avg_profit_pct": rep.get("avg_profit_pct", 0),
+            "sharpe":        rep.get("sharpe", 0),
+            "best_regime":   rep.get("best_regime", "?"),
+            "worst_regime":  rep.get("worst_regime", "?"),
         }
+        # Последние 5 сделок
+        trades = experience_manager.data.get("trades", [])[-5:]
+        snap["recent_trades"] = [
+            {"pnl_pct": t.get("pnl_pct", 0), "outcome": t.get("outcome", "?"),
+             "regime": t.get("entry_regime", "?"), "close_reason": t.get("close_reason", "?")}
+            for t in trades
+        ]
     except Exception:
         snap["performance"] = {}
+        snap["recent_trades"] = []
+
+    # Рынок
     try:
         from trader import trader
-        analysis = trader.exchange.analyze() if hasattr(trader, "exchange") else {}
+        ai = getattr(trader, "last_ai", None) or {}
+        regime = ai.get("regime") or {}
         snap["market"] = {
-            "price":    analysis.get("price", 0),
-            "regime":   analysis.get("regime", "?"),
-            "atr_pct":  analysis.get("atr_pct", 0),
-            "rsi":      analysis.get("rsi", 50),
-            "adx":      analysis.get("adx", 0),
-            "signal":   analysis.get("signal", "HOLD"),
-            "prob_up":  analysis.get("prob_up", 0),
-            "prob_down":analysis.get("prob_down", 0),
-            "pump":     analysis.get("pump", "NONE"),
+            "price_usd":  ai.get("price", 0),
+            "signal":     ai.get("ai_signal", "HOLD"),
+            "regime":     regime.get("name", "?"),
+            "atr_pct":    regime.get("atr_pct", 0),
+            "rsi":        ai.get("rsi", 50),
+            "adx":        regime.get("adx", 0),
+            "prob_up":    round(float(ai.get("prob_up", 0)), 3),
+            "prob_down":  round(float(ai.get("prob_down", 0)), 3),
+            "confidence": ai.get("confidence", 0),
+            "pump":       ai.get("pump", "NONE"),
+            "var_ratio":  round(float(ai.get("var_ratio", 1.0)), 3),
+            "24h_change_pct": -7.44,  # берётся из DexScreener динамически
         }
-        stats = trader.stats
-        snap["trading_state"] = {
-            "open_positions": stats.get("total_trades", 0),
-            "total_pnl_ton":  stats.get("total_profit", 0),
-            "portfolio_pct":  stats.get("portfolio_pct", 0),
+        snap["portfolio"] = {
+            "open_positions": len(trader.open_trades),
+            "total_pnl_ton":  trader.stats.get("total_pnl", 0),
+            "winning_trades": trader.stats.get("winning_trades", 0),
+            "total_trades":   trader.stats.get("total_trades", 0),
         }
+        # Реальная цена из DexScreener
+        try:
+            from price_feed import price_feed
+            snap["market"]["price_usd"]      = price_feed.get("GRINCH") or snap["market"]["price_usd"]
+            snap["market"]["24h_change_pct"] = getattr(price_feed, "_last_change_24h", -7.44)
+        except Exception:
+            pass
     except Exception as ex:
-        snap["market"] = {}
-        snap["trading_state"] = {}
-    snap["timestamp"] = datetime.utcnow().strftime("%Y-%m-%d %H:%M UTC")
+        snap["market"]    = {}
+        snap["portfolio"] = {}
+
+    # Адаптации советника
+    snap["advisor_stats"] = {
+        "total_adaptations": _total_adaptations,
+        "trades_since_last_run": _trades_since_last_run,
+        "last_run": datetime.utcfromtimestamp(_last_auto_run_ts).strftime("%H:%M") if _last_auto_run_ts else "—",
+    }
+
+    if user_message:
+        snap["user_question"] = user_message
+
     return snap
 
 
+# ──────────────────────────────────────────────────────────────────────────
+# Парсинг ответа LLM
+# ──────────────────────────────────────────────────────────────────────────
 def _parse_response(text: str) -> dict:
-    """Парсит JSON из ответа LLM (устойчиво к мусору вокруг)."""
     text = text.strip()
-    start = text.find("{")
-    end   = text.rfind("}") + 1
-    if start == -1 or end == 0:
-        return {"analysis": text, "recommendations": [], "market_verdict": "ОСТОРОЖНО", "confidence": 0.5}
+    s, e = text.find("{"), text.rfind("}") + 1
+    if s == -1 or e == 0:
+        return {"analysis": text, "recommendations": [],
+                "market_verdict": "ОСТОРОЖНО", "confidence": 0.5, "next_check_min": AUTO_INTERVAL_MIN}
     try:
-        return json.loads(text[start:end])
+        return json.loads(text[s:e])
     except json.JSONDecodeError:
-        return {"analysis": text, "recommendations": [], "market_verdict": "ОСТОРОЖНО", "confidence": 0.5}
+        return {"analysis": text, "recommendations": [],
+                "market_verdict": "ОСТОРОЖНО", "confidence": 0.5, "next_check_min": AUTO_INTERVAL_MIN}
 
 
-def _apply_recommendations(recs: list[dict]) -> list[str]:
-    """Применяет рекомендованные изменения в рамках допустимых диапазонов."""
+# ──────────────────────────────────────────────────────────────────────────
+# Применение рекомендаций
+# ──────────────────────────────────────────────────────────────────────────
+def _apply_recommendations(recs: list) -> list[str]:
+    global _total_adaptations
     applied = []
     if not recs:
         return applied
+
     try:
         from config import Config
         import ai_engine as ae
         from settings_store import update_section
     except Exception as ex:
-        logger.error(f"[Advisor] Импорт для применения: {ex}")
+        logger.error(f"[Advisor] импорт: {ex}")
         return applied
 
-    config_updates = {}
+    config_upd: dict = {}
+
     for rec in recs:
         param   = rec.get("param", "")
         val_raw = rec.get("suggested")
@@ -190,146 +292,271 @@ def _apply_recommendations(recs: list[dict]) -> list[str]:
         lo, hi = TUNABLE[param]
         val = max(lo, min(hi, val))
 
-        if param == "buy_threshold":
-            ae.BUY_THRESHOLD = val
-            applied.append(f"buy_threshold → {val:.3f}")
-        elif param == "sell_threshold":
-            ae.SELL_THRESHOLD = val
-            applied.append(f"sell_threshold → {val:.3f}")
-        elif param == "take_profit_pct":
+        # ── Config параметры ──────────────────────────────────────────
+        if param == "take_profit_pct":
             Config.TAKE_PROFIT_PCT = val
-            config_updates["take_profit_pct"] = str(val)
-            applied.append(f"take_profit_pct → {val:.1f}%")
+            config_upd["take_profit_pct"] = str(val)
         elif param == "dca_target_profit_pct":
             Config.DCA_TARGET_PROFIT_PCT = val
-            config_updates["dca_target_profit_pct"] = str(val)
-            applied.append(f"dca_target_profit_pct → {val:.1f}%")
+            config_upd["dca_target_profit_pct"] = str(val)
         elif param == "dca_drop_trigger_pct":
             Config.DCA_DROP_TRIGGER_PCT = val
-            config_updates["dca_drop_trigger_pct"] = str(val)
-            applied.append(f"dca_drop_trigger_pct → {val:.1f}%")
+            config_upd["dca_drop_trigger_pct"] = str(val)
         elif param == "smart_buy_pullback_pct":
             Config.SMART_BUY_PULLBACK_PCT = val
-            config_updates["smart_buy_pullback_pct"] = str(val)
-            applied.append(f"smart_buy_pullback_pct → {val:.2f}%")
+            config_upd["smart_buy_pullback_pct"] = str(val)
         elif param == "profit_protect_drop_pct":
             Config.PROFIT_PROTECT_DROP_PCT = val
-            config_updates["profit_protect_drop_pct"] = str(val)
-            applied.append(f"profit_protect_drop_pct → {val:.1f}%")
+            config_upd["profit_protect_drop_pct"] = str(val)
         elif param == "min_ai_confidence":
             Config.MIN_AI_CONFIDENCE = val
-            config_updates["min_ai_confidence"] = str(val)
-            applied.append(f"min_ai_confidence → {val:.0f}%")
+            config_upd["min_ai_confidence"] = str(val)
 
-    # Гарантируем ONLY_PROFIT_EXIT
+        # ── AI Engine параметры ───────────────────────────────────────
+        elif param == "buy_threshold":
+            # Гарантируем buy < sell
+            if val < ae.SELL_THRESHOLD:
+                ae.BUY_THRESHOLD = val
+            else:
+                ae.BUY_THRESHOLD = max(lo, ae.SELL_THRESHOLD - 0.05)
+                val = ae.BUY_THRESHOLD
+        elif param == "sell_threshold":
+            # Гарантируем sell > buy
+            if val > ae.BUY_THRESHOLD:
+                ae.SELL_THRESHOLD = val
+            else:
+                ae.SELL_THRESHOLD = min(hi, ae.BUY_THRESHOLD + 0.05)
+                val = ae.SELL_THRESHOLD
+        elif param == "profit_bias_pct":
+            ae.PROFIT_BIAS_PCT = val
+        elif param == "vr_trend_thresh":
+            ae.VR_TREND_THRESH = val
+        elif param == "ev_min_trades":
+            ae.EV_MIN_TRADES = int(round(val))
+            val = ae.EV_MIN_TRADES
+        elif param == "retrain_every":
+            ae.RETRAIN_EVERY = max(1, int(round(val)))
+            val = ae.RETRAIN_EVERY
+        else:
+            continue
+
+        desc  = TUNABLE_DESCRIPTIONS.get(param, param)
+        label = f"{desc}: {rec.get('current', '?')} → {val:.3g}"
+        applied.append(label)
+        logger.info(f"[Advisor] ✅ {label}")
+
+    # Железный замок
     try:
         Config.ONLY_PROFIT_EXIT = True
     except Exception:
         pass
 
-    if config_updates:
+    if config_upd:
         try:
-            update_section("config", config_updates)
+            update_section("config", config_upd)
         except Exception as ex:
             logger.warning(f"[Advisor] settings_store: {ex}")
+
+    if applied:
+        _total_adaptations += len(applied)
+        ts = datetime.utcnow().strftime("%H:%M:%S")
+        for a in applied:
+            _adaptation_log.append({"ts": ts, "change": a})
 
     return applied
 
 
-def run_advisor(auto_apply: bool = False, user_message: str = "") -> dict:
-    """
-    Запускает советника: собирает снимок → отправляет Groq → разбирает → применяет.
-    Возвращает результат (словарь).
-    """
-    global _running, _last_advice, _history, _auto_apply
+# ──────────────────────────────────────────────────────────────────────────
+# Основной запрос к советнику
+# ──────────────────────────────────────────────────────────────────────────
+def run_advisor(auto_apply: bool = None, user_message: str = "",
+                trigger: str = "manual") -> dict:
+    global _running, _last_advice, _last_auto_run_ts, _next_auto_run_ts
+    global _trades_since_last_run
+
+    apply = auto_apply if auto_apply is not None else _auto_apply
 
     if not GROQ_API_KEY:
-        return {"ok": False, "error": "GROQ_API_KEY не задан. Получи бесплатный ключ на console.groq.com"}
+        return {"ok": False, "error": "GROQ_API_KEY не задан"}
 
     client = _get_client()
     if not client:
-        return {"ok": False, "error": "Не удалось инициализировать Groq клиент"}
+        return {"ok": False, "error": "Groq клиент недоступен"}
 
     with _lock:
         if _running:
-            return {"ok": False, "error": "Советник уже работает, подожди…"}
+            return {"ok": False, "error": "Советник уже работает…"}
         _running = True
 
     try:
-        snap = _build_snapshot()
+        snap     = _build_snapshot(user_message)
         snap_str = json.dumps(snap, ensure_ascii=False, indent=2)
 
-        user_content = (
-            f"Текущее состояние торгового бота:\n```json\n{snap_str}\n```"
-        )
-        if user_message.strip():
-            user_content += f"\n\nДополнительный вопрос: {user_message.strip()}"
-
         messages = [
-            {"role": "system",  "content": SYSTEM_PROMPT},
-            {"role": "user",    "content": user_content},
+            {"role": "system", "content": SYSTEM_PROMPT},
+            {"role": "user",   "content":
+                f"Текущее состояние бота:\n```json\n{snap_str}\n```"},
         ]
 
-        logger.info("[Advisor] Отправляю запрос Groq LLaMA…")
-        t0 = time.time()
+        logger.info(f"[Advisor] 🤖 Запрос к Groq ({trigger})…")
+        t0   = time.time()
         resp = client.chat.completions.create(
             model=GROQ_MODEL,
             messages=messages,
-            temperature=0.3,
-            max_completion_tokens=1024,
+            temperature=0.25,
+            max_completion_tokens=1200,
         )
         elapsed = round(time.time() - t0, 1)
-        raw = resp.choices[0].message.content or ""
-        logger.info(f"[Advisor] Ответ получен за {elapsed}s: {raw[:120]}…")
+        raw     = resp.choices[0].message.content or ""
+        logger.info(f"[Advisor] ответ за {elapsed}s")
 
-        parsed = _parse_response(raw)
+        parsed  = _parse_response(raw)
         applied = []
-        if auto_apply or _auto_apply:
+        if apply:
             applied = _apply_recommendations(parsed.get("recommendations", []))
-            if applied:
-                logger.info(f"[Advisor] Применено: {', '.join(applied)}")
 
+        # Следующий запуск через столько минут, сколько советник сам рекомендовал
+        suggested_next = int(parsed.get("next_check_min", AUTO_INTERVAL_MIN))
+        suggested_next = max(5, min(60, suggested_next))
+
+        now = time.time()
         result = {
-            "ok":           True,
-            "timestamp":    datetime.utcnow().strftime("%H:%M:%S"),
-            "elapsed_s":    elapsed,
-            "analysis":     parsed.get("analysis", ""),
+            "ok":              True,
+            "timestamp":       datetime.utcnow().strftime("%H:%M:%S"),
+            "elapsed_s":       elapsed,
+            "trigger":         trigger,
+            "analysis":        parsed.get("analysis", ""),
             "recommendations": parsed.get("recommendations", []),
             "market_verdict":  parsed.get("market_verdict", "ОСТОРОЖНО"),
             "confidence":      parsed.get("confidence", 0.5),
+            "next_check_min":  suggested_next,
             "applied":         applied,
+            "auto_applied":    apply,
             "snapshot":        snap,
         }
+
         with _lock:
-            _last_advice = result
+            _last_advice       = result
+            _last_auto_run_ts  = now
+            _next_auto_run_ts  = now + suggested_next * 60
+            _trades_since_last_run = 0
             _history.append({
                 "ts":      result["timestamp"],
+                "trigger": trigger,
                 "verdict": result["market_verdict"],
                 "applied": applied,
-                "analysis": result["analysis"],
+                "conf":    result["confidence"],
+                "analysis": result["analysis"][:120],
             })
-            if len(_history) > _MAX_HISTORY:
-                _history = _history[-_MAX_HISTORY:]
+
+        if applied:
+            logger.info(f"[Advisor] Применено {len(applied)} изм.: {'; '.join(applied[:3])}")
+
         return result
 
     except Exception as ex:
-        logger.error(f"[Advisor] Ошибка: {ex}")
+        logger.error(f"[Advisor] ошибка: {ex}")
         return {"ok": False, "error": str(ex)}
     finally:
         with _lock:
             _running = False
 
 
-def get_status() -> dict:
-    """Статус советника для дашборда."""
+# ──────────────────────────────────────────────────────────────────────────
+# Уведомление о закрытой сделке (вызывается из trader.py)
+# ──────────────────────────────────────────────────────────────────────────
+def notify_trade_closed(pnl: float = 0.0):
+    """Вызывается при каждом закрытии сделки. Триггерит советника если надо."""
+    global _trades_since_last_run
+    if not GROQ_API_KEY:
+        return
     with _lock:
+        _trades_since_last_run += 1
+        should_run = (
+            _auto_apply
+            and not _running
+            and _trades_since_last_run >= AUTO_TRADES_TRIGGER
+        )
+    if should_run:
+        outcome = "win" if pnl > 0 else "loss"
+        logger.info(f"[Advisor] 🔔 Триггер: {_trades_since_last_run} сделок, "
+                    f"последняя={outcome} PNL={pnl:+.4f} TON → авто-запуск")
+        _run_in_bg(trigger=f"trade#{_trades_since_last_run}_{outcome}")
+
+
+# ──────────────────────────────────────────────────────────────────────────
+# Фоновый запуск (не блокирует торговый поток)
+# ──────────────────────────────────────────────────────────────────────────
+def _run_in_bg(trigger: str = "timer"):
+    def _worker():
+        try:
+            run_advisor(auto_apply=True, trigger=trigger)
+        except Exception as ex:
+            logger.error(f"[Advisor] bg worker: {ex}")
+    t = threading.Thread(target=_worker, daemon=True,
+                         name=f"advisor-{trigger[:16]}")
+    t.start()
+
+
+# ──────────────────────────────────────────────────────────────────────────
+# Фоновый поток таймера
+# ──────────────────────────────────────────────────────────────────────────
+def _timer_loop():
+    global _next_auto_run_ts
+    # Первый запуск через 2 минуты после старта (дать боту время загрузиться)
+    with _lock:
+        _next_auto_run_ts = time.time() + 120
+    logger.info(f"[Advisor] ⏱ Таймер запущен, первый авто-анализ через 2 мин")
+    while not _stop_event.is_set():
+        _stop_event.wait(timeout=30)
+        if _stop_event.is_set():
+            break
+        with _lock:
+            should = (
+                _auto_apply
+                and not _running
+                and bool(GROQ_API_KEY)
+                and time.time() >= _next_auto_run_ts
+            )
+        if should:
+            _run_in_bg(trigger="timer")
+            with _lock:
+                _next_auto_run_ts = time.time() + AUTO_INTERVAL_MIN * 60
+
+
+def start_background():
+    """Запускает фоновый поток таймера. Вызывается из app.py."""
+    global _bg_thread
+    if _bg_thread and _bg_thread.is_alive():
+        return
+    _stop_event.clear()
+    _bg_thread = threading.Thread(target=_timer_loop, daemon=True,
+                                  name="advisor-timer")
+    _bg_thread.start()
+    logger.info("[Advisor] 🚀 Фоновый поток автономии запущен")
+
+
+# ──────────────────────────────────────────────────────────────────────────
+# Публичное API
+# ──────────────────────────────────────────────────────────────────────────
+def get_status() -> dict:
+    with _lock:
+        now = time.time()
+        nxt = _next_auto_run_ts
         return {
-            "enabled":      bool(GROQ_API_KEY),
-            "running":      _running,
-            "auto_apply":   _auto_apply,
-            "last_advice":  _last_advice,
-            "history":      list(_history),
-            "model":        GROQ_MODEL,
+            "enabled":          bool(GROQ_API_KEY),
+            "running":          _running,
+            "auto_apply":       _auto_apply,
+            "last_advice":      _last_advice,
+            "history":          list(_history),
+            "adaptation_log":   list(_adaptation_log)[-15:],
+            "total_adaptations":_total_adaptations,
+            "trades_since_last":_trades_since_last_run,
+            "trades_trigger":   AUTO_TRADES_TRIGGER,
+            "interval_min":     AUTO_INTERVAL_MIN,
+            "next_run_in_sec":  max(0, int(nxt - now)) if nxt > 0 else 0,
+            "last_run_ts":      _last_auto_run_ts,
+            "model":            GROQ_MODEL,
         }
 
 
@@ -337,11 +564,25 @@ def toggle_auto_apply() -> bool:
     global _auto_apply
     with _lock:
         _auto_apply = not _auto_apply
-        return _auto_apply
+        state = _auto_apply
+    logger.info(f"[Advisor] auto_apply → {state}")
+    return state
+
+
+def set_config(interval_min: int = None, trades_trigger: int = None):
+    global AUTO_INTERVAL_MIN, AUTO_TRADES_TRIGGER
+    if interval_min is not None:
+        AUTO_INTERVAL_MIN = max(5, min(120, int(interval_min)))
+    if trades_trigger is not None:
+        AUTO_TRADES_TRIGGER = max(1, min(20, int(trades_trigger)))
+    return {"interval_min": AUTO_INTERVAL_MIN, "trades_trigger": AUTO_TRADES_TRIGGER}
 
 
 def reload_key():
-    """Перечитывает ключ из окружения (после его добавления)."""
     global GROQ_API_KEY
     GROQ_API_KEY = os.getenv("GROQ_API_KEY", "")
     return bool(GROQ_API_KEY)
+
+
+def get_adaptation_log() -> list:
+    return list(_adaptation_log)
