@@ -2,6 +2,7 @@ modules = ["python-3.11", "nodejs-20", "web"]
 [agent]
 expertMode = true
 stack = "FLASK_VANILLA_JS"
+integrations = ["python_openai:1.0.0"]
 
 [nix]
 channel = "stable-25_05"
