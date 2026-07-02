@@ -81,6 +81,33 @@ def compute_indicators(ohlcv):
     # Volume trend (скользящая 5 vs 20)
     df["vol_ma5"] = df["volume"].rolling(5).mean()
 
+    # ── Williams %R (14) ─────────────────────────────────────────────────
+    lo14 = df["low"].rolling(14).min()
+    hi14 = df["high"].rolling(14).max()
+    df["willr"] = -100 * (hi14 - df["close"]) / (hi14 - lo14 + 1e-10)
+
+    # ── CCI (Commodity Channel Index, 20) ────────────────────────────────
+    tp = (df["high"] + df["low"] + df["close"]) / 3
+    df["cci"] = (tp - tp.rolling(20).mean()) / (0.015 * tp.rolling(20).std() + 1e-10)
+
+    # ── Ichimoku Cloud (упрощённый: tenkan / kijun / senkou) ─────────────
+    df["tenkan"] = (df["high"].rolling(9).max() + df["low"].rolling(9).min()) / 2
+    df["kijun"]  = (df["high"].rolling(26).max() + df["low"].rolling(26).min()) / 2
+    df["ichi_gap"] = (df["tenkan"] - df["kijun"]) / (df["kijun"] + 1e-10) * 100  # % разрыв
+    senkou_a = (df["tenkan"] + df["kijun"]) / 2
+    senkou_b = (df["high"].rolling(52).max() + df["low"].rolling(52).min()) / 2
+    df["above_cloud"] = (df["close"] > senkou_a) & (df["close"] > senkou_b)
+
+    # ── Heiken Ashi ────────────────────────────────────────────────────────
+    ha_close = (df["open"] + df["high"] + df["low"] + df["close"]) / 4
+    ha_open  = (df["open"].shift(1) + df["close"].shift(1)) / 2
+    df["ha_body"]  = ha_close - ha_open   # >0 бычья, <0 медвежья
+    df["ha_trend"] = np.sign(df["ha_body"])
+
+    # ── VWAP отклонение ──────────────────────────────────────────────────
+    df["vwap"] = (df["volume"] * (df["high"] + df["low"] + df["close"]) / 3).cumsum() / (df["volume"].cumsum() + 1e-10)
+    df["vwap_dev"] = (df["close"] - df["vwap"]) / (df["vwap"] + 1e-10) * 100  # % отклонение от VWAP
+
     return df
 
 
