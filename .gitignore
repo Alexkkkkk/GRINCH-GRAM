@@ -20,6 +20,7 @@ env/
 
 # Данные бота (хранятся в data/ или /app/data/ на Bothost — не в Git)
 data/
+backups/
 experience.json
 settings.json
 wallets.json
