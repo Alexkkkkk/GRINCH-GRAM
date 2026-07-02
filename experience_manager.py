@@ -62,16 +62,18 @@ FILE = os.getenv("EXPERIENCE_FILE", os.path.join(_DATA_DIR, "experience.json"))
 MAX_TRADES_KEPT   = 1000     # сколько последних сделок хранить в журнале
 MAX_EQUITY_KEPT   = 3000     # сколько точек кривой капитала хранить
 EQUITY_MIN_GAP    = 60       # не чаще раза в N секунд писать точку капитала
-RECENT_WINDOW     = 10       # окно «недавних» сделок для оценки
+RECENT_WINDOW     = 5        # окно «недавних» сделок — быстрее реагирует (было 10)
 CONF_CAP          = 90.0     # потолок порога уверенности
-DD_SHRINK_1       = 10.0     # просадка % → уменьшаем ставку
-DD_SHRINK_2       = 20.0     # просадка % → сильно уменьшаем ставку
-DD_PAUSE          = 30.0     # просадка % → пауза новых покупок
-DD_RESUME         = 15.0     # просадка % → снимаем паузу (гистерезис)
+DD_SHRINK_1       = 8.0      # просадка 8% → уменьшаем ставку (было 10)
+DD_SHRINK_2       = 18.0     # просадка 18% → сильно уменьшаем ставку (было 20)
+DD_PAUSE          = 28.0     # просадка 28% → пауза новых покупок (было 30)
+DD_RESUME         = 12.0     # просадка 12% → снимаем паузу (было 15)
 # — безопасный РОСТ ставки на доказанной прибыли (только в спокойном режиме) —
 WIN_GROW_1        = 3        # серия прибыльных сделок → ставка +25%
-WIN_GROW_2        = 6        # серия прибыльных сделок → ставка до потолка
-GROW_CAP          = 1.5      # жёсткий потолок множителя ставки (×1.5 от базовой)
+WIN_GROW_2        = 5        # серия 5 побед → ставка до потолка (было 6)
+GROW_CAP          = 1.8      # потолок множителя ставки (×1.8 от базовой, было 1.5)
+# Режимы рынка для per-regime трекинга
+REGIME_KEYS       = ("UPTREND", "DOWNTREND", "RANGING", "VOLATILE", "BREAKOUT", "SQUEEZE", "TRANSITION")
 
 
 class ExperienceManager:
@@ -473,28 +475,81 @@ class ExperienceManager:
             drawdown = ((peak - cur_eq) / peak * 100) if peak > 0 else 0.0
             drawdown = max(0.0, drawdown)
 
+            # ── Per-regime win rate tracking ──────────────────────────────
+            regime_stats = ctrl.get("regime_stats") or {}
+            for t in trades[-20:]:   # обновляем по последним 20 сделкам
+                reg = (t.get("regime") or t.get("entry_regime") or "UNKNOWN").upper()
+                if reg not in REGIME_KEYS:
+                    reg = "TRANSITION"
+                rs = regime_stats.setdefault(reg, {"wins": 0, "total": 0, "net": 0.0})
+                if t.get("pnl") is not None:
+                    rs["total"] += 1
+                    if (t.get("pnl") or 0) > 0:
+                        rs["wins"] += 1
+                    rs["net"] = round(rs.get("net", 0.0) + (t.get("pnl") or 0), 4)
+            # Дедупликация: берём только уникальные combo из последних 20 сделок
+            # (повторный анализ завышает счётчики) — перестраиваем с нуля каждый раз
+            regime_stats = {}
+            for t in trades[-50:]:
+                reg = (t.get("regime") or t.get("entry_regime") or "UNKNOWN").upper()
+                if reg not in REGIME_KEYS:
+                    reg = "TRANSITION"
+                rs = regime_stats.setdefault(reg, {"wins": 0, "total": 0, "net": 0.0})
+                if t.get("pnl") is not None:
+                    rs["total"] += 1
+                    if (t.get("pnl") or 0) > 0:
+                        rs["wins"] += 1
+                    rs["net"] = round(rs.get("net", 0.0) + (t.get("pnl") or 0), 4)
+            # WR по режиму для текущей торговли
+            for reg, rs in regime_stats.items():
+                if rs["total"] > 0:
+                    rs["wr"] = round(rs["wins"] / rs["total"] * 100, 1)
+
+            # ── Sharpe ratio из equity curve ──────────────────────────────
+            sharpe = 0.0
+            if len(equity) >= 10:
+                try:
+                    eq_vals = [e["equity_ton"] for e in equity[-100:]]
+                    returns = [(eq_vals[i] - eq_vals[i-1]) / (eq_vals[i-1] + 1e-10)
+                               for i in range(1, len(eq_vals))]
+                    if returns:
+                        import statistics
+                        mu_r  = sum(returns) / len(returns)
+                        std_r = statistics.stdev(returns) if len(returns) > 1 else 1e-10
+                        sharpe = round(mu_r / (std_r + 1e-10) * (len(returns) ** 0.5), 2)
+                except Exception:
+                    sharpe = 0.0
+
             # — порог уверенности: строже после убытков —
             conf = base_conf
             if streak >= 2:
                 conf += min(3.0 * streak, 15.0)
             if recent_net < 0:
                 conf += 5.0
+            # При отрицательном Sharpe → дополнительная осторожность
+            if sharpe < -0.5:
+                conf += 5.0
             conf = max(base_conf, min(conf, CONF_CAP))
 
-            # — размер ставки: РАСТЁТ на серии прибыли, СОКРАЩАЕТСЯ при просадке —
+            # — размер ставки: Sharpe × win-streak × drawdown-защита —
             # Рост работает ТОЛЬКО в спокойном режиме (малая просадка) и строго
             # ограничен потолком GROW_CAP. Защита капитала важнее роста: при любой
             # заметной просадке ставка ужимается независимо от серии побед.
             amt = base_amt
             if drawdown < DD_SHRINK_1 and recent_net > 0:
                 if win_streak >= WIN_GROW_2:
-                    amt = base_amt * GROW_CAP
+                    # Sharpe > 1 = мы в выгодной полосе, можно чуть агрессивнее
+                    cap_mult = min(GROW_CAP * (1.0 + max(0, sharpe) * 0.1), GROW_CAP * 1.2)
+                    amt = base_amt * cap_mult
                 elif win_streak >= WIN_GROW_1:
                     amt = base_amt * 1.25
             if drawdown >= DD_SHRINK_2:
                 amt = base_amt * 0.35
             elif drawdown >= DD_SHRINK_1:
                 amt = base_amt * 0.60
+            # Sharpe < -1 = плохая полоса → дополнительное сокращение ставки
+            if sharpe < -1.0 and drawdown >= 5.0:
+                amt = min(amt, base_amt * 0.50)
             amt = max(base_amt * 0.25, min(amt, base_amt * GROW_CAP))
 
             # — пауза при сильной просадке (гистерезис) —
@@ -573,14 +628,17 @@ class ExperienceManager:
             ctrl["paused"]             = paused
             ctrl["drawdown_pct"]       = round(drawdown, 2)
             ctrl["loss_streak"]        = streak
+            ctrl["win_streak"]         = win_streak
             ctrl["take_profit_pct"]    = new_tp
             ctrl["ai_tp_adapted"]      = ai_tp_adapted
             ctrl["ai_tp_trades_used"]  = len(trades)
             ctrl["ai_avg_win_pct"]     = avg_win_pct
             ctrl["min_profit_floor_pct"] = min_profit_floor_pct
+            ctrl["sharpe"]             = sharpe
+            ctrl["regime_stats"]       = regime_stats
             ctrl["last_note"]          = (
                 f"DD={drawdown:.1f}% loss={streak} win={win_streak} "
-                f"recent_net={recent_net:+.4f} "
+                f"Sharpe={sharpe:+.2f} recent_net={recent_net:+.4f} "
                 f"TP={new_tp:.1f}% (пол={min_profit_floor_pct:.1f}%)"
             )
             self._apply_control_to_config()
@@ -591,10 +649,11 @@ class ExperienceManager:
             try:
                 tp_note = f"TP={report['take_profit_pct']:.1f}% (пол {report.get('min_profit_floor_pct',0):.1f}%)"
                 adapted_note = " 🎯 авто-TP" if report.get("ai_tp_adapted") else ""
+                sharpe_note = f" Sharpe={report.get('sharpe', 0):+.2f}" if report.get('sharpe') is not None else ""
                 trader.log(
                     f"🤖 ИИ-управление: порог={report['min_conf']:.0f}% "
                     f"ставка={report['trade_amount']:.3f} TON "
-                    f"{tp_note}{adapted_note} "
+                    f"{tp_note}{adapted_note}{sharpe_note} "
                     f"{'⏸️ ПАУЗА покупок' if report['paused'] else '▶️ активна'} "
                     f"| {report['last_note']}",
                     "INFO",

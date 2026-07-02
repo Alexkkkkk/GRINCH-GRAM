@@ -562,7 +562,11 @@ class Trader:
                 self.stats["winning_trades"] += 1
             # AI feedback
             try:
-                self.ai.feedback(outcome=trade["outcome"], pnl=float(pnl_ton))
+                ai_snap  = self.last_ai or {}
+                reg_name = (ai_snap.get("regime") or {}).get("name", "UNKNOWN")
+                ai_conf  = float(ai_snap.get("confidence", 0) or 0)
+                self.ai.feedback(outcome=trade["outcome"], pnl=float(pnl_ton),
+                                 regime=reg_name, conf=ai_conf)
             except Exception:
                 pass
             # Сохраняем в историю
@@ -1469,8 +1473,12 @@ class Trader:
         )
         # AI feedback
         try:
-            outcome = "win" if pnl_ton > 0 else "loss"
-            self.ai.feedback(outcome=outcome, pnl=float(pnl_ton))
+            outcome  = "win" if pnl_ton > 0 else "loss"
+            ai_snap  = self.last_ai or {}
+            reg_name = (ai_snap.get("regime") or {}).get("name", "UNKNOWN")
+            ai_conf  = float(ai_snap.get("confidence", 0) or 0)
+            self.ai.feedback(outcome=outcome, pnl=float(pnl_ton),
+                             regime=reg_name, conf=ai_conf)
         except Exception:
             pass
         return True
@@ -1765,11 +1773,15 @@ class Trader:
                 t.update(trade)
                 break
 
-        # ── 3. AI feedback: самообучение ─────────────────────────────────
+        # ── 3. AI feedback: самообучение с режимом и уверенностью ──────────
         try:
-            outcome = "win" if pnl > 0 else "loss"
-            self.ai.feedback(outcome=outcome, pnl=float(pnl))
-            self.log(f"🧠 AI feedback: {outcome} PNL={pnl:+.6f} TON", "INFO")
+            outcome  = "win" if pnl > 0 else "loss"
+            ai_snap  = self.last_ai or {}
+            reg_name = (ai_snap.get("regime") or {}).get("name", "UNKNOWN")
+            ai_conf  = float(ai_snap.get("confidence", 0) or 0)
+            self.ai.feedback(outcome=outcome, pnl=float(pnl),
+                             regime=reg_name, conf=ai_conf)
+            self.log(f"🧠 AI feedback: {outcome}({reg_name}) PNL={pnl:+.6f} TON conf={ai_conf:.0f}%", "INFO")
         except Exception as e:
             self.log(f"AI feedback ошибка: {e}", "WARN")
 

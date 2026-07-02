@@ -336,11 +336,20 @@ class _ModelSlot:
     def fit(self, X, y, sample_weight=None):
         try:
             kw = {}
-            clf = self.pipeline.named_steps.get("clf")
-            if clf is not None and hasattr(clf, "sample_weight"):
-                kw["clf__sample_weight"] = sample_weight
-            # HistGradientBoosting не принимает sample_weight через Pipeline так же
-            self.pipeline.fit(X, y)
+            if sample_weight is not None:
+                clf = self.pipeline.named_steps.get("clf")
+                if clf is not None:
+                    # Проверяем поддержку sample_weight через сигнатуру fit()
+                    import inspect
+                    try:
+                        sig = inspect.signature(clf.fit)
+                        if "sample_weight" in sig.parameters:
+                            # Pipeline принимает sample_weight как clf__sample_weight
+                            kw["clf__sample_weight"] = sample_weight
+                    except (ValueError, TypeError):
+                        pass   # нельзя интроспектировать — пропускаем
+            # Передаём веса РЕАЛЬНО (было: pipeline.fit(X, y) — баг, kw игнорировался)
+            self.pipeline.fit(X, y, **kw)
         except Exception as e:
             log.debug(f"[AI:{self.name}] fit error: {e}")
 
@@ -880,7 +889,7 @@ class AIEngine:
 
         for slot in self._slots:
             try:
-                slot.fit(X_arr, y_arr)
+                slot.fit(X_arr, y_arr, sample_weight=w_arr)
             except Exception as e:
                 log.debug(f"[AI:{slot.name}] refit error: {e}")
 

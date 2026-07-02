@@ -1,0 +1,212 @@
+[
+  {
+    "section": "liquidator",
+    "key": "sell_rise_pct",
+    "value": "25",
+    "updated_at": "2026-06-29T03:46:28.865821"
+  },
+  {
+    "section": "config",
+    "key": "STOP_LOSS_PCT",
+    "value": "5.0",
+    "updated_at": "2026-06-29T03:46:29.401769"
+  },
+  {
+    "section": "config",
+    "key": "SYMBOL",
+    "value": "GRINCH/USDT",
+    "updated_at": "2026-07-02T13:43:24.670199"
+  },
+  {
+    "section": "config",
+    "key": "TRADE_AMOUNT",
+    "value": "100.0",
+    "updated_at": "2026-07-02T13:43:24.670199"
+  },
+  {
+    "section": "config",
+    "key": "MAX_OPEN_TRADES",
+    "value": "10",
+    "updated_at": "2026-07-02T13:43:24.670199"
+  },
+  {
+    "section": "config",
+    "key": "TAKE_PROFIT_PCT",
+    "value": "6.0",
+    "updated_at": "2026-07-02T13:43:24.670199"
+  },
+  {
+    "section": "config",
+    "key": "TRAILING_STOP_PCT",
+    "value": "7.0",
+    "updated_at": "2026-07-02T13:43:24.670199"
+  },
+  {
+    "section": "config",
+    "key": "AI_AUTONOMOUS_MIN_CONF",
+    "value": "36.0",
+    "updated_at": "2026-06-29T21:47:39.577521"
+  },
+  {
+    "section": "config",
+    "key": "AI_FULL_RIGHTS_MIN_CONF",
+    "value": "0.0",
+    "updated_at": "2026-06-29T21:47:39.577521"
+  },
+  {
+    "section": "config",
+    "key": "AI_OVERRIDE_CONFIDENCE",
+    "value": "60.0",
+    "updated_at": "2026-06-29T21:47:39.577521"
+  },
+  {
+    "section": "config",
+    "key": "AI_HARD_OVERRIDE_CONFIDENCE",
+    "value": "60.0",
+    "updated_at": "2026-06-29T21:47:39.577521"
+  },
+  {
+    "section": "trader_state",
+    "key": "pending_buy",
+    "value": "",
+    "updated_at": "2026-07-01T20:21:33.675113"
+  },
+  {
+    "section": "config",
+    "key": "SMART_MONEY_BLOCK",
+    "value": "-2.0",
+    "updated_at": "2026-06-29T21:47:39.577521"
+  },
+  {
+    "section": "config",
+    "key": "SHORT_MIN_AI_CONF",
+    "value": "40.0",
+    "updated_at": "2026-06-29T21:47:39.577521"
+  },
+  {
+    "section": "config",
+    "key": "REVERSAL_AI_MIN",
+    "value": "72.0",
+    "updated_at": "2026-06-29T21:47:39.577521"
+  },
+  {
+    "section": "config",
+    "key": "FEE_PCT",
+    "value": "1.0",
+    "updated_at": "2026-07-02T13:43:24.670199"
+  },
+  {
+    "section": "config",
+    "key": "MIN_AI_CONFIDENCE",
+    "value": "62.0",
+    "updated_at": "2026-07-02T13:43:24.670199"
+  },
+  {
+    "section": "config",
+    "key": "USE_DYNAMIC_TARGETS",
+    "value": "True",
+    "updated_at": "2026-07-02T13:43:24.670199"
+  },
+  {
+    "section": "config",
+    "key": "TREND_FILTER",
+    "value": "False",
+    "updated_at": "2026-07-02T13:43:24.670199"
+  },
+  {
+    "section": "config",
+    "key": "SMART_BUY_ENABLED",
+    "value": "True",
+    "updated_at": "2026-07-02T13:43:24.670199"
+  },
+  {
+    "section": "config",
+    "key": "SMART_BUY_PULLBACK_PCT",
+    "value": "5.0",
+    "updated_at": "2026-07-02T13:43:24.670199"
+  },
+  {
+    "section": "config",
+    "key": "SMART_BUY_MAX_WAIT_TICKS",
+    "value": "3",
+    "updated_at": "2026-07-02T13:43:24.670199"
+  },
+  {
+    "section": "config",
+    "key": "SMART_BUY_SKIP_CONF",
+    "value": "50.0",
+    "updated_at": "2026-07-02T13:43:24.670199"
+  },
+  {
+    "section": "config",
+    "key": "SMART_TP_ENABLED",
+    "value": "True",
+    "updated_at": "2026-07-02T13:43:24.670199"
+  },
+  {
+    "section": "config",
+    "key": "SMART_TP_MIN_CONF",
+    "value": "68.0",
+    "updated_at": "2026-07-02T13:43:24.670199"
+  },
+  {
+    "section": "config",
+    "key": "SMART_TP_TIGHT_TRAIL_PCT",
+    "value": "1.5",
+    "updated_at": "2026-07-02T13:43:24.670199"
+  },
+  {
+    "section": "config",
+    "key": "MIN_PROFIT_TON",
+    "value": "5.0",
+    "updated_at": "2026-07-02T13:43:24.670199"
+  },
+  {
+    "section": "config",
+    "key": "AI_TP_ADAPT_MIN_TRADES",
+    "value": "10",
+    "updated_at": "2026-07-02T13:43:24.670199"
+  },
+  {
+    "section": "config",
+    "key": "AI_TP_CAP_PCT",
+    "value": "80.0",
+    "updated_at": "2026-07-02T13:43:24.670199"
+  },
+  {
+    "section": "config",
+    "key": "DCA_MODE",
+    "value": "True",
+    "updated_at": "2026-07-02T13:43:24.670199"
+  },
+  {
+    "section": "config",
+    "key": "DCA_STAKE_TON",
+    "value": "100.0",
+    "updated_at": "2026-07-02T13:43:24.670199"
+  },
+  {
+    "section": "config",
+    "key": "DCA_TARGET_PROFIT_PCT",
+    "value": "15.0",
+    "updated_at": "2026-07-02T13:43:24.670199"
+  },
+  {
+    "section": "config",
+    "key": "DCA_DROP_TRIGGER_PCT",
+    "value": "10.0",
+    "updated_at": "2026-07-02T13:43:24.670199"
+  },
+  {
+    "section": "config",
+    "key": "DCA_PULLBACK_WAIT_PCT",
+    "value": "10.0",
+    "updated_at": "2026-07-02T13:43:24.670199"
+  },
+  {
+    "section": "config",
+    "key": "DCA_MAX_ENTRIES",
+    "value": "10",
+    "updated_at": "2026-07-02T13:43:24.670199"
+  }
+]
