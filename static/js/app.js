@@ -1220,6 +1220,30 @@ async function saveDcaConfig() {
   }
 }
 
+async function saveProfitProtectConfig() {
+  const g = id => document.getElementById(id);
+  const cfg = {
+    profit_protect_enabled:  g("cfg-pp-enabled")?.checked ?? true,
+    profit_protect_ton:      parseFloat(g("cfg-pp-ton")?.value  || 2.0),
+    profit_protect_drop_pct: parseFloat(g("cfg-pp-drop")?.value || 1.5),
+    profit_protect_ai_sell:  g("cfg-pp-ai-sell")?.checked ?? true,
+  };
+  try {
+    const r = await fetch("/api/config", {
+      method: "POST", headers: {"Content-Type":"application/json"},
+      body: JSON.stringify(cfg)
+    });
+    const d = await r.json();
+    if (d.ok) {
+      showToast("✅ Защита прибыли сохранена", "ok");
+    } else {
+      showToast("❌ " + (d.message || "Ошибка"), "err");
+    }
+  } catch (e) {
+    showToast("❌ Ошибка сети: " + e.message, "err");
+  }
+}
+
 async function saveLargeSellConfig() {
   const g = id => document.getElementById(id);
   const cfg = {
@@ -1346,6 +1370,12 @@ async function loadConfig() {
   if (g("cfg-lsd-buy-ton"))  g("cfg-lsd-buy-ton").value     = cfg.large_sell_dca_ton       ?? 100;
   if (g("cfg-lsd-min-ton"))  g("cfg-lsd-min-ton").value     = cfg.large_sell_min_ton       ?? 500;
   if (g("cfg-lsd-cooldown")) g("cfg-lsd-cooldown").value    = cfg.large_sell_cooldown_sec  ?? 300;
+
+  // Защита прибыли
+  if (g("cfg-pp-enabled"))  g("cfg-pp-enabled").checked   = cfg.profit_protect_enabled  ?? true;
+  if (g("cfg-pp-ton"))      g("cfg-pp-ton").value         = cfg.profit_protect_ton       ?? 2.0;
+  if (g("cfg-pp-drop"))     g("cfg-pp-drop").value        = cfg.profit_protect_drop_pct  ?? 1.5;
+  if (g("cfg-pp-ai-sell"))  g("cfg-pp-ai-sell").checked   = cfg.profit_protect_ai_sell   ?? true;
 
   g("demo-badge").style.display = cfg.demo_mode ? "" : "none";
   if (cfg.ton_wallet) {

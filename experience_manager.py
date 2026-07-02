@@ -618,6 +618,47 @@ class ExperienceManager:
             # Если адаптация дала бы меньший TP — оставляем текущий.
             new_tp = max(prev_tp, new_tp)
             new_tp = round(new_tp, 2)
+
+            # ── Полная адаптация: DCA-цель и порог защиты прибыли ────────────
+            # Адаптируем DCA_TARGET_PROFIT_PCT и PROFIT_PROTECT_TON по истории сделок.
+            # Правило «только в плюс»:
+            #   DCA_TARGET — только ВВЕРХ (ставим выше при хорошей истории)
+            #   PROFIT_PROTECT_TON — только ВНИЗ (ловим прибыль раньше, не выше)
+            if len(trades) >= Config.AI_TP_ADAPT_MIN_TRADES and win_trades:
+                # Средняя выигрышная прибыль в TON
+                avg_win_ton = 0.0
+                for t in win_trades:
+                    avg_win_ton += float(t.get("pnl") or 0)
+                avg_win_ton = avg_win_ton / len(win_trades)
+
+                # ── DCA цель: поднимаем если средняя победа > текущей цели  ──
+                try:
+                    cur_dca_target = float(Config.DCA_TARGET_PROFIT_PCT)
+                    # avg_win_pct = средняя победа в % от ставки (уже вычислена выше)
+                    if avg_win_pct > cur_dca_target * 1.1 and avg_win_pct > 0:
+                        # Победы стабильно выше цели → поднимаем цель на 20% от разницы
+                        new_dca_target = round(
+                            cur_dca_target + (avg_win_pct - cur_dca_target) * 0.2, 1
+                        )
+                        new_dca_target = min(new_dca_target, Config.DCA_AI_TARGET_CAP)
+                        if new_dca_target > cur_dca_target:
+                            Config.DCA_TARGET_PROFIT_PCT = new_dca_target
+                            ctrl["ai_dca_target_adapted"] = True
+                except Exception:
+                    pass
+
+                # ── Защита прибыли: снижаем порог если средняя победа небольшая  ──
+                try:
+                    cur_protect = float(Config.PROFIT_PROTECT_TON)
+                    # Если средняя победа > 0, опускаем порог до 50% от средней победы
+                    if avg_win_ton > 0:
+                        optimal_protect = round(max(0.5, avg_win_ton * 0.5), 2)
+                        if optimal_protect < cur_protect:
+                            # Только вниз — ловим прибыль раньше
+                            Config.PROFIT_PROTECT_TON = optimal_protect
+                            ctrl["ai_protect_adapted"] = True
+                except Exception:
+                    pass
             tp_changed = abs(new_tp - float(ctrl.get("take_profit_pct") or 0)) > 0.1
 
             changed = (

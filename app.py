@@ -661,6 +661,11 @@ def api_config_get():
         "large_sell_dca_ton":      Config.LARGE_SELL_DCA_TON,
         "large_sell_min_ton":      Config.LARGE_SELL_MIN_TON,
         "large_sell_cooldown_sec": Config.LARGE_SELL_COOLDOWN_SEC,
+        # Защита прибыли
+        "profit_protect_enabled":  Config.PROFIT_PROTECT_ENABLED,
+        "profit_protect_ton":      Config.PROFIT_PROTECT_TON,
+        "profit_protect_drop_pct": Config.PROFIT_PROTECT_DROP_PCT,
+        "profit_protect_ai_sell":  Config.PROFIT_PROTECT_AI_SELL,
     })
 
 @app.route("/api/config", methods=["POST"])
@@ -751,6 +756,14 @@ def api_config_set():
     if (v := num("large_sell_min_ton",      50, 100000)) is not None: Config.LARGE_SELL_MIN_TON      = v
     if (v := num("large_sell_cooldown_sec", 30, 86400))  is not None: Config.LARGE_SELL_COOLDOWN_SEC = int(v)
 
+    # Защита прибыли
+    if "profit_protect_enabled" in data:
+        Config.PROFIT_PROTECT_ENABLED = bool(data["profit_protect_enabled"])
+    if "profit_protect_ai_sell" in data:
+        Config.PROFIT_PROTECT_AI_SELL = bool(data["profit_protect_ai_sell"])
+    if (v := num("profit_protect_ton",      0.1, 10000)) is not None: Config.PROFIT_PROTECT_TON      = v
+    if (v := num("profit_protect_drop_pct", 0.3, 20))    is not None: Config.PROFIT_PROTECT_DROP_PCT = v
+
     if "symbol" in data and data["symbol"] != Config.SYMBOL:
         if trader.open_trades:
             return jsonify({"ok": False, "message": "Нельзя сменить пару при открытых сделках."}), 409
@@ -794,6 +807,11 @@ def api_config_set():
             "LARGE_SELL_DCA_TON":      Config.LARGE_SELL_DCA_TON,
             "LARGE_SELL_MIN_TON":      Config.LARGE_SELL_MIN_TON,
             "LARGE_SELL_COOLDOWN_SEC": Config.LARGE_SELL_COOLDOWN_SEC,
+            # Защита прибыли
+            "PROFIT_PROTECT_ENABLED":  Config.PROFIT_PROTECT_ENABLED,
+            "PROFIT_PROTECT_TON":      Config.PROFIT_PROTECT_TON,
+            "PROFIT_PROTECT_DROP_PCT": Config.PROFIT_PROTECT_DROP_PCT,
+            "PROFIT_PROTECT_AI_SELL":  Config.PROFIT_PROTECT_AI_SELL,
         })
     except Exception as e:  # noqa: BLE001
         return jsonify({"ok": True, "message": f"Настройки применены, но не сохранены на диск: {e}"})

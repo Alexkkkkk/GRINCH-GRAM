@@ -1,12 +1,12 @@
 {
-  "timestamp": "2026-07-02_033802",
+  "timestamp": "2026-07-02_154138",
   "tables": {
     "bot_settings": 35,
     "bot_trades": 0,
-    "bot_equity": 2189,
+    "bot_equity": 3159,
     "bot_open_trades": 1,
     "bot_ai_state": 3,
-    "bot_wallets": 154,
+    "bot_wallets": 184,
     "bot_wallet_meta": 3
   }
 }

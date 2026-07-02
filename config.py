@@ -269,6 +269,17 @@ class Config:
     DCA_AI_DROP_CAP         = float(os.getenv("DCA_AI_DROP_CAP",     "50"))  # макс. порог докупки %
     DCA_AI_PULLBACK_CAP     = float(os.getenv("DCA_AI_PULLBACK_CAP", "50"))  # макс. ожидание отката %
 
+    # ── Защита прибыли: если портфель +N TON И рынок падает → продаём всё ───
+    # Продаёт весь GRINCH немедленно, если:
+    #   1) текущая прибыль портфеля >= PROFIT_PROTECT_TON (в TON)
+    #   2) цена откатилась от пика портфеля на >= PROFIT_PROTECT_DROP_PCT %
+    #      ИЛИ AI-сигнал = SELL с уверенностью >= 55%
+    # Защита «только в плюс»: выход по рынку, но никогда в убыток (ONLY_PROFIT_EXIT).
+    PROFIT_PROTECT_ENABLED  = bool(int(os.getenv("PROFIT_PROTECT_ENABLED",  "1")))
+    PROFIT_PROTECT_TON      = float(os.getenv("PROFIT_PROTECT_TON",         "2.0"))   # мин. прибыль для активации
+    PROFIT_PROTECT_DROP_PCT = float(os.getenv("PROFIT_PROTECT_DROP_PCT",    "1.5"))   # % откат от пика
+    PROFIT_PROTECT_AI_SELL  = bool(int(os.getenv("PROFIT_PROTECT_AI_SELL",  "1")))    # также при AI SELL
+
     # ── Детектор крупных продаж: автоматическая контрарная закупка ──────────
     # Когда в пуле кто-то продаёт крупный объём GRINCH — бот немедленно
     # покупает на LARGE_SELL_DCA_TON. Покупка безусловная (обходит AI-фильтры).

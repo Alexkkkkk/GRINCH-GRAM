@@ -806,6 +806,41 @@
         </div>
       </div>
 
+      <!-- Profit Protection Card -->
+      <div class="card card-c" id="profit-protect-card">
+        <div class="card-title ctit">🛡️ Защита прибыли — Фиксация при развороте</div>
+        <div class="settings-form">
+          <div class="cfg-section-title" style="color:#00ff88">
+            Если портфель в плюсе ≥ N TON <strong>и рынок начинает падать</strong> — бот немедленно
+            продаёт весь GRINCH. Работает в AI-режиме и DCA-режиме.
+          </div>
+          <label class="cfg-check" style="margin-bottom:12px">
+            <input type="checkbox" id="cfg-pp-enabled">
+            <span style="font-weight:700;color:#00ff88">Включить защиту прибыли</span>
+          </label>
+
+          <label>Мин. прибыль для защиты (TON)
+            <input type="number" id="cfg-pp-ton" value="2" min="0.1" step="0.5">
+            <small style="color:#8892b0">Защита активируется только когда портфель вырос на ≥ N TON. ИИ может снижать порог по истории сделок.</small>
+          </label>
+          <label>Откат от пика портфеля (%)
+            <input type="number" id="cfg-pp-drop" value="1.5" min="0.3" max="20" step="0.5">
+            <small style="color:#8892b0">Если стоимость портфеля упала на N% от своего пика — продаём немедленно</small>
+          </label>
+          <label class="cfg-check">
+            <input type="checkbox" id="cfg-pp-ai-sell">
+            <span>Продавать также при AI-сигнале SELL (≥55% уверенность)</span>
+          </label>
+
+          <div style="margin-top:10px;padding:8px 12px;background:rgba(0,255,136,.07);border:1px solid rgba(0,255,136,.15);border-radius:8px;font-size:11px;color:#8892b0">
+            <strong style="color:#00ff88">ИИ-адаптация:</strong> ИИ автоматически снижает порог защиты до 50% от средней прибыли
+            по истории сделок — ловит прибыль раньше по мере обучения.
+          </div>
+
+          <button class="btn btn-blue" onclick="saveProfitProtectConfig()" style="margin-top:14px">💾 Сохранить защиту прибыли</button>
+        </div>
+      </div>
+
       <!-- Large Sell DCA Card -->
       <div class="card card-c" id="large-sell-dca-card">
         <div class="card-title ctit">🚨 Детектор крупных продаж — Безусловная закупка</div>

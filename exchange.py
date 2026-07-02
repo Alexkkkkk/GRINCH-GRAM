@@ -134,8 +134,8 @@ class ExchangeClient:
     #   {"ts": время успеха, "bars": свечи, "fail_ts": время последней ошибки}
     _ohlcv_cache = {}
     _ohlcv_lock     = threading.Lock()
-    _OHLCV_TTL      = 180  # сек — обновлять свечи раз в ~3 мин достаточно
-    _OHLCV_BACKOFF  = 120  # сек — после ошибки не долбить API (отдаём устаревшие данные)
+    _OHLCV_TTL      = 60   # сек — обновлять свечи раз в минуту (быстрый сигнал)
+    _OHLCV_BACKOFF  = 45   # сек — после ошибки ждём меньше, чтобы не пропустить сигнал
 
     def get_real_ohlcv(self, limit=100, currency="usd", token="base", tf="hour", aggregate=1):
         """Реальные свечи пула GRINCH/GRAM (Toncoin) с GeckoTerminal.

@@ -59,6 +59,8 @@ class Trader:
         self.dca_total_stake    = 0.0
         # Детектор крупных продаж: время последней безусловной покупки по этому триггеру
         self._last_large_sell_buy_ts = 0.0
+        # Защита прибыли: пик стоимости портфеля (TON) для детектора разворота
+        self.portfolio_high_water_ton = 0.0
 
         # Кеш баланса: не долбим блокчейн при каждом /api/status (TTL 180 сек)
         self._balance_cache     = {}
@@ -163,7 +165,7 @@ class Trader:
                     _last_db_sync = now
             except Exception as e:
                 self.log(f"Ошибка в цикле: {e}", "ERROR")
-            time.sleep(30)
+            time.sleep(15)
 
     def _record_equity(self):
         """Снимок капитала кошелька в память (троттлинг внутри менеджера)."""
@@ -265,6 +267,88 @@ class Trader:
             self.exp.save_open_trades(self.open_trades)
         except Exception:
             pass
+
+    def _check_profit_protection(self, price_usd: float, grinch_ton: float) -> bool:
+        """
+        Защита прибыли: если портфель в плюсе >= PROFIT_PROTECT_TON TON
+        И рынок начал падать (откат от пика портфеля >= PROFIT_PROTECT_DROP_PCT%
+        ИЛИ AI-сигнал SELL с уверенностью >= 55%) — продаём ВСЁ немедленно.
+
+        Работает в DCA-режиме и AI-режиме. Уважает ONLY_PROFIT_EXIT.
+        Сбрасывает portfolio_high_water_ton после продажи.
+        """
+        if not Config.PROFIT_PROTECT_ENABLED:
+            return False
+        if not self.open_trades:
+            return False
+        if grinch_ton <= 0 or price_usd <= 0:
+            return False
+
+        # Текущая прибыль портфеля в TON
+        total_cost_ton, total_value_ton = self._dca_portfolio_value(grinch_ton)
+        if total_cost_ton <= 0 or total_value_ton <= 0:
+            return False
+
+        profit_ton = total_value_ton - total_cost_ton
+
+        # Обновляем пик стоимости портфеля
+        if total_value_ton > self.portfolio_high_water_ton:
+            self.portfolio_high_water_ton = total_value_ton
+
+        # Активируем только когда прибыль достигла порога
+        if profit_ton < Config.PROFIT_PROTECT_TON:
+            return False
+
+        # ── Детектор разворота ── 1: откат от пика портфеля ───────────
+        drop_from_peak = 0.0
+        if self.portfolio_high_water_ton > total_value_ton:
+            drop_from_peak = (
+                (self.portfolio_high_water_ton - total_value_ton)
+                / self.portfolio_high_water_ton * 100
+            )
+        price_fell = drop_from_peak >= Config.PROFIT_PROTECT_DROP_PCT
+
+        # ── Детектор разворота ── 2: AI говорит SELL ────────────────
+        ai_sell = False
+        if Config.PROFIT_PROTECT_AI_SELL:
+            ai_action = (self.last_ai or {}).get("action", "")
+            ai_conf   = float((self.last_ai or {}).get("confidence", 0) or 0)
+            ai_sell   = (ai_action == "SELL" and ai_conf >= 55)
+
+        if not price_fell and not ai_sell:
+            return False
+
+        # ── Продаём ВСЁ ────────────────────────────────────────────
+        reason_parts = []
+        if price_fell:
+            reason_parts.append(f"откат -{drop_from_peak:.1f}% от пика портфеля")
+        if ai_sell:
+            ai_conf2 = float((self.last_ai or {}).get("confidence", 0) or 0)
+            reason_parts.append(f"AI SELL {ai_conf2:.0f}%")
+        reason = " + ".join(reason_parts)
+
+        portfolio_pct = (total_value_ton - total_cost_ton) / total_cost_ton * 100
+        total_grinch  = sum(t.get("amount", 0) for t in self.open_trades)
+
+        self.log(
+            f"🛡️ ЗАЩИТА ПРИБЫЛИ: +{profit_ton:.4f} TON (+{portfolio_pct:.1f}%) | "
+            f"{reason} | продаём {total_grinch:.2f} GRINCH @ ${price_usd:.8f}",
+            "INFO"
+        )
+
+        closed = self._dca_sell_all(price_usd, grinch_ton, portfolio_pct)
+        if closed:
+            self.portfolio_high_water_ton = 0.0   # сброс после продажи
+            self._emit_signal("SELL", price_usd, self.last_ai)
+            self.log(
+                f"✅ Защита прибыли ИСПОЛНЕНА: +{profit_ton:.4f} TON зафиксировано | {reason}",
+                "INFO"
+            )
+            # В DCA-режиме — ждём откат перед следующим входом
+            if Config.DCA_MODE:
+                self.dca_wait_pullback = True
+                self.dca_peak_price    = price_usd
+        return closed
 
     def _check_large_sell_dca(self, price_usd: float, grinch_ton: float) -> bool:
         """
@@ -402,6 +486,14 @@ class Trader:
             return
 
         grinch_ton = price_feed.get_grinch_ton_price() or 0.0
+
+        # ── Защита прибыли (работает в любом режиме) ────────────────
+        # Если портфель +N TON И рынок падает — продаём ВСЁ немедленно
+        try:
+            if self._check_profit_protection(price_usd, grinch_ton):
+                return    # продали всё, выходим из тика
+        except Exception as _ppe:
+            self.log(f"⚠️ Profit protect check error: {_ppe}", "WARN")
 
         # ── Детектор крупных продаж (работает в любом режиме) ───────
         # Покупаем безусловно при крупной продаже в пуле — даже в фазе ожидания отката
@@ -745,17 +837,19 @@ class Trader:
                 self.log(f"⚠️ DCA тик: {e}", "ERROR")
             return
 
-        # ── Детектор крупных продаж в AI-режиме ─────────────────────
-        # Проверяем ДО AI-анализа, чтобы безусловная покупка не блокировалась
-        # AI HOLD или низкой уверенностью. После успешной покупки — выходим.
+        # ── Защита прибыли + детектор крупных продаж в AI-режиме ────
         try:
             from price_feed import price_feed as _pf
             _ls_price = _pf.get("GRINCH") or 0.0
             _ls_gton  = _pf.get_grinch_ton_price() or 0.0
             if _ls_price > 0:
+                # Сначала — защита прибыли (если +N TON И падает → продаём и выходим)
+                if self._check_profit_protection(_ls_price, _ls_gton):
+                    return
+                # Затем — безусловная покупка на крупной продаже
                 self._check_large_sell_dca(_ls_price, _ls_gton)
         except Exception as _lse:
-            self.log(f"⚠️ Large Sell DCA check (AI mode): {_lse}", "WARN")
+            self.log(f"⚠️ Profit/LargeSell check (AI mode): {_lse}", "WARN")
 
         ohlcv  = self.exchange.get_ohlcv(limit=100)
         result = analyze(ohlcv)
