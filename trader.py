@@ -1368,7 +1368,8 @@ class Trader:
                 "INFO"
             )
 
-        stake = Config.TRADE_AMOUNT * conf_factor * kelly_mult * power_mult
+        ai_size_mult = max(0.3, min(1.5, getattr(Config, "AI_SIZE_MULT", 1.0)))
+        stake = Config.TRADE_AMOUNT * conf_factor * kelly_mult * power_mult * ai_size_mult
 
         # ── Резерв на комиссию + опрос баланса перед сделкой ─────────────
         # ВСЕГДА оставляем GAS_RESERVE_TON на газ будущей продажи GRINCH→TON.

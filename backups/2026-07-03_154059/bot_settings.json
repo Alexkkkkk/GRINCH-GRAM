@@ -186,12 +186,6 @@
     "updated_at": "2026-07-03T11:08:04.214575"
   },
   {
-    "section": "advisor",
-    "key": "groq_api_key",
-    "value": "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",
-    "updated_at": "2026-07-03T06:29:40.263874"
-  },
-  {
     "section": "config",
     "key": "SMART_TP_ENABLED",
     "value": "True",
@@ -199,9 +193,45 @@
   },
   {
     "section": "config",
+    "key": "dca_drop_trigger_pct",
+    "value": "10.0",
+    "updated_at": "2026-07-03T14:36:29.613311"
+  },
+  {
+    "section": "config",
     "key": "min_ai_confidence",
-    "value": "55.0",
-    "updated_at": "2026-07-03T11:30:16.920971"
+    "value": "40.0",
+    "updated_at": "2026-07-03T14:41:59.138924"
+  },
+  {
+    "section": "config",
+    "key": "profit_protect_drop_pct",
+    "value": "2.0",
+    "updated_at": "2026-07-03T14:41:59.138924"
+  },
+  {
+    "section": "advisor",
+    "key": "groq_api_key",
+    "value": "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",
+    "updated_at": "2026-07-03T15:15:53.015045"
+  },
+  {
+    "section": "config",
+    "key": "dca_mode",
+    "value": "0",
+    "updated_at": "2026-07-03T15:39:43.681739"
+  },
+  {
+    "section": "config",
+    "key": "short_trading_enabled",
+    "value": "0",
+    "updated_at": "2026-07-03T15:39:43.681739"
+  },
+  {
+    "section": "config",
+    "key": "take_profit_pct",
+    "value": "60.0",
+    "updated_at": "2026-07-03T15:39:50.625180"
   },
   {
     "section": "config",

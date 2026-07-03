@@ -12,6 +12,12 @@ class Config:
     # Начальная ставка 100 TON — полный боевой режим
     TRADE_AMOUNT = float(os.getenv("TRADE_AMOUNT", "100"))
 
+    # ── AI-управляемый множитель размера позиции (money management) ──
+    # Советник сам крутит его в диапазоне [0.3..1.5] по уверенности сигнала
+    # и текущей просадке портфеля. Итоговая ставка = TRADE_AMOUNT × conf_factor
+    # × kelly_mult × power_mult × AI_SIZE_MULT (см. trader.py._open_trade).
+    AI_SIZE_MULT = float(os.getenv("AI_SIZE_MULT", "1.0"))
+
     # ── 1 сделка за раз: весь капитал в одну лучшую позицию ──
     MAX_OPEN_TRADES = int(os.getenv("MAX_OPEN_TRADES", "1"))
 

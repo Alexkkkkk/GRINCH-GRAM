@@ -935,6 +935,18 @@
           <div id="adv-adapt-log-list" style="max-height:110px;overflow-y:auto;display:flex;flex-direction:column;gap:2px"></div>
         </div>
 
+        <!-- Money management -->
+        <div style="margin-bottom:10px;padding:9px 12px;background:rgba(255,209,102,.06);border:1px solid rgba(255,209,102,.2);border-radius:8px">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px">
+            <span style="font-size:10px;font-weight:700;color:#ffd166;letter-spacing:.5px">💰 РАЗМЕР ПОЗИЦИИ (AI money management)</span>
+            <span id="adv-size-mult" style="font-size:13px;font-weight:700;color:#ffd166;font-family:monospace">×1.00</span>
+          </div>
+          <div style="height:5px;border-radius:3px;background:rgba(255,255,255,.06);overflow:hidden">
+            <div id="adv-size-bar" style="height:100%;width:58%;background:linear-gradient(90deg,#ff6b6b,#ffd166,#00ff88);border-radius:3px"></div>
+          </div>
+          <div style="display:flex;justify-content:space-between;font-size:8px;color:#555;margin-top:2px"><span>0.3× осторожно</span><span>1.5× агрессивно</span></div>
+        </div>
+
         <!-- Стратегии под управлением AI -->
         <div style="margin-bottom:10px">
           <div style="font-size:10px;font-weight:700;color:#00d4ff;margin-bottom:5px;letter-spacing:.5px">🧠 СТРАТЕГИИ ПОД УПРАВЛЕНИЕМ AI</div>
@@ -1158,6 +1170,7 @@ function advLoadStatus() {
     if (s.history && s.history.length) advRenderHistory(s.history);
     if (s.adaptation_log && s.adaptation_log.length) advRenderAdaptLog(s.adaptation_log);
     if (s.strategy_toggles) advRenderStrategyToggles(s.strategy_toggles, s.strategy_labels || {});
+    if (typeof s.ai_size_mult === 'number') advRenderSizeMult(s.ai_size_mult);
 
     // Заполняем cfg inputs
     const intEl = document.getElementById('adv-cfg-interval');
@@ -1289,6 +1302,16 @@ function advRenderStrategyToggles(toggles, labels) {
       <span style="margin-left:auto;font-size:9px;font-weight:700;color:${col};white-space:nowrap">${on?'ВКЛ':'ВЫКЛ'}</span>
     </div>`;
   }).join('');
+}
+
+function advRenderSizeMult(mult) {
+  const lbl = document.getElementById('adv-size-mult');
+  const bar = document.getElementById('adv-size-bar');
+  if (lbl) lbl.textContent = '×' + mult.toFixed(2);
+  if (bar) {
+    const pct = Math.max(0, Math.min(100, ((mult - 0.3) / (1.5 - 0.3)) * 100));
+    bar.style.width = pct + '%';
+  }
 }
 
 function advToggleAuto() {
