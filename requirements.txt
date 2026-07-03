@@ -22,3 +22,8 @@ cryptography
 ccxt
 pytoniq-core
 openai
+email_validator
+flask
+flask-sqlalchemy
+gunicorn
+psycopg2-binary
