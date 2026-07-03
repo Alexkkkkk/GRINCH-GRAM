@@ -1,3 +1,4 @@
+openai
 flask==3.0.3
 flask-socketio==5.3.6
 flask-sqlalchemy==3.1.1

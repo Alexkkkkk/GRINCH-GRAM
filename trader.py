@@ -804,6 +804,13 @@ class Trader:
         self.dca_entries_count = 0
         self.dca_total_stake   = 0.0
 
+        # ── AI Советник: триггер после DCA-закрытия ──────────────────
+        try:
+            from ai_advisor import notify_trade_closed
+            notify_trade_closed(total_pnl)
+        except Exception:
+            pass
+
         self.log(
             f"🟩 DCA цикл завершён: продано {total_grinch:.4f} GRINCH | "
             f"суммарный PNL ≈ {total_pnl:+.4f} TON | "
@@ -2071,6 +2078,13 @@ class Trader:
             self.exp.analyze_and_adapt(self, self.ai)
         except Exception as e:
             self.log(f"Память/адаптация: {e}", "WARN")
+
+        # ── Уведомляем AI Советника (триггер адаптации) ──────────────
+        try:
+            from ai_advisor import notify_trade_closed
+            notify_trade_closed(pnl)
+        except Exception:
+            pass
 
         emoji = "🟩" if pnl >= 0 else "🟥"
         self.log(
