@@ -20,4 +20,6 @@ RUN mkdir -p /app/data
 ENV PORT=3000
 EXPOSE 3000
 
-CMD ["python", "app.py"]
+# Gunicorn: 1 воркер + 8 тредов — обязательно для Flask-SocketIO (async_mode=threading)
+# Порт 3000 — ожидаемый Bothost
+CMD ["gunicorn", "--bind", "0.0.0.0:3000", "--workers", "1", "--threads", "8", "--timeout", "120", "main:app"]
