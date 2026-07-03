@@ -492,39 +492,6 @@ def api_advisor_apikey():
     reload_key(key)
     return jsonify({"ok": True, "enabled": True})
 
-@app.route("/api/wallet/mnemonic", methods=["POST"])
-def api_wallet_mnemonic_set():
-    import settings_store
-    from config import Config
-    data     = request.json or {}
-    mnemonic = str(data.get("mnemonic", "")).strip()
-    if not mnemonic:
-        return jsonify({"ok": False, "error": "Мнемоника не может быть пустой"})
-    words = mnemonic.split()
-    if len(words) != 24:
-        return jsonify({"ok": False, "error": f"Мнемоника должна содержать 24 слова, получено: {len(words)}"})
-    # сохраняем в персистентное хранилище (settings.json / PostgreSQL)
-    settings_store.update_section("wallet", {"ton_mnemonic": mnemonic})
-    Config.TON_MNEMONIC = mnemonic
-    # применяем немедленно без перезапуска процесса
-    result = trader.exchange.reload_wallet(mnemonic)
-    if not result.get("ok"):
-        return jsonify({"ok": False, "error": result.get("error") or "Не удалось активировать кошелёк"})
-    return jsonify({"ok": True})
-
-@app.route("/api/wallet/mnemonic", methods=["GET"])
-def api_wallet_mnemonic_get():
-    import settings_store
-    sec    = settings_store.get_section("wallet")
-    stored = sec.get("ton_mnemonic", "")
-    dedust = getattr(trader.exchange, "_dedust", None)
-    connected = bool(dedust and dedust.ready)
-    return jsonify({
-        "configured": bool(stored) or bool(os.environ.get("TON_MNEMONIC")),
-        "connected":  connected,
-        "wallet":     Config.TON_WALLET if connected else None,
-    })
-
 @app.route("/api/advisor/apikey", methods=["GET"])
 def api_advisor_apikey_get():
     import settings_store

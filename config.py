@@ -301,15 +301,7 @@ class Config:
     # on-chain НЕ существует — поэтому свопы нужно слать прямо в этот пул.
     GRINCH_POOL_ADDRESS = os.getenv("GRINCH_POOL_ADDRESS", "EQDpVwTQr53cwgaT_VCFsmrleg5fBvStTjMrvyvprF_ROC9Z")
     # Мнемоника TON-кошелька (24 слова через пробел) — хранить только в секретах!
-    # Приоритет: значение, сохранённое через меню (settings_store) → env var.
     TON_MNEMONIC = os.getenv("TON_MNEMONIC", "")
-    try:
-        import settings_store as _settings_store
-        _wallet_sec = _settings_store.get_section("wallet")
-        if _wallet_sec.get("ton_mnemonic"):
-            TON_MNEMONIC = _wallet_sec["ton_mnemonic"]
-    except Exception:
-        pass
 
     # ── Сигнал «умных денег» (мониторинг кошельков пула) ──────────────────
     # Бот наблюдает за всеми кошельками в пуле GRINCH и учится у прибыльных.

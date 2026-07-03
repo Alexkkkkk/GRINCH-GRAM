@@ -246,19 +246,6 @@ class ExchangeClient:
             print(f"[Exchange] get_ohlcv error: {e}")
             return self._fake_ohlcv(limit)
 
-    def reload_wallet(self, mnemonic: str = None):
-        """Переинициализирует DeDust-кошелёк новой мнемоникой без рестарта
-        процесса — используется при сохранении ключа через меню."""
-        from dedust_client import dedust_client
-        ready = dedust_client.reinit(mnemonic)
-        if ready:
-            self._dedust   = dedust_client
-            self.demo_mode = False
-        else:
-            self._dedust   = None
-            self.demo_mode = True
-        return {"ok": ready, "error": dedust_client.error}
-
     def get_balance(self):
         if self._dedust:
             try:
