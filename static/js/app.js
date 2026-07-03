@@ -1221,58 +1221,9 @@ async function saveDcaConfig() {
 }
 
 // ─── AI Советник ────────────────────────────────────────────────────────────
-let _advTimer = null;
-
-async function advRun(autoApply = false) {
-  const btn = document.getElementById(autoApply ? "adv-btn-apply" : "adv-btn-run");
-  const msg = (document.getElementById("adv-user-msg") || {}).value || "";
-  if (btn) { btn.disabled = true; btn.textContent = "⏳ Думаю…"; }
-  try {
-    const r = await fetch("/api/advisor/run", {
-      method: "POST", headers: {"Content-Type":"application/json"},
-      body: JSON.stringify({ auto_apply: autoApply, message: msg })
-    });
-    const d = await r.json();
-    if (!d.ok) { showToast("❌ " + (d.error || "Ошибка советника"), "err"); return; }
-    _advRenderResult(d);
-    showToast(autoApply ? `✅ Советник применил ${d.applied?.length || 0} изм.` : "✅ Анализ получен", "ok");
-  } catch (e) {
-    showToast("❌ " + e.message, "err");
-  } finally {
-    if (btn) { btn.disabled = false; btn.textContent = autoApply ? "⚡ Анализ + Применить" : "🔍 Анализ"; }
-  }
-}
-
-function _advRenderResult(d) {
-  const g = id => document.getElementById(id);
-  if (g("adv-verdict-row")) g("adv-verdict-row").style.display = "";
-  if (g("adv-verdict-badge")) {
-    const vb = g("adv-verdict-badge");
-    vb.textContent = d.market_verdict || "—";
-    const colors = {НАКАПЛИВАТЬ:"#00ff88", АКТИВНО_ТОРГОВАТЬ:"#00d4ff", ОСТОРОЖНО:"#ffd166", ПАУЗА:"#ff6b6b"};
-    vb.style.color = colors[d.market_verdict] || "#ccd6f6";
-    vb.style.background = `${colors[d.market_verdict] || "#ccd6f6"}20`;
-  }
-  if (g("adv-conf-label"))   g("adv-conf-label").textContent = `уверенность ${Math.round((d.confidence||0)*100)}%`;
-  if (g("adv-time-label"))   g("adv-time-label").textContent = d.timestamp || "";
-  if (g("adv-analysis-text")) g("adv-analysis-text").textContent = d.analysis || "";
-  if (g("adv-verdict-mini")) g("adv-verdict-mini").textContent = d.market_verdict || "—";
-  if (g("adv-applied-wrap")) {
-    const applied = d.applied || [];
-    g("adv-applied-wrap").style.display = applied.length ? "" : "none";
-    if (g("adv-applied-list")) g("adv-applied-list").innerHTML = applied.map(a => `• ${a}`).join("<br>");
-  }
-}
-
-async function advToggleAuto() {
-  const r = await fetch("/api/advisor/toggle_auto", {method:"POST"});
-  const d = await r.json();
-  const lbl = document.getElementById("adv-auto-label");
-  const badge = document.getElementById("adv-auto-badge");
-  if (lbl) lbl.textContent = d.auto_apply ? "ВКЛ" : "ВЫКЛ";
-  if (badge) badge.style.display = d.auto_apply ? "" : "none";
-  showToast(d.auto_apply ? "⚡ Автономия включена" : "⏸ Автономия выключена", "ok");
-}
+// Опрос статуса, запуск анализа и переключение автономии реализованы в
+// templates/index.html (advLoadStatus/advRun/advToggleAuto) — единственный
+// источник правды, чтобы не дублировать поллинг и рендер.
 
 async function advSaveKey() {
   const inp = document.getElementById("adv-apikey-inp");
@@ -1295,29 +1246,6 @@ async function advSaveKey() {
   }
 }
 
-async function _advPollStatus() {
-  try {
-    const r = await fetch("/api/advisor/status");
-    const d = await r.json();
-    const g = id => document.getElementById(id);
-    if (g("adv-status-dot")) g("adv-status-dot").style.background = d.enabled ? "#00ff88" : "#444";
-    if (g("adv-auto-badge")) g("adv-auto-badge").style.display = (d.enabled && d.auto_apply) ? "" : "none";
-    if (g("adv-auto-label")) g("adv-auto-label").textContent = d.auto_apply ? "ВКЛ" : "ВЫКЛ";
-    if (g("adv-running-badge")) g("adv-running-badge").style.display = d.running ? "" : "none";
-    if (g("adv-adapt-count")) g("adv-adapt-count").textContent = `${d.total_adaptations || 0} адаптаций`;
-    if (g("adv-trades-count")) g("adv-trades-count").textContent = `${d.trades_since_last || 0} / ${d.trades_trigger || 3}`;
-    if (g("adv-countdown")) {
-      const sec = d.next_run_in_sec || 0;
-      g("adv-countdown").textContent = sec > 0 ? `${Math.floor(sec/60)}:${String(sec%60).padStart(2,"0")}` : "—";
-    }
-    if (d.last_advice && d.last_advice.ok) _advRenderResult(d.last_advice);
-    if (g("adv-key-status") && d.enabled) g("adv-key-status").textContent = "✅ Ключ активен";
-  } catch (e) {}
-}
-
-// Опрос советника каждые 30 секунд
-setInterval(_advPollStatus, 30000);
-setTimeout(_advPollStatus, 2000);
 
 async function saveProfitProtectConfig() {
   const g = id => document.getElementById(id);
