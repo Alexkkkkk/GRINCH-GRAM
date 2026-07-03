@@ -12,6 +12,7 @@ logger = logging.getLogger(__name__)
 
 # ── Groq (бесплатно, OpenAI-совместимый API) ──────────────────────────────
 GROQ_API_KEY  = os.getenv("GROQ_API_KEY", "")
+<<<<<<< HEAD
 
 # Загружаем ключ из settings_store (если сохранён через дашборд)
 try:
@@ -21,6 +22,8 @@ try:
         GROQ_API_KEY = _adv_sec["groq_api_key"]
 except Exception:
     pass
+=======
+>>>>>>> 805f5aa66116a50968a4b235cac5ab4439cc12da
 GROQ_BASE_URL = "https://api.groq.com/openai/v1"
 GROQ_MODEL    = "llama-3.3-70b-versatile"
 

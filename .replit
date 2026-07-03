@@ -2,6 +2,7 @@ modules = ["python-3.11", "nodejs-20", "web"]
 [agent]
 expertMode = true
 stack = "FLASK_VANILLA_JS"
+integrations = ["python_openai:1.0.0"]
 
 [nix]
 channel = "stable-25_05"
@@ -41,7 +42,7 @@ externalPort = 80
 
 [deployment]
 deploymentTarget = "autoscale"
-run = ["gunicorn", "--bind", "0.0.0.0:5000", "main:app"]
+run = ["gunicorn", "--bind", "0.0.0.0:5000", "--workers", "1", "--threads", "8", "--timeout", "120", "main:app"]
 
 [userenv]
 
@@ -55,3 +56,4 @@ SMART_TP_TIGHT_TRAIL_PCT = "1.0"
 TRAIL_STAGE4_AT = "20"
 TRAIL_STAGE4_PCT = "1.5"
 TRAIL_TREND_WIDEN = "3.0"
+GROQ_API_KEY = "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"

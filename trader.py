@@ -830,6 +830,13 @@ class Trader:
         except Exception:
             pass
 
+        # ── AI Советник: триггер после DCA-закрытия ──────────────────
+        try:
+            from ai_advisor import notify_trade_closed
+            notify_trade_closed(total_pnl)
+        except Exception:
+            pass
+
         return True
 
     # ──────────────────────────────────────────
@@ -2091,6 +2098,12 @@ class Trader:
             f"{emoji} Закрыто @ {price} | PNL={pnl:+.6f} TON | {reason}", 
             "SELL" if pnl >= 0 else "ERROR"
         )
+        # ── Уведомляем AI Советника (триггер адаптации) ──────────────
+        try:
+            from ai_advisor import notify_trade_closed
+            notify_trade_closed(pnl)
+        except Exception:
+            pass
         return True
 
     # ──────────────────────────────────────────

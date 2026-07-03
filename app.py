@@ -244,6 +244,12 @@ def start_background():
         ton.start()
         import db_backup
         db_backup.start()
+        # ── AI Советник: запуск фонового потока автономии ──────────────
+        try:
+            from ai_advisor import start_background as _adv_start
+            _adv_start()
+        except Exception as _adv_ex:
+            print(f"[Advisor] не запущен: {_adv_ex}")
 
 start_background()
 
@@ -355,6 +361,10 @@ def health():
 #  Главный дашборд
 # ════════════════════════════════════════════════════════════════════════════
 
+@app.route("/health")
+def health():
+    return "ok", 200
+
 @app.route("/")
 def index():
     try:
@@ -432,6 +442,68 @@ def api_trade_close():
 def api_ai_decisions():
     log = getattr(trader, "decision_log", [])
     return jsonify(list(reversed(log))[:15])
+
+# ─── AI Советник (Groq LLaMA) ───────────────────────────────────────────────
+@app.route("/api/advisor/status")
+def api_advisor_status():
+    from ai_advisor import get_status
+    return jsonify(get_status())
+
+@app.route("/api/advisor/run", methods=["POST"])
+def api_advisor_run():
+    from ai_advisor import run_advisor, reload_key
+    reload_key()
+    data        = request.json or {}
+    auto_apply  = bool(data.get("auto_apply", False))
+    user_msg    = str(data.get("message", ""))[:500]
+    result = run_advisor(auto_apply=auto_apply, user_message=user_msg)
+    return jsonify(result)
+
+@app.route("/api/advisor/toggle_auto", methods=["POST"])
+def api_advisor_toggle_auto():
+    from ai_advisor import toggle_auto_apply
+    state = toggle_auto_apply()
+    return jsonify({"auto_apply": state})
+
+@app.route("/api/advisor/config", methods=["GET", "POST"])
+def api_advisor_config():
+    from ai_advisor import set_config, AUTO_INTERVAL_MIN, AUTO_TRADES_TRIGGER
+    if request.method == "POST":
+        data = request.json or {}
+        result = set_config(
+            interval_min   = data.get("interval_min"),
+            trades_trigger = data.get("trades_trigger"),
+        )
+        return jsonify({"ok": True, **result})
+    return jsonify({"interval_min": AUTO_INTERVAL_MIN, "trades_trigger": AUTO_TRADES_TRIGGER})
+
+@app.route("/api/advisor/log")
+def api_advisor_log():
+    from ai_advisor import get_adaptation_log
+    return jsonify(get_adaptation_log())
+
+@app.route("/api/advisor/apikey", methods=["POST"])
+def api_advisor_apikey():
+    from ai_advisor import reload_key
+    import settings_store
+    data = request.json or {}
+    key  = str(data.get("key", "")).strip()
+    if not key:
+        return jsonify({"ok": False, "error": "Ключ не может быть пустым"})
+    # сохраняем в персистентное хранилище (settings.json / PostgreSQL)
+    settings_store.update_section("advisor", {"groq_api_key": key})
+    # применяем немедленно без перезапуска
+    reload_key(key)
+    return jsonify({"ok": True, "enabled": True})
+
+@app.route("/api/advisor/apikey", methods=["GET"])
+def api_advisor_apikey_get():
+    import settings_store
+    sec = settings_store.get_section("advisor")
+    stored = sec.get("groq_api_key", "")
+    # возвращаем только маску — не раскрываем ключ в UI
+    masked = ("gsk_" + "•" * 20 + stored[-4:]) if len(stored) > 8 else ("•" * len(stored) if stored else "")
+    return jsonify({"ok": True, "has_key": bool(stored), "masked": masked})
 
 @app.route("/api/trade/manual_buy", methods=["POST"])
 def api_manual_buy():
