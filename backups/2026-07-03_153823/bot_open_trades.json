@@ -18,15 +18,15 @@
       "trail_pct": 0.0,
       "high_water": 0.0005282,
       "entry_price": 0.0005282,
-      "net_pct_now": -1.44,
-      "net_ton_now": -1.438054,
+      "net_pct_now": -6.13,
+      "net_ton_now": -6.138181,
       "take_profit": 0.052820000000000006,
       "entry_regime": "DCA",
       "ai_confidence": 0.0,
       "entry_anomaly": false,
       "entry_atr_pct": 0.0,
       "min_gross_pct": 15.7,
-      "value_ton_now": 99.917117,
+      "value_ton_now": 95.169514,
       "entry_bo_score": 0.0,
       "entry_sm_label": "",
       "entry_sm_score": 0.0,
@@ -37,6 +37,6 @@
       "entry_sm_buys_1h": 0,
       "entry_sm_sells_1h": 0
     },
-    "updated_at": "2026-07-03T12:41:25.052099"
+    "updated_at": "2026-07-03T15:38:04.629703"
   }
 ]
