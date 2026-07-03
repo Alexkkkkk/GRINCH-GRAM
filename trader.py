@@ -6,6 +6,7 @@ from exchange import ExchangeClient
 from strategy import analyze
 from ai_engine import AIEngine
 from experience_manager import experience_manager
+import liquidity_guard
 
 
 class Trader:
@@ -1328,6 +1329,14 @@ class Trader:
         return sl_pct, tp_pct
 
     def _open_trade(self, side, price, analysis, ai=None):
+        if side == "buy" and liquidity_guard.is_buy_paused():
+            status = liquidity_guard.get_status()
+            self.log(
+                f"⛔ BUY заблокирован LiquidityGuard: {status.get('pause_reason', 'низкая ликвидность')}",
+                "WARN"
+            )
+            return False
+
         ai_conf = ai.get("confidence", 0) if ai else 0
 
         # ── Kelly-adjusted position sizing ────────────────────────────────

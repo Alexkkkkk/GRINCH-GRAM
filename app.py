@@ -584,6 +584,11 @@ def api_wallets():
 def api_liquidator_status():
     return jsonify(grinch_liquidator.get_status())
 
+@app.route("/api/liquidity_guard")
+def api_liquidity_guard_status():
+    """Постоянный мониторинг ликвидности пула GRINCH — авто-пауза BUY при просадке."""
+    return jsonify(liquidity_guard.get_status())
+
 @app.route("/api/equity")
 def api_equity():
     """История изменения баланса кошелька (equity curve)."""

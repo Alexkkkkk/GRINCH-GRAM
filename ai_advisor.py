@@ -309,6 +309,20 @@ def _build_snapshot(user_message: str = "") -> dict:
         snap["market"]    = {}
         snap["portfolio"] = {}
 
+    # Ликвидность пула (LiquidityGuard)
+    try:
+        import liquidity_guard
+        lg = liquidity_guard.get_status()
+        snap["liquidity"] = {
+            "current_usd":  lg.get("current_liq", 0),
+            "peak_usd":     lg.get("peak_liq", 0),
+            "drop_pct":     lg.get("drop_pct", 0),
+            "buys_paused":  lg.get("buys_paused", False),
+            "pause_reason": lg.get("pause_reason", ""),
+        }
+    except Exception:
+        snap["liquidity"] = {}
+
     # Адаптации советника
     snap["advisor_stats"] = {
         "total_adaptations": _total_adaptations,
