@@ -1,0 +1,42 @@
+[
+  {
+    "trade_id": "dedust_1783081020",
+    "data": {
+      "id": "dedust_1783081020",
+      "pnl": 0.0,
+      "side": "buy",
+      "amount": 315105.514004,
+      "status": "open",
+      "symbol": "GRINCH/USDT",
+      "dca_entry": true,
+      "dca_index": 1,
+      "entry_rsi": 0.0,
+      "in_profit": false,
+      "opened_at": "2026-07-03T12:17:00.078390",
+      "stake_ton": 100.0,
+      "stop_loss": 0.0,
+      "trail_pct": 0.0,
+      "high_water": 0.0005282,
+      "entry_price": 0.0005282,
+      "net_pct_now": -6.14,
+      "net_ton_now": -6.146946,
+      "take_profit": 0.052820000000000006,
+      "entry_regime": "DCA",
+      "ai_confidence": 0.0,
+      "entry_anomaly": false,
+      "entry_atr_pct": 0.0,
+      "min_gross_pct": 15.7,
+      "value_ton_now": 95.160661,
+      "entry_bo_score": 0.0,
+      "entry_sm_label": "",
+      "entry_sm_score": 0.0,
+      "breakeven_price": 0.00053543,
+      "entry_bo_signal": "FLAT",
+      "entry_price_ton": 0.00031135894921316805,
+      "entry_mom_signal": "CALM",
+      "entry_sm_buys_1h": 0,
+      "entry_sm_sells_1h": 0
+    },
+    "updated_at": "2026-07-03T15:18:58.648227"
+  }
+]
