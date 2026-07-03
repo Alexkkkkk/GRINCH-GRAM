@@ -1235,12 +1235,10 @@ async function advSaveKey() {
   });
   const d = await r.json();
   if (d.ok) {
-    showToast("✅ Groq ключ сохранён", "ok");
-    const st = document.getElementById("adv-key-status");
-    if (st) st.textContent = "✅ Ключ активен";
+    showToast("✅ Groq ключ сохранён — AI советник активирован", "ok");
     if (inp) inp.value = "";
-    const dot = document.getElementById("adv-status-dot");
-    if (dot) dot.style.background = "#00ff88";
+    if (typeof advLoadKey === "function") advLoadKey();
+    if (typeof advLoadStatus === "function") advLoadStatus();
   } else {
     showToast("❌ " + (d.error || "Ошибка"), "err");
   }

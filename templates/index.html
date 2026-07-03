@@ -951,8 +951,21 @@
         </div>
 
         <!-- Настройки автономии -->
-        <details style="margin-bottom:8px">
+        <details style="margin-bottom:8px" id="adv-settings-details">
           <summary style="font-size:10px;color:#8892b0;cursor:pointer;padding:4px 0">⚙️ Настройки автономии</summary>
+
+          <!-- GROQ API KEY -->
+          <div style="margin-top:10px;padding:10px 12px;background:rgba(160,0,255,.07);border:1px solid rgba(160,0,255,.2);border-radius:8px">
+            <div style="font-size:10px;font-weight:700;color:#a06fff;margin-bottom:6px;letter-spacing:.5px">🔑 GROQ API KEY</div>
+            <div id="adv-key-status" style="font-size:10px;color:#8892b0;margin-bottom:6px"></div>
+            <div style="display:flex;gap:6px;align-items:center">
+              <input type="password" id="adv-apikey-inp" placeholder="gsk_..." autocomplete="off"
+                style="flex:1;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.12);border-radius:6px;padding:6px 10px;font-size:11px;color:#ccd6f6;outline:none;font-family:monospace">
+              <button class="btn-tiny" onclick="advSaveKey()" style="padding:6px 12px;font-size:10px;white-space:nowrap;background:rgba(160,0,255,.2);border-color:rgba(160,0,255,.4);color:#c084fc">💾 Сохранить</button>
+            </div>
+            <div style="font-size:9px;color:#555;margin-top:4px">Получить бесплатно: <a href="https://console.groq.com/keys" target="_blank" style="color:#a06fff;text-decoration:none">console.groq.com/keys</a></div>
+          </div>
+
           <div style="margin-top:8px;display:grid;grid-template-columns:1fr 1fr;gap:8px">
             <label style="font-size:11px;color:#8892b0">Таймер (мин)
               <input type="number" id="adv-cfg-interval" value="15" min="5" max="120" style="display:block;width:100%;margin-top:4px;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.1);border-radius:6px;padding:5px 8px;font-size:11px;color:#ccd6f6">
@@ -1102,6 +1115,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const priceEl = document.getElementById('price');
   if (priceEl) obs.observe(priceEl, {childList:true, characterData:true, subtree:true});
   advLoadStatus();
+  advLoadKey();
 });
 
 // ─── AI Советник — Полная Автономия ──────────────────────────────────────────
@@ -1273,6 +1287,22 @@ function advSaveCfg() {
     showToast('⚙️ Настройки автономии сохранены: каждые ' + res.interval_min + ' мин / ' + res.trades_trigger + ' сделок', 'info');
     advLoadStatus();
   });
+}
+
+function advLoadKey() {
+  fetch('/api/advisor/apikey').then(r => r.json()).then(res => {
+    const el = document.getElementById('adv-key-status');
+    const dot = document.getElementById('adv-status-dot');
+    if (!el) return;
+    if (res.has_key) {
+      el.textContent = '✅ Ключ задан: ' + (res.masked || '');
+      el.style.color = '#00ff88';
+      if (dot) dot.style.background = '#00ff88';
+    } else {
+      el.textContent = '⚠️ Ключ не задан — AI советник отключён';
+      el.style.color = '#ff6b6b';
+    }
+  }).catch(() => {});
 }
 
 function showToast(msg, type) {

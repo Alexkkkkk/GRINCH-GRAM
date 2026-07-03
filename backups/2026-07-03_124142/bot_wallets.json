@@ -1,20 +1,5 @@
 [
   {
-    "address": "UQAXBqgi9hz7L2QTQvy182BZHXHGIqKKzew3rheJlDwV-SFb",
-    "data": {
-      "buys": 0,
-      "sells": 1,
-      "ton_in": 0.0,
-      "last_ts": 1782531596.0,
-      "ton_out": 69.239104208,
-      "first_ts": 1782531596.0,
-      "last_kind": "sell",
-      "grinch_sold": 250000.0,
-      "grinch_bought": 0.0
-    },
-    "updated_at": "2026-07-03T10:10:34.123536"
-  },
-  {
     "address": "UQAmtdLQ-lgeTW2bJjkZbKXtBBP2UJvkw3Eg_uk8wq2s0xjz",
     "data": {
       "buys": 2,
@@ -29,7 +14,7 @@
       "grinch_sold": 0.0,
       "grinch_bought": 221079.574527098
     },
-    "updated_at": "2026-07-03T10:10:34.123536"
+    "updated_at": "2026-07-03T10:46:40.962587"
   },
   {
     "address": "UQARaQGk9LZkzZKRxS3I_4-n-qPTGp_bGS4-2go8EpDlsoVX",
@@ -46,7 +31,7 @@
       "grinch_sold": 0.0,
       "grinch_bought": 410692.52719409997
     },
-    "updated_at": "2026-07-03T10:10:34.123536"
+    "updated_at": "2026-07-03T10:46:40.962587"
   },
   {
     "address": "UQBtZen8g44niJX7yHsppnCuR3G-TbKTj9AzDYFjG_ZiwEPK",
@@ -61,7 +46,7 @@
       "grinch_sold": 1613200.6385915831,
       "grinch_bought": 0.0
     },
-    "updated_at": "2026-07-03T10:10:34.123536"
+    "updated_at": "2026-07-03T10:46:40.962587"
   },
   {
     "address": "UQDgczQWKDXeXsyrD0HEgPMc6u8FFztQOewkiED2SDIq0zD6",
@@ -76,7 +61,7 @@
       "grinch_sold": 0.0,
       "grinch_bought": 1808505.054205887
     },
-    "updated_at": "2026-07-03T10:10:34.123536"
+    "updated_at": "2026-07-03T10:46:40.962587"
   },
   {
     "address": "UQD3brNihWDnYIMx71K_j_BFWcZyvM79WbTvMWQ7Xha9ywSy",
@@ -93,7 +78,7 @@
       "grinch_sold": 80696.521758278,
       "grinch_bought": 80696.521758278
     },
-    "updated_at": "2026-07-03T10:10:34.123536"
+    "updated_at": "2026-07-03T10:46:40.962587"
   },
   {
     "address": "UQA56gjXkOua-gv2iU2NL8M6ProBuiI3pyO-Xb24BXnx3oyi",
@@ -110,7 +95,7 @@
       "grinch_sold": 1455000.0,
       "grinch_bought": 0.0
     },
-    "updated_at": "2026-07-03T10:10:34.123536"
+    "updated_at": "2026-07-03T10:46:40.962587"
   },
   {
     "address": "UQDa1sxSeRQzJI0cMmuH0Vr6NrHgdgl8JYD1RKpsMB6pyie6",
@@ -127,7 +112,7 @@
       "grinch_sold": 358589.14040640695,
       "grinch_bought": 358589.14040640695
     },
-    "updated_at": "2026-07-03T10:10:34.123536"
+    "updated_at": "2026-07-03T10:46:40.962587"
   },
   {
     "address": "UQB5Dr84rHTtOsHZYwBoREI0cT5KLmhiO2_zUnGMyZf7IAuV",
@@ -144,7 +129,7 @@
       "grinch_sold": 0.0,
       "grinch_bought": 1758426.81177275
     },
-    "updated_at": "2026-07-03T10:10:34.123536"
+    "updated_at": "2026-07-03T10:46:40.962587"
   },
   {
     "address": "UQC02NcRjt5fRqQZESwB-tHgUaZpuOhGcAKS9Z9DJhUS37xe",
@@ -160,7 +145,23 @@
       "grinch_sold": 0.0,
       "grinch_bought": 4139699.0271468707
     },
-    "updated_at": "2026-07-03T10:10:34.123536"
+    "updated_at": "2026-07-03T10:46:40.962587"
+  },
+  {
+    "address": "UQAl0UjDL8Xv6GICyJXlTB-iTsdCla5Dy7EwJDOdIbOUGNdv",
+    "data": {
+      "buys": 0,
+      "sells": 14,
+      "ton_in": 0.0,
+      "last_ts": 1782646678.0,
+      "ton_out": 2237.881430388,
+      "usd_out": 3190.37380112989,
+      "first_ts": 1782617104.0,
+      "last_kind": "sell",
+      "grinch_sold": 7937121.33226,
+      "grinch_bought": 0.0
+    },
+    "updated_at": "2026-07-03T10:46:40.962587"
   },
   {
     "address": "UQCINEbH9_Etgoi2TGBhXqwszOChv9uTH_XBFd7Nws9CmO1E",
@@ -177,7 +178,7 @@
       "grinch_sold": 0.0,
       "grinch_bought": 166652.194914682
     },
-    "updated_at": "2026-07-03T10:10:34.123536"
+    "updated_at": "2026-07-03T10:46:40.962587"
   },
   {
     "address": "UQBeM8C4DDYDpda36cEdCTd9QWFK-XkbGJwF0MxemM-gwOsP",
@@ -192,7 +193,7 @@
       "grinch_sold": 36546.928158432,
       "grinch_bought": 36546.928161147
     },
-    "updated_at": "2026-07-03T10:10:34.123536"
+    "updated_at": "2026-07-03T10:46:40.962587"
   },
   {
     "address": "UQDXPCw2j_rHEaomQKrIJnK3Lv3CqPsL_1ZW9CPzgCMV-38U",
@@ -207,7 +208,7 @@
       "grinch_sold": 114428.594399732,
       "grinch_bought": 0.0
     },
-    "updated_at": "2026-07-03T10:10:34.123536"
+    "updated_at": "2026-07-03T10:46:40.962587"
   },
   {
     "address": "UQBdiFmkHEes7FNx1cV8FTp8Tiy_bx4FjOieYVl-a8G7nBcD",
@@ -224,7 +225,7 @@
       "grinch_sold": 0.0,
       "grinch_bought": 14900.037127002
     },
-    "updated_at": "2026-07-03T10:10:34.123536"
+    "updated_at": "2026-07-03T10:46:40.962587"
   },
   {
     "address": "UQCeAz0PzKyNcLc3HDs6pbzOS4ijE4VS2cMJtOtgtJJJCq6N",
@@ -241,7 +242,7 @@
       "grinch_sold": 0.0,
       "grinch_bought": 12385.79339028
     },
-    "updated_at": "2026-07-03T10:10:34.123536"
+    "updated_at": "2026-07-03T10:46:40.962587"
   },
   {
     "address": "UQCAP_Ivm4269yYxg-kYtORnE5H_oIUb3wwAlflGfI1wGumJ",
@@ -258,7 +259,7 @@
       "grinch_sold": 145063.79978059698,
       "grinch_bought": 145063.79978059698
     },
-    "updated_at": "2026-07-03T10:10:34.123536"
+    "updated_at": "2026-07-03T10:46:40.962587"
   },
   {
     "address": "UQABdlzxXkxQ-ycpeT2p1Iqeyq5agt2W3OOyECs4DnqNInO9",
@@ -275,7 +276,7 @@
       "grinch_sold": 908541.760012826,
       "grinch_bought": 0.0
     },
-    "updated_at": "2026-07-03T10:10:34.123536"
+    "updated_at": "2026-07-03T10:46:40.962587"
   },
   {
     "address": "UQCoKQdLk1VdlSQfRN2flpWf3RizMQMHuXikv_Q4Rp5OsVdG",
@@ -292,7 +293,7 @@
       "grinch_sold": 332707.506240434,
       "grinch_bought": 332707.506240434
     },
-    "updated_at": "2026-07-03T10:10:34.123536"
+    "updated_at": "2026-07-03T10:46:40.962587"
   },
   {
     "address": "UQAPXWbzVK98OHB9rTJHfaERt9ElG7y3zqy8C0E7OLb3TrOX",
@@ -309,7 +310,7 @@
       "grinch_sold": 0.0,
       "grinch_bought": 74032.27624794301
     },
-    "updated_at": "2026-07-03T10:10:34.123536"
+    "updated_at": "2026-07-03T10:46:40.962587"
   },
   {
     "address": "UQA8fedhvaj__XVuxJiJxZPBwcrL-ZmU7aGM3X6pAwwDjCA-",
@@ -326,7 +327,7 @@
       "grinch_sold": 5000000.0,
       "grinch_bought": 0.0
     },
-    "updated_at": "2026-07-03T10:10:34.123536"
+    "updated_at": "2026-07-03T10:46:40.962587"
   },
   {
     "address": "UQCl7IDRDl86FP3DTVpVf9zLnwQSWG1cqQnkuXC3IxKHjQoY",
@@ -343,24 +344,7 @@
       "grinch_sold": 1002711.0,
       "grinch_bought": 502710.76035839197
     },
-    "updated_at": "2026-07-03T10:10:34.123536"
-  },
-  {
-    "address": "UQAr_P6yuEmSykKfdM9IPb-GFtvYn88qyaCXuGxcav3LK9pe",
-    "data": {
-      "buys": 1,
-      "sells": 1,
-      "ton_in": 51.901011755,
-      "usd_in": 86.67468963085,
-      "last_ts": 1783073408.0,
-      "ton_out": 52.969321215,
-      "usd_out": 88.45876642905,
-      "first_ts": 1783073407.0,
-      "last_kind": "buy",
-      "grinch_sold": 166644.256311953,
-      "grinch_bought": 166644.256311953
-    },
-    "updated_at": "2026-07-03T10:10:34.123536"
+    "updated_at": "2026-07-03T10:46:40.962587"
   },
   {
     "address": "UQBoNd2v-9Itwfdgf9EKZq-pNRqZ-oNUUHzthVHVlR-mqel_",
@@ -377,7 +361,7 @@
       "grinch_sold": 31311.034181032,
       "grinch_bought": 31311.034181032
     },
-    "updated_at": "2026-07-03T10:10:34.123536"
+    "updated_at": "2026-07-03T10:46:40.962587"
   },
   {
     "address": "UQAEP_MDenFUuxTYFE9sRkixNCSf_dHw0JoaFj29vT3AOXbd",
@@ -394,7 +378,7 @@
       "grinch_sold": 475457.511131765,
       "grinch_bought": 461911.367149899
     },
-    "updated_at": "2026-07-03T10:10:34.123536"
+    "updated_at": "2026-07-03T10:46:40.962587"
   },
   {
     "address": "UQBFmACsmAIoR0vnoMy1DJaan9CFlXXcVizLBxTzUfCmwH13",
@@ -411,7 +395,7 @@
       "grinch_sold": 79056.167838537,
       "grinch_bought": 79056.167838537
     },
-    "updated_at": "2026-07-03T10:10:34.123536"
+    "updated_at": "2026-07-03T10:46:40.962587"
   },
   {
     "address": "UQDVyQ-kkaar_qQEVkzwqViK9ppC2h847ZHH9PKMuk99Qbga",
@@ -428,7 +412,7 @@
       "grinch_sold": 80364.391844234,
       "grinch_bought": 80364.391844234
     },
-    "updated_at": "2026-07-03T10:10:34.123536"
+    "updated_at": "2026-07-03T10:46:40.962587"
   },
   {
     "address": "UQD1IWOsMl0UEvCnmUJPRW7aIhTCFuym0mzgamnkzYAEy3RE",
@@ -445,7 +429,7 @@
       "grinch_sold": 0.0,
       "grinch_bought": 4535.57880061
     },
-    "updated_at": "2026-07-03T10:10:34.123536"
+    "updated_at": "2026-07-03T10:46:40.962587"
   },
   {
     "address": "UQB-7yqZPrAxLWyvs1CZvyl23Hb9G7pE5pfVZGpVV1Oiklf_",
@@ -462,7 +446,7 @@
       "grinch_sold": 387336.139479272,
       "grinch_bought": 387336.139479272
     },
-    "updated_at": "2026-07-03T10:10:34.123536"
+    "updated_at": "2026-07-03T10:46:40.962587"
   },
   {
     "address": "UQB1V8K_WNJtg4IrshraG-vP0lEYOMcYWpl-2pplZ6BJukNj",
@@ -479,7 +463,7 @@
       "grinch_sold": 183918.524745087,
       "grinch_bought": 0.0
     },
-    "updated_at": "2026-07-03T10:10:34.123536"
+    "updated_at": "2026-07-03T10:46:40.962587"
   },
   {
     "address": "UQC5u9dWhhHhwyDnrrNgOH-_UFCUlbSkrsG5_uzkTVwXh3Kj",
@@ -496,7 +480,7 @@
       "grinch_sold": 234298.013536279,
       "grinch_bought": 234298.013536279
     },
-    "updated_at": "2026-07-03T10:10:34.123536"
+    "updated_at": "2026-07-03T10:46:40.962587"
   },
   {
     "address": "UQBv14KwPyzxlTlsLRGTX4RKMXFqbum4XJiCLhaZY02nyP_U",
@@ -513,7 +497,24 @@
       "grinch_sold": 173525.362039971,
       "grinch_bought": 173525.362039971
     },
-    "updated_at": "2026-07-03T10:10:34.123536"
+    "updated_at": "2026-07-03T10:46:40.962587"
+  },
+  {
+    "address": "UQAr_P6yuEmSykKfdM9IPb-GFtvYn88qyaCXuGxcav3LK9pe",
+    "data": {
+      "buys": 1,
+      "sells": 1,
+      "ton_in": 51.901011755,
+      "usd_in": 86.67468963085,
+      "last_ts": 1783073408.0,
+      "ton_out": 52.969321215,
+      "usd_out": 88.45876642905,
+      "first_ts": 1783073407.0,
+      "last_kind": "buy",
+      "grinch_sold": 166644.256311953,
+      "grinch_bought": 166644.256311953
+    },
+    "updated_at": "2026-07-03T10:46:40.962587"
   },
   {
     "address": "UQDT-SIIdhzJ6QHy2CxQAFZK9o0Qn9urfPnIs7AFfLBzaOS4",
@@ -528,7 +529,7 @@
       "grinch_sold": 118852.016389008,
       "grinch_bought": 0.0
     },
-    "updated_at": "2026-07-03T10:10:34.123536"
+    "updated_at": "2026-07-03T10:46:40.962587"
   },
   {
     "address": "UQCuE5eJqnZdQBbQspjebDYWZbs-Z_No5YQhXmuzpfMy7fFA",
@@ -543,7 +544,7 @@
       "grinch_sold": 17515.81649379,
       "grinch_bought": 0.0
     },
-    "updated_at": "2026-07-03T10:10:34.123536"
+    "updated_at": "2026-07-03T10:46:40.962587"
   },
   {
     "address": "UQAs_6EwHY1V5mxgtqDQOarOVvR2ODVmTScAGS_pzGwWxntp",
@@ -560,7 +561,7 @@
       "grinch_sold": 211357.407380473,
       "grinch_bought": 0.0
     },
-    "updated_at": "2026-07-03T10:10:34.123536"
+    "updated_at": "2026-07-03T10:46:40.962587"
   },
   {
     "address": "UQA3hADgnWyAyS-0N44SurSeueeDe6HwnvSoDL4-oTkIXryI",
@@ -577,7 +578,7 @@
       "grinch_sold": 381923.982344264,
       "grinch_bought": 381923.982344264
     },
-    "updated_at": "2026-07-03T10:10:34.123536"
+    "updated_at": "2026-07-03T10:46:40.962587"
   },
   {
     "address": "UQDTtBHATFoDgXj1ZG0iQtf7M9kuAxcGlVmUIzowq1Goz8PD",
@@ -592,7 +593,7 @@
       "grinch_sold": 126675.593677117,
       "grinch_bought": 126675.593677117
     },
-    "updated_at": "2026-07-03T10:10:34.123536"
+    "updated_at": "2026-07-03T10:46:40.962587"
   },
   {
     "address": "UQBE0vQrJo6M3cwhzics3Tsc_6IwtS5_lnBJ5NzdVoEjHTzO",
@@ -609,7 +610,7 @@
       "grinch_sold": 795860.006912451,
       "grinch_bought": 795860.006912451
     },
-    "updated_at": "2026-07-03T10:10:34.123536"
+    "updated_at": "2026-07-03T10:46:40.962587"
   },
   {
     "address": "UQBPFvMMcZULFLB20RvCZ3C6sJD3gk4KVuK1hnp5l2xTKYxo",
@@ -626,7 +627,7 @@
       "grinch_sold": 774279.256447243,
       "grinch_bought": 1273.776549598
     },
-    "updated_at": "2026-07-03T10:10:34.123536"
+    "updated_at": "2026-07-03T10:46:40.962587"
   },
   {
     "address": "UQCw5OQ-1esAb9u-ckOywRsvKUbgshvMsD_025HnNnLwaWuQ",
@@ -643,7 +644,7 @@
       "grinch_sold": 159250.033395686,
       "grinch_bought": 124842.159396811
     },
-    "updated_at": "2026-07-03T10:10:34.123536"
+    "updated_at": "2026-07-03T10:46:40.962587"
   },
   {
     "address": "UQB01PFnRu-YTsnazlinmGgAuGryWFRXTALFC9nsnEdel9qx",
@@ -658,7 +659,7 @@
       "grinch_sold": 113008.88589046101,
       "grinch_bought": 0.0
     },
-    "updated_at": "2026-07-03T10:10:34.123536"
+    "updated_at": "2026-07-03T10:46:40.962587"
   },
   {
     "address": "UQARwNz0MHPC2nwF0bKVPX0YVawHT3dI2QAvTbAJhKPYzN04",
@@ -673,7 +674,7 @@
       "grinch_sold": 20000.0,
       "grinch_bought": 0.0
     },
-    "updated_at": "2026-07-03T10:10:34.123536"
+    "updated_at": "2026-07-03T10:46:40.962587"
   },
   {
     "address": "UQCURaTcvZiNv7-eeSoLgtuQX07dHASRRF258stYu2or5IqJ",
@@ -690,24 +691,7 @@
       "grinch_sold": 0.0,
       "grinch_bought": 91327.767979295
     },
-    "updated_at": "2026-07-03T10:10:34.123536"
-  },
-  {
-    "address": "UQBWrqsCRJWZPZkHzGAJH1Y2ZPViqOa8NF2uzOGhNiZGpUbl",
-    "data": {
-      "buys": 1,
-      "sells": 0,
-      "ton_in": 222.0,
-      "usd_in": 370.74,
-      "last_ts": 1783073407.0,
-      "ton_out": 0.0,
-      "usd_out": 0.0,
-      "first_ts": 1783073407.0,
-      "last_kind": "buy",
-      "grinch_sold": 0.0,
-      "grinch_bought": 695224.998075194
-    },
-    "updated_at": "2026-07-03T10:10:34.123536"
+    "updated_at": "2026-07-03T10:46:40.962587"
   },
   {
     "address": "UQBU7WOJpe_lggKrxs4Tbb5ZVlCzeKN1NhkaFSMknM_xPJiZ",
@@ -724,7 +708,7 @@
       "grinch_sold": 48537.421408454,
       "grinch_bought": 168554.52565984
     },
-    "updated_at": "2026-07-03T10:10:34.123536"
+    "updated_at": "2026-07-03T10:46:40.962587"
   },
   {
     "address": "UQBFTBJogry0jJimFHD1Bcp2TMTUapgXxY8IMkKZWsX-KI1a",
@@ -739,7 +723,7 @@
       "grinch_sold": 0.0,
       "grinch_bought": 49464.094020414
     },
-    "updated_at": "2026-07-03T10:10:34.123536"
+    "updated_at": "2026-07-03T10:46:40.962587"
   },
   {
     "address": "UQBsUHmvORegHFMzgIkwjP_Xrt-_L-52Bar6CST8AqJPrVmD",
@@ -755,7 +739,7 @@
       "grinch_sold": 816825.644058796,
       "grinch_bought": 0.0
     },
-    "updated_at": "2026-07-03T10:10:34.123536"
+    "updated_at": "2026-07-03T10:46:40.962587"
   },
   {
     "address": "UQC71Mmk8vPcDCee0n5On8y59fQ-ZBTvfUj5WuNU9djQ4CyK",
@@ -770,7 +754,7 @@
       "grinch_sold": 67847.109716592,
       "grinch_bought": 67847.109716592
     },
-    "updated_at": "2026-07-03T10:10:34.123536"
+    "updated_at": "2026-07-03T10:46:40.962587"
   },
   {
     "address": "UQDtG6EVtUEMR39f0ZhS8Q4vjR71wB8vY97V6rMLqGP2Huc9",
@@ -785,7 +769,7 @@
       "grinch_sold": 3150170.6358631896,
       "grinch_bought": 2065547.25527141
     },
-    "updated_at": "2026-07-03T10:10:34.123536"
+    "updated_at": "2026-07-03T10:46:40.962587"
   },
   {
     "address": "UQDaGipDCoDX1j98bHt9rcWN26FORe5imB7tnqeh6We8WS4N",
@@ -800,7 +784,7 @@
       "grinch_sold": 185321.137149218,
       "grinch_bought": 185321.137149218
     },
-    "updated_at": "2026-07-03T10:10:34.123536"
+    "updated_at": "2026-07-03T10:46:40.962587"
   },
   {
     "address": "UQCRpWfaqeKVytRYehK1yH7uMuQwlATudHCYVy2-FIAm8IUC",
@@ -817,7 +801,7 @@
       "grinch_sold": 1490803.67886033,
       "grinch_bought": 0.0
     },
-    "updated_at": "2026-07-03T10:10:34.123536"
+    "updated_at": "2026-07-03T10:46:40.962587"
   },
   {
     "address": "UQC2HbP7d-FJsmIiVHHGDNn9dNWidbubzSmHD3LxaCF5e6_Y",
@@ -832,7 +816,7 @@
       "grinch_sold": 0.0,
       "grinch_bought": 323735.871328911
     },
-    "updated_at": "2026-07-03T10:10:34.123536"
+    "updated_at": "2026-07-03T10:46:40.962587"
   },
   {
     "address": "UQC5gabHeHR8h_NNzXqfpCMSTn7AB7fw1BX8qN99fjC6U1YT",
@@ -849,7 +833,7 @@
       "grinch_sold": 161883.56309084,
       "grinch_bought": 0.0
     },
-    "updated_at": "2026-07-03T10:10:34.123536"
+    "updated_at": "2026-07-03T10:46:40.962587"
   },
   {
     "address": "UQAjKva0hkmTWFe52JWawvcktCdWw59rqtIebaHYD4OVZ5Nd",
@@ -866,7 +850,39 @@
       "grinch_sold": 2711.952670915,
       "grinch_bought": 2711.952670915
     },
-    "updated_at": "2026-07-03T10:10:34.123536"
+    "updated_at": "2026-07-03T10:46:40.962587"
+  },
+  {
+    "address": "UQAXBqgi9hz7L2QTQvy182BZHXHGIqKKzew3rheJlDwV-SFb",
+    "data": {
+      "buys": 0,
+      "sells": 1,
+      "ton_in": 0.0,
+      "last_ts": 1782531596.0,
+      "ton_out": 69.239104208,
+      "first_ts": 1782531596.0,
+      "last_kind": "sell",
+      "grinch_sold": 250000.0,
+      "grinch_bought": 0.0
+    },
+    "updated_at": "2026-07-03T10:46:40.962587"
+  },
+  {
+    "address": "UQAOp8KAs3WokkpVcQKZvEZ5Epvl5FhOEaXF63vClX7bo6Hf",
+    "data": {
+      "buys": 1,
+      "sells": 1,
+      "ton_in": 53.084377338,
+      "usd_in": 89.18175392784,
+      "last_ts": 1783075107.0,
+      "ton_out": 53.658470071,
+      "usd_out": 90.14622971928,
+      "first_ts": 1783075106.0,
+      "last_kind": "buy",
+      "grinch_sold": 163729.542496751,
+      "grinch_bought": 163729.542496751
+    },
+    "updated_at": "2026-07-03T10:46:40.962587"
   },
   {
     "address": "UQAOnMrGCrxaGQQP03HrRULQYFK7_PeM-xOBnD4VW8fbWZuN",
@@ -883,7 +899,7 @@
       "grinch_sold": 170884.434669213,
       "grinch_bought": 170884.434669213
     },
-    "updated_at": "2026-07-03T10:10:34.123536"
+    "updated_at": "2026-07-03T10:46:40.962587"
   },
   {
     "address": "UQBSbCwuTPKaNLJe7StaALOBdrGkvZQZBpXujCDHb-tm02Xb",
@@ -899,7 +915,7 @@
       "grinch_sold": 447412.54367752397,
       "grinch_bought": 447412.543677524
     },
-    "updated_at": "2026-07-03T10:10:34.123536"
+    "updated_at": "2026-07-03T10:46:40.962587"
   },
   {
     "address": "UQDT-cS6q_6FLmHPIBCm7tCY2AtWd-Tsrue_3HMXKUrUjFCn",
@@ -914,7 +930,7 @@
       "grinch_sold": 27453.845782599,
       "grinch_bought": 0.0
     },
-    "updated_at": "2026-07-03T10:10:34.123536"
+    "updated_at": "2026-07-03T10:46:40.962587"
   },
   {
     "address": "UQCLpJIYEcGPbvng_uwUCn_vV9zC_UWKKqjlTyjMSU5NvSdT",
@@ -929,7 +945,7 @@
       "grinch_sold": 68624.24852704,
       "grinch_bought": 68624.24852704
     },
-    "updated_at": "2026-07-03T10:10:34.123536"
+    "updated_at": "2026-07-03T10:46:40.962587"
   },
   {
     "address": "UQCP4cmmVF263RRHAYmXCjbbTXg_4FI9W2ZZQNgfpj7p2wv4",
@@ -946,7 +962,7 @@
       "grinch_sold": 739239.40877906,
       "grinch_bought": 245677.14135165903
     },
-    "updated_at": "2026-07-03T10:10:34.123536"
+    "updated_at": "2026-07-03T10:46:40.962587"
   },
   {
     "address": "UQBHk01vmz5aG4Zv-DbP6_PX7JK3GfE3hqL4hB1avP-4ze4E",
@@ -963,7 +979,7 @@
       "grinch_sold": 243674.29483236,
       "grinch_bought": 243674.29483236
     },
-    "updated_at": "2026-07-03T10:10:34.123536"
+    "updated_at": "2026-07-03T10:46:40.962587"
   },
   {
     "address": "UQAzV2qQdcOMzy5NTuKoH3phLXWZpNNu1SJjaS3tH1DLuSSy",
@@ -979,7 +995,7 @@
       "grinch_sold": 0.0,
       "grinch_bought": 1038511.4739055531
     },
-    "updated_at": "2026-07-03T10:10:34.123536"
+    "updated_at": "2026-07-03T10:46:40.962587"
   },
   {
     "address": "UQApLH_xdAt-jZ3f8Zs2MXBTX1ETZm7xiIyPPwNkWvq_NxJS",
@@ -994,120 +1010,24 @@
       "grinch_sold": 3648.329796176,
       "grinch_bought": 0.0
     },
-    "updated_at": "2026-07-03T10:10:34.123536"
+    "updated_at": "2026-07-03T10:46:40.962587"
   },
   {
-    "address": "UQAl0UjDL8Xv6GICyJXlTB-iTsdCla5Dy7EwJDOdIbOUGNdv",
-    "data": {
-      "buys": 0,
-      "sells": 14,
-      "ton_in": 0.0,
-      "last_ts": 1782646678.0,
-      "ton_out": 2237.881430388,
-      "usd_out": 3190.37380112989,
-      "first_ts": 1782617104.0,
-      "last_kind": "sell",
-      "grinch_sold": 7937121.33226,
-      "grinch_bought": 0.0
-    },
-    "updated_at": "2026-07-03T10:10:34.123536"
-  },
-  {
-    "address": "UQAOgU7nv61BFzJhtx2BlNZdcKn4z7dqSzFYbZESe5Z7IhN7",
-    "data": {
-      "buys": 4,
-      "sells": 3,
-      "ton_in": 129.51640603700002,
-      "usd_in": 158.55845205629998,
-      "last_ts": 1782939448.0,
-      "ton_out": 105.50280803800001,
-      "usd_out": 163.45880641122,
-      "first_ts": 1782504706.0,
-      "last_kind": "buy",
-      "grinch_sold": 339153.694812804,
-      "grinch_bought": 434475.025475494
-    },
-    "updated_at": "2026-07-03T10:10:34.123536"
-  },
-  {
-    "address": "UQBFHZOptyigRwtM3vW2mU94iDU4Bzh_fvMl1ld0TMqlGZfJ",
+    "address": "UQBWrqsCRJWZPZkHzGAJH1Y2ZPViqOa8NF2uzOGhNiZGpUbl",
     "data": {
       "buys": 1,
-      "sells": 1,
-      "ton_in": 0.169782474,
-      "usd_in": 0.2631628347,
-      "last_ts": 1782667614.0,
-      "ton_out": 1.869446115,
-      "first_ts": 1782536781.0,
+      "sells": 0,
+      "ton_in": 222.0,
+      "usd_in": 370.74,
+      "last_ts": 1783073407.0,
+      "ton_out": 0.0,
+      "usd_out": 0.0,
+      "first_ts": 1783073407.0,
       "last_kind": "buy",
-      "grinch_sold": 5621.804125939,
-      "grinch_bought": 615.860325782
+      "grinch_sold": 0.0,
+      "grinch_bought": 695224.998075194
     },
-    "updated_at": "2026-07-03T10:10:34.123536"
-  },
-  {
-    "address": "UQD9lqu9VdGv6Hz1wpa8RSUBVmQbNcoeZOs3xgwbk5b6pwhN",
-    "data": {
-      "buys": 2,
-      "sells": 1,
-      "ton_in": 85.0,
-      "usd_in": 141.95,
-      "last_ts": 1783020398.0,
-      "ton_out": 84.482310941,
-      "usd_out": 139.39581305265,
-      "first_ts": 1783005421.0,
-      "last_kind": "buy",
-      "grinch_sold": 294305.745289504,
-      "grinch_bought": 310086.556026873
-    },
-    "updated_at": "2026-07-03T10:10:34.123536"
-  },
-  {
-    "address": "UQC2w9nABhSmr-w2D-LfQ7I4z5UiSnR7eV_fGKojwTqcre--",
-    "data": {
-      "buys": 0,
-      "sells": 3,
-      "ton_in": 0.0,
-      "last_ts": 1782585261.0,
-      "ton_out": 31.867560442000002,
-      "first_ts": 1782507964.0,
-      "last_kind": "sell",
-      "grinch_sold": 115875.225299453,
-      "grinch_bought": 0.0
-    },
-    "updated_at": "2026-07-03T10:10:34.123536"
-  },
-  {
-    "address": "UQC0G6EaOOIJ9Lk-TR4hcgYgaO3T274kX4JHrrO5Gd8lCR7U",
-    "data": {
-      "buys": 1,
-      "sells": 1,
-      "ton_in": 6.0,
-      "last_ts": 1782492881.0,
-      "ton_out": 6.053977624,
-      "first_ts": 1782485121.0,
-      "last_kind": "buy",
-      "grinch_sold": 21803.051773012,
-      "grinch_bought": 21803.051773012
-    },
-    "updated_at": "2026-07-03T10:10:34.123536"
-  },
-  {
-    "address": "UQBLS4DU8UwkfzeIb7FeuQ7NtsO3_xnwKcVKaXMgzjEkJSZ0",
-    "data": {
-      "buys": 2,
-      "sells": 1,
-      "ton_in": 117.5,
-      "usd_in": 185.05,
-      "last_ts": 1782842592.0,
-      "ton_out": 63.935983791,
-      "usd_out": 99.74013471396,
-      "first_ts": 1782656243.0,
-      "last_kind": "sell",
-      "grinch_sold": 223123.31179892,
-      "grinch_bought": 444655.74719957705
-    },
-    "updated_at": "2026-07-03T10:10:34.123536"
+    "updated_at": "2026-07-03T10:46:40.962587"
   },
   {
     "address": "UQCA_3-KRt2R2WL_SUe16u3G6HTzNjRUoktiifHO318u7RYz",
@@ -1124,7 +1044,104 @@
       "grinch_sold": 0.0,
       "grinch_bought": 679.475360067
     },
-    "updated_at": "2026-07-03T10:10:34.123536"
+    "updated_at": "2026-07-03T10:46:40.962587"
+  },
+  {
+    "address": "UQAOgU7nv61BFzJhtx2BlNZdcKn4z7dqSzFYbZESe5Z7IhN7",
+    "data": {
+      "buys": 4,
+      "sells": 3,
+      "ton_in": 129.51640603700002,
+      "usd_in": 158.55845205629998,
+      "last_ts": 1782939448.0,
+      "ton_out": 105.50280803800001,
+      "usd_out": 163.45880641122,
+      "first_ts": 1782504706.0,
+      "last_kind": "buy",
+      "grinch_sold": 339153.694812804,
+      "grinch_bought": 434475.025475494
+    },
+    "updated_at": "2026-07-03T10:46:40.962587"
+  },
+  {
+    "address": "UQBFHZOptyigRwtM3vW2mU94iDU4Bzh_fvMl1ld0TMqlGZfJ",
+    "data": {
+      "buys": 1,
+      "sells": 1,
+      "ton_in": 0.169782474,
+      "usd_in": 0.2631628347,
+      "last_ts": 1782667614.0,
+      "ton_out": 1.869446115,
+      "first_ts": 1782536781.0,
+      "last_kind": "buy",
+      "grinch_sold": 5621.804125939,
+      "grinch_bought": 615.860325782
+    },
+    "updated_at": "2026-07-03T10:46:40.962587"
+  },
+  {
+    "address": "UQD9lqu9VdGv6Hz1wpa8RSUBVmQbNcoeZOs3xgwbk5b6pwhN",
+    "data": {
+      "buys": 2,
+      "sells": 1,
+      "ton_in": 85.0,
+      "usd_in": 141.95,
+      "last_ts": 1783020398.0,
+      "ton_out": 84.482310941,
+      "usd_out": 139.39581305265,
+      "first_ts": 1783005421.0,
+      "last_kind": "buy",
+      "grinch_sold": 294305.745289504,
+      "grinch_bought": 310086.556026873
+    },
+    "updated_at": "2026-07-03T10:46:40.962587"
+  },
+  {
+    "address": "UQC2w9nABhSmr-w2D-LfQ7I4z5UiSnR7eV_fGKojwTqcre--",
+    "data": {
+      "buys": 0,
+      "sells": 3,
+      "ton_in": 0.0,
+      "last_ts": 1782585261.0,
+      "ton_out": 31.867560442000002,
+      "first_ts": 1782507964.0,
+      "last_kind": "sell",
+      "grinch_sold": 115875.225299453,
+      "grinch_bought": 0.0
+    },
+    "updated_at": "2026-07-03T10:46:40.962587"
+  },
+  {
+    "address": "UQC0G6EaOOIJ9Lk-TR4hcgYgaO3T274kX4JHrrO5Gd8lCR7U",
+    "data": {
+      "buys": 1,
+      "sells": 1,
+      "ton_in": 6.0,
+      "last_ts": 1782492881.0,
+      "ton_out": 6.053977624,
+      "first_ts": 1782485121.0,
+      "last_kind": "buy",
+      "grinch_sold": 21803.051773012,
+      "grinch_bought": 21803.051773012
+    },
+    "updated_at": "2026-07-03T10:46:40.962587"
+  },
+  {
+    "address": "UQBLS4DU8UwkfzeIb7FeuQ7NtsO3_xnwKcVKaXMgzjEkJSZ0",
+    "data": {
+      "buys": 2,
+      "sells": 1,
+      "ton_in": 117.5,
+      "usd_in": 185.05,
+      "last_ts": 1782842592.0,
+      "ton_out": 63.935983791,
+      "usd_out": 99.74013471396,
+      "first_ts": 1782656243.0,
+      "last_kind": "sell",
+      "grinch_sold": 223123.31179892,
+      "grinch_bought": 444655.74719957705
+    },
+    "updated_at": "2026-07-03T10:46:40.962587"
   },
   {
     "address": "UQB41UXhVRo0qnqsYaXQJs54pS_f-Hzq59y_UG_fG5o4dvYo",
@@ -1139,7 +1156,7 @@
       "grinch_sold": 174397.147317778,
       "grinch_bought": 0.0
     },
-    "updated_at": "2026-07-03T10:10:34.123536"
+    "updated_at": "2026-07-03T10:46:40.962587"
   },
   {
     "address": "UQCwPItCg3xRoooWDgiOtApaA6f5qCMALiewIKA2bLApSJUm",
@@ -1154,7 +1171,7 @@
       "grinch_sold": 87829.192003186,
       "grinch_bought": 0.0
     },
-    "updated_at": "2026-07-03T10:10:34.123536"
+    "updated_at": "2026-07-03T10:46:40.962587"
   },
   {
     "address": "UQBYnQNENLQOzYFNFUc4eSD63I_sjs2wMDiOAhBheFVN1Skf",
@@ -1170,7 +1187,7 @@
       "grinch_sold": 1298.904704197,
       "grinch_bought": 20597.81080549
     },
-    "updated_at": "2026-07-03T10:10:34.123536"
+    "updated_at": "2026-07-03T10:46:40.962587"
   },
   {
     "address": "UQCtPH64EXqqNd2dn2EHLvQzT7h6hJH_Id2URlrGwDRNs2XR",
@@ -1187,7 +1204,7 @@
       "grinch_sold": 0.0,
       "grinch_bought": 1026445.699748118
     },
-    "updated_at": "2026-07-03T10:10:34.123536"
+    "updated_at": "2026-07-03T10:46:40.962587"
   },
   {
     "address": "UQDzCUqoHgbwj5LHkWI_uj-7GDiw4ZJLL8g59mmhfAupt1g2",
@@ -1204,7 +1221,7 @@
       "grinch_sold": 60000.0,
       "grinch_bought": 0.0
     },
-    "updated_at": "2026-07-03T10:10:34.123536"
+    "updated_at": "2026-07-03T10:46:40.962587"
   },
   {
     "address": "UQDu4AiT__JKuqT0Znje0RoXIQMPcj4uIGYZme3UK4hFlE_Q",
@@ -1221,7 +1238,7 @@
       "grinch_sold": 0.0,
       "grinch_bought": 911427.094877256
     },
-    "updated_at": "2026-07-03T10:10:34.123536"
+    "updated_at": "2026-07-03T10:46:40.962587"
   },
   {
     "address": "UQAV6QR63WQkeYO64B6CnHGn3uau9D6Qwly64qW20UbfQTeR",
@@ -1236,7 +1253,7 @@
       "grinch_sold": 27695.096215085,
       "grinch_bought": 0.0
     },
-    "updated_at": "2026-07-03T10:10:34.123536"
+    "updated_at": "2026-07-03T10:46:40.962587"
   },
   {
     "address": "UQCLxeXGjGQ_8ZbL4gh63EMDOtJ3tGNYmTuI0OWbpW-f7KrG",
@@ -1253,7 +1270,7 @@
       "grinch_sold": 0.0,
       "grinch_bought": 41938.569337695
     },
-    "updated_at": "2026-07-03T10:10:34.123536"
+    "updated_at": "2026-07-03T10:46:40.962587"
   },
   {
     "address": "UQBHHajalTHFLXAFTqkfl6K2kihSh_Vk-vx58lazY83v5IkM",
@@ -1270,7 +1287,7 @@
       "grinch_sold": 5000000.0,
       "grinch_bought": 0.0
     },
-    "updated_at": "2026-07-03T10:10:34.123536"
+    "updated_at": "2026-07-03T10:46:40.962587"
   },
   {
     "address": "UQCADPcA4q5hDLEL3-5SVwoOombDt0Vmk6R28EiCIexTzPUW",
@@ -1287,7 +1304,7 @@
       "grinch_sold": 0.0,
       "grinch_bought": 2446263.0682580792
     },
-    "updated_at": "2026-07-03T10:10:34.123536"
+    "updated_at": "2026-07-03T10:46:40.962587"
   },
   {
     "address": "UQAGB99Vl7lFIdqNuiSWYNaJbM77uiR8a0unlCkDr0RteYhI",
@@ -1304,22 +1321,7 @@
       "grinch_sold": 384748.0,
       "grinch_bought": 469862.84722932
     },
-    "updated_at": "2026-07-03T10:10:34.123536"
-  },
-  {
-    "address": "UQBFwPUe8GT05vLChdkDKP2yZ1oleNmKB_qjpEKeCsWAC84X",
-    "data": {
-      "buys": 0,
-      "sells": 1,
-      "ton_in": 0.0,
-      "last_ts": 1782496312.0,
-      "ton_out": 30.29414673,
-      "first_ts": 1782496312.0,
-      "last_kind": "sell",
-      "grinch_sold": 110978.600543781,
-      "grinch_bought": 0.0
-    },
-    "updated_at": "2026-07-03T10:10:34.123536"
+    "updated_at": "2026-07-03T10:46:40.962587"
   },
   {
     "address": "UQA7vXv3xSruX09iccxNez9SFoS8a_tXe8MFis9h4h42-rI6",
@@ -1336,7 +1338,7 @@
       "grinch_sold": 0.0,
       "grinch_bought": 36329.523283303
     },
-    "updated_at": "2026-07-03T10:10:34.123536"
+    "updated_at": "2026-07-03T10:46:40.962587"
   },
   {
     "address": "UQAFNcxmYR-CtZH-JXSkKhw2ISST1iG7YMZF8YqgnLR7BFo9",
@@ -1353,7 +1355,7 @@
       "grinch_sold": 71072.505253112,
       "grinch_bought": 0.0
     },
-    "updated_at": "2026-07-03T10:10:34.123536"
+    "updated_at": "2026-07-03T10:46:40.962587"
   },
   {
     "address": "UQD4nQCquXr-z0UzLK-FEF7arw_9fOB-RXqk1G0sTZzF8lmR",
@@ -1370,7 +1372,7 @@
       "grinch_sold": 500000.0,
       "grinch_bought": 0.0
     },
-    "updated_at": "2026-07-03T10:10:34.123536"
+    "updated_at": "2026-07-03T10:46:40.962587"
   },
   {
     "address": "UQAUe_dswCT0hvuCiqaWGMtTLoCcnfJS85WbBqWMLzuDiWZA",
@@ -1387,7 +1389,7 @@
       "grinch_sold": 0.0,
       "grinch_bought": 101792.436173178
     },
-    "updated_at": "2026-07-03T10:10:34.123536"
+    "updated_at": "2026-07-03T10:46:40.962587"
   },
   {
     "address": "UQABXTMd5OSxstJ0LPMZlS9Jav2a6Ciq5yPTum3MXDahozBo",
@@ -1404,7 +1406,7 @@
       "grinch_sold": 0.0,
       "grinch_bought": 4121816.332665212
     },
-    "updated_at": "2026-07-03T10:10:34.123536"
+    "updated_at": "2026-07-03T10:46:40.962587"
   },
   {
     "address": "UQBdZZWRIBSpXyDZG2FPCDJpStKg71ShJw660NioYvregkwe",
@@ -1421,7 +1423,7 @@
       "grinch_sold": 729.377586879,
       "grinch_bought": 729.377586879
     },
-    "updated_at": "2026-07-03T10:10:34.123536"
+    "updated_at": "2026-07-03T10:46:40.962587"
   },
   {
     "address": "UQC_biT2Okoiy0f8-UTwrqyo6nLMJfXjysiWFfRr7ew60_R5",
@@ -1436,7 +1438,7 @@
       "grinch_sold": 68886.263880895,
       "grinch_bought": 68886.263880895
     },
-    "updated_at": "2026-07-03T10:10:34.123536"
+    "updated_at": "2026-07-03T10:46:40.962587"
   },
   {
     "address": "UQCE2nE71uwJLTEw1wqwJjiXmxSi2FCSgoe9o1WZCVaX-XmX",
@@ -1451,7 +1453,7 @@
       "grinch_sold": 3521.97634137,
       "grinch_bought": 0.0
     },
-    "updated_at": "2026-07-03T10:10:34.123536"
+    "updated_at": "2026-07-03T10:46:40.962587"
   },
   {
     "address": "UQDO3mjfmy5mYsZ7QE5NxdXKk3CurrqD_ZhvOuX8zpTDO9k5",
@@ -1466,7 +1468,22 @@
       "grinch_sold": 0.0,
       "grinch_bought": 6600.912343883
     },
-    "updated_at": "2026-07-03T10:10:34.123536"
+    "updated_at": "2026-07-03T10:46:40.962587"
+  },
+  {
+    "address": "UQBFwPUe8GT05vLChdkDKP2yZ1oleNmKB_qjpEKeCsWAC84X",
+    "data": {
+      "buys": 0,
+      "sells": 1,
+      "ton_in": 0.0,
+      "last_ts": 1782496312.0,
+      "ton_out": 30.29414673,
+      "first_ts": 1782496312.0,
+      "last_kind": "sell",
+      "grinch_sold": 110978.600543781,
+      "grinch_bought": 0.0
+    },
+    "updated_at": "2026-07-03T10:46:40.962587"
   },
   {
     "address": "UQA3VIUr5qTK8PepCrFhf1mqz6YEIThJQ35OTonXVjHNwWji",
@@ -1483,7 +1500,7 @@
       "grinch_sold": 2617413.52060042,
       "grinch_bought": 0.0
     },
-    "updated_at": "2026-07-03T10:10:34.123536"
+    "updated_at": "2026-07-03T10:46:40.962587"
   },
   {
     "address": "UQCUU2Tbb37heE3ngVhgsrsgz2WZv3MExUHUSXFXFC9D6w07",
@@ -1500,7 +1517,7 @@
       "grinch_sold": 0.0,
       "grinch_bought": 4235865.47411757
     },
-    "updated_at": "2026-07-03T10:10:34.123536"
+    "updated_at": "2026-07-03T10:46:40.962587"
   },
   {
     "address": "UQA-zbxSRZd8O_ZgDMpcqdrTpozZZgSJquSP5LcECUtCMaZ-",
@@ -1517,7 +1534,7 @@
       "grinch_sold": 666535.852857176,
       "grinch_bought": 668440.2872149339
     },
-    "updated_at": "2026-07-03T10:10:34.123536"
+    "updated_at": "2026-07-03T10:46:40.962587"
   },
   {
     "address": "UQAtQu7kekcaZYwo_dkv7EA3kOMWZpnSrXUS5dvee7vKoYKv",
@@ -1533,7 +1550,7 @@
       "grinch_sold": 0.0,
       "grinch_bought": 24084.258108408998
     },
-    "updated_at": "2026-07-03T10:10:34.123536"
+    "updated_at": "2026-07-03T10:46:40.962587"
   },
   {
     "address": "UQDHLUFDM4U6BOeZDPH-sjhOyDs1RgLxoQL2_CEUp39looyG",
@@ -1550,7 +1567,7 @@
       "grinch_sold": 273368.974923579,
       "grinch_bought": 273368.974923579
     },
-    "updated_at": "2026-07-03T10:10:34.123536"
+    "updated_at": "2026-07-03T10:46:40.962587"
   },
   {
     "address": "UQCMad9fKC7KF-hYK8Fl-MdKGCJ9XEQyLZjdky35x_NYkDWI",
@@ -1565,7 +1582,7 @@
       "grinch_sold": 6543.803117172,
       "grinch_bought": 9917.885383974
     },
-    "updated_at": "2026-07-03T10:10:34.123536"
+    "updated_at": "2026-07-03T10:46:40.962587"
   },
   {
     "address": "UQBx2hWe8wTitBHIMuVwaOfs5Qg7tMV7HQVcATOv1JImVxTK",
@@ -1580,7 +1597,7 @@
       "grinch_sold": 68114.682698821,
       "grinch_bought": 68104.682698821
     },
-    "updated_at": "2026-07-03T10:10:34.123536"
+    "updated_at": "2026-07-03T10:46:40.962587"
   },
   {
     "address": "UQAZUNcItgKON4BHGWAEbTNdAWeFqfjUF7IXrZX8sTpr5vGP",
@@ -1595,7 +1612,7 @@
       "grinch_sold": 488543.653698229,
       "grinch_bought": 0.0
     },
-    "updated_at": "2026-07-03T10:10:34.123536"
+    "updated_at": "2026-07-03T10:46:40.962587"
   },
   {
     "address": "UQBLf88TNZqriAVkPLjdl0NiZvsG2hMy5MMOP2xcl1dJfBeo",
@@ -1612,7 +1629,7 @@
       "grinch_sold": 310680.20990017,
       "grinch_bought": 0.0
     },
-    "updated_at": "2026-07-03T10:10:34.123536"
+    "updated_at": "2026-07-03T10:46:40.962587"
   },
   {
     "address": "UQCsOvTXHbDlXLmGGUfjbDNV8Bb958rS0ReAKkeBhIR3wx42",
@@ -1627,24 +1644,24 @@
       "grinch_sold": 125160.327124917,
       "grinch_bought": 0.0
     },
-    "updated_at": "2026-07-03T10:10:34.123536"
+    "updated_at": "2026-07-03T10:46:40.962587"
   },
   {
     "address": "UQDEiPeiJf1jzUPLpMLGxwG8mQ12pUAexczMZagPpRPyuTgi",
     "data": {
       "buys": 22,
-      "sells": 16,
+      "sells": 17,
       "ton_in": 1296.806393,
       "usd_in": 2016.5813721600002,
-      "last_ts": 1783008920.0,
-      "ton_out": 1051.910725214,
-      "usd_out": 1632.8229103425099,
+      "last_ts": 1783075566.0,
+      "ton_out": 1312.787958965,
+      "usd_out": 2071.09666304419,
       "first_ts": 1782881488.0,
-      "last_kind": "buy",
-      "grinch_sold": 3262264.2100029243,
+      "last_kind": "sell",
+      "grinch_sold": 4081591.591402924,
       "grinch_bought": 4105799.402447666
     },
-    "updated_at": "2026-07-03T10:10:34.123536"
+    "updated_at": "2026-07-03T10:46:40.962587"
   },
   {
     "address": "UQDwmbtjgUyJtKiRomxuWhAOy-6KKllyuSFTUmvXVv7K888X",
@@ -1661,7 +1678,7 @@
       "grinch_sold": 137031.0,
       "grinch_bought": 199433.877009667
     },
-    "updated_at": "2026-07-03T10:10:34.123536"
+    "updated_at": "2026-07-03T10:46:40.962587"
   },
   {
     "address": "UQDmo3jhLhSaPZ7TxgPZSi2hjA6h1fS8hYn3N6ELm0liEoiR",
@@ -1676,7 +1693,7 @@
       "grinch_sold": 3827.987521102,
       "grinch_bought": 0.0
     },
-    "updated_at": "2026-07-03T10:10:34.123536"
+    "updated_at": "2026-07-03T10:46:40.962587"
   },
   {
     "address": "UQAH4MY1EbqP7Gg2wJkoZvoCG4BYPsEG5lVBXPZn0UqXN2P3",
@@ -1692,7 +1709,7 @@
       "grinch_sold": 0.0,
       "grinch_bought": 320568.04895081307
     },
-    "updated_at": "2026-07-03T10:10:34.123536"
+    "updated_at": "2026-07-03T10:46:40.962587"
   },
   {
     "address": "UQBkxAGxrp1_TtVGFac9mR8pGutu1NBMbYWlxwcl3QnwDWxs",
@@ -1707,7 +1724,7 @@
       "grinch_sold": 10000.0,
       "grinch_bought": 0.0
     },
-    "updated_at": "2026-07-03T10:10:34.123536"
+    "updated_at": "2026-07-03T10:46:40.962587"
   },
   {
     "address": "UQAmM6w3twDSm6Fg_N4TLULFgV_xiG9HkLTU6XiwKCGS6DJ1",
@@ -1724,7 +1741,7 @@
       "grinch_sold": 647073.18313938,
       "grinch_bought": 639166.9831717319
     },
-    "updated_at": "2026-07-03T10:10:34.123536"
+    "updated_at": "2026-07-03T10:46:40.962587"
   },
   {
     "address": "UQDU7bWCxZeGYJKmSGFCcOfbMNk8-Kr76Z5Fe1oNZZnIDlBN",
@@ -1741,7 +1758,7 @@
       "grinch_sold": 1.0,
       "grinch_bought": 0.0
     },
-    "updated_at": "2026-07-03T10:10:34.123536"
+    "updated_at": "2026-07-03T10:46:40.962587"
   },
   {
     "address": "UQB2aMx92pfjANWsoKv7xDq6GGLLhGqsq3DlY4IQT_aHqH-N",
@@ -1758,7 +1775,7 @@
       "grinch_sold": 26971.903491497,
       "grinch_bought": 67782.155021263
     },
-    "updated_at": "2026-07-03T10:10:34.123536"
+    "updated_at": "2026-07-03T10:46:40.962587"
   },
   {
     "address": "UQCnQyf7C9pZbNICpyChwTuCOGsJXD8eANzxkCIRmr94XqNc",
@@ -1775,7 +1792,7 @@
       "grinch_sold": 0.0,
       "grinch_bought": 237172.396312264
     },
-    "updated_at": "2026-07-03T10:10:34.123536"
+    "updated_at": "2026-07-03T10:46:40.962587"
   },
   {
     "address": "UQC31L41ldI3FmGCrVZEusJbYKELi4y3MOmfpOp9NKdlov29",
@@ -1790,7 +1807,7 @@
       "grinch_sold": 250000.0,
       "grinch_bought": 0.0
     },
-    "updated_at": "2026-07-03T10:10:34.123536"
+    "updated_at": "2026-07-03T10:46:40.962587"
   },
   {
     "address": "UQBPCBZ8MpCVypuwqGd6qe7xaTNscgg9gru7TJ_FTPshIClK",
@@ -1806,7 +1823,7 @@
       "grinch_sold": 0.0,
       "grinch_bought": 3345889.774521809
     },
-    "updated_at": "2026-07-03T10:10:34.123536"
+    "updated_at": "2026-07-03T10:46:40.962587"
   },
   {
     "address": "UQDs27VkVa-pLJn1tF4lQGJe69qqfcwJV27HFzF5vtdZabhQ",
@@ -1821,7 +1838,7 @@
       "grinch_sold": 152941.012274159,
       "grinch_bought": 0.0
     },
-    "updated_at": "2026-07-03T10:10:34.123536"
+    "updated_at": "2026-07-03T10:46:40.962587"
   },
   {
     "address": "UQAnInbfYZIbfNeIhN1UkoaKHthYR-_V-1XJ_qqyofROy6S6",
@@ -1836,7 +1853,7 @@
       "grinch_sold": 0.0,
       "grinch_bought": 268244.000660073
     },
-    "updated_at": "2026-07-03T10:10:34.123536"
+    "updated_at": "2026-07-03T10:46:40.962587"
   },
   {
     "address": "UQB0Hloeg8YzSTIm2nBGf-rjqLYHaUHVQZrJOWrWqHTKwbV1",
@@ -1851,7 +1868,7 @@
       "grinch_sold": 100000.0,
       "grinch_bought": 0.0
     },
-    "updated_at": "2026-07-03T10:10:34.123536"
+    "updated_at": "2026-07-03T10:46:40.962587"
   },
   {
     "address": "UQC7qFEOt9fuQmHFQhdoR7kl-kAmHH4AyCwvhOOnekEdi_DN",
@@ -1868,7 +1885,7 @@
       "grinch_sold": 73642.848899977,
       "grinch_bought": 73642.848899977
     },
-    "updated_at": "2026-07-03T10:10:34.123536"
+    "updated_at": "2026-07-03T10:46:40.962587"
   },
   {
     "address": "UQABNZXnTLj0et5ww_pcuLHl1HFYRGTQvv_3MkumK0GVfWjV",
@@ -1885,7 +1902,7 @@
       "grinch_sold": 168244.167763265,
       "grinch_bought": 168244.167763265
     },
-    "updated_at": "2026-07-03T10:10:34.123536"
+    "updated_at": "2026-07-03T10:46:40.962587"
   },
   {
     "address": "UQB-DSlCFlWoGjbFFYA48eQ5yW7MW3_GMa0fsBKIj4posuwf",
@@ -1902,7 +1919,7 @@
       "grinch_sold": 629784.26766704,
       "grinch_bought": 815466.845660647
     },
-    "updated_at": "2026-07-03T10:10:34.123536"
+    "updated_at": "2026-07-03T10:46:40.962587"
   },
   {
     "address": "UQAWGUvtpR9uF0ey3fI4nQbN3EEP6ZKPGyO3W4N0EAXuJNot",
@@ -1919,7 +1936,7 @@
       "grinch_sold": 772420.963022134,
       "grinch_bought": 0.0
     },
-    "updated_at": "2026-07-03T10:10:34.123536"
+    "updated_at": "2026-07-03T10:46:40.962587"
   },
   {
     "address": "UQBSix61BevDYMsaNwx9t7dc2Xv7Z4f6SA_HtysLeUCfZbRF",
@@ -1936,7 +1953,7 @@
       "grinch_sold": 120000.0,
       "grinch_bought": 0.0
     },
-    "updated_at": "2026-07-03T10:10:34.123536"
+    "updated_at": "2026-07-03T10:46:40.962587"
   },
   {
     "address": "UQAo-htWfocaiQ8Io7v1u8YM70a7TUzkRWa5PAfAUREQKz9B",
@@ -1953,7 +1970,7 @@
       "grinch_sold": 1100000.0,
       "grinch_bought": 0.0
     },
-    "updated_at": "2026-07-03T10:10:34.123536"
+    "updated_at": "2026-07-03T10:46:40.962587"
   },
   {
     "address": "UQDLIxqu23coDsQLp98SbDQfFEqYQOiDxu4pcnH5Ha532aD9",
@@ -1968,7 +1985,7 @@
       "grinch_sold": 126815.885641606,
       "grinch_bought": 0.0
     },
-    "updated_at": "2026-07-03T10:10:34.123536"
+    "updated_at": "2026-07-03T10:46:40.962587"
   },
   {
     "address": "UQCdV1rFRSfzD1DG6oymDW8yscm55hFId_ZjWU_qqOL7V0Gn",
@@ -1985,7 +2002,7 @@
       "grinch_sold": 23393.513544093,
       "grinch_bought": 23393.513544093003
     },
-    "updated_at": "2026-07-03T10:10:34.123536"
+    "updated_at": "2026-07-03T10:46:40.962587"
   },
   {
     "address": "UQCCKd0c0Gj6Nwfp2_WBk_tMtfFcoBtZ2dsPSfq6XGoFgQlb",
@@ -2001,7 +2018,7 @@
       "grinch_sold": 0.0,
       "grinch_bought": 2363959.285444994
     },
-    "updated_at": "2026-07-03T10:10:34.123536"
+    "updated_at": "2026-07-03T10:46:40.962587"
   },
   {
     "address": "UQDDU3Rjw34ALCIP4xp-THG8GZlTMz0jkmj5OHBHHC56luOO",
@@ -2016,7 +2033,7 @@
       "grinch_sold": 100000.0,
       "grinch_bought": 0.0
     },
-    "updated_at": "2026-07-03T10:10:34.123536"
+    "updated_at": "2026-07-03T10:46:40.962587"
   },
   {
     "address": "UQBNozxcPNHvIlcI8Y3t1rvtQhd9a7f1BbAAxvzonUY20xV0",
@@ -2033,7 +2050,7 @@
       "grinch_sold": 21923.433194958998,
       "grinch_bought": 21923.433194958998
     },
-    "updated_at": "2026-07-03T10:10:34.123536"
+    "updated_at": "2026-07-03T10:46:40.962587"
   },
   {
     "address": "UQD_cH0xh6JM9JwXY4JIUy6edcihhLqucCCRIjFtQBnxsaZO",
@@ -2050,7 +2067,7 @@
       "grinch_sold": 0.0,
       "grinch_bought": 2699.239526971
     },
-    "updated_at": "2026-07-03T10:10:34.123536"
+    "updated_at": "2026-07-03T10:46:40.962587"
   },
   {
     "address": "UQBk5e3nXMMIga9LyURfRtqRcbhVTBOKMVROnGLgy1p1jAlz",
@@ -2067,7 +2084,7 @@
       "grinch_sold": 174037.134929835,
       "grinch_bought": 174037.134929835
     },
-    "updated_at": "2026-07-03T10:10:34.123536"
+    "updated_at": "2026-07-03T10:46:40.962587"
   },
   {
     "address": "UQA_xObZIuvT6ejcLLWvNGyJti6ZTlE3MWrOvJotHWlaVoCL",
@@ -2082,7 +2099,7 @@
       "grinch_sold": 165353.341910052,
       "grinch_bought": 165353.341910052
     },
-    "updated_at": "2026-07-03T10:10:34.123536"
+    "updated_at": "2026-07-03T10:46:40.962587"
   },
   {
     "address": "UQDape1hyomeJLDTU2JToxsQdvU3eypTkfEdmNOPTsiadv19",
@@ -2099,7 +2116,7 @@
       "grinch_sold": 952750.3882863622,
       "grinch_bought": 952750.3882863622
     },
-    "updated_at": "2026-07-03T10:10:34.123536"
+    "updated_at": "2026-07-03T10:46:40.962587"
   },
   {
     "address": "UQD_WqhA9lFR3HFs7R79-3_3n3_VxLMpFAAI6Ivc68r22-mH",
@@ -2114,7 +2131,7 @@
       "grinch_sold": 33000.0,
       "grinch_bought": 0.0
     },
-    "updated_at": "2026-07-03T10:10:34.123536"
+    "updated_at": "2026-07-03T10:46:40.962587"
   },
   {
     "address": "UQCO4jJeh1eO0miZV2tcZxDXWTzMvTST1R7qhWSoguj2Pl3j",
@@ -2131,7 +2148,7 @@
       "grinch_sold": 21915.344808452,
       "grinch_bought": 21915.344808452
     },
-    "updated_at": "2026-07-03T10:10:34.123536"
+    "updated_at": "2026-07-03T10:46:40.962587"
   },
   {
     "address": "UQA9viQj5T3nZWZe8EUUl3EoTZ-lRFFZhkAaTB_H58lxL3ZY",
@@ -2147,7 +2164,7 @@
       "grinch_sold": 500000.0,
       "grinch_bought": 0.0
     },
-    "updated_at": "2026-07-03T10:10:34.123536"
+    "updated_at": "2026-07-03T10:46:40.962587"
   },
   {
     "address": "UQCbOWgztS9btjk01j16F3_Y9QNpjkngd9rRrbPEcYDrwn1C",
@@ -2164,7 +2181,7 @@
       "grinch_sold": 400000.0,
       "grinch_bought": 0.0
     },
-    "updated_at": "2026-07-03T10:10:34.123536"
+    "updated_at": "2026-07-03T10:46:40.962587"
   },
   {
     "address": "UQD637gof4Iys3_pO5YyUL6UfByXD_hRZxSI6O8TqzK1TcK9",
@@ -2179,7 +2196,7 @@
       "grinch_sold": 7475.919692675,
       "grinch_bought": 9494.174961571
     },
-    "updated_at": "2026-07-03T10:10:34.123536"
+    "updated_at": "2026-07-03T10:46:40.962587"
   },
   {
     "address": "UQDjhZWjx7cxlXPvOgN67Z_YWCvKZu2WCyQkQvZZoieAyM-i",
@@ -2196,7 +2213,7 @@
       "grinch_sold": 50021.942210771,
       "grinch_bought": 50021.942210771
     },
-    "updated_at": "2026-07-03T10:10:34.123536"
+    "updated_at": "2026-07-03T10:46:40.962587"
   },
   {
     "address": "UQCBNR8B2k-7iU-XG4lznlABvUms4gL79mYO6I1sHWxFNhVZ",
@@ -2213,7 +2230,7 @@
       "grinch_sold": 1498581.97620946,
       "grinch_bought": 0.0
     },
-    "updated_at": "2026-07-03T10:10:34.123536"
+    "updated_at": "2026-07-03T10:46:40.962587"
   },
   {
     "address": "UQBufSt9nC1KoYWGXsfTVy_-GkAxlQPT-7KZwaPprIJX0MTP",
@@ -2228,7 +2245,7 @@
       "grinch_sold": 400000.0,
       "grinch_bought": 0.0
     },
-    "updated_at": "2026-07-03T10:10:34.123536"
+    "updated_at": "2026-07-03T10:46:40.962587"
   },
   {
     "address": "UQD-WEwJETdiicPHMAl1SJOY-XMDXwZs8NpBQZjOz3KDMFbB",
@@ -2243,7 +2260,7 @@
       "grinch_sold": 89948.019345874,
       "grinch_bought": 74031.986164219
     },
-    "updated_at": "2026-07-03T10:10:34.123536"
+    "updated_at": "2026-07-03T10:46:40.962587"
   },
   {
     "address": "UQDX5x2CIm21VAfEB7ee7ynwIA39Pf8WXMsCdM5AzC4YA8a8",
@@ -2258,7 +2275,7 @@
       "grinch_sold": 123536.97789183499,
       "grinch_bought": 0.0
     },
-    "updated_at": "2026-07-03T10:10:34.123536"
+    "updated_at": "2026-07-03T10:46:40.962587"
   },
   {
     "address": "UQCGI3hbQEP5fou_UNOcLJcNGACSjAddkvry_9AG0Y2ihROG",
@@ -2274,7 +2291,7 @@
       "grinch_sold": 0.0,
       "grinch_bought": 3629481.509700183
     },
-    "updated_at": "2026-07-03T10:10:34.123536"
+    "updated_at": "2026-07-03T10:46:40.962587"
   },
   {
     "address": "UQChhrKIi_Ab-cwXfXw0pFMY1MwEGVfb2s6gwDKNuGZdogTj",
@@ -2290,7 +2307,7 @@
       "grinch_sold": 56311.672080232005,
       "grinch_bought": 32522.566077978998
     },
-    "updated_at": "2026-07-03T10:10:34.123536"
+    "updated_at": "2026-07-03T10:46:40.962587"
   },
   {
     "address": "UQClPRUl1HS0u46EQW11N5nY2vFt32GA7S6asINWFNDz7YMB",
@@ -2305,7 +2322,7 @@
       "grinch_sold": 1500000.713712045,
       "grinch_bought": 0.0
     },
-    "updated_at": "2026-07-03T10:10:34.123536"
+    "updated_at": "2026-07-03T10:46:40.962587"
   },
   {
     "address": "UQBWdAEW9cRC1SJPHa7vuXg3bE1qNkTCLVNJL5K6LlhY4QAj",
@@ -2320,7 +2337,7 @@
       "grinch_sold": 0.0,
       "grinch_bought": 332.679482765
     },
-    "updated_at": "2026-07-03T10:10:34.123536"
+    "updated_at": "2026-07-03T10:46:40.962587"
   },
   {
     "address": "UQDyH8J41EiDOBb6fCZ4JVcvzW_kYB2mHVV3Mm0kzbd6N02W",
@@ -2335,7 +2352,7 @@
       "grinch_sold": 0.0,
       "grinch_bought": 40823.50221803
     },
-    "updated_at": "2026-07-03T10:10:34.123536"
+    "updated_at": "2026-07-03T10:46:40.962587"
   },
   {
     "address": "UQC7OT8ShvXQGfgoQeVHsOx7pkDhA9OgRchLQAdfraPxaXKI",
@@ -2350,7 +2367,7 @@
       "grinch_sold": 34000.0,
       "grinch_bought": 0.0
     },
-    "updated_at": "2026-07-03T10:10:34.123536"
+    "updated_at": "2026-07-03T10:46:40.962587"
   },
   {
     "address": "UQCrQH8vOwRGOypZcxsoMxsPKBz9d_QhsGbx23mFE63M9BnU",
@@ -2367,7 +2384,7 @@
       "grinch_sold": 2250.0,
       "grinch_bought": 0.0
     },
-    "updated_at": "2026-07-03T10:10:34.123536"
+    "updated_at": "2026-07-03T10:46:40.962587"
   },
   {
     "address": "UQA8b56chmFHjbdzqsstNOnj_74q0bJVXmW44LT6dq4Isfj6",
@@ -2382,87 +2399,7 @@
       "grinch_sold": 100000.0,
       "grinch_bought": 0.0
     },
-    "updated_at": "2026-07-03T10:10:34.123536"
-  },
-  {
-    "address": "UQDvln6-WZsewpswS3-kUTo-5HkGqyrjpqBlaCx5SrGWU8tN",
-    "data": {
-      "buys": 4,
-      "sells": 0,
-      "ton_in": 210.084560903,
-      "usd_in": 336.1352974448,
-      "last_ts": 1782727485.0,
-      "ton_out": 0.0,
-      "usd_out": 0.0,
-      "first_ts": 1782727362.0,
-      "last_kind": "buy",
-      "grinch_sold": 0.0,
-      "grinch_bought": 732335.7234246191
-    },
-    "updated_at": "2026-07-03T10:10:34.123536"
-  },
-  {
-    "address": "UQD-pngIa-7ebUVm39PFD_nxlE5AgbLKWA5o_KY-bu3ufIOv",
-    "data": {
-      "buys": 0,
-      "sells": 1,
-      "ton_in": 0.0,
-      "last_ts": 1782445599.0,
-      "ton_out": 118.454993055,
-      "first_ts": 1782445599.0,
-      "last_kind": "sell",
-      "grinch_sold": 400000.0,
-      "grinch_bought": 0.0
-    },
-    "updated_at": "2026-07-03T10:10:34.123536"
-  },
-  {
-    "address": "UQD08pzmUKUuNxYCF2FWb1gn4vXgW2EhH3_kX1dzKEnEI_GL",
-    "data": {
-      "buys": 9,
-      "sells": 0,
-      "ton_in": 344.0,
-      "usd_in": 531.7,
-      "last_ts": 1782997028.0,
-      "ton_out": 0.0,
-      "first_ts": 1782501543.0,
-      "last_kind": "buy",
-      "grinch_sold": 0.0,
-      "grinch_bought": 1185236.8261854511
-    },
-    "updated_at": "2026-07-03T10:10:34.123536"
-  },
-  {
-    "address": "UQDj6fA9Jglu_yCzUiiRoBOINcPwyc0EBuIKVPXQ-DFbwBK9",
-    "data": {
-      "buys": 5,
-      "sells": 0,
-      "ton_in": 1100.0,
-      "usd_in": 1696.95,
-      "last_ts": 1782940325.0,
-      "ton_out": 0.0,
-      "usd_out": 0.0,
-      "first_ts": 1782938259.0,
-      "last_kind": "buy",
-      "grinch_sold": 0.0,
-      "grinch_bought": 3031412.303291171
-    },
-    "updated_at": "2026-07-03T10:10:34.123536"
-  },
-  {
-    "address": "UQC0BK07-BSFTzo-gJjpvPsr1Nhyh5Bs2nRq7EtN3Mu1qKuW",
-    "data": {
-      "buys": 2,
-      "sells": 0,
-      "ton_in": 190.0,
-      "last_ts": 1782564668.0,
-      "ton_out": 0.0,
-      "first_ts": 1782562254.0,
-      "last_kind": "buy",
-      "grinch_sold": 0.0,
-      "grinch_bought": 575844.685744624
-    },
-    "updated_at": "2026-07-03T10:10:34.123536"
+    "updated_at": "2026-07-03T10:46:40.962587"
   },
   {
     "address": "UQCJtJlFRZWPXd01Y7_-K9a5PCSNTYRfT_wEt6KPgSzStrmM",
@@ -2479,7 +2416,7 @@
       "grinch_sold": 677010.772526066,
       "grinch_bought": 1238952.4763200218
     },
-    "updated_at": "2026-07-03T10:10:34.123536"
+    "updated_at": "2026-07-03T10:46:40.962587"
   },
   {
     "address": "UQBpB9Vq9pjHF0xSQ1PTCzwUop9WMgUNrRw83J4AtfRbCHxL",
@@ -2495,7 +2432,7 @@
       "grinch_sold": 0.0,
       "grinch_bought": 688040.48014284
     },
-    "updated_at": "2026-07-03T10:10:34.123536"
+    "updated_at": "2026-07-03T10:46:40.962587"
   },
   {
     "address": "UQD3mXkjfkFPt8yePSTK9bRywjvjSxW_C0dulsKdU1S8zATZ",
@@ -2511,7 +2448,87 @@
       "grinch_sold": 0.0,
       "grinch_bought": 2319142.460329842
     },
-    "updated_at": "2026-07-03T10:10:34.123536"
+    "updated_at": "2026-07-03T10:46:40.962587"
+  },
+  {
+    "address": "UQDvln6-WZsewpswS3-kUTo-5HkGqyrjpqBlaCx5SrGWU8tN",
+    "data": {
+      "buys": 4,
+      "sells": 0,
+      "ton_in": 210.084560903,
+      "usd_in": 336.1352974448,
+      "last_ts": 1782727485.0,
+      "ton_out": 0.0,
+      "usd_out": 0.0,
+      "first_ts": 1782727362.0,
+      "last_kind": "buy",
+      "grinch_sold": 0.0,
+      "grinch_bought": 732335.7234246191
+    },
+    "updated_at": "2026-07-03T10:46:40.962587"
+  },
+  {
+    "address": "UQD-pngIa-7ebUVm39PFD_nxlE5AgbLKWA5o_KY-bu3ufIOv",
+    "data": {
+      "buys": 0,
+      "sells": 1,
+      "ton_in": 0.0,
+      "last_ts": 1782445599.0,
+      "ton_out": 118.454993055,
+      "first_ts": 1782445599.0,
+      "last_kind": "sell",
+      "grinch_sold": 400000.0,
+      "grinch_bought": 0.0
+    },
+    "updated_at": "2026-07-03T10:46:40.962587"
+  },
+  {
+    "address": "UQD08pzmUKUuNxYCF2FWb1gn4vXgW2EhH3_kX1dzKEnEI_GL",
+    "data": {
+      "buys": 9,
+      "sells": 0,
+      "ton_in": 344.0,
+      "usd_in": 531.7,
+      "last_ts": 1782997028.0,
+      "ton_out": 0.0,
+      "first_ts": 1782501543.0,
+      "last_kind": "buy",
+      "grinch_sold": 0.0,
+      "grinch_bought": 1185236.8261854511
+    },
+    "updated_at": "2026-07-03T10:46:40.962587"
+  },
+  {
+    "address": "UQDj6fA9Jglu_yCzUiiRoBOINcPwyc0EBuIKVPXQ-DFbwBK9",
+    "data": {
+      "buys": 5,
+      "sells": 0,
+      "ton_in": 1100.0,
+      "usd_in": 1696.95,
+      "last_ts": 1782940325.0,
+      "ton_out": 0.0,
+      "usd_out": 0.0,
+      "first_ts": 1782938259.0,
+      "last_kind": "buy",
+      "grinch_sold": 0.0,
+      "grinch_bought": 3031412.303291171
+    },
+    "updated_at": "2026-07-03T10:46:40.962587"
+  },
+  {
+    "address": "UQC0BK07-BSFTzo-gJjpvPsr1Nhyh5Bs2nRq7EtN3Mu1qKuW",
+    "data": {
+      "buys": 2,
+      "sells": 0,
+      "ton_in": 190.0,
+      "last_ts": 1782564668.0,
+      "ton_out": 0.0,
+      "first_ts": 1782562254.0,
+      "last_kind": "buy",
+      "grinch_sold": 0.0,
+      "grinch_bought": 575844.685744624
+    },
+    "updated_at": "2026-07-03T10:46:40.962587"
   },
   {
     "address": "UQCsBXUfid-8xAcFT5Igy7w6dzjVwcye-DIE__mLxVh9d5BF",
@@ -2526,7 +2543,7 @@
       "grinch_sold": 14753.363644297,
       "grinch_bought": 0.0
     },
-    "updated_at": "2026-07-03T10:10:34.123536"
+    "updated_at": "2026-07-03T10:46:40.962587"
   },
   {
     "address": "UQARA7ZdUu5Zs9lFziVsAk7rOZwgi7_8YvBdb2-lWjHm7H-x",
@@ -2541,7 +2558,7 @@
       "grinch_sold": 100000.0,
       "grinch_bought": 0.0
     },
-    "updated_at": "2026-07-03T10:10:34.123536"
+    "updated_at": "2026-07-03T10:46:40.962587"
   },
   {
     "address": "UQD0oJR2yb0nAPeGg_HVe6qMJ1yXRRuUfrtXcX5KXVaJGxGr",
@@ -2558,7 +2575,7 @@
       "grinch_sold": 4000000.0,
       "grinch_bought": 0.0
     },
-    "updated_at": "2026-07-03T10:10:34.123536"
+    "updated_at": "2026-07-03T10:46:40.962587"
   },
   {
     "address": "UQAV4NlHgZBt6V9NKCGiSFhCUy8TRNGz6PKOJeHBuHNzmg0a",
@@ -2575,7 +2592,7 @@
       "grinch_sold": 0.0,
       "grinch_bought": 1034.322700154
     },
-    "updated_at": "2026-07-03T10:10:34.123536"
+    "updated_at": "2026-07-03T10:46:40.962587"
   },
   {
     "address": "UQCu38LDgwKrinjPetm5Z2QiKoCp71JkItVGHps1UtOts_Us",
@@ -2590,7 +2607,7 @@
       "grinch_sold": 68363.725235478,
       "grinch_bought": 68363.725235478
     },
-    "updated_at": "2026-07-03T10:10:34.123536"
+    "updated_at": "2026-07-03T10:46:40.962587"
   },
   {
     "address": "UQD-rqtvbpDvnHoRAxY4UIeR-3xbwwZXVZ4r8uXh2vxtxydy",
@@ -2607,7 +2624,7 @@
       "grinch_sold": 323932.359021954,
       "grinch_bought": 323932.359021954
     },
-    "updated_at": "2026-07-03T10:10:34.123536"
+    "updated_at": "2026-07-03T10:46:40.962587"
   },
   {
     "address": "UQAIjYZkdqrV4wDJxHTtrbdig-H-G2ZE2t1wAHPby3XtiTbK",
@@ -2622,7 +2639,7 @@
       "grinch_sold": 111615.43584143699,
       "grinch_bought": 0.0
     },
-    "updated_at": "2026-07-03T10:10:34.123536"
+    "updated_at": "2026-07-03T10:46:40.962587"
   },
   {
     "address": "UQCg4wuRTn2riGmGHWC6Ln-m67SkjGch6suSHK5-9Svi2D5b",
@@ -2639,7 +2656,7 @@
       "grinch_sold": 12704.833009625001,
       "grinch_bought": 19723.347723197
     },
-    "updated_at": "2026-07-03T10:10:34.123536"
+    "updated_at": "2026-07-03T10:46:40.962587"
   },
   {
     "address": "UQBEkBU4DD9mvd8m5CkvJa2LjocP2qp6pbGyRpXyvnA4xucl",
@@ -2656,7 +2673,7 @@
       "grinch_sold": 381255.214276024,
       "grinch_bought": 381255.214276024
     },
-    "updated_at": "2026-07-03T10:10:34.123536"
+    "updated_at": "2026-07-03T10:46:40.962587"
   },
   {
     "address": "UQCmLAUCAOhnRCYR5X9vZJW69Z-z41buSIPm03Nnw0JoJbV5",
@@ -2672,71 +2689,7 @@
       "grinch_sold": 0.0,
       "grinch_bought": 1179689.6254013462
     },
-    "updated_at": "2026-07-03T10:10:34.123536"
-  },
-  {
-    "address": "UQCXTgxB2yqiLs4w7lO3pPtYN2dMOT4vDmfOYFFI8e8kXEBW",
-    "data": {
-      "buys": 0,
-      "sells": 3,
-      "ton_in": 0.0,
-      "last_ts": 1782585261.0,
-      "ton_out": 34.128292989,
-      "first_ts": 1782507963.0,
-      "last_kind": "sell",
-      "grinch_sold": 120383.613307276,
-      "grinch_bought": 0.0
-    },
-    "updated_at": "2026-07-03T10:10:34.123536"
-  },
-  {
-    "address": "UQC8B1Trx0_c69sr7J1F0ImIUjaOnYHSt84DAvHJ6MZi78il",
-    "data": {
-      "buys": 1,
-      "sells": 1,
-      "ton_in": 30.0,
-      "usd_in": 49.8,
-      "last_ts": 1783026468.0,
-      "ton_out": 26.889692088,
-      "usd_out": 45.44357962872,
-      "first_ts": 1782992762.0,
-      "last_kind": "sell",
-      "grinch_sold": 100229.416810866,
-      "grinch_bought": 100229.416810866
-    },
-    "updated_at": "2026-07-03T10:10:34.123536"
-  },
-  {
-    "address": "UQBjWiaXOSIWCGHxPqzsDFTakBF7jU7vNaQmkVRb21OA7uqd",
-    "data": {
-      "buys": 8,
-      "sells": 3,
-      "ton_in": 400.02756353300003,
-      "usd_in": 283.602150488,
-      "last_ts": 1783035731.0,
-      "ton_out": 170.114880465,
-      "usd_out": 165.07976698044,
-      "first_ts": 1782416524.0,
-      "last_kind": "buy",
-      "grinch_sold": 562222.0,
-      "grinch_bought": 1405967.015591909
-    },
-    "updated_at": "2026-07-03T10:10:34.123536"
-  },
-  {
-    "address": "UQB9jHpuFQzmd0Txx7ZENzr0eXf6A_L2_ZOHy_hi0w7p2L6V",
-    "data": {
-      "buys": 0,
-      "sells": 3,
-      "ton_in": 0.0,
-      "last_ts": 1782585261.0,
-      "ton_out": 33.115074409,
-      "first_ts": 1782507963.0,
-      "last_kind": "sell",
-      "grinch_sold": 117349.463637184,
-      "grinch_bought": 0.0
-    },
-    "updated_at": "2026-07-03T10:10:34.123536"
+    "updated_at": "2026-07-03T10:46:40.962587"
   },
   {
     "address": "UQB6TVtcMc63DPbV20feqG5RVVd2rBtr02CyK8vzxeYooJea",
@@ -2753,7 +2706,7 @@
       "grinch_sold": 166367.397494281,
       "grinch_bought": 166367.397494281
     },
-    "updated_at": "2026-07-03T10:10:34.123536"
+    "updated_at": "2026-07-03T10:46:40.962587"
   },
   {
     "address": "UQB64RozIQBvO32W7PGIZbSRZMnv-g4W8uJu0DGG7996DvUF",
@@ -2768,24 +2721,24 @@
       "grinch_sold": 121945.007806852,
       "grinch_bought": 0.0
     },
-    "updated_at": "2026-07-03T10:10:34.123536"
+    "updated_at": "2026-07-03T10:46:40.962587"
   },
   {
     "address": "UQB4esvHnrTToNH-kH6QjDbnE3wJYeMbwrWaGwCEuc_Goq5z",
     "data": {
-      "buys": 7,
+      "buys": 8,
       "sells": 0,
-      "ton_in": 780.5,
-      "usd_in": 1299.825,
-      "last_ts": 1783069108.0,
+      "ton_in": 952.5,
+      "usd_in": 1588.785,
+      "last_ts": 1783075106.0,
       "ton_out": 0.0,
       "usd_out": 0.0,
       "first_ts": 1782991095.0,
       "last_kind": "buy",
       "grinch_sold": 0.0,
-      "grinch_bought": 2575289.552028675
+      "grinch_bought": 3095207.859641091
     },
-    "updated_at": "2026-07-03T10:10:34.123536"
+    "updated_at": "2026-07-03T10:46:40.962587"
   },
   {
     "address": "UQAiyQQz9gJ1oXEXjTN6M3drpwpTcGaMUK8nrkoii69uVsSL",
@@ -2802,7 +2755,71 @@
       "grinch_sold": 414496.241453103,
       "grinch_bought": 250518.781520996
     },
-    "updated_at": "2026-07-03T10:10:34.123536"
+    "updated_at": "2026-07-03T10:46:40.962587"
+  },
+  {
+    "address": "UQCXTgxB2yqiLs4w7lO3pPtYN2dMOT4vDmfOYFFI8e8kXEBW",
+    "data": {
+      "buys": 0,
+      "sells": 3,
+      "ton_in": 0.0,
+      "last_ts": 1782585261.0,
+      "ton_out": 34.128292989,
+      "first_ts": 1782507963.0,
+      "last_kind": "sell",
+      "grinch_sold": 120383.613307276,
+      "grinch_bought": 0.0
+    },
+    "updated_at": "2026-07-03T10:46:40.962587"
+  },
+  {
+    "address": "UQC8B1Trx0_c69sr7J1F0ImIUjaOnYHSt84DAvHJ6MZi78il",
+    "data": {
+      "buys": 1,
+      "sells": 1,
+      "ton_in": 30.0,
+      "usd_in": 49.8,
+      "last_ts": 1783026468.0,
+      "ton_out": 26.889692088,
+      "usd_out": 45.44357962872,
+      "first_ts": 1782992762.0,
+      "last_kind": "sell",
+      "grinch_sold": 100229.416810866,
+      "grinch_bought": 100229.416810866
+    },
+    "updated_at": "2026-07-03T10:46:40.962587"
+  },
+  {
+    "address": "UQBjWiaXOSIWCGHxPqzsDFTakBF7jU7vNaQmkVRb21OA7uqd",
+    "data": {
+      "buys": 8,
+      "sells": 3,
+      "ton_in": 400.02756353300003,
+      "usd_in": 283.602150488,
+      "last_ts": 1783035731.0,
+      "ton_out": 170.114880465,
+      "usd_out": 165.07976698044,
+      "first_ts": 1782416524.0,
+      "last_kind": "buy",
+      "grinch_sold": 562222.0,
+      "grinch_bought": 1405967.015591909
+    },
+    "updated_at": "2026-07-03T10:46:40.962587"
+  },
+  {
+    "address": "UQB9jHpuFQzmd0Txx7ZENzr0eXf6A_L2_ZOHy_hi0w7p2L6V",
+    "data": {
+      "buys": 0,
+      "sells": 3,
+      "ton_in": 0.0,
+      "last_ts": 1782585261.0,
+      "ton_out": 33.115074409,
+      "first_ts": 1782507963.0,
+      "last_kind": "sell",
+      "grinch_sold": 117349.463637184,
+      "grinch_bought": 0.0
+    },
+    "updated_at": "2026-07-03T10:46:40.962587"
   },
   {
     "address": "UQBGVywyDJS59J-vuBAXuF31sxg-HzPc3to5twEXWNQ0vdn7",
@@ -2819,7 +2836,7 @@
       "grinch_sold": 1312.6099647259998,
       "grinch_bought": 1312.6099647259998
     },
-    "updated_at": "2026-07-03T10:10:34.123536"
+    "updated_at": "2026-07-03T10:46:40.962587"
   },
   {
     "address": "UQDd6XSOE8urYP4L7IoNoYkJR0jOTNgl46KI7aNEE8Bf7D8O",
@@ -2836,7 +2853,7 @@
       "grinch_sold": 78734.103152583,
       "grinch_bought": 78734.103152583
     },
-    "updated_at": "2026-07-03T10:10:34.123536"
+    "updated_at": "2026-07-03T10:46:40.962587"
   },
   {
     "address": "UQCuUWaWb-9rGBkgsV2ybakNtPIZ_oapn7o9SS8uqVMOYAPj",
@@ -2853,7 +2870,7 @@
       "grinch_sold": 79706.254004329,
       "grinch_bought": 79706.254004329
     },
-    "updated_at": "2026-07-03T10:10:34.123536"
+    "updated_at": "2026-07-03T10:46:40.962587"
   },
   {
     "address": "UQByQkuUU821AgaqDq1efH2WSBupEEWDCNrHchyDi-dkz1cI",
@@ -2870,7 +2887,7 @@
       "grinch_sold": 512294.021993918,
       "grinch_bought": 512294.021993918
     },
-    "updated_at": "2026-07-03T10:10:34.123536"
+    "updated_at": "2026-07-03T10:46:40.962587"
   },
   {
     "address": "UQC-weQeNIBArera6d8X6PCYXIgoMRHggqV0pNDU6SWK0n9u",
@@ -2886,7 +2903,7 @@
       "grinch_sold": 2480868.088060901,
       "grinch_bought": 0.0
     },
-    "updated_at": "2026-07-03T10:10:34.123536"
+    "updated_at": "2026-07-03T10:46:40.962587"
   },
   {
     "address": "UQCqb4CHASNsppuzgAsf1hY8dZ9r8WjviUeM0bcBr9BeMi9Y",
@@ -2901,7 +2918,7 @@
       "grinch_sold": 0.0,
       "grinch_bought": 11446.371420159
     },
-    "updated_at": "2026-07-03T10:10:34.123536"
+    "updated_at": "2026-07-03T10:46:40.962587"
   },
   {
     "address": "UQCuWG5XIULFQrZ3qDJXzsD7kOH_rT4J2dMQjfATW2N2f-us",
@@ -2916,7 +2933,7 @@
       "grinch_sold": 0.0,
       "grinch_bought": 332462.400188808
     },
-    "updated_at": "2026-07-03T10:10:34.123536"
+    "updated_at": "2026-07-03T10:46:40.962587"
   },
   {
     "address": "UQBS4TWgSf2fTj66nN2HVNNPSY4jD-SbmTORN6LWyotxlhnB",
@@ -2931,7 +2948,7 @@
       "grinch_sold": 14937.944983171,
       "grinch_bought": 0.0
     },
-    "updated_at": "2026-07-03T10:10:34.123536"
+    "updated_at": "2026-07-03T10:46:40.962587"
   },
   {
     "address": "UQAj4nV6eSwkE9Y_r24RKCLdCKWvZLEBhFQNy-FCyN6Yc8dA",
@@ -2948,7 +2965,7 @@
       "grinch_sold": 80034.308184539,
       "grinch_bought": 80034.308184539
     },
-    "updated_at": "2026-07-03T10:10:34.123536"
+    "updated_at": "2026-07-03T10:46:40.962587"
   },
   {
     "address": "UQDAaLm5HF0pL4-6JrWYgbeFrBLHq-ibbhybkJRn8ujAhwAy",
@@ -2965,7 +2982,7 @@
       "grinch_sold": 79380.212700286,
       "grinch_bought": 79380.212700286
     },
-    "updated_at": "2026-07-03T10:10:34.123536"
+    "updated_at": "2026-07-03T10:46:40.962587"
   },
   {
     "address": "UQBUqDAHTo-SFUV14EbOmqadPxwKKqKQnm09Ic7TEfUJtfF_",
@@ -2982,7 +2999,7 @@
       "grinch_sold": 78414.002541255,
       "grinch_bought": 78414.002541255
     },
-    "updated_at": "2026-07-03T10:10:34.123536"
+    "updated_at": "2026-07-03T10:46:40.962587"
   },
   {
     "address": "UQAO9DTrzsVoobR82kMkrLskCyO3YNm4qgPHAfyJ8a2ukhYl",
@@ -2999,7 +3016,7 @@
       "grinch_sold": 81366.988319411,
       "grinch_bought": 81366.988319411
     },
-    "updated_at": "2026-07-03T10:10:34.123536"
+    "updated_at": "2026-07-03T10:46:40.962587"
   },
   {
     "address": "UQBB19OacbDykoxAMicFA3gwiKh-PyJf_KkdQFdGa052fOla",
@@ -3016,7 +3033,7 @@
       "grinch_sold": 81030.71487521,
       "grinch_bought": 81030.71487521
     },
-    "updated_at": "2026-07-03T10:10:34.123536"
+    "updated_at": "2026-07-03T10:46:40.962587"
   },
   {
     "address": "UQADEFMTMnC-gu5v2U0ZY8AYaGhAOk9TcECg1TOquAW3r7_B",
@@ -3031,7 +3048,7 @@
       "grinch_sold": 16551.896767872,
       "grinch_bought": 0.0
     },
-    "updated_at": "2026-07-03T10:10:34.123536"
+    "updated_at": "2026-07-03T10:46:40.962587"
   },
   {
     "address": "UQBlVMb8KfykcKZV9CJlfE2Xwp1cNqB88hK64SOBNgfSa4rT",
@@ -3048,7 +3065,7 @@
       "grinch_sold": 1111000.0,
       "grinch_bought": 313568.252673709
     },
-    "updated_at": "2026-07-03T10:10:34.123536"
+    "updated_at": "2026-07-03T10:46:40.962587"
   },
   {
     "address": "UQDDgb2BTM-KCjntOoUg6uHllvnu3KGqEquKw6IySVP3hDgM",
@@ -3065,7 +3082,7 @@
       "grinch_sold": 442528.804329952,
       "grinch_bought": 565314.007141583
     },
-    "updated_at": "2026-07-03T10:10:34.123536"
+    "updated_at": "2026-07-03T10:46:40.962587"
   },
   {
     "address": "UQBf9BPsrofH1_MSLRP2LsUIAfveMI22slMQY6hugcWlnBNP",
@@ -3082,6 +3099,6 @@
       "grinch_sold": 627672.993567631,
       "grinch_bought": 627662.993567631
     },
-    "updated_at": "2026-07-03T10:10:34.123536"
+    "updated_at": "2026-07-03T10:46:40.962587"
   }
 ]
