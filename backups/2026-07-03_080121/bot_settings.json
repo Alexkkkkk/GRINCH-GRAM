@@ -216,6 +216,12 @@
     "updated_at": "2026-07-02T19:45:42.918601"
   },
   {
+    "section": "advisor",
+    "key": "groq_api_key",
+    "value": "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",
+    "updated_at": "2026-07-03T06:29:40.263874"
+  },
+  {
     "section": "config",
     "key": "TRAILING_STOP_PCT",
     "value": "7.0",

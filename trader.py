@@ -742,14 +742,37 @@ class Trader:
         if total_grinch <= 0:
             return False
 
+        # ── Консолидация: продаём ВЕСЬ GRINCH на балансе одной сделкой,
+        # не только то, что учтено во внутренних позициях — так пыль/
+        # расхождения не остаются непроданными после DCA-выхода.
+        sell_amount = total_grinch
+        if self.exchange.mode == "dedust":
+            try:
+                real_bal = self.exchange.get_balance() or {}
+                real_grinch = float(real_bal.get("GRINCH", 0) or 0)
+                reserve = Config.GRINCH_RESERVE if (
+                    Config.SHORT_TRADING_ENABLED or self.open_short_trades
+                ) else 0.0
+                sweepable = max(0.0, real_grinch - reserve)
+                if sweepable > sell_amount:
+                    self.log(
+                        f"🧹 Консолидация: на балансе {real_grinch:.4f} GRINCH "
+                        f"(учтено {total_grinch:.4f}) — продаём всё "
+                        f"{sweepable:.4f} одной сделкой",
+                        "INFO"
+                    )
+                    sell_amount = sweepable
+            except Exception as _sw_e:
+                self.log(f"⚠️ Не удалось сверить баланс для консолидации DCA: {_sw_e}", "WARN")
+
         self.log(
-            f"💸 DCA: продаём {total_grinch:.4f} GRINCH "
+            f"💸 DCA: продаём {sell_amount:.4f} GRINCH "
             f"(прибыль портфеля {portfolio_pct:+.1f}%)...",
             "INFO"
         )
 
         if self.exchange.mode == "dedust":
-            sell_result = self.exchange.place_order("sell", total_grinch)
+            sell_result = self.exchange.place_order("sell", sell_amount)
             if not sell_result or sell_result.get("error"):
                 err = (sell_result or {}).get("error", "нет ответа")
                 self.log(f"⚠️ DCA: продажа не исполнена — {err}. Позиции остаются.", "WARN")
@@ -1948,6 +1971,31 @@ class Trader:
         # ── 1. РЕАЛЬНАЯ продажа GRINCH через DeDust ─────────────────────
         if self.exchange.mode == "dedust":
             grinch_amount = trade.get("amount", 0)
+            # ── Консолидация: если это последняя открытая LONG-позиция,
+            # продаём ВЕСЬ GRINCH на балансе одной сделкой (не только
+            # то, что учтено в trade["amount"]) — так пыль/расхождения
+            # после ре-мержа или ручных операций не остаются непроданными.
+            if trade.get("side") == "buy":
+                other_longs = [t for t in self.open_trades
+                               if t.get("side") == "buy" and t.get("id") != trade.get("id")]
+                if not other_longs:
+                    try:
+                        real_bal = self.exchange.get_balance() or {}
+                        real_grinch = float(real_bal.get("GRINCH", 0) or 0)
+                        reserve = Config.GRINCH_RESERVE if (
+                            Config.SHORT_TRADING_ENABLED or self.open_short_trades
+                        ) else 0.0
+                        sweepable = max(0.0, real_grinch - reserve)
+                        if sweepable > grinch_amount:
+                            self.log(
+                                f"🧹 Консолидация: на балансе {real_grinch:.4f} GRINCH "
+                                f"(учтено {grinch_amount:.4f}) — продаём всё "
+                                f"{sweepable:.4f} одной сделкой",
+                                "INFO"
+                            )
+                            grinch_amount = sweepable
+                    except Exception as _sw_e:
+                        self.log(f"⚠️ Не удалось сверить баланс для консолидации: {_sw_e}", "WARN")
             if grinch_amount > 0:
                 # ── ЖЕЛЕЗНЫЙ ЗАМОК: проверяем TON-цену перед блокчейном ──────
                 # Даже если все верхние проверки пройдены, делаем финальную
