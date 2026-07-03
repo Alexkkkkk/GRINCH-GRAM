@@ -578,9 +578,13 @@ def set_config(interval_min: int = None, trades_trigger: int = None):
     return {"interval_min": AUTO_INTERVAL_MIN, "trades_trigger": AUTO_TRADES_TRIGGER}
 
 
-def reload_key():
+def reload_key(key: str = None):
+    """Обновить ключ Groq. key=None — читать из env, key=str — установить напрямую."""
     global GROQ_API_KEY
-    GROQ_API_KEY = os.getenv("GROQ_API_KEY", "")
+    if key is not None:
+        GROQ_API_KEY = key.strip()
+    else:
+        GROQ_API_KEY = os.getenv("GROQ_API_KEY", "")
     return bool(GROQ_API_KEY)
 
 

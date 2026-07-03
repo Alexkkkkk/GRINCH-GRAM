@@ -470,6 +470,29 @@ def api_advisor_log():
     from ai_advisor import get_adaptation_log
     return jsonify(get_adaptation_log())
 
+@app.route("/api/advisor/apikey", methods=["POST"])
+def api_advisor_apikey():
+    from ai_advisor import reload_key
+    import settings_store
+    data = request.json or {}
+    key  = str(data.get("key", "")).strip()
+    if not key:
+        return jsonify({"ok": False, "error": "Ключ не может быть пустым"})
+    # сохраняем в персистентное хранилище (settings.json / PostgreSQL)
+    settings_store.update_section("advisor", {"groq_api_key": key})
+    # применяем немедленно без перезапуска
+    reload_key(key)
+    return jsonify({"ok": True, "enabled": True})
+
+@app.route("/api/advisor/apikey", methods=["GET"])
+def api_advisor_apikey_get():
+    import settings_store
+    sec = settings_store.get_section("advisor")
+    stored = sec.get("groq_api_key", "")
+    # возвращаем только маску — не раскрываем ключ в UI
+    masked = ("gsk_" + "•" * 20 + stored[-4:]) if len(stored) > 8 else ("•" * len(stored) if stored else "")
+    return jsonify({"ok": True, "has_key": bool(stored), "masked": masked})
+
 @app.route("/api/trade/manual_buy", methods=["POST"])
 def api_manual_buy():
     data   = request.get_json(silent=True) or {}
