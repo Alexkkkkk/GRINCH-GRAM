@@ -186,22 +186,34 @@
     "updated_at": "2026-07-03T11:08:04.214575"
   },
   {
-    "section": "advisor",
-    "key": "groq_api_key",
-    "value": "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",
-    "updated_at": "2026-07-03T06:29:40.263874"
-  },
-  {
     "section": "config",
     "key": "SMART_TP_ENABLED",
     "value": "True",
     "updated_at": "2026-07-03T11:08:04.214575"
   },
   {
+    "section": "advisor",
+    "key": "groq_api_key",
+    "value": "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",
+    "updated_at": "2026-07-03T13:03:14.233568"
+  },
+  {
+    "section": "config",
+    "key": "dca_drop_trigger_pct",
+    "value": "10.0",
+    "updated_at": "2026-07-03T14:36:29.613311"
+  },
+  {
     "section": "config",
     "key": "min_ai_confidence",
-    "value": "55.0",
-    "updated_at": "2026-07-03T11:30:16.920971"
+    "value": "40.0",
+    "updated_at": "2026-07-03T14:41:59.138924"
+  },
+  {
+    "section": "config",
+    "key": "profit_protect_drop_pct",
+    "value": "2.0",
+    "updated_at": "2026-07-03T14:41:59.138924"
   },
   {
     "section": "config",
