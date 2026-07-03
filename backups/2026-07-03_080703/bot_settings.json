@@ -13,7 +13,6 @@
   },
   {
     "section": "config",
-<<<<<<<< HEAD:backups/2026-07-03_045838/bot_settings.json
     "key": "SMART_BUY_MAX_WAIT_TICKS",
     "value": "3",
     "updated_at": "2026-07-02T19:45:42.918601"
@@ -80,8 +79,6 @@
   },
   {
     "section": "config",
-========
->>>>>>>> 805f5aa66116a50968a4b235cac5ab4439cc12da:backups/2026-07-02_184612/bot_settings.json
     "key": "AI_AUTONOMOUS_MIN_CONF",
     "value": "36.0",
     "updated_at": "2026-06-29T21:47:39.577521"
@@ -130,203 +127,44 @@
   },
   {
     "section": "config",
-<<<<<<<< HEAD:backups/2026-07-03_045838/bot_settings.json
     "key": "DCA_DROP_TRIGGER_PCT",
     "value": "20.0",
     "updated_at": "2026-07-02T19:45:42.918601"
-========
-    "key": "SYMBOL",
-    "value": "GRINCH/USDT",
-    "updated_at": "2026-07-02T16:08:12.738313"
-  },
-  {
-    "section": "config",
-    "key": "TRADE_AMOUNT",
-    "value": "100.0",
-    "updated_at": "2026-07-02T16:08:12.738313"
-  },
-  {
-    "section": "config",
-    "key": "MAX_OPEN_TRADES",
-    "value": "10",
-    "updated_at": "2026-07-02T16:08:12.738313"
-  },
-  {
-    "section": "config",
-    "key": "TAKE_PROFIT_PCT",
-    "value": "6.0",
-    "updated_at": "2026-07-02T16:08:12.738313"
-  },
-  {
-    "section": "config",
-    "key": "TRAILING_STOP_PCT",
-    "value": "7.0",
-    "updated_at": "2026-07-02T16:08:12.738313"
-  },
-  {
-    "section": "config",
-    "key": "FEE_PCT",
-    "value": "1.0",
-    "updated_at": "2026-07-02T16:08:12.738313"
-  },
-  {
-    "section": "config",
-    "key": "MIN_AI_CONFIDENCE",
-    "value": "62.0",
-    "updated_at": "2026-07-02T16:08:12.738313"
-  },
-  {
-    "section": "config",
-    "key": "USE_DYNAMIC_TARGETS",
-    "value": "True",
-    "updated_at": "2026-07-02T16:08:12.738313"
-  },
-  {
-    "section": "config",
-    "key": "TREND_FILTER",
-    "value": "False",
-    "updated_at": "2026-07-02T16:08:12.738313"
-  },
-  {
-    "section": "config",
-    "key": "SMART_BUY_ENABLED",
-    "value": "True",
-    "updated_at": "2026-07-02T16:08:12.738313"
-  },
-  {
-    "section": "config",
-    "key": "SMART_BUY_PULLBACK_PCT",
-    "value": "5.0",
-    "updated_at": "2026-07-02T16:08:12.738313"
-  },
-  {
-    "section": "config",
-    "key": "SMART_BUY_MAX_WAIT_TICKS",
-    "value": "3",
-    "updated_at": "2026-07-02T16:08:12.738313"
-  },
-  {
-    "section": "config",
-    "key": "SMART_BUY_SKIP_CONF",
-    "value": "50.0",
-    "updated_at": "2026-07-02T16:08:12.738313"
-  },
-  {
-    "section": "config",
-    "key": "SMART_TP_ENABLED",
-    "value": "True",
-    "updated_at": "2026-07-02T16:08:12.738313"
-  },
-  {
-    "section": "config",
-    "key": "SMART_TP_MIN_CONF",
-    "value": "68.0",
-    "updated_at": "2026-07-02T16:08:12.738313"
-  },
-  {
-    "section": "config",
-    "key": "SMART_TP_TIGHT_TRAIL_PCT",
-    "value": "1.5",
-    "updated_at": "2026-07-02T16:08:12.738313"
-  },
-  {
-    "section": "config",
-    "key": "MIN_PROFIT_TON",
-    "value": "5.0",
-    "updated_at": "2026-07-02T16:08:12.738313"
-  },
-  {
-    "section": "config",
-    "key": "AI_TP_ADAPT_MIN_TRADES",
-    "value": "10",
-    "updated_at": "2026-07-02T16:08:12.738313"
-  },
-  {
-    "section": "config",
-    "key": "AI_TP_CAP_PCT",
-    "value": "80.0",
-    "updated_at": "2026-07-02T16:08:12.738313"
-  },
-  {
-    "section": "config",
-    "key": "DCA_MODE",
-    "value": "True",
-    "updated_at": "2026-07-02T16:08:12.738313"
-  },
-  {
-    "section": "config",
-    "key": "DCA_STAKE_TON",
-    "value": "100.0",
-    "updated_at": "2026-07-02T16:08:12.738313"
-  },
-  {
-    "section": "config",
-    "key": "DCA_TARGET_PROFIT_PCT",
-    "value": "15.0",
-    "updated_at": "2026-07-02T16:08:12.738313"
-  },
-  {
-    "section": "config",
-    "key": "DCA_DROP_TRIGGER_PCT",
-    "value": "20.0",
-    "updated_at": "2026-07-02T16:08:12.738313"
->>>>>>>> 805f5aa66116a50968a4b235cac5ab4439cc12da:backups/2026-07-02_184612/bot_settings.json
   },
   {
     "section": "config",
     "key": "DCA_PULLBACK_WAIT_PCT",
     "value": "17.0",
-<<<<<<<< HEAD:backups/2026-07-03_045838/bot_settings.json
     "updated_at": "2026-07-02T19:45:42.918601"
-========
-    "updated_at": "2026-07-02T16:08:12.738313"
->>>>>>>> 805f5aa66116a50968a4b235cac5ab4439cc12da:backups/2026-07-02_184612/bot_settings.json
   },
   {
     "section": "config",
     "key": "DCA_MAX_ENTRIES",
     "value": "10",
-<<<<<<<< HEAD:backups/2026-07-03_045838/bot_settings.json
     "updated_at": "2026-07-02T19:45:42.918601"
-========
-    "updated_at": "2026-07-02T16:08:12.738313"
->>>>>>>> 805f5aa66116a50968a4b235cac5ab4439cc12da:backups/2026-07-02_184612/bot_settings.json
   },
   {
     "section": "config",
     "key": "LARGE_SELL_DCA_ENABLED",
     "value": "True",
-<<<<<<<< HEAD:backups/2026-07-03_045838/bot_settings.json
     "updated_at": "2026-07-02T19:45:42.918601"
-========
-    "updated_at": "2026-07-02T16:08:12.738313"
->>>>>>>> 805f5aa66116a50968a4b235cac5ab4439cc12da:backups/2026-07-02_184612/bot_settings.json
   },
   {
     "section": "config",
     "key": "LARGE_SELL_DCA_TON",
     "value": "100.0",
-<<<<<<<< HEAD:backups/2026-07-03_045838/bot_settings.json
     "updated_at": "2026-07-02T19:45:42.918601"
-========
-    "updated_at": "2026-07-02T16:08:12.738313"
->>>>>>>> 805f5aa66116a50968a4b235cac5ab4439cc12da:backups/2026-07-02_184612/bot_settings.json
   },
   {
     "section": "config",
     "key": "LARGE_SELL_MIN_TON",
     "value": "500.0",
-<<<<<<<< HEAD:backups/2026-07-03_045838/bot_settings.json
     "updated_at": "2026-07-02T19:45:42.918601"
-========
-    "updated_at": "2026-07-02T16:08:12.738313"
->>>>>>>> 805f5aa66116a50968a4b235cac5ab4439cc12da:backups/2026-07-02_184612/bot_settings.json
   },
   {
     "section": "config",
     "key": "LARGE_SELL_COOLDOWN_SEC",
     "value": "100",
-<<<<<<<< HEAD:backups/2026-07-03_045838/bot_settings.json
     "updated_at": "2026-07-02T19:45:42.918601"
   },
   {
@@ -378,6 +216,12 @@
     "updated_at": "2026-07-02T19:45:42.918601"
   },
   {
+    "section": "advisor",
+    "key": "groq_api_key",
+    "value": "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",
+    "updated_at": "2026-07-03T06:29:40.263874"
+  },
+  {
     "section": "config",
     "key": "TRAILING_STOP_PCT",
     "value": "7.0",
@@ -418,8 +262,5 @@
     "key": "SMART_BUY_PULLBACK_PCT",
     "value": "5.0",
     "updated_at": "2026-07-02T19:45:42.918601"
-========
-    "updated_at": "2026-07-02T16:08:12.738313"
->>>>>>>> 805f5aa66116a50968a4b235cac5ab4439cc12da:backups/2026-07-02_184612/bot_settings.json
   }
 ]

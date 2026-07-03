@@ -209,6 +209,14 @@ class DedustClient:
     def error(self) -> Optional[str]:
         return self._error
 
+    def reinit(self, mnemonic_override: str = None):
+        """Переинициализирует клиент с новой мнемоникой без рестарта процесса.
+        Мутирует существующий объект-синглтон на месте, поэтому все, кто уже
+        держит ссылку на него (ExchangeClient._dedust), видят обновлённое
+        состояние без необходимости пере-получать объект."""
+        self.__init__(mnemonic_override)
+        return self._ready
+
     # ─────────────────────────────── helpers ───────────────────────────────
 
     def _derive_and_set_wallet_addr(self):

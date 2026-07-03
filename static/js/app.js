@@ -1295,6 +1295,41 @@ async function advSaveKey() {
   }
 }
 
+async function walletSaveMnemonic() {
+  const inp = document.getElementById("wallet-mnemonic-inp");
+  const mnemonic = inp ? inp.value.trim() : "";
+  if (!mnemonic) { showToast("❌ Введите мнемонику (24 слова)", "err"); return; }
+  const r = await fetch("/api/wallet/mnemonic", {
+    method:"POST", headers:{"Content-Type":"application/json"},
+    body: JSON.stringify({mnemonic})
+  });
+  const d = await r.json();
+  if (d.ok) {
+    showToast("✅ Ключ кошелька сохранён и подключён", "ok");
+    if (inp) inp.value = "";
+    _walletPollStatus();
+  } else {
+    showToast("❌ " + (d.error || "Ошибка"), "err");
+  }
+}
+
+async function _walletPollStatus() {
+  try {
+    const r = await fetch("/api/wallet/mnemonic");
+    const d = await r.json();
+    const dot = document.getElementById("wallet-key-dot");
+    const st  = document.getElementById("wallet-key-status");
+    if (dot) dot.style.background = d.connected ? "#00ff88" : (d.configured ? "#ffd166" : "#444");
+    if (st) {
+      st.textContent = d.connected
+        ? `✅ Подключён${d.wallet ? " · " + d.wallet.slice(0,6) + "…" + d.wallet.slice(-4) : ""}`
+        : (d.configured ? "⚠️ Ключ сохранён, но не активен" : "Ключ не задан");
+    }
+  } catch (e) {}
+}
+_walletPollStatus();
+setInterval(_walletPollStatus, 30000);
+
 async function _advPollStatus() {
   try {
     const r = await fetch("/api/advisor/status");
