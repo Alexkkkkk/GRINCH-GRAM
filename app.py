@@ -349,6 +349,10 @@ def tonconnect_manifest():
 #  Главный дашборд
 # ════════════════════════════════════════════════════════════════════════════
 
+@app.route("/health")
+def health():
+    return "ok", 200
+
 @app.route("/")
 def index():
     try:
