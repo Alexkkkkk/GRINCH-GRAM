@@ -60,3 +60,4 @@ scikit-learn
 sqlalchemy
 ta
 flask-compress
+orjson

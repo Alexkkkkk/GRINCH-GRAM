@@ -9,6 +9,10 @@ try:
     from flask_compress import Compress
 except ImportError:
     Compress = None
+try:
+    import orjson
+except ImportError:
+    orjson = None
 import threading
 import time
 import logging
@@ -21,16 +25,36 @@ from coin_info import coin_info
 log = logging.getLogger(__name__)
 
 
-class NumpyJSONProvider(DefaultJSONProvider):
-    def dumps(self, obj, **kwargs):
-        return json.dumps(obj, default=self._convert, **kwargs)
+def _numpy_default(o):
+    if isinstance(o, (np.integer,)):  return int(o)
+    if isinstance(o, (np.floating,)): return float(o)
+    if isinstance(o, (np.bool_,)):    return bool(o)
+    if isinstance(o, np.ndarray):     return o.tolist()
+    if isinstance(o, set):            return list(o)
+    raise TypeError(f"Object of type {type(o).__name__} is not JSON serializable")
 
-    def _convert(self, o):
-        if isinstance(o, (np.integer,)):  return int(o)
-        if isinstance(o, (np.floating,)): return float(o)
-        if isinstance(o, (np.bool_,)):    return bool(o)
-        if isinstance(o, np.ndarray):     return o.tolist()
-        raise TypeError(f"Object of type {type(o).__name__} is not JSON serializable")
+
+class NumpyJSONProvider(DefaultJSONProvider):
+    """Сериализация через orjson (в разы быстрее stdlib json на C-уровне),
+    с fallback на стандартный json, если orjson недоступен."""
+
+    def dumps(self, obj, **kwargs):
+        if orjson is not None:
+            try:
+                return orjson.dumps(
+                    obj, default=_numpy_default, option=orjson.OPT_SERIALIZE_NUMPY
+                ).decode("utf-8")
+            except TypeError:
+                pass
+        return json.dumps(obj, default=_numpy_default, **kwargs)
+
+    def loads(self, s, **kwargs):
+        if orjson is not None:
+            try:
+                return orjson.loads(s)
+            except Exception:
+                pass
+        return json.loads(s, **kwargs)
 
 
 app = Flask(__name__)
@@ -117,19 +141,30 @@ with app.app_context():
 # ── SocketIO ──────────────────────────────────────────────────────────────────
 _orig_dumps = json.dumps
 def _safe_dumps(obj, **kw):
-    def _default(o):
-        if isinstance(o, (np.integer,)):  return int(o)
-        if isinstance(o, (np.floating,)): return float(o)
-        if isinstance(o, (np.bool_,)):    return bool(o)
-        if isinstance(o, np.ndarray):     return o.tolist()
-        raise TypeError(f"Object of type {type(o).__name__} is not JSON serializable")
-    kw.setdefault("default", _default)
+    if orjson is not None:
+        try:
+            return orjson.dumps(
+                obj, default=_numpy_default, option=orjson.OPT_SERIALIZE_NUMPY
+            ).decode("utf-8")
+        except TypeError:
+            pass
+    kw.setdefault("default", _numpy_default)
     return _orig_dumps(obj, **kw)
+
+
+def _safe_loads(s, **kw):
+    if orjson is not None:
+        try:
+            return orjson.loads(s)
+        except Exception:
+            pass
+    return json.loads(s, **kw)
+
 
 import flask_socketio
 flask_socketio.json = type("_J", (), {
     "dumps": staticmethod(_safe_dumps),
-    "loads": staticmethod(json.loads),
+    "loads": staticmethod(_safe_loads),
 })()
 
 socketio = SocketIO(app, cors_allowed_origins="*", async_mode="threading",

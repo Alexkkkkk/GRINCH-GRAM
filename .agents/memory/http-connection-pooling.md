@@ -21,3 +21,12 @@ Also: `/api/candles` in `app.py` caches the computed `analyze()` payload for 8s 
 cache `_CANDLES_CACHE`) since indicator computation is CPU-heavy but the frontend polls
 every 10s while OHLCV itself only refreshes every 60s. Flask-Compress is enabled for
 gzip on JSON/JS/CSS responses. DB pool (`db_store.py`) sized minconn=2/maxconn=16.
+
+JSON serialization (`app.py`'s `NumpyJSONProvider` + SocketIO's `_safe_dumps`) uses
+`orjson` (C-based, much faster than stdlib `json`) with a fallback to stdlib json if
+orjson isn't installed or raises `TypeError` on an unsupported type. Numpy scalars/
+arrays go through `orjson.OPT_SERIALIZE_NUMPY` + a shared `_numpy_default()` fallback.
+Verified orjson silently serializes `NaN`/`Infinity` to `null` instead of stdlib's
+non-spec-compliant literal `NaN` token (which browsers can't `JSON.parse` anyway) — so
+this is a safe behavior match, not a regression, for a finance app with occasional NaN
+indicator values.
