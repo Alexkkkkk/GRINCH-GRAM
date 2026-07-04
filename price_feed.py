@@ -1,6 +1,7 @@
 import time
 import threading
 import requests
+from http_client import SESSION as _HTTP
 from config import Config
 
 # Соответствие тикера → ID в CoinGecko (бесплатный API без ключа)
@@ -68,7 +69,7 @@ class PriceFeed:
 
     def _fetch_coingecko(self, coin_id):
         try:
-            r = requests.get(
+            r = _HTTP.get(
                 "https://api.coingecko.com/api/v3/simple/price",
                 params={"ids": coin_id, "vs_currencies": "usd"},
                 timeout=10,
@@ -80,7 +81,7 @@ class PriceFeed:
 
     def _fetch_dexscreener(self, token_address):
         try:
-            r = requests.get(
+            r = _HTTP.get(
                 f"https://api.dexscreener.com/latest/dex/tokens/{token_address}",
                 timeout=10,
             )
@@ -138,7 +139,7 @@ class PriceFeed:
             return onchain
         # 2) Резерв — priceNative закреплённого пула с DexScreener
         try:
-            r = requests.get(
+            r = _HTTP.get(
                 f"https://api.dexscreener.com/latest/dex/tokens/{Config.GRINCH_TOKEN_ADDRESS}",
                 timeout=10,
             )
@@ -187,7 +188,7 @@ class PriceFeed:
         """
         try:
             pool = Config.GRINCH_POOL_ADDRESS
-            r = requests.post(
+            r = _HTTP.post(
                 "https://toncenter.com/api/v2/runGetMethod",
                 json={"address": pool, "method": "get_pool_data", "stack": []},
                 headers={"Accept": "application/json"}, timeout=8,

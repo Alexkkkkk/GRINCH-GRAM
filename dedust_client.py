@@ -9,6 +9,7 @@ import secrets
 import time
 import threading
 import requests
+from http_client import SESSION as _HTTP
 from typing import Optional
 
 from pytoniq import WalletV5R1, LiteBalancer, Address
@@ -66,7 +67,7 @@ def get_shared_balance(force: bool = False) -> dict:
 
     # TON balance: TonCenter v2 → TonAPI v2
     try:
-        r = requests.get(
+        r = _HTTP.get(
             "https://toncenter.com/api/v2/getAddressBalance",
             params={"address": wallet}, timeout=8,
         )
@@ -81,7 +82,7 @@ def get_shared_balance(force: bool = False) -> dict:
 
     if ton_val is None and not hit_429:
         try:
-            r = requests.get(
+            r = _HTTP.get(
                 f"https://tonapi.io/v2/accounts/{wallet}",
                 headers={"Accept": "application/json"}, timeout=8,
             )
@@ -97,7 +98,7 @@ def get_shared_balance(force: bool = False) -> dict:
     # GRINCH balance: TonCenter v3 → TonAPI direct → TonAPI list
     if not hit_429:
         try:
-            r = requests.get(
+            r = _HTTP.get(
                 "https://toncenter.com/api/v3/jetton/wallets",
                 params={"owner_address": wallet, "jetton_address": token, "limit": 1},
                 timeout=8,
@@ -115,7 +116,7 @@ def get_shared_balance(force: bool = False) -> dict:
 
     if grn_val == 0.0 and not hit_429:
         try:
-            r = requests.get(
+            r = _HTTP.get(
                 f"https://tonapi.io/v2/accounts/{wallet}/jettons/{token}",
                 headers={"Accept": "application/json"}, timeout=8,
             )
@@ -262,7 +263,7 @@ class DedustClient:
         """
         wallet = Config.TON_WALLET
         try:
-            r = requests.get(
+            r = _HTTP.get(
                 "https://toncenter.com/api/v2/getAddressBalance",
                 params={"address": wallet}, timeout=8,
             )
@@ -272,7 +273,7 @@ class DedustClient:
         except Exception as e:
             log.debug(f"[DeDust] TON balance TonCenter v2: {e}")
         try:
-            r = requests.get(
+            r = _HTTP.get(
                 f"https://tonapi.io/v2/accounts/{wallet}",
                 headers={"Accept": "application/json"}, timeout=8,
             )
@@ -292,7 +293,7 @@ class DedustClient:
 
         # 1. TonCenter v3 (jetton/wallets)
         try:
-            r = requests.get(
+            r = _HTTP.get(
                 "https://toncenter.com/api/v3/jetton/wallets",
                 params={"owner_address": wallet, "jetton_address": token, "limit": 1},
                 timeout=8,
@@ -310,7 +311,7 @@ class DedustClient:
 
         # 2. TonAPI прямой эндпоинт для конкретного жетона — без поиска по списку
         try:
-            r = requests.get(
+            r = _HTTP.get(
                 f"https://tonapi.io/v2/accounts/{wallet}/jettons/{token}",
                 headers={"Accept": "application/json"}, timeout=8,
             )
@@ -326,7 +327,7 @@ class DedustClient:
 
         # 3. TonAPI список жетонов — нормализуем адреса через raw hex (как в ликвидаторе)
         try:
-            r = requests.get(
+            r = _HTTP.get(
                 f"https://tonapi.io/v2/accounts/{wallet}/jettons",
                 headers={"Accept": "application/json"}, timeout=8,
             )
@@ -375,7 +376,7 @@ class DedustClient:
         """
         # ── TonCenter v3 (первичный) ─────────────────────────────────────────
         try:
-            r = requests.get(
+            r = _HTTP.get(
                 "https://toncenter.com/api/v3/jetton/wallets",
                 params={
                     "owner_address": owner_addr_str,
@@ -394,7 +395,7 @@ class DedustClient:
 
         # ── TonAPI (резервный) ───────────────────────────────────────────────
         try:
-            r = requests.get(
+            r = _HTTP.get(
                 f"https://tonapi.io/v2/accounts/{owner_addr_str}/jettons",
                 headers={"Accept": "application/json"}, timeout=8,
             )
@@ -418,7 +419,7 @@ class DedustClient:
 
         # ── TonCenter v3 (первичный, надёжный) ──────────────────────────────
         try:
-            r = requests.get(
+            r = _HTTP.get(
                 "https://toncenter.com/api/v3/jetton/wallets",
                 params={
                     "owner_address": addr_str,
@@ -437,7 +438,7 @@ class DedustClient:
 
         # ── TonAPI (резервный) ───────────────────────────────────────────────
         try:
-            r = requests.get(
+            r = _HTTP.get(
                 f"https://tonapi.io/v2/accounts/{addr_str}/jettons",
                 headers={"Accept": "application/json"}, timeout=5,
             )
@@ -620,12 +621,12 @@ class DedustClient:
         """
         pool = Config.GRINCH_POOL_ADDRESS
         try:
-            r1 = requests.get(
+            r1 = _HTTP.get(
                 f"https://tonapi.io/v2/accounts/{pool}",
                 headers={"Accept": "application/json"}, timeout=self._RESERVES_TIMEOUT,
             )
             ton_reserve = (r1.json().get("balance", 0) or 0) / TON
-            r2 = requests.get(
+            r2 = _HTTP.get(
                 f"https://tonapi.io/v2/accounts/{pool}/jettons",
                 headers={"Accept": "application/json"}, timeout=self._RESERVES_TIMEOUT,
             )

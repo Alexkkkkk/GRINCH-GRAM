@@ -26,3 +26,4 @@
 - [Data fetch speed](data-fetch-speed.md) — trader.py tick sleep 30→15s; wallet_tracker POLL_SEC 30→15; exchange _OHLCV_TTL 180→60s, _OHLCV_BACKOFF 120→45s.
 - [Groq AI Advisor](groq-ai-advisor.md) — key entered via dashboard, stored in settings_store (DB-first); must read key lazily per-call, not once at import (startup race made it look "unset"); external pghost.ru DB holds settings, not Replit's DB.
 - [Liquidity guard](liquidity-guard.md) — continuous pool liquidity monitor auto-pauses BUY (never SELL) on sharp drop from peak; started at import time; feeds ai_advisor snapshot read-only.
+- [HTTP pooling & caching](http-connection-pooling.md) — external API calls go through shared http_client.SESSION (keep-alive); /api/candles caches analyze() 8s; Flask-Compress enabled; DB pool minconn=2/maxconn=16.

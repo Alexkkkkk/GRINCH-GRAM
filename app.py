@@ -5,6 +5,10 @@ import numpy as np
 from flask import Flask, render_template, jsonify, request, session, redirect, url_for
 from flask.json.provider import DefaultJSONProvider
 from flask_socketio import SocketIO, emit
+try:
+    from flask_compress import Compress
+except ImportError:
+    Compress = None
 import threading
 import time
 import logging
@@ -32,6 +36,24 @@ class NumpyJSONProvider(DefaultJSONProvider):
 app = Flask(__name__)
 app.json_provider_class = NumpyJSONProvider
 app.json = NumpyJSONProvider(app)
+app.config["SEND_FILE_MAX_AGE_DEFAULT"] = 3600 if os.environ.get("FLASK_ENV") == "production" or not app.debug else 0
+
+
+@app.after_request
+def _add_static_cache_headers(resp):
+    # Статика (JS/CSS/шрифты) — кэшируем на клиенте, чтобы не гонять её по сети
+    # на каждый запрос страницы (браузер и так проверит по ETag при заходе).
+    if request.path.startswith("/static/"):
+        resp.headers.setdefault("Cache-Control", "public, max-age=3600")
+    return resp
+if Compress is not None:
+    app.config["COMPRESS_MIMETYPES"] = [
+        "text/html", "text/css", "text/xml",
+        "application/json", "application/javascript", "text/javascript",
+    ]
+    app.config["COMPRESS_LEVEL"] = 6
+    app.config["COMPRESS_MIN_SIZE"] = 500
+    Compress(app)
 def _resolve_secret_key():
     """Надёжный ключ сессий: env → постоянный файл → случайный.
     Слабый зашитый ключ по умолчанию не используется (иначе cookie подделать)."""
@@ -385,8 +407,16 @@ def api_status():
     # Пока буфер не прогрет (самый первый запрос) — считаем напрямую один раз.
     return jsonify(_status_for_response())
 
+_CANDLES_CACHE = {"ts": 0.0, "payload": None}
+_CANDLES_CACHE_TTL = 8  # сек — свечи обновляются раз в 15м, считать индикаторы на каждый опрос (10с) незачем
+
 @app.route("/api/candles")
 def api_candles():
+    now = time.time()
+    cached = _CANDLES_CACHE["payload"]
+    if cached is not None and (now - _CANDLES_CACHE["ts"]) < _CANDLES_CACHE_TTL:
+        return jsonify(cached)
+
     from strategy import analyze
     # Реальные свечи пары GRINCH/GRAM (цена GRINCH в GRAM/Toncoin) с GeckoTerminal.
     # 15-минутный таймфрейм — как на DeDust.
@@ -403,10 +433,13 @@ def api_candles():
         if isinstance(obj, (np.bool_,)):   return bool(obj)
         if isinstance(obj, np.ndarray):    return obj.tolist()
         return obj
-    return jsonify({
+    payload = {
         "candles": _walk(analysis.get("candles", [])),
         "price":   _walk(analysis.get("price", 0)),
-    })
+    }
+    _CANDLES_CACHE["ts"] = now
+    _CANDLES_CACHE["payload"] = payload
+    return jsonify(payload)
 
 @app.route("/api/start", methods=["POST"])
 def api_start():

@@ -26,6 +26,7 @@ import time
 from datetime import datetime, timezone
 
 import requests
+from http_client import SESSION as _HTTP
 
 from config import Config
 
@@ -111,7 +112,7 @@ class WalletTracker:
         grinch = (Config.GRINCH_TOKEN_ADDRESS or "").lower()
         if not pool:
             return
-        r = requests.get(
+        r = _HTTP.get(
             f"https://api.geckoterminal.com/api/v2/networks/ton/pools/{pool}/trades",
             timeout=15,
         )
