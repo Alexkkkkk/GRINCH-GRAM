@@ -58,10 +58,13 @@ _SECRET_KEY = _resolve_secret_key()
 app.config["SECRET_KEY"] = _SECRET_KEY
 app.secret_key = _SECRET_KEY
 
-# ── База данных ───────────────────────────────────────────────────────────────
-app.config["SQLALCHEMY_DATABASE_URI"] = os.environ.get(
-    "DATABASE_URL", "sqlite:///grinchgram.db"
+# ── База данных — pghost.ru, жёстко прописана, env не используется ───────────
+_PGHOST_URL = (
+    "postgresql://bothost_db_bf4fb06bbd60:"
+    "b0dqQSV7PsGK465oK4h3oPUtJjM5rjKtGQis_YXHXvM"
+    "@node1.pghost.ru:15529/bothost_db_bf4fb06bbd60"
 )
+app.config["SQLALCHEMY_DATABASE_URI"] = _PGHOST_URL
 app.config["SQLALCHEMY_ENGINE_OPTIONS"] = {"pool_recycle": 300, "pool_pre_ping": True}
 db.init_app(app)
 
