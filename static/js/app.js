@@ -1882,6 +1882,71 @@ function forceLiqSell() {
     .catch(() => { if (btn) btn.disabled = false; });
 }
 
+// ══════════════════════════════════════════════════════════════════
+//  Мониторинг ликвидности GRINCH (LiquidityGuard)
+// ══════════════════════════════════════════════════════════════════
+function fmtUsd(v) {
+  if (v == null) return "—";
+  return "$" + Number(v).toLocaleString("en-US", { maximumFractionDigits: 0 });
+}
+
+function updateLiquidityGuard(d) {
+  const curEl    = document.getElementById("lg-current");
+  const peakEl   = document.getElementById("lg-peak");
+  const dropEl   = document.getElementById("lg-drop");
+  const statusEl = document.getElementById("lg-status");
+  const barEl    = document.getElementById("lg-bar");
+  const warnEl   = document.getElementById("lg-warn");
+  const card     = document.getElementById("liqguard-card");
+
+  if (curEl)  curEl.textContent  = fmtUsd(d.current_liq);
+  if (peakEl) peakEl.textContent = fmtUsd(d.peak_liq);
+
+  if (dropEl) {
+    const drop = d.drop_pct || 0;
+    dropEl.textContent = drop.toFixed(1) + "%";
+    dropEl.style.color = drop >= (d.pause_threshold_pct || 30) ? "var(--red)" : drop >= 15 ? "#ffd166" : "var(--green)";
+  }
+
+  if (statusEl) {
+    if (d.buys_paused) {
+      statusEl.textContent = "⛔ ПАУЗА";
+      statusEl.style.color = "var(--red)";
+    } else {
+      statusEl.textContent = "✅ АКТИВНЫ";
+      statusEl.style.color = "var(--green)";
+    }
+  }
+
+  if (barEl) {
+    const drop = Math.min(100, Math.max(0, d.drop_pct || 0));
+    barEl.style.width = drop.toFixed(1) + "%";
+    barEl.style.background = d.buys_paused ? "var(--red)" : "";
+  }
+
+  if (warnEl) {
+    if (d.buys_paused && d.pause_reason) {
+      warnEl.style.display = "block";
+      warnEl.textContent = "⚠️ " + d.pause_reason;
+    } else {
+      warnEl.style.display = "none";
+    }
+  }
+
+  if (card) {
+    card.style.borderColor = d.buys_paused ? "rgba(255,71,87,0.4)" : "";
+  }
+}
+
+function pollLiquidityGuard() {
+  fetch("/api/liquidity_guard")
+    .then(r => r.json())
+    .then(d => updateLiquidityGuard(d))
+    .catch(() => {});
+}
+pollLiquidityGuard();
+setInterval(pollLiquidityGuard, 15000);
+
 // ── График истории баланса кошелька (equity curve) ───────────────────────────
 (function initEquityChart() {
   const canvas  = document.getElementById("eq-chart");

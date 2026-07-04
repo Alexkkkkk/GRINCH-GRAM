@@ -680,6 +680,22 @@
         </div>
       </div>
 
+      <!-- Liquidity Guard -->
+      <div class="card card-c" id="liqguard-card">
+        <div class="card-title ctit">💧 Мониторинг ликвидности GRINCH</div>
+        <div id="liqguard-body">
+          <div class="liq-grid-2">
+            <div class="liq-row"><span class="liq-lbl">Текущая ликвидность</span><span class="liq-val" id="lg-current">—</span></div>
+            <div class="liq-row"><span class="liq-lbl">Пик</span><span class="liq-val" id="lg-peak">—</span></div>
+            <div class="liq-row"><span class="liq-lbl">Просадка от пика</span><span class="liq-val" id="lg-drop">—</span></div>
+            <div class="liq-row"><span class="liq-lbl">Статус BUY</span><span class="liq-val" id="lg-status">—</span></div>
+          </div>
+          <div class="liq-progress-wrap"><div class="liq-progress-bar" id="lg-bar" style="width:0%"></div></div>
+          <div id="lg-warn" class="liq-gas-warn" style="display:none"></div>
+          <div style="font-size:10px;color:#8892b0;margin-top:8px">Постоянный опрос пула каждые 15с. Если ликвидность резко проседает (вывод ликвидности, обвал), новые покупки автоматически ставятся на паузу — открытые позиции и продажи никогда не блокируются.</div>
+        </div>
+      </div>
+
     </div><!-- /#tab-wallet -->
 
     <!-- ─── TAB: НАСТРОЙКИ ─── -->

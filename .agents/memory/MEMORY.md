@@ -25,3 +25,4 @@
 - [Full AI adaptation](full-ai-adaptation.md) — experience_manager.py adapts DCA_TARGET_PROFIT_PCT (only UP, based on avg_win_pct) and PROFIT_PROTECT_TON (only DOWN, to 50% of avg_win_ton); both after the existing TP-only-up block; gated on AI_TP_ADAPT_MIN_TRADES.
 - [Data fetch speed](data-fetch-speed.md) — trader.py tick sleep 30→15s; wallet_tracker POLL_SEC 30→15; exchange _OHLCV_TTL 180→60s, _OHLCV_BACKOFF 120→45s.
 - [Groq AI Advisor](groq-ai-advisor.md) — key entered via dashboard, stored in settings_store (DB-first); must read key lazily per-call, not once at import (startup race made it look "unset"); external pghost.ru DB holds settings, not Replit's DB.
+- [Liquidity guard](liquidity-guard.md) — continuous pool liquidity monitor auto-pauses BUY (never SELL) on sharp drop from peak; started at import time; feeds ai_advisor snapshot read-only.

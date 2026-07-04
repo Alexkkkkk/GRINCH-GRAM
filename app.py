@@ -125,6 +125,7 @@ user_mgr = UserTradingManager()
 trader.signal_callbacks.append(user_mgr.on_signal)
 
 from grinch_liquidator import grinch_liquidator
+import liquidity_guard
 
 from deposit_monitor import DepositMonitor
 deposit_monitor = DepositMonitor(Config.TON_WALLET)
