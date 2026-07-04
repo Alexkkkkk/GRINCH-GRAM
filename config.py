@@ -255,7 +255,7 @@ class Config:
     # Потолок автоматического TP (не выше X% чтобы AI не поднял нереальную цель)
     AI_TP_CAP_PCT       = float(os.getenv("AI_TP_CAP_PCT", "80.0"))
 
-    DCA_MODE            = bool(int(os.getenv("DCA_MODE", "0")))
+    DCA_MODE            = bool(int(os.getenv("DCA_MODE", "1")))   # DCA включён по умолчанию
     # TON за каждый вход (первая покупка и каждая докупка)
     DCA_STAKE_TON       = float(os.getenv("DCA_STAKE_TON", "100"))
     # Продать ВСЁ когда общая стоимость GRINCH выросла на N% относительно суммарных затрат
@@ -282,9 +282,13 @@ class Config:
     #      ИЛИ AI-сигнал = SELL с уверенностью >= 55%
     # Защита «только в плюс»: выход по рынку, но никогда в убыток (ONLY_PROFIT_EXIT).
     PROFIT_PROTECT_ENABLED  = bool(int(os.getenv("PROFIT_PROTECT_ENABLED",  "1")))
-    PROFIT_PROTECT_TON      = float(os.getenv("PROFIT_PROTECT_TON",         "2.0"))   # мин. прибыль для активации
+    PROFIT_PROTECT_TON      = float(os.getenv("PROFIT_PROTECT_TON",         "3.0"))   # мин. 3 TON прибыли для активации
     PROFIT_PROTECT_DROP_PCT = float(os.getenv("PROFIT_PROTECT_DROP_PCT",    "1.5"))   # % откат от пика
     PROFIT_PROTECT_AI_SELL  = bool(int(os.getenv("PROFIT_PROTECT_AI_SELL",  "1")))    # также при AI SELL
+
+    # ── Минимальная АБСОЛЮТНАЯ прибыль в TON — ниже этого не закрываем сделку ──
+    # Советник управляет этим значением, жёсткий минимум = 3 TON.
+    MIN_PROFIT_TON_ABS = float(os.getenv("MIN_PROFIT_TON_ABS", "3.0"))
 
     # ── Детектор крупных продаж: автоматическая контрарная закупка ──────────
     # Когда в пуле кто-то продаёт крупный объём GRINCH — бот немедленно

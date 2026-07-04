@@ -1,13 +1,13 @@
 [
   {
     "key": "control",
-    "value": "{\"base_min_conf\": 62.0, \"base_trade_amount\": 100.0, \"min_conf\": 62.0, \"trade_amount\": 100.0, \"paused\": false, \"peak_equity\": 448.774885, \"drawdown_pct\": 1.04, \"loss_streak\": 0, \"last_note\": \"DD=1.0% loss=0 win=10 recent_net=+35.8494\", \"updated\": null, \"take_profit_pct\": 6.0, \"ai_tp_adapted\": false, \"ai_tp_trades_used\": 0, \"ai_avg_win_pct\": 0.0, \"dca_target_pct\": 15.0, \"dca_drop_pct\": 10.0, \"dca_pullback_pct\": 10.0, \"dca_ai_adapted\": false, \"dca_adapt_report\": {}}",
-    "updated_at": "2026-07-03T15:46:42.462570"
+    "value": "{\"base_min_conf\": 55.0, \"base_trade_amount\": 100.0, \"min_conf\": 55.0, \"trade_amount\": 100.0, \"paused\": false, \"peak_equity\": 448.774885, \"drawdown_pct\": 1.04, \"loss_streak\": 0, \"last_note\": \"DD=1.0% loss=0 win=10 recent_net=+35.8494\", \"updated\": null, \"take_profit_pct\": 6.0, \"ai_tp_adapted\": false, \"ai_tp_trades_used\": 0, \"ai_avg_win_pct\": 0.0, \"dca_target_pct\": 15.0, \"dca_drop_pct\": 10.0, \"dca_pullback_pct\": 10.0, \"dca_ai_adapted\": false, \"dca_adapt_report\": {}}",
+    "updated_at": "2026-07-04T17:54:19.297128"
   },
   {
     "key": "stats",
     "value": "{\"total_trades\": 3, \"winning_trades\": 10, \"total_pnl\": 35.849441, \"start_balance\": 10000.0}",
-    "updated_at": "2026-07-03T15:46:43.444785"
+    "updated_at": "2026-07-04T17:54:19.819112"
   },
   {
     "key": "ai_export",

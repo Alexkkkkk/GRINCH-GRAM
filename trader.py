@@ -66,7 +66,7 @@ class Trader:
         # Кеш баланса: не долбим блокчейн при каждом /api/status (TTL 180 сек)
         self._balance_cache     = {}
         self._balance_cache_ts  = 0
-        self._balance_cache_ttl = 180  # секунд — снижает нагрузку на TonCenter
+        self._balance_cache_ttl = 30   # секунд (было 180) — быстрое обновление баланса
         # ── Долговременная память + само-управление ИИ ───────────────────
         self.exp = experience_manager
         self.exp.restore_trader(self)
@@ -555,15 +555,25 @@ class Trader:
                     "INFO"
                 )
 
-                # Цель достигнута → продаём ВСЁ
+                # Цель достигнута → продаём ВСЁ (при условии мин. 3 TON абсолютной прибыли)
                 if portfolio_pct >= Config.DCA_TARGET_PROFIT_PCT:
-                    self.log(
-                        f"🎯 DCA ЦЕЛЬ: портфель +{portfolio_pct:.1f}% ≥ "
-                        f"+{Config.DCA_TARGET_PROFIT_PCT:.0f}% — продаём ВСЁ одной сделкой! "
-                        f"({total_grinch:.2f} GRINCH)",
-                        "INFO"
-                    )
-                    closed = self._dca_sell_all(price_usd, grinch_ton, portfolio_pct)
+                    profit_ton_abs = total_value_ton - total_cost_ton
+                    min_ton = getattr(Config, "MIN_PROFIT_TON_ABS", 3.0)
+                    if profit_ton_abs < min_ton:
+                        self.log(
+                            f"⏳ DCA: цель по % достигнута (+{portfolio_pct:.1f}%) "
+                            f"но прибыль {profit_ton_abs:.3f} TON < мин {min_ton:.1f} TON — "
+                            f"держим позицию, ждём роста",
+                            "INFO"
+                        )
+                    else:
+                        self.log(
+                            f"🎯 DCA ЦЕЛЬ: портфель +{portfolio_pct:.1f}% ≥ "
+                            f"+{Config.DCA_TARGET_PROFIT_PCT:.0f}% | прибыль {profit_ton_abs:.2f} TON ✅ "
+                            f"— продаём ВСЁ! ({total_grinch:.2f} GRINCH)",
+                            "INFO"
+                        )
+                    closed = self._dca_sell_all(price_usd, grinch_ton, portfolio_pct) if profit_ton_abs >= min_ton else False
                     if closed:
                         self.dca_wait_pullback = True
                         self.dca_peak_price    = price_usd
