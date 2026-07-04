@@ -137,7 +137,8 @@ CONFIRM_WEIGHT    = 15.0               # вес реальной сделки ×
 REPLAY_SIZE       = 2000               # больший буфер опыта
 ACCURACY_WINDOW   = 100                # длиннее окно = стабильнее веса моделей
 META_MIN_SAMPLES  = 8                  # мета-слой активируется раньше (с 8 сделок)
-RETRAIN_EVERY     = 2                  # переобучение каждые 2 тика — быстрая адаптация
+RETRAIN_EVERY     = 2                  # переобучение максимум раз в N тиков (и только если пришли новые данные)
+ANALYZE_CACHE_TTL = 12                  # сек — не пересчитывать 7 моделей повторно на тех же свечах
 KELLY_LOOKBACK    = 100                # стабильный Kelly на 100 сделках
 
 # ─── v4: Асимметричные пороги сигналов ───────────────────────────────────────
@@ -605,6 +606,14 @@ class AIEngine:
         self._new_confirms = 0
         self._retrains    = 0   # сколько раз модель самопереобучилась после старта
 
+        # ── Кэш анализа: не гонять 7 моделей заново, если свечи не изменились ──
+        self._last_candle_key  = None
+        self._last_retrain_key = None
+        self._last_result      = None
+        self._last_result_ts   = 0.0
+        self._cache_hits       = 0
+        self._cache_misses     = 0
+
         # ── Буфер опыта ──────────────────────────────────────────────────
         self._replay_X:  list = []
         self._replay_y:  list = []
@@ -801,6 +810,24 @@ class AIEngine:
             return self._analyze_locked(ohlcv)
 
     def _analyze_locked(self, ohlcv: list) -> dict:
+        # ── Кэш: если свечи не изменились с прошлого вызова — не гоняем
+        # 7 ML-моделей и 80+ признаков заново (тик 15с, свечи обновляются реже) ──
+        if ohlcv:
+            last_bar = ohlcv[-1]
+            candle_key = (len(ohlcv), last_bar[0], last_bar[4])
+            now = time.time()
+            if (
+                candle_key == self._last_candle_key
+                and self._last_result is not None
+                and (now - self._last_result_ts) < ANALYZE_CACHE_TTL
+                and self._new_confirms < 5
+            ):
+                self._cache_hits += 1
+                return self._last_result
+            self._cache_misses += 1
+        else:
+            candle_key = None
+
         df = self._build_features(ohlcv)
         if df is None or len(df) < 40:
             return self._empty_result()
@@ -811,12 +838,14 @@ class AIEngine:
 
         self._tick_count += 1
 
-        # ── Авто-переобучение ────────────────────────────────────────────
+        # ── Авто-переобучение (только когда реально пришли новые данные) ──
+        data_changed = candle_key != self._last_retrain_key
         should_retrain = (
-            self._tick_count % RETRAIN_EVERY == 0 or
+            (data_changed and self._tick_count % RETRAIN_EVERY == 0) or
             self._new_confirms >= 5
         )
         if should_retrain:
+            self._last_retrain_key = candle_key
             self._replay_X = list(X)
             self._replay_y = list(y)
             self._replay_w = [1.0] * len(X)
@@ -957,7 +986,7 @@ class AIEngine:
             total_boost = 5.0
             log.debug(f"[AI v4 Boost] SELL+DOWNTREND +5% → {old_conf}%→{confidence}%")
 
-        return {
+        result = {
             "ai_signal":    ai_signal,
             "confidence":   confidence,
             "prob_up":      round(prob_up   * 100, 1),
@@ -980,6 +1009,13 @@ class AIEngine:
             "breakout":     breakout,
             "total_boost":  round(total_boost, 1),
         }
+
+        # ── Сохраняем в кэш: следующий тик с теми же свечами получит
+        # готовый результат мгновенно, без повторного прогона моделей ──
+        self._last_candle_key = candle_key
+        self._last_result     = result
+        self._last_result_ts  = time.time()
+        return result
 
     # ─────────────────────────────────────────────────────────────────────────
     # Обратная связь от трейдера (вызывается когда сделка закрывается)
