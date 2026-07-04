@@ -58,13 +58,11 @@ _SECRET_KEY = _resolve_secret_key()
 app.config["SECRET_KEY"] = _SECRET_KEY
 app.secret_key = _SECRET_KEY
 
-# ── База данных — pghost.ru, жёстко прописана, env не используется ───────────
-_PGHOST_URL = (
-    "postgresql://bothost_db_bf4fb06bbd60:"
-    "b0dqQSV7PsGK465oK4h3oPUtJjM5rjKtGQis_YXHXvM"
-    "@node1.pghost.ru:15529/bothost_db_bf4fb06bbd60"
-)
-app.config["SQLALCHEMY_DATABASE_URI"] = _PGHOST_URL
+# ── База данных — берётся из переменной окружения DATABASE_URL (Replit PostgreSQL) ───
+_DATABASE_URL = os.environ.get("DATABASE_URL")
+if not _DATABASE_URL:
+    raise RuntimeError("DATABASE_URL environment variable is not set")
+app.config["SQLALCHEMY_DATABASE_URI"] = _DATABASE_URL
 app.config["SQLALCHEMY_ENGINE_OPTIONS"] = {"pool_recycle": 300, "pool_pre_ping": True}
 db.init_app(app)
 

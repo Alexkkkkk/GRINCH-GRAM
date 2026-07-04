@@ -35,12 +35,8 @@ import psycopg2.pool
 
 logger = logging.getLogger(__name__)
 
-# ── Единственная БД — pghost.ru. Жёстко прописана, не читается из env. ──────
-DATABASE_URL = (
-    "postgresql://bothost_db_bf4fb06bbd60:"
-    "b0dqQSV7PsGK465oK4h3oPUtJjM5rjKtGQis_YXHXvM"
-    "@node1.pghost.ru:15529/bothost_db_bf4fb06bbd60"
-)
+# ── БД берётся из переменной окружения DATABASE_URL (Replit PostgreSQL) ─────
+DATABASE_URL = os.environ.get("DATABASE_URL")
 
 _pool: psycopg2.pool.ThreadedConnectionPool | None = None
 _pool_lock = threading.Lock()
