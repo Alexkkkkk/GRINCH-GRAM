@@ -200,14 +200,25 @@ def _status_for_response():
                 _status_snapshot = snap
     return snap
 
+_connected_clients = 0
+_connected_lock    = threading.Lock()
+
+
+def _has_dashboard_clients() -> bool:
+    with _connected_lock:
+        return _connected_clients > 0
+
+
 def push_updates():
     global _status_snapshot
     while True:
         try:
-            snap = _safe_status()
-            with _snapshot_lock:
-                _status_snapshot = snap
-            socketio.emit("status_update", snap)
+            # Никто не смотрит дашборд — не тратим CPU на сборку снапшота статуса.
+            if _has_dashboard_clients():
+                snap = _safe_status()
+                with _snapshot_lock:
+                    _status_snapshot = snap
+                socketio.emit("status_update", snap)
         except Exception as e:
             print(f"[Push] Ошибка: {e}")
         time.sleep(2)
@@ -218,18 +229,19 @@ def push_price():
     last, last_symbol = None, None
     while True:
         try:
-            symbol = Config.SYMBOL
-            if symbol != last_symbol:
-                last = None
-                last_symbol = symbol
-            price = float(trader.exchange.get_live_price())
-            gram  = price_feed.get_grinch_ton_price()
-            # Изменение считаем по курсу в GRAM (он же показан в hero)
-            change = round((gram - last) / last * 100, 3) if (last and gram) else 0.0
-            socketio.emit("price_update",
-                          {"symbol": symbol, "price": price, "gram": gram, "change": change})
-            if gram and gram > 0:
-                last = gram
+            if _has_dashboard_clients():
+                symbol = Config.SYMBOL
+                if symbol != last_symbol:
+                    last = None
+                    last_symbol = symbol
+                price = float(trader.exchange.get_live_price())
+                gram  = price_feed.get_grinch_ton_price()
+                # Изменение считаем по курсу в GRAM (он же показан в hero)
+                change = round((gram - last) / last * 100, 3) if (last and gram) else 0.0
+                socketio.emit("price_update",
+                              {"symbol": symbol, "price": price, "gram": gram, "change": change})
+                if gram and gram > 0:
+                    last = gram
         except Exception as e:
             print(f"[Price] Ошибка: {e}")
         time.sleep(2)
@@ -1091,13 +1103,23 @@ def api_platform_stats():
 
 @socketio.on("connect")
 def on_connect(auth=None):
+    global _connected_clients
     # Поток статуса панели — только для владельца после входа.
     if _auth_configured() and not session.get("logged_in"):
         return False  # отклонить подключение неавторизованного клиента
+    with _connected_lock:
+        _connected_clients += 1
     try:
         emit("status_update", _status_for_response())
     except Exception as e:
         print(f"[on_connect] Ошибка: {e}")
+
+
+@socketio.on("disconnect")
+def on_disconnect():
+    global _connected_clients
+    with _connected_lock:
+        _connected_clients = max(0, _connected_clients - 1)
 
 
 def _free_port(port: int):

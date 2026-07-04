@@ -28,3 +28,14 @@ returning the identical prediction dict from the identical input is safe to cach
 **How to apply:** if adding new per-tick heavy computation to `ai_engine.py` or
 `strategy.py`, gate it the same way — check whether the input data actually changed
 before redoing expensive work, rather than gating purely on a tick/time counter.
+
+`strategy.analyze()` got the same candle-fingerprint cache (module-level, TTL 8s) since
+`trader.py` and manual snapshot endpoints (`/api/candles`, force_buy/sell) call it
+multiple times per tick on identical OHLCV — same pattern, same fix, separate module
+because `strategy.py` and `ai_engine.py` compute indicators independently and don't
+share a feature-engineering layer (merging them is a bigger, riskier refactor, not done).
+
+Also: `app.py`'s `push_updates`/`push_price` background loops now check a
+`_connected_clients` counter (incremented/decremented in the `connect`/`disconnect`
+SocketIO handlers) and skip building/emitting status+price payloads entirely when no
+dashboard browser tab is open — avoids CPU work with zero listeners.
