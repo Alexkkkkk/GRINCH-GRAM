@@ -16,7 +16,7 @@ class Config:
     # Советник сам крутит его в диапазоне [0.3..1.5] по уверенности сигнала
     # и текущей просадке портфеля. Итоговая ставка = TRADE_AMOUNT × conf_factor
     # × kelly_mult × power_mult × AI_SIZE_MULT (см. trader.py._open_trade).
-    AI_SIZE_MULT = float(os.getenv("AI_SIZE_MULT", "1.0"))
+    AI_SIZE_MULT = float(os.getenv("AI_SIZE_MULT", "1.2"))  # повышено для более активной торговли
 
     # ── 1 сделка за раз: весь капитал в одну лучшую позицию ──
     MAX_OPEN_TRADES = int(os.getenv("MAX_OPEN_TRADES", "1"))
@@ -125,7 +125,7 @@ class Config:
     # Если откат не пришёл за SMART_BUY_MAX_WAIT_TICKS → берём по рынку.
     # При AI >= SMART_BUY_SKIP_CONF% — покупаем сразу (слишком сильный сигнал).
     SMART_BUY_ENABLED       = bool(int(os.getenv("SMART_BUY_ENABLED", "1")))
-    SMART_BUY_PULLBACK_PCT  = float(os.getenv("SMART_BUY_PULLBACK_PCT", "0.8"))  # ждём откат -0.8%
+    SMART_BUY_PULLBACK_PCT  = float(os.getenv("SMART_BUY_PULLBACK_PCT", "0.4"))  # ждём откат -0.4% (было -0.8%, быстрее входим)
     SMART_BUY_MAX_WAIT_TICKS = int(os.getenv("SMART_BUY_MAX_WAIT_TICKS", "3"))   # макс 3 тика (~90 сек)
     SMART_BUY_SKIP_CONF     = float(os.getenv("SMART_BUY_SKIP_CONF", "88.0"))    # ≥88% → сразу
 
@@ -179,9 +179,9 @@ class Config:
     TREND_FILTER = os.getenv("TREND_FILTER", "true").lower() == "true"
     # RSI 78 — для мем-монеты GRINCH RSI 68-75 это норма в памп; блокируем только экстремум
     RSI_OVERBOUGHT = float(os.getenv("RSI_OVERBOUGHT", "78"))
-    # AI уверенность мин 62% — только высококонвикционные сигналы
-    # Минимальная уверенность для BUY — AI торгует при 60%+
-    MIN_AI_CONFIDENCE = float(os.getenv("MIN_AI_CONFIDENCE", "60"))
+    # AI уверенность мин — снижено для более активной торговли (было 60%)
+    # Минимальная уверенность для BUY — AI торгует при 52%+
+    MIN_AI_CONFIDENCE = float(os.getenv("MIN_AI_CONFIDENCE", "52"))
     # AI-овверрайд только при 78%+ — очень сильный сигнал против тренда
     AI_OVERRIDE_CONFIDENCE = float(os.getenv("AI_OVERRIDE_CONFIDENCE", "78"))
     # AI жёсткий овверрайд: при ≥93% уверенности игнорируем RSI/аномалию (только DOWNTREND блокирует)
