@@ -1,6 +1,7 @@
 import time
 import threading
 import requests
+from http_client import SESSION as _HTTP
 from config import Config
 from price_feed import COINGECKO_IDS
 
@@ -40,7 +41,7 @@ class CoinInfo:
 
     def _market_coingecko(self, cid):
         try:
-            r = requests.get(
+            r = _HTTP.get(
                 "https://api.coingecko.com/api/v3/coins/markets",
                 params={"vs_currency": "usd", "ids": cid},
                 timeout=10,
@@ -72,7 +73,7 @@ class CoinInfo:
 
     def _market_dexscreener(self, addr, base):
         try:
-            r = requests.get(
+            r = _HTTP.get(
                 f"https://api.dexscreener.com/latest/dex/tokens/{addr}",
                 timeout=10,
             )
@@ -143,7 +144,7 @@ class CoinInfo:
         if not pool:
             return []
         try:
-            r = requests.get(
+            r = _HTTP.get(
                 f"https://api.geckoterminal.com/api/v2/networks/ton/pools/{pool}/trades",
                 timeout=12,
             )
@@ -207,7 +208,7 @@ class CoinInfo:
 
     def _exchanges_dexscreener(self, addr):
         try:
-            r = requests.get(
+            r = _HTTP.get(
                 f"https://api.dexscreener.com/latest/dex/tokens/{addr}",
                 timeout=10,
             )
@@ -237,7 +238,7 @@ class CoinInfo:
 
     def _exchanges_coingecko(self, cid):
         try:
-            r = requests.get(
+            r = _HTTP.get(
                 f"https://api.coingecko.com/api/v3/coins/{cid}/tickers",
                 timeout=12,
             )

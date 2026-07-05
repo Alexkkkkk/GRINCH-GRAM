@@ -62,6 +62,9 @@ class Trader:
         self._last_large_sell_buy_ts = 0.0
         # Защита прибыли: пик стоимости портфеля (TON) для детектора разворота
         self.portfolio_high_water_ton = 0.0
+        # Health-check: время и статус последнего успешного тика торгового цикла
+        self.last_tick_ts = 0.0
+        self.last_tick_ok = None
 
         # Кеш баланса: не долбим блокчейн при каждом /api/status (TTL 180 сек)
         self._balance_cache     = {}
@@ -164,8 +167,12 @@ class Trader:
                 if self.open_trades and (now - _last_db_sync) >= 60:
                     self._sync_open_trades_to_db()
                     _last_db_sync = now
+                self.last_tick_ts = time.time()
+                self.last_tick_ok = True
             except Exception as e:
                 self.log(f"Ошибка в цикле: {e}", "ERROR")
+                self.last_tick_ts = time.time()
+                self.last_tick_ok = False
             time.sleep(15)
 
     def _record_equity(self):

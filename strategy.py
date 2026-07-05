@@ -1,5 +1,14 @@
+import time
 import pandas as pd
 import numpy as np
+
+# ── Кэш результата analyze(): trader.py и ручные снапшоты (/api/candles,
+# force_buy/sell) вызывают analyze() на тех же свечах несколько раз за тик —
+# индикаторы пересчитываются один раз и переиспользуются, пока свечи не изменились.
+_ANALYZE_CACHE_TTL = 8
+_analyze_cache_key    = None
+_analyze_cache_result = None
+_analyze_cache_ts     = 0.0
 
 
 def compute_indicators(ohlcv):
@@ -578,6 +587,31 @@ def _pdigits(p):
 # ── Публичный API ──────────────────────────────────────────────────────────────
 
 def analyze(ohlcv):
+    global _analyze_cache_key, _analyze_cache_result, _analyze_cache_ts
+
+    if ohlcv:
+        last_bar = ohlcv[-1]
+        cache_key = (len(ohlcv), last_bar[0], last_bar[4])
+        now = time.time()
+        if (
+            cache_key == _analyze_cache_key
+            and _analyze_cache_result is not None
+            and (now - _analyze_cache_ts) < _ANALYZE_CACHE_TTL
+        ):
+            return _analyze_cache_result
+    else:
+        cache_key = None
+
+    result = _analyze_impl(ohlcv)
+
+    if cache_key is not None:
+        _analyze_cache_key    = cache_key
+        _analyze_cache_result = result
+        _analyze_cache_ts     = time.time()
+    return result
+
+
+def _analyze_impl(ohlcv):
     df = compute_indicators(ohlcv)
     signal, strength = get_signal(df)
 

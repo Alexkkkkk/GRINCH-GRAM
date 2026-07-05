@@ -5,6 +5,14 @@ import numpy as np
 from flask import Flask, render_template, jsonify, request, session, redirect, url_for
 from flask.json.provider import DefaultJSONProvider
 from flask_socketio import SocketIO, emit
+try:
+    from flask_compress import Compress
+except ImportError:
+    Compress = None
+try:
+    import orjson
+except ImportError:
+    orjson = None
 import threading
 import time
 import logging
@@ -17,21 +25,59 @@ from coin_info import coin_info
 log = logging.getLogger(__name__)
 
 
-class NumpyJSONProvider(DefaultJSONProvider):
-    def dumps(self, obj, **kwargs):
-        return json.dumps(obj, default=self._convert, **kwargs)
+def _numpy_default(o):
+    if isinstance(o, (np.integer,)):  return int(o)
+    if isinstance(o, (np.floating,)): return float(o)
+    if isinstance(o, (np.bool_,)):    return bool(o)
+    if isinstance(o, np.ndarray):     return o.tolist()
+    if isinstance(o, set):            return list(o)
+    raise TypeError(f"Object of type {type(o).__name__} is not JSON serializable")
 
-    def _convert(self, o):
-        if isinstance(o, (np.integer,)):  return int(o)
-        if isinstance(o, (np.floating,)): return float(o)
-        if isinstance(o, (np.bool_,)):    return bool(o)
-        if isinstance(o, np.ndarray):     return o.tolist()
-        raise TypeError(f"Object of type {type(o).__name__} is not JSON serializable")
+
+class NumpyJSONProvider(DefaultJSONProvider):
+    """Сериализация через orjson (в разы быстрее stdlib json на C-уровне),
+    с fallback на стандартный json, если orjson недоступен."""
+
+    def dumps(self, obj, **kwargs):
+        if orjson is not None:
+            try:
+                return orjson.dumps(
+                    obj, default=_numpy_default, option=orjson.OPT_SERIALIZE_NUMPY
+                ).decode("utf-8")
+            except TypeError:
+                pass
+        return json.dumps(obj, default=_numpy_default, **kwargs)
+
+    def loads(self, s, **kwargs):
+        if orjson is not None:
+            try:
+                return orjson.loads(s)
+            except Exception:
+                pass
+        return json.loads(s, **kwargs)
 
 
 app = Flask(__name__)
 app.json_provider_class = NumpyJSONProvider
 app.json = NumpyJSONProvider(app)
+app.config["SEND_FILE_MAX_AGE_DEFAULT"] = 3600 if os.environ.get("FLASK_ENV") == "production" or not app.debug else 0
+
+
+@app.after_request
+def _add_static_cache_headers(resp):
+    # Статика (JS/CSS/шрифты) — кэшируем на клиенте, чтобы не гонять её по сети
+    # на каждый запрос страницы (браузер и так проверит по ETag при заходе).
+    if request.path.startswith("/static/"):
+        resp.headers.setdefault("Cache-Control", "public, max-age=3600")
+    return resp
+if Compress is not None:
+    app.config["COMPRESS_MIMETYPES"] = [
+        "text/html", "text/css", "text/xml",
+        "application/json", "application/javascript", "text/javascript",
+    ]
+    app.config["COMPRESS_LEVEL"] = 6
+    app.config["COMPRESS_MIN_SIZE"] = 500
+    Compress(app)
 def _resolve_secret_key():
     """Надёжный ключ сессий: env → постоянный файл → случайный.
     Слабый зашитый ключ по умолчанию не используется (иначе cookie подделать)."""
@@ -58,13 +104,11 @@ _SECRET_KEY = _resolve_secret_key()
 app.config["SECRET_KEY"] = _SECRET_KEY
 app.secret_key = _SECRET_KEY
 
-# ── База данных — pghost.ru, жёстко прописана, env не используется ───────────
-_PGHOST_URL = (
-    "postgresql://bothost_db_bf4fb06bbd60:"
-    "b0dqQSV7PsGK465oK4h3oPUtJjM5rjKtGQis_YXHXvM"
-    "@node1.pghost.ru:15529/bothost_db_bf4fb06bbd60"
-)
-app.config["SQLALCHEMY_DATABASE_URI"] = _PGHOST_URL
+# ── База данных — берётся из переменной окружения DATABASE_URL (Replit PostgreSQL) ───
+_DATABASE_URL = os.environ.get("DATABASE_URL")
+if not _DATABASE_URL:
+    raise RuntimeError("DATABASE_URL environment variable is not set")
+app.config["SQLALCHEMY_DATABASE_URI"] = _DATABASE_URL
 app.config["SQLALCHEMY_ENGINE_OPTIONS"] = {"pool_recycle": 300, "pool_pre_ping": True}
 db.init_app(app)
 
@@ -97,19 +141,30 @@ with app.app_context():
 # ── SocketIO ──────────────────────────────────────────────────────────────────
 _orig_dumps = json.dumps
 def _safe_dumps(obj, **kw):
-    def _default(o):
-        if isinstance(o, (np.integer,)):  return int(o)
-        if isinstance(o, (np.floating,)): return float(o)
-        if isinstance(o, (np.bool_,)):    return bool(o)
-        if isinstance(o, np.ndarray):     return o.tolist()
-        raise TypeError(f"Object of type {type(o).__name__} is not JSON serializable")
-    kw.setdefault("default", _default)
+    if orjson is not None:
+        try:
+            return orjson.dumps(
+                obj, default=_numpy_default, option=orjson.OPT_SERIALIZE_NUMPY
+            ).decode("utf-8")
+        except TypeError:
+            pass
+    kw.setdefault("default", _numpy_default)
     return _orig_dumps(obj, **kw)
+
+
+def _safe_loads(s, **kw):
+    if orjson is not None:
+        try:
+            return orjson.loads(s)
+        except Exception:
+            pass
+    return json.loads(s, **kw)
+
 
 import flask_socketio
 flask_socketio.json = type("_J", (), {
     "dumps": staticmethod(_safe_dumps),
-    "loads": staticmethod(json.loads),
+    "loads": staticmethod(_safe_loads),
 })()
 
 socketio = SocketIO(app, cors_allowed_origins="*", async_mode="threading",
@@ -180,14 +235,25 @@ def _status_for_response():
                 _status_snapshot = snap
     return snap
 
+_connected_clients = 0
+_connected_lock    = threading.Lock()
+
+
+def _has_dashboard_clients() -> bool:
+    with _connected_lock:
+        return _connected_clients > 0
+
+
 def push_updates():
     global _status_snapshot
     while True:
         try:
-            snap = _safe_status()
-            with _snapshot_lock:
-                _status_snapshot = snap
-            socketio.emit("status_update", snap)
+            # Никто не смотрит дашборд — не тратим CPU на сборку снапшота статуса.
+            if _has_dashboard_clients():
+                snap = _safe_status()
+                with _snapshot_lock:
+                    _status_snapshot = snap
+                socketio.emit("status_update", snap)
         except Exception as e:
             print(f"[Push] Ошибка: {e}")
         time.sleep(2)
@@ -198,18 +264,19 @@ def push_price():
     last, last_symbol = None, None
     while True:
         try:
-            symbol = Config.SYMBOL
-            if symbol != last_symbol:
-                last = None
-                last_symbol = symbol
-            price = float(trader.exchange.get_live_price())
-            gram  = price_feed.get_grinch_ton_price()
-            # Изменение считаем по курсу в GRAM (он же показан в hero)
-            change = round((gram - last) / last * 100, 3) if (last and gram) else 0.0
-            socketio.emit("price_update",
-                          {"symbol": symbol, "price": price, "gram": gram, "change": change})
-            if gram and gram > 0:
-                last = gram
+            if _has_dashboard_clients():
+                symbol = Config.SYMBOL
+                if symbol != last_symbol:
+                    last = None
+                    last_symbol = symbol
+                price = float(trader.exchange.get_live_price())
+                gram  = price_feed.get_grinch_ton_price()
+                # Изменение считаем по курсу в GRAM (он же показан в hero)
+                change = round((gram - last) / last * 100, 3) if (last and gram) else 0.0
+                socketio.emit("price_update",
+                              {"symbol": symbol, "price": price, "gram": gram, "change": change})
+                if gram and gram > 0:
+                    last = gram
         except Exception as e:
             print(f"[Price] Ошибка: {e}")
         time.sleep(2)
@@ -254,6 +321,12 @@ def start_background():
             _adv_start()
         except Exception as _adv_ex:
             print(f"[Advisor] не запущен: {_adv_ex}")
+        # ── Алерты: монитор здоровья торгового цикла → Telegram ────────
+        try:
+            import alerts
+            alerts.start_monitor()
+        except Exception as _al_ex:
+            print(f"[Alerts] монитор не запущен: {_al_ex}")
 
 start_background()
 
@@ -358,7 +431,38 @@ def tonconnect_manifest():
 
 @app.route("/health")
 def health():
-    return "ok", 200
+    """
+    Реальная проверка живости, а не просто "процесс запущен":
+    считаем сервис нездоровым, если торговый агент включён, но его
+    фоновый цикл не тикал дольше 90с (тик раз в 15с + запас на сеть/блокчейн)
+    или последний тик завершился с ошибкой.
+    """
+    if not trader.running:
+        return jsonify({"status": "ok", "trader": "stopped"}), 200
+
+    now = time.time()
+    age = now - (trader.last_tick_ts or 0)
+    if trader.last_tick_ts == 0:
+        # Ещё идёт предобучение AI перед первым тиком — это ожидаемо, не ошибка
+        return jsonify({"status": "ok", "trader": "starting"}), 200
+    if age > 90:
+        return jsonify({
+            "status": "unhealthy",
+            "reason": "trading loop stalled",
+            "seconds_since_last_tick": round(age, 1),
+        }), 503
+    if trader.last_tick_ok is False:
+        return jsonify({
+            "status": "degraded",
+            "reason": "last tick raised an error (see logs)",
+            "seconds_since_last_tick": round(age, 1),
+        }), 200
+
+    return jsonify({
+        "status": "ok",
+        "trader": "running",
+        "seconds_since_last_tick": round(age, 1),
+    }), 200
 
 
 # ════════════════════════════════════════════════════════════════════════════
@@ -387,8 +491,16 @@ def api_status():
     # Пока буфер не прогрет (самый первый запрос) — считаем напрямую один раз.
     return jsonify(_status_for_response())
 
+_CANDLES_CACHE = {"ts": 0.0, "payload": None}
+_CANDLES_CACHE_TTL = 8  # сек — свечи обновляются раз в 15м, считать индикаторы на каждый опрос (10с) незачем
+
 @app.route("/api/candles")
 def api_candles():
+    now = time.time()
+    cached = _CANDLES_CACHE["payload"]
+    if cached is not None and (now - _CANDLES_CACHE["ts"]) < _CANDLES_CACHE_TTL:
+        return jsonify(cached)
+
     from strategy import analyze
     # Реальные свечи пары GRINCH/GRAM (цена GRINCH в GRAM/Toncoin) с GeckoTerminal.
     # 15-минутный таймфрейм — как на DeDust.
@@ -405,10 +517,13 @@ def api_candles():
         if isinstance(obj, (np.bool_,)):   return bool(obj)
         if isinstance(obj, np.ndarray):    return obj.tolist()
         return obj
-    return jsonify({
+    payload = {
         "candles": _walk(analysis.get("candles", [])),
         "price":   _walk(analysis.get("price", 0)),
-    })
+    }
+    _CANDLES_CACHE["ts"] = now
+    _CANDLES_CACHE["payload"] = payload
+    return jsonify(payload)
 
 @app.route("/api/start", methods=["POST"])
 def api_start():
@@ -504,6 +619,40 @@ def api_advisor_apikey_get():
     # возвращаем только маску — не раскрываем ключ в UI
     masked = ("gsk_" + "•" * 20 + stored[-4:]) if len(stored) > 8 else ("•" * len(stored) if stored else "")
     return jsonify({"ok": True, "has_key": bool(stored), "masked": masked})
+
+@app.route("/api/alerts/config", methods=["POST"])
+def api_alerts_config():
+    import settings_store
+    data     = request.json or {}
+    token    = str(data.get("bot_token", "")).strip()
+    chat_id  = str(data.get("chat_id", "")).strip()
+    enabled  = bool(data.get("enabled", True))
+    updates = {"enabled": enabled}
+    if token:
+        updates["telegram_bot_token"] = token
+    if chat_id:
+        updates["telegram_chat_id"] = chat_id
+    settings_store.update_section("alerts", updates)
+    return jsonify({"ok": True})
+
+@app.route("/api/alerts/config", methods=["GET"])
+def api_alerts_config_get():
+    import settings_store
+    sec = settings_store.get_section("alerts")
+    token = sec.get("telegram_bot_token", "")
+    return jsonify({
+        "ok": True,
+        "has_token": bool(token),
+        "masked_token": ("•" * 20 + token[-4:]) if len(token) > 4 else "",
+        "chat_id": sec.get("telegram_chat_id", ""),
+        "enabled": bool(sec.get("enabled", True)),
+    })
+
+@app.route("/api/alerts/test", methods=["POST"])
+def api_alerts_test():
+    import alerts
+    result = alerts.send_alert("🔔 QuantumBrain: тестовое уведомление. Если вы это видите — Telegram-алерты настроены верно.")
+    return jsonify(result), (200 if result.get("ok") else 400)
 
 @app.route("/api/trade/manual_buy", methods=["POST"])
 def api_manual_buy():
@@ -1060,13 +1209,23 @@ def api_platform_stats():
 
 @socketio.on("connect")
 def on_connect(auth=None):
+    global _connected_clients
     # Поток статуса панели — только для владельца после входа.
     if _auth_configured() and not session.get("logged_in"):
         return False  # отклонить подключение неавторизованного клиента
+    with _connected_lock:
+        _connected_clients += 1
     try:
         emit("status_update", _status_for_response())
     except Exception as e:
         print(f"[on_connect] Ошибка: {e}")
+
+
+@socketio.on("disconnect")
+def on_disconnect():
+    global _connected_clients
+    with _connected_lock:
+        _connected_clients = max(0, _connected_clients - 1)
 
 
 def _free_port(port: int):
