@@ -261,7 +261,7 @@ class Config:
     # Продать ВСЁ когда общая стоимость GRINCH выросла на N% относительно суммарных затрат
     DCA_TARGET_PROFIT_PCT = float(os.getenv("DCA_TARGET_PROFIT_PCT", "20"))
     # Докупать ещё когда цена упала N% от цены ПОСЛЕДНЕЙ покупки
-    DCA_DROP_TRIGGER_PCT  = float(os.getenv("DCA_DROP_TRIGGER_PCT", "25"))
+    DCA_DROP_TRIGGER_PCT  = float(os.getenv("DCA_DROP_TRIGGER_PCT", "12"))  # снижено с 25% — GRINCH корректируется на 6-15%, 25% пропускает окно
     # После продажи: ждать падения цены на N% от пика перед следующей покупкой
     DCA_PULLBACK_WAIT_PCT = float(os.getenv("DCA_PULLBACK_WAIT_PCT", "25"))
     # Максимальное количество DCA-входов за один цикл (защита от бесконечного усреднения)
@@ -283,7 +283,7 @@ class Config:
     # Защита «только в плюс»: выход по рынку, но никогда в убыток (ONLY_PROFIT_EXIT).
     PROFIT_PROTECT_ENABLED  = bool(int(os.getenv("PROFIT_PROTECT_ENABLED",  "1")))
     PROFIT_PROTECT_TON      = float(os.getenv("PROFIT_PROTECT_TON",         "3.0"))   # мин. 3 TON прибыли для активации
-    PROFIT_PROTECT_DROP_PCT = float(os.getenv("PROFIT_PROTECT_DROP_PCT",    "1.5"))   # % откат от пика
+    PROFIT_PROTECT_DROP_PCT = float(os.getenv("PROFIT_PROTECT_DROP_PCT",    "3.0"))   # повышено с 1.5% — GRINCH ATR=5%/свеча, 1.5% = шум, не сигнал
     PROFIT_PROTECT_AI_SELL  = bool(int(os.getenv("PROFIT_PROTECT_AI_SELL",  "1")))    # также при AI SELL
 
     # ── Минимальная АБСОЛЮТНАЯ прибыль в TON — ниже этого не закрываем сделку ──
@@ -297,7 +297,7 @@ class Config:
     # выдерживается пауза LARGE_SELL_COOLDOWN_SEC секунд.
     LARGE_SELL_DCA_ENABLED  = bool(int(os.getenv("LARGE_SELL_DCA_ENABLED",  "1")))
     LARGE_SELL_DCA_TON      = float(os.getenv("LARGE_SELL_DCA_TON",         "100.0"))   # TON на покупку
-    LARGE_SELL_MIN_TON      = float(os.getenv("LARGE_SELL_MIN_TON",         "500.0"))   # мин. TON продажи
+    LARGE_SELL_MIN_TON      = float(os.getenv("LARGE_SELL_MIN_TON",         "200.0"))   # снижено с 500 — micro-cap $47k пул: 200 TON продажа уже двигает рынок
     LARGE_SELL_COOLDOWN_SEC = int(os.getenv("LARGE_SELL_COOLDOWN_SEC",      "300"))     # пауза между сигналами
 
     DEMO_MODE  = os.getenv("DEMO_MODE",  "false").lower() == "true"

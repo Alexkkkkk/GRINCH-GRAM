@@ -93,24 +93,43 @@ class CoinInfo:
             info = p.get("info", {}) or {}
             pc = p.get("priceChange", {}) or {}
             vol = p.get("volume", {}) or {}
-            txns = (p.get("txns", {}) or {}).get("h24", {}) or {}
+            all_txns = p.get("txns", {}) or {}
+            txns_h24 = all_txns.get("h24", {}) or {}
+            txns_h6  = all_txns.get("h6",  {}) or {}
+            txns_h1  = all_txns.get("h1",  {}) or {}
             pool = p.get("pairAddress")
             if pool:
                 with self._lock:
                     self._pool_cache[base] = (pool, time.time())
+            # Вычисляем buy/sell ratios по всем таймфреймам
+            def _ratio(t):
+                b, s = t.get("buys", 0) or 0, t.get("sells", 0) or 0
+                return round(b / s, 3) if s else None
             return {
                 "name": p["baseToken"].get("name"),
                 "symbol": p["baseToken"].get("symbol"),
                 "image": info.get("imageUrl"),
                 "price_usd": _f(p.get("priceUsd")),
+                "price_native": _f(p.get("priceNative")),
+                "change_m5":  _f(pc.get("m5")),
+                "change_h1":  _f(pc.get("h1")),
+                "change_h6":  _f(pc.get("h6")),
                 "change_h24": _f(pc.get("h24")),
-                "change_h1": _f(pc.get("h1")),
                 "volume_h24": _f(vol.get("h24")),
+                "volume_h6":  _f(vol.get("h6")),
+                "volume_h1":  _f(vol.get("h1")),
                 "liquidity": _f((p.get("liquidity", {}) or {}).get("usd")),
                 "market_cap": _f(p.get("marketCap")),
                 "fdv": _f(p.get("fdv")),
-                "buys_h24": txns.get("buys"),
-                "sells_h24": txns.get("sells"),
+                "buys_h24":  txns_h24.get("buys"),
+                "sells_h24": txns_h24.get("sells"),
+                "ratio_h24": _ratio(txns_h24),
+                "buys_h6":   txns_h6.get("buys"),
+                "sells_h6":  txns_h6.get("sells"),
+                "ratio_h6":  _ratio(txns_h6),
+                "buys_h1":   txns_h1.get("buys"),
+                "sells_h1":  txns_h1.get("sells"),
+                "ratio_h1":  _ratio(txns_h1),
                 "url": p.get("url"),
                 "pool": pool,
                 "source": "DexScreener",
