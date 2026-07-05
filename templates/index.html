@@ -906,6 +906,12 @@
           <span style="margin-left:auto;font-size:11px;color:#00ff88" id="adv-adapt-count">0 адаптаций</span>
         </div>
 
+        <!-- Лимит Groq (если исчерпан) -->
+        <div id="adv-ratelimit-wrap" style="display:none;margin-bottom:10px;padding:8px 12px;background:rgba(255,107,107,.08);border:1px solid rgba(255,107,107,.25);border-radius:8px">
+          <div style="font-size:11px;font-weight:700;color:#ff6b6b;margin-bottom:3px">⏳ Лимит токенов Groq исчерпан</div>
+          <div id="adv-ratelimit-text" style="font-size:11px;color:#ccd6f6;line-height:1.6"></div>
+        </div>
+
         <!-- Панель автономии -->
         <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:10px">
           <div style="background:rgba(0,255,136,.06);border:1px solid rgba(0,255,136,.15);border-radius:8px;padding:8px;text-align:center">
@@ -1205,6 +1211,8 @@ function advLoadStatus() {
       advStartCountdown();
     }
 
+    advRenderRateLimit(s.rate_limit);
+
     if (s.last_advice) advRenderResult(s.last_advice);
     if (s.history && s.history.length) advRenderHistory(s.history);
     if (s.adaptation_log && s.adaptation_log.length) advRenderAdaptLog(s.adaptation_log);
@@ -1217,6 +1225,21 @@ function advLoadStatus() {
     if (intEl) intEl.value = s.interval_min || 15;
     if (trEl)  trEl.value  = s.trades_trigger || 3;
   }).catch(() => {});
+}
+
+function advRenderRateLimit(rl) {
+  const wrap = document.getElementById('adv-ratelimit-wrap');
+  const text = document.getElementById('adv-ratelimit-text');
+  if (!wrap || !text) return;
+  if (!rl || !rl.limited) { wrap.style.display = 'none'; return; }
+  wrap.style.display = 'block';
+  const parts = [];
+  if (rl.used != null && rl.limit != null) parts.push(`использовано ${rl.used.toLocaleString('ru')} из ${rl.limit.toLocaleString('ru')} токенов/день`);
+  if (rl.reset_in_sec != null) {
+    const m = Math.floor(rl.reset_in_sec / 60), s = rl.reset_in_sec % 60;
+    parts.push(`сброс через ${m > 0 ? m + 'м ' : ''}${s}с`);
+  }
+  text.textContent = parts.length ? parts.join(' · ') : 'советник временно не отвечает, попробуйте позже';
 }
 
 function advStartCountdown() {
