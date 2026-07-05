@@ -57,6 +57,24 @@ TUNABLE = {
     "dca_stake_ton":           (5.0,  1000.0),   # TON за каждый DCA-вход
     "trade_amount":            (5.0,  1000.0),   # TON базовой ставки AI-режима
     "min_profit_ton_abs":      (2.0,    50.0),   # минимальная АБСОЛЮТНАЯ прибыль в TON
+    # ── Трейлинг: уровни активации стадий ───────────────────────
+    "trail_breakeven_at":      (3.0,    25.0),   # прибыль % → переход в безубыток
+    "trail_stage2_at":         (8.0,    35.0),   # прибыль % → стадия 2
+    "trail_stage3_at":         (15.0,   50.0),   # прибыль % → стадия 3
+    "trail_stage4_at":         (25.0,   80.0),   # прибыль % → стадия 4
+    "smart_tp_tight_trail_pct":(2.0,    20.0),   # тугой трейл в Smart TP режиме
+    # ── DCA расширенные параметры ────────────────────────────────
+    "dca_pullback_wait_pct":   (5.0,    50.0),   # % падения от пика для нового DCA-цикла
+    "dca_max_entries":         (2.0,    20.0),   # макс. DCA-входов за цикл
+    # ── Крупные продажи ──────────────────────────────────────────
+    "large_sell_dca_ton":      (5.0,   500.0),   # TON для закупки на сигнале крупной продажи
+    # ── Защита прибыли ───────────────────────────────────────────
+    "profit_protect_ton":      (0.5,    50.0),   # мин. TON прибыли для активации защиты
+    # ── AI фильтры входа ─────────────────────────────────────────
+    "rsi_overbought":          (65.0,   90.0),   # RSI-уровень перекупленности (блок BUY)
+    "ai_autonomous_min_conf":  (45.0,   80.0),   # мин. уверенность для авто-входа AI
+    "ai_full_rights_min_conf": (50.0,   85.0),   # мин. уверенность для полных прав AI (без ATR-фильтра)
+    "short_min_ai_conf":       (50.0,   90.0),   # мин. уверенность для шорт-позиции
 }
 
 # ── Стратегии, которые советник МОЖЕТ включать/выключать целиком ─────────
@@ -92,6 +110,19 @@ TUNABLE_DESCRIPTIONS = {
     "dca_stake_ton":           "Размер DCA-ставки в TON (каждый вход)",
     "trade_amount":            "Базовая ставка AI-режима в TON",
     "min_profit_ton_abs":      "Минимальная прибыль в TON (абсолютная, не %)",
+    "trail_breakeven_at":      "Прибыль % для перехода стопа в безубыток",
+    "trail_stage2_at":         "Прибыль % для активации трейлинга стадии 2",
+    "trail_stage3_at":         "Прибыль % для активации трейлинга стадии 3",
+    "trail_stage4_at":         "Прибыль % для активации трейлинга стадии 4",
+    "smart_tp_tight_trail_pct":"Тугой трейлинг в режиме Smart TP (%)",
+    "dca_pullback_wait_pct":   "Падение от пика перед новым DCA-циклом (%)",
+    "dca_max_entries":         "Макс. DCA-входов за один цикл (шт.)",
+    "large_sell_dca_ton":      "TON для закупки при сигнале крупной продажи",
+    "profit_protect_ton":      "Мин. прибыль TON для активации защиты прибыли",
+    "rsi_overbought":          "RSI-уровень перекупленности (блок входа)",
+    "ai_autonomous_min_conf":  "Мин. уверенность AI для автономного входа (%)",
+    "ai_full_rights_min_conf": "Мин. уверенность AI для полных прав (без ATR-фильтра) (%)",
+    "short_min_ai_conf":       "Мин. уверенность AI для открытия шорта (%)",
 }
 
 # ── Внутреннее состояние ───────────────────────────────────────────────────
@@ -266,15 +297,21 @@ losses > 0 → ai_size_mult 0.4-0.6, уменьши ставку
 • ev_min_trades — только целые числа
 • dca_stake_ton ≤ 2% ликвидности пула (micro-cap защита)
 
-ДОПУСТИМЫЕ ДИАПАЗОНЫ:
-take_profit_pct:[5-200] dca_target_profit_pct:[5-100] dca_drop_trigger_pct:[5-60]
-smart_buy_pullback_pct:[0.2-5] profit_protect_drop_pct:[0.3-20] min_ai_confidence:[40-90]
-buy_threshold:[0.40-0.75] sell_threshold:[0.52-0.85] profit_bias_pct:[0.010-0.060]
-vr_trend_thresh:[1.05-1.40] ev_min_trades:[5-25] retrain_every:[1-6]
-trailing_stop_pct:[2-25] trail_stage2_pct:[2-20] trail_stage3_pct:[1.5-15]
-trail_stage4_pct:[1-10] smart_tp_min_conf:[50-90] short_trail_pct:[3-25]
-ai_size_mult:[0.3-1.5] dca_stake_ton:[5-1000] trade_amount:[5-1000]
-min_profit_ton_abs:[2.0-50.0]
+ДОПУСТИМЫЕ ДИАПАЗОНЫ (все параметры под контролем советника):
+— Основные: take_profit_pct:[5-200] dca_target_profit_pct:[5-100] dca_drop_trigger_pct:[5-60]
+— Smart BUY: smart_buy_pullback_pct:[0.2-5]
+— Защита: profit_protect_drop_pct:[0.3-20] profit_protect_ton:[0.5-50]
+— AI-вход: min_ai_confidence:[40-90] ai_autonomous_min_conf:[45-80] ai_full_rights_min_conf:[50-85]
+— RSI: rsi_overbought:[65-90]
+— AI Engine: buy_threshold:[0.40-0.75] sell_threshold:[0.52-0.85] profit_bias_pct:[0.010-0.060]
+— AI Engine: vr_trend_thresh:[1.05-1.40] ev_min_trades:[5-25] retrain_every:[1-6]
+— Трейлинг %: trailing_stop_pct:[2-25] trail_stage2_pct:[2-20] trail_stage3_pct:[1.5-15] trail_stage4_pct:[1-10]
+— Трейлинг AT: trail_breakeven_at:[3-25] trail_stage2_at:[8-35] trail_stage3_at:[15-50] trail_stage4_at:[25-80]
+— Smart TP: smart_tp_min_conf:[50-90] smart_tp_tight_trail_pct:[2-20]
+— Шорт: short_trail_pct:[3-25] short_min_ai_conf:[50-90]
+— DCA: dca_stake_ton:[5-1000] dca_pullback_wait_pct:[5-50] dca_max_entries:[2-20]
+— Ставки: trade_amount:[5-1000] ai_size_mult:[0.3-1.5] large_sell_dca_ton:[5-500]
+— Прибыль: min_profit_ton_abs:[2.0-50.0]
 
 СТРАТЕГИИ: dca_mode=ВСЕГДА_true | short_trading_enabled=только_DOWNTREND
 smart_buy_enabled=выкл_при_BREAKOUT_и_КОРРЕКЦИИ | smart_tp_enabled=вкл_при_conf>70%
@@ -342,16 +379,49 @@ def _build_snapshot(user_message: str = "") -> dict:
     # Config
     try:
         from config import Config
+        def _g(attr, default=None):
+            return getattr(Config, attr, default)
         snap["config"] = {
-            "take_profit_pct":         Config.TAKE_PROFIT_PCT,
-            "dca_mode":                Config.DCA_MODE,
-            "dca_target_profit_pct":   Config.DCA_TARGET_PROFIT_PCT,
-            "dca_drop_trigger_pct":    getattr(Config, "DCA_DROP_TRIGGER_PCT", 25.0),
-            "smart_buy_pullback_pct":  Config.SMART_BUY_PULLBACK_PCT,
-            "profit_protect_drop_pct": Config.PROFIT_PROTECT_DROP_PCT,
-            "min_ai_confidence":       Config.MIN_AI_CONFIDENCE,
-            "only_profit_exit":        Config.ONLY_PROFIT_EXIT,
-            "fee_round_trip_pct":      Config.FEE_ROUND_TRIP,
+            # ── Основные торговые параметры ──
+            "take_profit_pct":          _g("TAKE_PROFIT_PCT"),
+            "dca_mode":                 _g("DCA_MODE"),
+            "dca_target_profit_pct":    _g("DCA_TARGET_PROFIT_PCT"),
+            "dca_drop_trigger_pct":     _g("DCA_DROP_TRIGGER_PCT", 12.0),
+            "dca_pullback_wait_pct":    _g("DCA_PULLBACK_WAIT_PCT", 25.0),
+            "dca_max_entries":          _g("DCA_MAX_ENTRIES", 10),
+            "dca_stake_ton":            _g("DCA_STAKE_TON", 100.0),
+            "trade_amount":             _g("TRADE_AMOUNT", 100.0),
+            "min_profit_ton_abs":       _g("MIN_PROFIT_TON_ABS", 2.0),
+            # ── AI фильтры входа ──
+            "min_ai_confidence":        _g("MIN_AI_CONFIDENCE"),
+            "ai_autonomous_min_conf":   _g("AI_AUTONOMOUS_MIN_CONF", 55.0),
+            "ai_full_rights_min_conf":  _g("AI_FULL_RIGHTS_MIN_CONF", 62.0),
+            "rsi_overbought":           _g("RSI_OVERBOUGHT", 78.0),
+            # ── Трейлинг ──
+            "trailing_stop_pct":        _g("TRAILING_STOP_PCT"),
+            "trail_breakeven_at":       _g("TRAIL_BREAKEVEN_AT", 10.0),
+            "trail_stage2_at":          _g("TRAIL_STAGE2_AT", 18.0),
+            "trail_stage2_pct":         _g("TRAIL_STAGE2_PCT"),
+            "trail_stage3_at":          _g("TRAIL_STAGE3_AT", 28.0),
+            "trail_stage3_pct":         _g("TRAIL_STAGE3_PCT"),
+            "trail_stage4_at":          _g("TRAIL_STAGE4_AT", 40.0),
+            "trail_stage4_pct":         _g("TRAIL_STAGE4_PCT"),
+            "smart_tp_min_conf":        _g("SMART_TP_MIN_CONF"),
+            "smart_tp_tight_trail_pct": _g("SMART_TP_TIGHT_TRAIL_PCT", 6.0),
+            # ── Защита прибыли ──
+            "profit_protect_drop_pct":  _g("PROFIT_PROTECT_DROP_PCT"),
+            "profit_protect_ton":       _g("PROFIT_PROTECT_TON", 3.0),
+            # ── Smart BUY ──
+            "smart_buy_pullback_pct":   _g("SMART_BUY_PULLBACK_PCT"),
+            # ── Крупные продажи ──
+            "large_sell_dca_ton":       _g("LARGE_SELL_DCA_TON", 100.0),
+            # ── Шорт ──
+            "short_min_ai_conf":        _g("SHORT_MIN_AI_CONF", 65.0),
+            "short_trail_pct":          _g("SHORT_TRAIL_PCT"),
+            # ── Прочее ──
+            "ai_size_mult":             _g("AI_SIZE_MULT"),
+            "only_profit_exit":         _g("ONLY_PROFIT_EXIT"),
+            "fee_round_trip_pct":       _g("FEE_ROUND_TRIP"),
         }
     except Exception:
         snap["config"] = {}
@@ -678,6 +748,57 @@ def _apply_recommendations(recs: list) -> list[str]:
         elif param == "retrain_every":
             ae.RETRAIN_EVERY = max(1, int(round(val)))
             val = ae.RETRAIN_EVERY
+
+        # ── Трейлинг: уровни активации стадий ────────────────────
+        elif param == "trail_breakeven_at":
+            Config.TRAIL_BREAKEVEN_AT = val
+            config_upd["trail_breakeven_at"] = str(val)
+        elif param == "trail_stage2_at":
+            Config.TRAIL_STAGE2_AT = val
+            config_upd["trail_stage2_at"] = str(val)
+        elif param == "trail_stage3_at":
+            Config.TRAIL_STAGE3_AT = val
+            config_upd["trail_stage3_at"] = str(val)
+        elif param == "trail_stage4_at":
+            Config.TRAIL_STAGE4_AT = val
+            config_upd["trail_stage4_at"] = str(val)
+        elif param == "smart_tp_tight_trail_pct":
+            Config.SMART_TP_TIGHT_TRAIL_PCT = val
+            config_upd["smart_tp_tight_trail_pct"] = str(val)
+
+        # ── DCA расширенные ───────────────────────────────────────
+        elif param == "dca_pullback_wait_pct":
+            Config.DCA_PULLBACK_WAIT_PCT = val
+            config_upd["dca_pullback_wait_pct"] = str(val)
+        elif param == "dca_max_entries":
+            Config.DCA_MAX_ENTRIES = max(2, int(round(val)))
+            val = Config.DCA_MAX_ENTRIES
+            config_upd["dca_max_entries"] = str(val)
+
+        # ── Крупные продажи ───────────────────────────────────────
+        elif param == "large_sell_dca_ton":
+            Config.LARGE_SELL_DCA_TON = val
+            config_upd["large_sell_dca_ton"] = str(val)
+
+        # ── Защита прибыли ────────────────────────────────────────
+        elif param == "profit_protect_ton":
+            Config.PROFIT_PROTECT_TON = val
+            config_upd["profit_protect_ton"] = str(val)
+
+        # ── AI фильтры входа ──────────────────────────────────────
+        elif param == "rsi_overbought":
+            Config.RSI_OVERBOUGHT = val
+            config_upd["rsi_overbought"] = str(val)
+        elif param == "ai_autonomous_min_conf":
+            Config.AI_AUTONOMOUS_MIN_CONF = val
+            config_upd["ai_autonomous_min_conf"] = str(val)
+        elif param == "ai_full_rights_min_conf":
+            Config.AI_FULL_RIGHTS_MIN_CONF = val
+            config_upd["ai_full_rights_min_conf"] = str(val)
+        elif param == "short_min_ai_conf":
+            Config.SHORT_MIN_AI_CONF = val
+            config_upd["short_min_ai_conf"] = str(val)
+
         else:
             continue
 
@@ -830,7 +951,7 @@ def run_advisor(auto_apply: bool = None, user_message: str = "",
 
         # Следующий запуск через столько минут, сколько советник сам рекомендовал
         suggested_next = int(parsed.get("next_check_min", AUTO_INTERVAL_MIN))
-        suggested_next = max(5, min(60, suggested_next))
+        suggested_next = max(2, min(60, suggested_next))
 
         now = time.time()
         result = {
