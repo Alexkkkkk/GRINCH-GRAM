@@ -287,8 +287,8 @@ class Config:
     PROFIT_PROTECT_AI_SELL  = bool(int(os.getenv("PROFIT_PROTECT_AI_SELL",  "1")))    # также при AI SELL
 
     # ── Минимальная АБСОЛЮТНАЯ прибыль в TON — ниже этого не закрываем сделку ──
-    # Советник управляет этим значением, жёсткий минимум = 3 TON.
-    MIN_PROFIT_TON_ABS = float(os.getenv("MIN_PROFIT_TON_ABS", "3.0"))
+    # Советник управляет этим значением, жёсткий минимум = 2 TON.
+    MIN_PROFIT_TON_ABS = float(os.getenv("MIN_PROFIT_TON_ABS", "2.0"))
 
     # ── Детектор крупных продаж: автоматическая контрарная закупка ──────────
     # Когда в пуле кто-то продаёт крупный объём GRINCH — бот немедленно

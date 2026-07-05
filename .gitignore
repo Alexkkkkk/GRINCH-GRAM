@@ -34,3 +34,4 @@ artifacts/
 .replit
 pyproject.toml
 attached_assets/
+backups/
