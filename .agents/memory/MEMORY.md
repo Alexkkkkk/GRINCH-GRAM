@@ -32,3 +32,4 @@
 - [Telegram health alerts](telegram-health-alerts.md) — alerts.py monitor thread polls the same health logic as /health, sends Telegram only on state transitions (+5min resend cap) via direct Bot API call, not python-telegram-bot lib.
 - [HTTP pooling & caching](http-connection-pooling.md) — external API calls go through shared http_client.SESSION (keep-alive); /api/candles caches analyze() 8s; Flask-Compress enabled; DB pool minconn=2/maxconn=16.
 - [AI inference caching](ai-inference-caching.md) — AIEngine.analyze() caches result by candle fingerprint (skip 7-model recompute if candles unchanged); retrain gated on data_changed, not just tick count.
+- [Advisor DEX snapshot](advisor-dex-snapshot.md) — ai_advisor snapshot has a `dex` section built from coin_info (buy/sell ratio, net recent flow) so the LLM can decide to trade more actively on real DeDust order flow.
