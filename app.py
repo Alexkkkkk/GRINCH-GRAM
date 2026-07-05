@@ -321,6 +321,12 @@ def start_background():
             _adv_start()
         except Exception as _adv_ex:
             print(f"[Advisor] не запущен: {_adv_ex}")
+        # ── Алерты: монитор здоровья торгового цикла → Telegram ────────
+        try:
+            import alerts
+            alerts.start_monitor()
+        except Exception as _al_ex:
+            print(f"[Alerts] монитор не запущен: {_al_ex}")
 
 start_background()
 
@@ -613,6 +619,40 @@ def api_advisor_apikey_get():
     # возвращаем только маску — не раскрываем ключ в UI
     masked = ("gsk_" + "•" * 20 + stored[-4:]) if len(stored) > 8 else ("•" * len(stored) if stored else "")
     return jsonify({"ok": True, "has_key": bool(stored), "masked": masked})
+
+@app.route("/api/alerts/config", methods=["POST"])
+def api_alerts_config():
+    import settings_store
+    data     = request.json or {}
+    token    = str(data.get("bot_token", "")).strip()
+    chat_id  = str(data.get("chat_id", "")).strip()
+    enabled  = bool(data.get("enabled", True))
+    updates = {"enabled": enabled}
+    if token:
+        updates["telegram_bot_token"] = token
+    if chat_id:
+        updates["telegram_chat_id"] = chat_id
+    settings_store.update_section("alerts", updates)
+    return jsonify({"ok": True})
+
+@app.route("/api/alerts/config", methods=["GET"])
+def api_alerts_config_get():
+    import settings_store
+    sec = settings_store.get_section("alerts")
+    token = sec.get("telegram_bot_token", "")
+    return jsonify({
+        "ok": True,
+        "has_token": bool(token),
+        "masked_token": ("•" * 20 + token[-4:]) if len(token) > 4 else "",
+        "chat_id": sec.get("telegram_chat_id", ""),
+        "enabled": bool(sec.get("enabled", True)),
+    })
+
+@app.route("/api/alerts/test", methods=["POST"])
+def api_alerts_test():
+    import alerts
+    result = alerts.send_alert("🔔 QuantumBrain: тестовое уведомление. Если вы это видите — Telegram-алерты настроены верно.")
+    return jsonify(result), (200 if result.get("ok") else 400)
 
 @app.route("/api/trade/manual_buy", methods=["POST"])
 def api_manual_buy():

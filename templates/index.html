@@ -1025,6 +1025,28 @@
         </div>
       </div>
 
+      <!-- Telegram Alerts -->
+      <div class="card card-c">
+        <div class="card-title ctit">🔔 Оповещения в Telegram</div>
+        <div style="font-size:11px;color:#8892b0;margin-bottom:10px">
+          Бот пришлёт сообщение, если торговый цикл завис или упал с ошибкой — не нужно держать дашборд открытым.
+        </div>
+        <div style="padding:10px 12px;background:rgba(0,180,255,.07);border:1px solid rgba(0,180,255,.2);border-radius:8px">
+          <label class="cfg-check" style="margin-bottom:8px"><input type="checkbox" id="al-enabled" checked> Включить оповещения</label>
+          <div style="font-size:10px;color:#8892b0;margin-bottom:6px">Bot Token (от <a href="https://t.me/BotFather" target="_blank" style="color:#00d4ff;text-decoration:none">@BotFather</a>)</div>
+          <input type="password" id="al-token-inp" placeholder="123456:ABC-..." autocomplete="off"
+            style="width:100%;box-sizing:border-box;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.12);border-radius:6px;padding:6px 10px;font-size:11px;color:#ccd6f6;outline:none;font-family:monospace;margin-bottom:8px">
+          <div style="font-size:10px;color:#8892b0;margin-bottom:6px">Chat ID (ваш личный или ID группы — узнать у <a href="https://t.me/userinfobot" target="_blank" style="color:#00d4ff;text-decoration:none">@userinfobot</a>)</div>
+          <input type="text" id="al-chatid-inp" placeholder="123456789" autocomplete="off"
+            style="width:100%;box-sizing:border-box;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.12);border-radius:6px;padding:6px 10px;font-size:11px;color:#ccd6f6;outline:none;font-family:monospace;margin-bottom:8px">
+          <div style="display:flex;gap:6px">
+            <button class="btn-tiny" onclick="alSaveConfig()" style="flex:1;padding:6px 12px;font-size:10px;background:rgba(0,180,255,.2);border-color:rgba(0,180,255,.4);color:#5ec9ff">💾 Сохранить</button>
+            <button class="btn-tiny" onclick="alSendTest()" style="flex:1;padding:6px 12px;font-size:10px">🔔 Тест</button>
+          </div>
+          <div id="al-status-msg" style="font-size:10px;margin-top:6px;color:#8892b0"></div>
+        </div>
+      </div>
+
       <!-- Logs -->
       <div class="card card-c">
         <div class="card-title ctit">📝 Логи бота <button class="btn-tiny" onclick="clearLogs()">Очистить</button></div>
@@ -1150,6 +1172,7 @@ document.addEventListener('DOMContentLoaded', () => {
   if (priceEl) obs.observe(priceEl, {childList:true, characterData:true, subtree:true});
   advLoadStatus();
   advLoadKey();
+  alLoadConfig();
 });
 
 // ─── AI Советник — Полная Автономия ──────────────────────────────────────────
@@ -1364,6 +1387,65 @@ function advLoadKey() {
     } else {
       el.textContent = '⚠️ Ключ не задан — AI советник отключён';
       el.style.color = '#ff6b6b';
+    }
+  }).catch(() => {});
+}
+
+function alSaveConfig() {
+  const token   = document.getElementById('al-token-inp')?.value.trim();
+  const chatId  = document.getElementById('al-chatid-inp')?.value.trim();
+  const enabled = document.getElementById('al-enabled')?.checked;
+  fetch('/api/alerts/config', {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({bot_token: token, chat_id: chatId, enabled: enabled})
+  }).then(r => r.json()).then(res => {
+    const el = document.getElementById('al-status-msg');
+    if (res.ok) {
+      if (el) { el.textContent = '✅ Настройки сохранены'; el.style.color = '#00ff88'; }
+      showToast('🔔 Настройки Telegram-алертов сохранены', 'success');
+      document.getElementById('al-token-inp').value = '';
+      alLoadConfig();
+    } else if (el) {
+      el.textContent = '⚠️ Ошибка сохранения'; el.style.color = '#ff6b6b';
+    }
+  }).catch(() => {});
+}
+
+function alSendTest() {
+  const el = document.getElementById('al-status-msg');
+  if (el) { el.textContent = 'Отправляю тест...'; el.style.color = '#8892b0'; }
+  fetch('/api/alerts/test', {method:'POST'}).then(r => r.json()).then(res => {
+    if (!el) return;
+    if (res.ok) {
+      el.textContent = '✅ Тестовое сообщение отправлено — проверьте Telegram';
+      el.style.color = '#00ff88';
+      showToast('🔔 Тестовое уведомление отправлено', 'success');
+    } else {
+      el.textContent = '⚠️ ' + (res.error || 'Ошибка отправки');
+      el.style.color = '#ff6b6b';
+    }
+  }).catch(() => {
+    if (el) { el.textContent = '⚠️ Ошибка сети'; el.style.color = '#ff6b6b'; }
+  });
+}
+
+function alLoadConfig() {
+  fetch('/api/alerts/config').then(r => r.json()).then(res => {
+    const el = document.getElementById('al-status-msg');
+    const tokenInp = document.getElementById('al-token-inp');
+    const chatInp  = document.getElementById('al-chatid-inp');
+    const enabledCb = document.getElementById('al-enabled');
+    if (chatInp && res.chat_id) chatInp.value = res.chat_id;
+    if (enabledCb) enabledCb.checked = !!res.enabled;
+    if (tokenInp) tokenInp.placeholder = res.has_token ? res.masked_token : '123456:ABC-...';
+    if (el) {
+      if (res.has_token && res.chat_id) {
+        el.textContent = res.enabled ? '✅ Оповещения настроены и включены' : '⏸ Оповещения настроены, но выключены';
+        el.style.color = res.enabled ? '#00ff88' : '#8892b0';
+      } else {
+        el.textContent = 'ℹ️ Заполните токен и chat ID, чтобы получать оповещения';
+        el.style.color = '#8892b0';
+      }
     }
   }).catch(() => {});
 }

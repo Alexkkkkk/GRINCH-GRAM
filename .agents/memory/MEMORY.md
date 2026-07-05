@@ -28,5 +28,6 @@
 - [Liquidity guard](liquidity-guard.md) — continuous pool liquidity monitor auto-pauses BUY (never SELL) on sharp drop from peak; started at import time; feeds ai_advisor snapshot read-only.
 - [Deployment target for this bot](deployment-target-vm.md) — MUST be "vm" not "autoscale": stateful trader/AI/background threads would duplicate or die on scale-to-zero/multi-instance. Gunicorn needs --worker-class gthread --threads for SocketIO.
 - [Real health check](real-health-check.md) — /health checks trader.last_tick_ts staleness (>90s) not just "process alive"; catches a hung trading loop that a plain 200 OK would hide.
+- [Telegram health alerts](telegram-health-alerts.md) — alerts.py monitor thread polls the same health logic as /health, sends Telegram only on state transitions (+5min resend cap) via direct Bot API call, not python-telegram-bot lib.
 - [HTTP pooling & caching](http-connection-pooling.md) — external API calls go through shared http_client.SESSION (keep-alive); /api/candles caches analyze() 8s; Flask-Compress enabled; DB pool minconn=2/maxconn=16.
 - [AI inference caching](ai-inference-caching.md) — AIEngine.analyze() caches result by candle fingerprint (skip 7-model recompute if candles unchanged); retrain gated on data_changed, not just tick count.
