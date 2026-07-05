@@ -26,3 +26,4 @@
 - [Data fetch speed](data-fetch-speed.md) — trader.py tick sleep 30→15s; wallet_tracker POLL_SEC 30→15; exchange _OHLCV_TTL 180→60s, _OHLCV_BACKOFF 120→45s.
 - [Groq AI Advisor](groq-ai-advisor.md) — key entered via dashboard, stored in settings_store (DB-first); must read key lazily per-call, not once at import (startup race made it look "unset"); external pghost.ru DB holds settings, not Replit's DB.
 - [Liquidity guard](liquidity-guard.md) — continuous pool liquidity monitor auto-pauses BUY (never SELL) on sharp drop from peak; started at import time; feeds ai_advisor snapshot read-only.
+- [Analytics buffer](analytics-buffer.md) — analytics_buffer.py: rolling deques (400 ticks / 100 trades); push_tick() called from _push_tick_analytics() after every DCA+AI tick; push_trade("DCA_BUY/SELL/OPEN/CLOSE") in all trade paths; get_advisor_summary(window=100) feeds ai_advisor snapshot; _sf() must check v is None (not `v or 0`) to avoid zeroing legit 0-values.

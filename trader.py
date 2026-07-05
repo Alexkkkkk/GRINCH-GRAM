@@ -738,6 +738,19 @@ class Trader:
                 f"| итого вложено: {self.dca_total_stake:.2f} TON | {reason}",
                 "INFO"
             )
+            # Аналитический буфер: DCA-покупка
+            try:
+                from analytics_buffer import analytics_buffer as _ab
+                _ab.push_trade("DCA_BUY", {
+                    "price":    price_usd,
+                    "stake_ton": stake_ton,
+                    "regime":   (self.last_ai or {}).get("regime", {}) and
+                                (self.last_ai or {}).get("regime", {}).get("name") or "DCA",
+                    "ai_conf":  float((self.last_ai or {}).get("confidence", 0) or 0),
+                    "dca_entries": self.dca_entries_count,
+                })
+            except Exception:
+                pass
             return True
         finally:
             Config.TRADE_AMOUNT = orig_amount
@@ -845,6 +858,23 @@ class Trader:
         except Exception:
             pass
 
+        # ── Аналитический буфер: DCA-продажа ─────────────────────────
+        try:
+            from analytics_buffer import analytics_buffer as _ab
+            ai_snap = self.last_ai or {}
+            _ab.push_trade("DCA_SELL", {
+                "price":        price_usd,
+                "stake_ton":    total_stake,
+                "pnl_ton":      total_pnl,
+                "pnl_pct":      round(portfolio_pct, 2),
+                "regime":       (ai_snap.get("regime") or {}).get("name") or "DCA",
+                "ai_conf":      float(ai_snap.get("confidence", 0) or 0),
+                "close_reason": f"dca_target_{portfolio_pct:.1f}pct",
+                "dca_entries":  self.dca_entries_count,
+            })
+        except Exception:
+            pass
+
         self.log(
             f"🟩 DCA цикл завершён: продано {total_grinch:.4f} GRINCH | "
             f"суммарный PNL ≈ {total_pnl:+.4f} TON | "
@@ -874,6 +904,105 @@ class Trader:
         return True
 
     # ──────────────────────────────────────────
+    # Аналитический буфер: снимок тика
+    # ──────────────────────────────────────────
+    def _push_tick_analytics(self) -> None:
+        """Пушим полный снимок текущего тика в analytics_buffer.
+        Вызывается в конце каждого тика (DCA и AI режим).
+        Не должен ломать торговлю — все ошибки подавляются.
+        """
+        try:
+            from analytics_buffer import analytics_buffer as _ab
+            from price_feed import price_feed as _pf
+            import liquidity_guard as _lg
+
+            ai      = self.last_ai or {}
+            regime  = ai.get("regime") or {}
+            bo      = ai.get("breakout") or {}
+            mom     = ai.get("momentum") or {}
+
+            price_usd = _pf.get("GRINCH") or 0.0
+            price_ton = _pf.get_grinch_ton_price() or 0.0
+
+            # ── DCA прогресс ──────────────────────────────────────────
+            dca_profit_pct  = 0.0
+            dca_profit_ton  = 0.0
+            dca_avg_price   = 0.0
+            if Config.DCA_MODE and self.open_trades and price_ton > 0:
+                try:
+                    cost_ton, val_ton = self._dca_portfolio_value(price_ton)
+                    if cost_ton > 0:
+                        dca_profit_pct = (val_ton - cost_ton) / cost_ton * 100
+                        dca_profit_ton = val_ton - cost_ton
+                    total_amt   = sum(t.get("amount", 0) for t in self.open_trades)
+                    total_stake = sum(t.get("stake_ton", 0) for t in self.open_trades)
+                    dca_avg_price = total_stake / total_amt if total_amt > 0 else 0
+                except Exception:
+                    pass
+
+            # ── Ликвидность ───────────────────────────────────────────
+            liq_usd = 0.0
+            try:
+                liq_usd = float(_lg.get_status().get("current_liq", 0) or 0)
+            except Exception:
+                pass
+
+            # ── Баланс ────────────────────────────────────────────────
+            ton_bal = 0.0
+            try:
+                bal = self._get_balance_cached()
+                ton_bal = float(bal.get("TON", 0) or 0)
+            except Exception:
+                pass
+
+            # ── Умные деньги ──────────────────────────────────────────
+            sm       = self.last_sm or {}
+            sm_score = float(sm.get("score", 0) or 0)
+            sm_early = bool(sm.get("early_buy", False))
+
+            # ── Последнее решение ──────────────────────────────────────
+            last_dec = self.decision_log[-1] if self.decision_log else {}
+
+            _ab.push_tick({
+                "price_usd":      price_usd,
+                "price_ton":      price_ton,
+                "rsi":            float(ai.get("rsi") or last_dec.get("rsi") or 50),
+                "adx":            float(regime.get("adx") or 0),
+                "atr_pct":        float(regime.get("atr_pct") or 0),
+                "bb_pct":         float(ai.get("bb_pct") or 0),
+                "vol_ratio":      float(ai.get("vol_ratio") or 1.0),
+                "macd_hist":      float(ai.get("macd_hist") or 0),
+                "stoch_rsi":      float(ai.get("stoch_rsi") or 0.5),
+                "regime":         regime.get("name") or last_dec.get("regime") or "?",
+                "ai_signal":      ai.get("ai_signal") or last_dec.get("ai_sig") or "HOLD",
+                "ai_conf":        float(ai.get("confidence") or last_dec.get("conf") or 0),
+                "prob_up":        float(ai.get("prob_up") or 0),
+                "prob_down":      float(ai.get("prob_down") or 0),
+                "var_ratio":      float(ai.get("var_ratio") or 1.0),
+                "pump":           str(ai.get("pump") or "NONE"),
+                "anomaly":        bool((ai.get("anomaly") or {}).get("detected", False)),
+                "momentum":       str(mom.get("signal") or "CALM"),
+                "breakout":       str(bo.get("signal") or "FLAT"),
+                "entry_quality":  self.last_entry.get("quality") or last_dec.get("quality") or "?",
+                "entry_score":    int(self.last_entry.get("score") or last_dec.get("score") or 0),
+                "sm_score":       sm_score,
+                "sm_early":       sm_early,
+                "final_signal":   last_dec.get("result") or "HOLD",
+                "blocked":        bool(last_dec.get("blocked", False)),
+                "blocked_reason": str(last_dec.get("reason") or ""),
+                "open_positions": len(self.open_trades),
+                "portfolio_pnl":  float(self.stats.get("total_pnl", 0)),
+                "ton_balance":    ton_bal,
+                "liq_usd":        liq_usd,
+                "dca_entries":    self.dca_entries_count,
+                "dca_avg_price":  dca_avg_price,
+                "dca_profit_pct": round(dca_profit_pct, 4),
+                "dca_profit_ton": round(dca_profit_ton, 4),
+            })
+        except Exception:
+            pass  # буфер НИКОГДА не ломает торговлю
+
+    # ──────────────────────────────────────────
     # Торговый тик
     # ──────────────────────────────────────────
     def _tick(self):
@@ -883,6 +1012,11 @@ class Trader:
                 self._tick_dca()
             except Exception as e:
                 self.log(f"⚠️ DCA тик: {e}", "ERROR")
+            # Пушим аналитику после каждого DCA-тика
+            try:
+                self._push_tick_analytics()
+            except Exception:
+                pass
             return
 
         # ── Защита прибыли + детектор крупных продаж в AI-режиме ────
@@ -1262,6 +1396,12 @@ class Trader:
             else:
                 self._sell_confirm_count = 0
 
+        # ── Аналитический буфер (AI-режим) ────────────────────────────
+        try:
+            self._push_tick_analytics()
+        except Exception:
+            pass
+
     def _emit_signal(self, signal, price, ai=None):
         """Шлёт сигнал BUY/SELL всем подписчикам (UserTradingManager и т.п.).
         Вызывать ТОЛЬКО после подтверждённого реального исполнения сделки —
@@ -1538,6 +1678,17 @@ class Trader:
             f"🟢 BUY @ {price} | {stake:.3f} TON | SL={sl}(-{sl_pct:.1f}%) | "
             f"TP={tp}(+{tp_pct:.1f}%) | AI={ai_conf}%", "BUY"
         )
+        # ── Аналитический буфер: событие открытия позиции ─────────────
+        try:
+            from analytics_buffer import analytics_buffer as _ab
+            _ab.push_trade("OPEN", {
+                "price":    price,
+                "stake_ton": stake,
+                "regime":   str(regime_entry.get("name") or "?"),
+                "ai_conf":  float(ai_conf),
+            })
+        except Exception:
+            pass
         return True
 
     def _close_all_trades(self, price, analysis):
@@ -2166,10 +2317,19 @@ class Trader:
             f"{emoji} Закрыто @ {price} | PNL={pnl:+.6f} TON | {reason}", 
             "SELL" if pnl >= 0 else "ERROR"
         )
-        # ── Уведомляем AI Советника (триггер адаптации) ──────────────
+        # ── Аналитический буфер: событие закрытия позиции ────────────
         try:
-            from ai_advisor import notify_trade_closed
-            notify_trade_closed(pnl)
+            from analytics_buffer import analytics_buffer as _ab
+            _ab.push_trade("CLOSE", {
+                "price":        price,
+                "stake_ton":    trade.get("stake_ton", 0),
+                "pnl_ton":      pnl,
+                "pnl_pct":      trade.get("pnl_pct") or 0,
+                "regime":       trade.get("exit_regime") or trade.get("entry_regime") or "?",
+                "ai_conf":      trade.get("exit_ai_confidence") or trade.get("ai_confidence") or 0,
+                "close_reason": reason,
+                "dca_entries":  self.dca_entries_count,
+            })
         except Exception:
             pass
         return True
