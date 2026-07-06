@@ -51,9 +51,25 @@ def _split(X, y, w):
 
 def main():
     import db_store
+    # Если пул не поднялся при импорте (timeout на pghost.ru) — пробуем ещё раз.
+    # Сабпроцесс запускается редко (раз в 2 дня), поэтому можем позволить
+    # дополнительные 60с ожидания: 3 попытки × ~20с.
     if not db_store._available:
-        log.warning("БД недоступна — нечего переобучать, выходим")
-        return 1
+        import time as _time
+        log.warning("БД не подключилась при импорте — пробуем переподключиться (до 3 раз)")
+        for attempt in range(1, 4):
+            _time.sleep(attempt * 10)   # 10s, 20s, 30s
+            try:
+                with db_store._pool_lock:
+                    db_store._init_pool()
+            except Exception as e:
+                log.warning(f"Попытка {attempt}/3: {e}")
+            if db_store._available:
+                log.info("Переподключение успешно")
+                break
+        else:
+            log.error("БД недоступна после 3 попыток — выходим")
+            return 1
 
     examples = db_store.ai_examples_get_recent(WINDOW)
     if len(examples) < 30:

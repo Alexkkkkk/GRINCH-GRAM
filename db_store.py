@@ -174,26 +174,36 @@ def _init_pool():
     if not DATABASE_URL:
         logger.warning("[DB] DATABASE_URL не задан — работаем без PostgreSQL")
         return
-    try:
-        # LOW_MEMORY_MODE (Bothost 255MB): держим пул маленьким — каждое соединение
-        # psycopg2 добавляет ~4-8MB RSS + libpq буферы. 8 соединений вместо 16.
-        _max_conn = 8 if os.environ.get("LOW_MEMORY_MODE") == "1" else 16
-        p = psycopg2.pool.ThreadedConnectionPool(
-            minconn=2, maxconn=_max_conn,
-            dsn=DATABASE_URL,
-            connect_timeout=10,
-        )
-        with p.getconn() as conn:
+    # Внешняя БД (pghost.ru) может отвечать медленно под нагрузкой.
+    # Пробуем подключиться до 3 раз с увеличивающимся таймаутом (15→25→40с).
+    _timeouts = [15, 25, 40]
+    last_err = None
+    for attempt, timeout in enumerate(_timeouts, 1):
+        try:
+            _max_conn = 8 if os.environ.get("LOW_MEMORY_MODE") == "1" else 16
+            p = psycopg2.pool.ThreadedConnectionPool(
+                minconn=2, maxconn=_max_conn,
+                dsn=DATABASE_URL,
+                connect_timeout=timeout,
+            )
+            conn = p.getconn()
             with conn.cursor() as cur:
                 cur.execute(_DDL)
             conn.commit()
             p.putconn(conn)
-        _pool = p
-        _available = True
-        print("[DB] ✅ PostgreSQL подключён и схема готова")
-    except Exception as e:
-        print(f"[DB] ⚠️ Ошибка подключения к PostgreSQL: {e} — используем JSON-файлы")
-        _available = False
+            _pool = p
+            _available = True
+            print("[DB] ✅ PostgreSQL подключён и схема готова")
+            return
+        except Exception as e:
+            last_err = e
+            if attempt < len(_timeouts):
+                import time as _time
+                wait = attempt * 5
+                print(f"[DB] ⚠️ Попытка {attempt}/{len(_timeouts)} не удалась ({e}) — повтор через {wait}с")
+                _time.sleep(wait)
+    print(f"[DB] ⚠️ Ошибка подключения к PostgreSQL: {last_err} — используем JSON-файлы")
+    _available = False
 
 
 def is_available() -> bool:
