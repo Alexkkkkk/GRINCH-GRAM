@@ -441,31 +441,42 @@ def health():
     фоновый цикл не тикал дольше 90с (тик раз в 15с + запас на сеть/блокчейн)
     или последний тик завершился с ошибкой.
     """
+    # RSS всегда прикладываем к ответу — при следующем OOM на внешнем хостинге
+    # (Bothost и т.п.) в его логах health-check будет видно, сколько памяти
+    # процесс использовал прямо перед падением, а не только факт падения.
+    try:
+        rss_mb = round(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1024, 1)
+    except Exception:
+        rss_mb = None
+
     if not trader.running:
-        return jsonify({"status": "ok", "trader": "stopped"}), 200
+        return jsonify({"status": "ok", "trader": "stopped", "rss_mb": rss_mb}), 200
 
     now = time.time()
     age = now - (trader.last_tick_ts or 0)
     if trader.last_tick_ts == 0:
         # Ещё идёт предобучение AI перед первым тиком — это ожидаемо, не ошибка
-        return jsonify({"status": "ok", "trader": "starting"}), 200
+        return jsonify({"status": "ok", "trader": "starting", "rss_mb": rss_mb}), 200
     if age > 90:
         return jsonify({
             "status": "unhealthy",
             "reason": "trading loop stalled",
             "seconds_since_last_tick": round(age, 1),
+            "rss_mb": rss_mb,
         }), 503
     if trader.last_tick_ok is False:
         return jsonify({
             "status": "degraded",
             "reason": "last tick raised an error (see logs)",
             "seconds_since_last_tick": round(age, 1),
+            "rss_mb": rss_mb,
         }), 200
 
     return jsonify({
         "status": "ok",
         "trader": "running",
         "seconds_since_last_tick": round(age, 1),
+        "rss_mb": rss_mb,
     }), 200
 
 
