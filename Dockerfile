@@ -31,12 +31,17 @@ EXPOSE 3000
 
 # Health check: Bothost nginx начнёт роутить трафик только когда /health отвечает 200
 HEALTHCHECK --interval=15s --timeout=10s --start-period=60s --retries=3 \
-    CMD curl -f http://localhost:3000/health || exit 1
+    CMD curl -f http://localhost:${PORT:-3000}/health || exit 1
 
 # Gunicorn: 1 воркер + 4 треда — обязательно для Flask-SocketIO (async_mode=threading).
-# Тредов меньше (было 8) — каждый тред держит свой стек и локальные буферы,
-# на тарифе с жёсткой реальной квотой памяти это заметная доля RAM.
-# --max-requests: safety-сеть — воркер сам перезапускается после N запросов,
-# чтобы сбрасывать любой постепенный рост RAM (не даёт памяти "расползтись" за часы работы)
-CMD ["gunicorn", "--bind", "0.0.0.0:3000", "--workers", "1", "--threads", "4", "--timeout", "120", \
-     "--max-requests", "2000", "--max-requests-jitter", "200", "main:app"]
+# --worker-class gthread ОБЯЗАТЕЛЕН для Flask-SocketIO в threading-режиме.
+# Shell-форма CMD нужна чтобы $PORT раскрывался из env (Bothost передаёт порт через PORT).
+# --max-requests: воркер сам перезапускается после N запросов → сброс постепенного роста RAM.
+CMD gunicorn --bind 0.0.0.0:${PORT:-3000} \
+    --workers 1 \
+    --worker-class gthread \
+    --threads 4 \
+    --timeout 120 \
+    --max-requests 2000 \
+    --max-requests-jitter 200 \
+    main:app
