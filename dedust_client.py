@@ -19,6 +19,12 @@ from dedust import Asset, Factory, Pool, PoolType, JettonRoot
 from config import Config
 from price_feed import price_feed
 
+
+def _tc_headers() -> dict:
+    """Возвращает заголовки для TonCenter API (X-API-Key, если задан)."""
+    key = Config.TONCENTER_API_KEY
+    return {"X-API-Key": key} if key else {}
+
 log = logging.getLogger(__name__)
 
 # 1 TON = 1_000_000_000 нанотонов
@@ -69,7 +75,7 @@ def get_shared_balance(force: bool = False) -> dict:
     try:
         r = _HTTP.get(
             "https://toncenter.com/api/v2/getAddressBalance",
-            params={"address": wallet}, timeout=8,
+            params={"address": wallet}, headers=_tc_headers(), timeout=8,
         )
         if r.status_code == 429:
             hit_429 = True
@@ -101,7 +107,7 @@ def get_shared_balance(force: bool = False) -> dict:
             r = _HTTP.get(
                 "https://toncenter.com/api/v3/jetton/wallets",
                 params={"owner_address": wallet, "jetton_address": token, "limit": 1},
-                timeout=8,
+                headers=_tc_headers(), timeout=8,
             )
             if r.status_code == 429:
                 hit_429 = True
@@ -265,7 +271,7 @@ class DedustClient:
         try:
             r = _HTTP.get(
                 "https://toncenter.com/api/v2/getAddressBalance",
-                params={"address": wallet}, timeout=8,
+                params={"address": wallet}, headers=_tc_headers(), timeout=8,
             )
             result = r.json().get("result")
             if result is not None:
@@ -296,7 +302,7 @@ class DedustClient:
             r = _HTTP.get(
                 "https://toncenter.com/api/v3/jetton/wallets",
                 params={"owner_address": wallet, "jetton_address": token, "limit": 1},
-                timeout=8,
+                headers=_tc_headers(), timeout=8,
             )
             if r.status_code == 200:
                 wallets = r.json().get("jetton_wallets", [])
@@ -383,7 +389,7 @@ class DedustClient:
                     "jetton_address": Config.GRINCH_TOKEN_ADDRESS,
                     "limit": 1,
                 },
-                timeout=8,
+                headers=_tc_headers(), timeout=8,
             )
             wallets = r.json().get("jetton_wallets", [])
             if wallets:
@@ -426,7 +432,7 @@ class DedustClient:
                     "jetton_address": Config.GRINCH_TOKEN_ADDRESS,
                     "limit": 1,
                 },
-                timeout=6,
+                headers=_tc_headers(), timeout=6,
             )
             wallets = r.json().get("jetton_wallets", [])
             if wallets:

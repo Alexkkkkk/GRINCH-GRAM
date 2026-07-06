@@ -1,6 +1,6 @@
 """
 Мониторинг депозитов на платформенный кошелёк.
-Проверяет TonCenter API каждые 120 секунд (без ключа).
+Проверяет TonCenter API каждые 120 секунд (без ключа) или 30 секунд (с ключом).
 Когда в поле comment транзакции найден код пользователя (GG-XXXXXXXX),
 зачисляет сумму на его виртуальный баланс.
 
@@ -8,6 +8,7 @@
 TONTracker стартует через 5s, DepositMonitor через 65s — чтобы не совпадать
 и не нарушать rate-limit TonCenter (~1 req/s бесплатно).
 """
+import os
 import threading
 import logging
 import time
@@ -20,9 +21,13 @@ log = logging.getLogger(__name__)
 
 class DepositMonitor:
     TONCENTER    = "https://toncenter.com/api/v2"
-    POLL_SEC     = 120   # бесплатный план ≈ 1 req/s; 120s даёт хороший запас
     BACKOFF_MAX  = 600
     START_DELAY  = 65    # расфазировка с TONTracker (тот стартует через 5s)
+
+    @property
+    def POLL_SEC(self):
+        """30s с ключом, 120s без — чтобы не жечь бесплатный rate-limit."""
+        return 30 if os.getenv("TONCENTER_API_KEY") else 120
 
     def __init__(self, platform_address: str):
         self.address  = platform_address
@@ -53,8 +58,12 @@ class DepositMonitor:
     def _get(self, path: str, params: dict):
         qs  = urllib.parse.urlencode(params)
         url = f"{self.TONCENTER}/{path}?{qs}"
+        req = urllib.request.Request(url)
+        _key = os.getenv("TONCENTER_API_KEY", "")
+        if _key:
+            req.add_header("X-API-Key", _key)
         try:
-            with urllib.request.urlopen(url, timeout=12) as r:
+            with urllib.request.urlopen(req, timeout=12) as r:
                 self._backoff = 0
                 return json.loads(r.read())
         except urllib.error.HTTPError as e:

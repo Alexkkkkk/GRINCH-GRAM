@@ -4,6 +4,12 @@ import requests
 from http_client import SESSION as _HTTP
 from config import Config
 
+
+def _tc_headers() -> dict:
+    """Заголовки для TonCenter API (X-API-Key, если задан в TONCENTER_API_KEY)."""
+    key = Config.TONCENTER_API_KEY
+    return {"X-API-Key": key} if key else {}
+
 # Соответствие тикера → ID в CoinGecko (бесплатный API без ключа)
 COINGECKO_IDS = {
     "TON": "the-open-network",
@@ -191,7 +197,7 @@ class PriceFeed:
             r = _HTTP.post(
                 "https://toncenter.com/api/v2/runGetMethod",
                 json={"address": pool, "method": "get_pool_data", "stack": []},
-                headers={"Accept": "application/json"}, timeout=8,
+                headers={"Accept": "application/json", **_tc_headers()}, timeout=8,
             )
             d = r.json()
             res = d.get("result") or {}

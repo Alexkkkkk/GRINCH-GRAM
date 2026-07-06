@@ -312,6 +312,9 @@ class Config:
     GRINCH_POOL_ADDRESS = os.getenv("GRINCH_POOL_ADDRESS", "EQDpVwTQr53cwgaT_VCFsmrleg5fBvStTjMrvyvprF_ROC9Z")
     # Мнемоника TON-кошелька (24 слова через пробел) — хранить только в секретах!
     TON_MNEMONIC = os.getenv("TON_MNEMONIC", "")
+    # API-ключ TonCenter (опционально) — снимает rate-limit 429 на бесплатном плане.
+    # Получить: https://toncenter.com/  (бесплатный tier даёт 10 rps вместо 1 rps)
+    TONCENTER_API_KEY = os.getenv("TONCENTER_API_KEY", "")
 
     # ── Сигнал «умных денег» (мониторинг кошельков пула) ──────────────────
     # Бот наблюдает за всеми кошельками в пуле GRINCH и учится у прибыльных.
