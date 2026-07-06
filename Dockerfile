@@ -17,10 +17,12 @@ COPY . .
 # /app/data — персистентная папка Bothost (сохраняется между деплоями)
 RUN mkdir -p /app/data
 
-# LOW_MEMORY_MODE отключён: подтверждено 4 vCPU / 2GB RAM на контейнере —
-# этого достаточно для полного ансамбля из 7 моделей (RF/ET/GB/HGB/XGB/LGB/MLP).
-# Если снова начнутся OOM/SIGKILL — включить обратно ENV LOW_MEMORY_MODE=1.
-ENV LOW_MEMORY_MODE=0
+# ВРЕМЕННЫЙ ОТКАТ (2026-07-06): после включения полного ансамбля контейнер
+# на Bothost начал получать повторные SIGTERM от платформы и зависать —
+# несмотря на заявленные 4 vCPU/2GB, похоже реальная квота на этом тарифе
+# жёстче. Возвращаем экономный режим (3 модели) до выяснения с поддержкой
+# Bothost реального лимита памяти контейнера.
+ENV LOW_MEMORY_MODE=1
 ENV PORT=3000
 EXPOSE 3000
 
@@ -28,8 +30,10 @@ EXPOSE 3000
 HEALTHCHECK --interval=15s --timeout=10s --start-period=60s --retries=3 \
     CMD curl -f http://localhost:3000/health || exit 1
 
-# Gunicorn: 1 воркер + 8 тредов — обязательно для Flask-SocketIO (async_mode=threading).
+# Gunicorn: 1 воркер + 4 треда — обязательно для Flask-SocketIO (async_mode=threading).
+# Тредов меньше (было 8) — каждый тред держит свой стек и локальные буферы,
+# на тарифе с жёсткой реальной квотой памяти это заметная доля RAM.
 # --max-requests: safety-сеть — воркер сам перезапускается после N запросов,
 # чтобы сбрасывать любой постепенный рост RAM (не даёт памяти "расползтись" за часы работы)
-CMD ["gunicorn", "--bind", "0.0.0.0:3000", "--workers", "1", "--threads", "8", "--timeout", "120", \
+CMD ["gunicorn", "--bind", "0.0.0.0:3000", "--workers", "1", "--threads", "4", "--timeout", "120", \
      "--max-requests", "2000", "--max-requests-jitter", "200", "main:app"]
