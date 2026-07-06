@@ -25,8 +25,17 @@ GROQ_BASE_URL = "https://api.groq.com/openai/v1"
 GROQ_MODEL    = "llama-3.3-70b-versatile"
 
 # ── Параметры автономии ────────────────────────────────────────────────────
-AUTO_INTERVAL_MIN    = 3    # авто-запуск каждые N минут (было 5, стало чаще — активнее торговля)
+AUTO_INTERVAL_MIN    = 15   # авто-запуск каждые N минут (сеанс советника увеличен с 3 до 15 мин)
 AUTO_TRADES_TRIGGER  = 1    # авто-запуск после каждой закрытой сделки (было 3)
+
+# Восстанавливаем сохранённые настройки интервала (переживают перезапуск)
+try:
+    if _adv_sec.get("interval_min"):
+        AUTO_INTERVAL_MIN = max(5, min(120, int(_adv_sec["interval_min"])))
+    if _adv_sec.get("trades_trigger"):
+        AUTO_TRADES_TRIGGER = max(1, min(20, int(_adv_sec["trades_trigger"])))
+except Exception:
+    pass
 
 # ── Параметры которые советник МОЖЕТ менять → (мин, макс) ─────────────────
 TUNABLE = {
@@ -1299,6 +1308,18 @@ def set_config(interval_min: int = None, trades_trigger: int = None):
         AUTO_INTERVAL_MIN = max(5, min(120, int(interval_min)))
     if trades_trigger is not None:
         AUTO_TRADES_TRIGGER = max(1, min(20, int(trades_trigger)))
+    try:
+        from settings_store import update_section
+        update_section("advisor", {
+            "interval_min":   AUTO_INTERVAL_MIN,
+            "trades_trigger": AUTO_TRADES_TRIGGER,
+        })
+    except Exception as ex:
+        logger.warning(f"[Advisor] не удалось сохранить конфиг в settings_store: {ex}")
+    with _lock:
+        global _next_auto_run_ts
+        _next_auto_run_ts = time.time() + AUTO_INTERVAL_MIN * 60
+    logger.info(f"[Advisor] ⏱ Интервал сеанса → {AUTO_INTERVAL_MIN} мин, триггер сделок → {AUTO_TRADES_TRIGGER}")
     return {"interval_min": AUTO_INTERVAL_MIN, "trades_trigger": AUTO_TRADES_TRIGGER}
 
 
