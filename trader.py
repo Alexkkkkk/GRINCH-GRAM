@@ -27,6 +27,15 @@ class Trader:
             "start_balance":  10000.0,
         }
         self._thread = None
+        # ── Ручной выключатель торговли ──────────────────────────────────
+        # ВСЕГДА False при старте процесса (требование пользователя): бот
+        # анализирует рынок, показывает данные в дашборде, но НЕ совершает
+        # сделок, пока пользователь явно не включит торговлю кнопкой.
+        # Это НЕ то же самое, что exp.is_paused() (авто-пауза ИИ по просадке) —
+        # отдельный, полностью ручной флаг, не хранится как "включено" между
+        # перезапусками.
+        self.trading_enabled = False
+        self._last_disabled_log_ts = 0.0
         self.signal_callbacks = []
         self.on_training_progress = None
         # Сериализация закрытия позиций: не даём торговому циклу и ручному
@@ -174,6 +183,28 @@ class Trader:
         self.running = False
         self.training = False
         self.log("Торговый агент остановлен", "WARN")
+
+    # ──────────────────────────────────────────
+    # Ручной выключатель торговли (не путать с start/stop всего агента)
+    # ──────────────────────────────────────────
+    def enable_trading(self):
+        self.trading_enabled = True
+        self.log("🟢 Торговля ВКЛЮЧЕНА пользователем — бот может открывать/закрывать сделки", "INFO")
+
+    def disable_trading(self):
+        self.trading_enabled = False
+        self.log("🔴 Торговля ВЫКЛЮЧЕНА пользователем — бот приостановил все сделки", "WARN")
+
+    def _trading_disabled_guard(self) -> bool:
+        """True — торговля выключена, тик нужно пропустить (только логика сделок,
+        мониторинг/цены/дашборд продолжают работать как обычно)."""
+        if self.trading_enabled:
+            return False
+        now = time.time()
+        if now - self._last_disabled_log_ts >= 300:  # не чаще раза в 5 минут
+            self.log("⏸️ Торговля выключена (ручной переключатель) — сделки не выполняются", "INFO")
+            self._last_disabled_log_ts = now
+        return True
 
     # ──────────────────────────────────────────
     # Главный цикл
@@ -568,6 +599,9 @@ class Trader:
         4. После достижения цели и продажи всего: ждём отката 25-30%
            от максимальной цены, затем начинаем новый цикл.
         """
+        if self._trading_disabled_guard():
+            return
+
         from price_feed import price_feed
 
         price_usd = price_feed.get("GRINCH") or 0.0
@@ -1103,6 +1137,10 @@ class Trader:
     # Торговый тик
     # ──────────────────────────────────────────
     def _tick(self):
+        # ── Ручной выключатель торговли: блокирует ОБА режима (DCA и AI) ──
+        if self._trading_disabled_guard():
+            return
+
         # ── DCA режим: полностью заменяет AI-логику ─────────────────
         if Config.DCA_MODE:
             try:
@@ -2601,6 +2639,7 @@ class Trader:
 
         return {
             "running":       self.running,
+            "trading_enabled": self.trading_enabled,
             "training":      self.training,
             "demo_mode":     self.exchange.demo_mode,
             "symbol":        Config.SYMBOL,

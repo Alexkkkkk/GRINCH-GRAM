@@ -95,6 +95,7 @@
     <div class="ai-auto-pill" id="ai-auto-pill">🤖 AI АВТО</div>
     <button id="btn-start" class="btn btn-green btn-xs" onclick="startAgent()" {% if init_running %}style="display:none"{% endif %}>▶ Пуск</button>
     <button id="btn-stop"  class="btn btn-red   btn-xs" onclick="stopAgent()"  {% if not init_running %}style="display:none"{% endif %}>⏹ Стоп</button>
+    <button id="btn-trading-toggle" class="btn btn-xs" onclick="toggleTrading()" title="Разрешить/запретить боту совершать сделки">🔴 Торговля выкл</button>
     <a href="/logout" class="btn btn-tiny" style="text-decoration:none;display:inline-flex;align-items:center">⎋</a>
   </div>
 </header>

@@ -616,6 +616,16 @@ def api_stop():
     trader.stop()
     return jsonify({"ok": True, "message": "Агент остановлен"})
 
+@app.route("/api/trading/enable", methods=["POST"])
+def api_trading_enable():
+    trader.enable_trading()
+    return jsonify({"ok": True, "trading_enabled": True})
+
+@app.route("/api/trading/disable", methods=["POST"])
+def api_trading_disable():
+    trader.disable_trading()
+    return jsonify({"ok": True, "trading_enabled": False})
+
 @app.route("/api/trade/delete", methods=["POST"])
 def api_trade_delete():
     data = request.get_json(silent=True) or {}

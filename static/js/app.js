@@ -203,6 +203,9 @@ function updateUI(data) {
   badge.textContent = running ? "РАБОТАЕТ" : "ОСТАНОВЛЕН";
   badge.className = "badge " + (running ? "badge-running" : "badge-stopped");
   document.getElementById("demo-badge").style.display = data.demo_mode ? "" : "none";
+  if (typeof data.trading_enabled !== "undefined") {
+    updateTradingToggleBtn(data.trading_enabled);
+  }
 
   // Статистика
   document.getElementById("stat-total").textContent   = stats.total_trades || 0;
@@ -1139,6 +1142,32 @@ async function startAgent() {
 }
 async function stopAgent() {
   await fetch("/api/stop", {method:"POST"});
+}
+
+let _tradingEnabled = false;
+async function toggleTrading() {
+  const url = _tradingEnabled ? "/api/trading/disable" : "/api/trading/enable";
+  try {
+    const res  = await fetch(url, {method:"POST"});
+    const data = await res.json();
+    if (data.ok) updateTradingToggleBtn(data.trading_enabled);
+  } catch (e) {
+    console.error("Ошибка переключения торговли:", e);
+  }
+}
+function updateTradingToggleBtn(enabled) {
+  _tradingEnabled = !!enabled;
+  const btn = document.getElementById("btn-trading-toggle");
+  if (!btn) return;
+  if (_tradingEnabled) {
+    btn.textContent = "🟢 Торговля вкл";
+    btn.classList.add("btn-green");
+    btn.classList.remove("btn-red");
+  } else {
+    btn.textContent = "🔴 Торговля выкл";
+    btn.classList.add("btn-red");
+    btn.classList.remove("btn-green");
+  }
 }
 
 // ── Mobile Brain toggle ──────────────────────────────────────────
