@@ -270,15 +270,20 @@ class Trader:
         except Exception:
             pass
 
+    def _combined_open_trades(self):
+        """LONG + SHORT позиции вместе — единый список для сохранения/восстановления,
+        чтобы SHORT-позиции тоже переживали рестарт бота (раньше терялись)."""
+        return list(self.open_trades) + list(self.open_short_trades)
+
     def _sync_open_trades_to_db(self):
-        """Обновляет live-поля открытых позиций в PostgreSQL (раз в 60 сек)."""
+        """Обновляет live-поля открытых позиций (LONG + SHORT) в PostgreSQL (раз в 60 сек)."""
         try:
             from price_feed import price_feed
             import db_store
             if not db_store.is_available():
                 return
             grinch_ton = price_feed.get_grinch_ton_price() or 0.0
-            enriched   = self._enriched_open_trades(grinch_ton)
+            enriched   = self._enriched_open_trades(grinch_ton) + self._enriched_short_trades(grinch_ton)
             db_store.open_trades_save(enriched)
             self._last_db_sync_ts = time.time()
         except Exception:
@@ -349,7 +354,7 @@ class Trader:
             "INFO"
         )
         try:
-            self.exp.save_open_trades(self.open_trades)
+            self.exp.save_open_trades(self._combined_open_trades())
         except Exception:
             pass
 
@@ -1763,7 +1768,7 @@ class Trader:
         # АВТО-СОХРАНЕНИЕ: цена покупки + цель продажи на диск, чтобы после
         # перезапуска бот знал почём купил и не продал дешевле.
         try:
-            self.exp.save_open_trades(self.open_trades)
+            self.exp.save_open_trades(self._combined_open_trades())
         except Exception as e:  # noqa: BLE001
             self.log(f"Сохранение позиции: {e}", "WARN")
         self.log(
@@ -1936,6 +1941,10 @@ class Trader:
         }
         self.open_short_trades.append(trade)
         self.stats["total_trades"] += 1
+        try:
+            self.exp.save_open_trades(self._combined_open_trades())
+        except Exception as e:  # noqa: BLE001
+            self.log(f"Сохранение SHORT-позиции: {e}", "WARN")
 
         self.log(
             f"📉 SHORT открыт: продали {target_grinch:.2f} GRINCH @ ${price:.8f} "
@@ -2004,6 +2013,11 @@ class Trader:
         self.stats["total_pnl"] = round(self.stats["total_pnl"] + pnl_ton, 6)
         if pnl_ton > 0:
             self.stats["winning_trades"] += 1
+        try:
+            self.exp.save_open_trades(self._combined_open_trades())
+            self.exp.record_trade(dict(trade), self.stats, self.ai)
+        except Exception as e:  # noqa: BLE001
+            self.log(f"Сохранение закрытия SHORT: {e}", "WARN")
 
         emoji = "🟩" if pnl_ton >= 0 else "🟥"
         self.log(
@@ -2208,11 +2222,11 @@ class Trader:
         self.log(f"🗑 Позиция {trade_id} удалена вручную (без продажи)", "WARNING")
         try:
             import db_store
-            db_store.open_trades_save(self.open_trades)
+            db_store.open_trades_save(self._combined_open_trades())
         except Exception:
             pass
         try:
-            self.exp.save_open_trades(self.open_trades)
+            self.exp.save_open_trades(self._combined_open_trades())
         except Exception:
             pass
         return {"ok": True}
@@ -2385,7 +2399,7 @@ class Trader:
 
         # ── 4. Память + само-управление ИИ ───────────────────────────────
         try:
-            self.exp.save_open_trades(self.open_trades)   # позиция закрыта → обновляем диск
+            self.exp.save_open_trades(self._combined_open_trades())   # позиция закрыта → обновляем диск
             self.exp.record_trade(trade, self.stats, self.ai)
             from price_feed import price_feed
             self.exp.record_balance(

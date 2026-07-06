@@ -222,7 +222,12 @@ class ExperienceManager:
                         trader.stats[k] = stats[k]
             # ВОССТАНАВЛИВАЕМ открытые позиции: цена покупки + цель продажи —
             # чтобы после перезапуска бот знал почём купил и НЕ продал дешевле.
-            open_trades = [dict(t) for t in (self.data.get("open_trades") or [])]
+            all_open = [dict(t) for t in (self.data.get("open_trades") or [])]
+            # LONG и SHORT хранятся вместе в одной таблице (bot_open_trades) —
+            # разделяем их обратно по trade_type, иначе SHORT-позиции терялись
+            # при каждом рестарте бота.
+            open_trades       = [t for t in all_open if t.get("trade_type") != "short"]
+            open_short_trades = [t for t in all_open if t.get("trade_type") == "short"]
             self._apply_control_to_config()
             ctrl = self.data["control"]
         if open_trades:
@@ -233,11 +238,13 @@ class ExperienceManager:
             for t in open_trades:
                 if t.get("id") not in existing_ids:
                     trader.trades.append(dict(t))
+        if open_short_trades:
+            trader.open_short_trades = open_short_trades
         try:
             note = (
                 f"🧠 Память загружена: {len(self.data['trades'])} сделок"
-                + (f" | ⏳ {len(open_trades)} открытых позиций восстановлено"
-                   if open_trades else "")
+                + (f" | ⏳ {len(open_trades)} LONG восстановлено" if open_trades else "")
+                + (f" | 📉 {len(open_short_trades)} SHORT восстановлено" if open_short_trades else "")
                 + f" | порог={ctrl['min_conf']:.0f}% ставка={ctrl['trade_amount']:.3f} | "
                 f"{'⏸️ ПАУЗА' if ctrl['paused'] else '▶️ активна'}"
             )
@@ -246,6 +253,12 @@ class ExperienceManager:
                 trader.log(
                     f"   ↩️ Позиция: куплено {t.get('amount')} @ {t.get('entry_price')} "
                     f"→ продать не дешевле цели TP={t.get('take_profit')}",
+                    "INFO",
+                )
+            for t in open_short_trades:
+                trader.log(
+                    f"   ↩️ SHORT: продано {t.get('amount')} @ {t.get('entry_price')} "
+                    f"→ откупить не дороже TP={t.get('take_profit')}",
                     "INFO",
                 )
         except Exception:  # noqa: BLE001
