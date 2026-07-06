@@ -25,4 +25,7 @@ HEALTHCHECK --interval=15s --timeout=10s --start-period=60s --retries=3 \
     CMD curl -f http://localhost:3000/health || exit 1
 
 # Gunicorn: 1 воркер + 8 тредов — обязательно для Flask-SocketIO (async_mode=threading)
-CMD ["gunicorn", "--bind", "0.0.0.0:3000", "--workers", "1", "--threads", "8", "--timeout", "120", "main:app"]
+# --max-requests: safety-сеть — воркер сам перезапускается после N запросов,
+# чтобы сбрасывать любой постепенный рост RAM (не даёт памяти "расползтись" за часы работы)
+CMD ["gunicorn", "--bind", "0.0.0.0:3000", "--workers", "1", "--threads", "8", "--timeout", "120", \
+     "--max-requests", "2000", "--max-requests-jitter", "200", "main:app"]

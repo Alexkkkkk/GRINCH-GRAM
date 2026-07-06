@@ -34,6 +34,7 @@ import pandas as pd
 import threading
 import time
 import logging
+import gc
 from collections import deque
 
 from sklearn.ensemble import (
@@ -134,10 +135,10 @@ def _garman_klass_vol(o: np.ndarray, h: np.ndarray, l: np.ndarray, c: np.ndarray
 LOOK_AHEADS       = [3, 5, 8, 13]      # мульти-горизонт для 15м GRINCH (более длинный горизонт)
 ATR_LABEL_MULT    = 0.7                 # порог = 0.7 × ATR_pct (качественнее, меньше шума)
 CONFIRM_WEIGHT    = 15.0               # вес реальной сделки ×15 — доминирует над историей
-REPLAY_SIZE       = 2000               # больший буфер опыта
+REPLAY_SIZE       = 800                # буфер опыта уменьшен (было 2000) — меньше RAM на X_arr/y_arr при рефите
 ACCURACY_WINDOW   = 100                # длиннее окно = стабильнее веса моделей
 META_MIN_SAMPLES  = 8                  # мета-слой активируется раньше (с 8 сделок)
-RETRAIN_EVERY     = 2                  # переобучение максимум раз в N тиков (и только если пришли новые данные)
+RETRAIN_EVERY     = 4                  # переобучение максимум раз в N тиков (было 2) — реже пиковая нагрузка на RAM
 ANALYZE_CACHE_TTL = 12                  # сек — не пересчитывать 7 моделей повторно на тех же свечах
 KELLY_LOOKBACK    = 100                # стабильный Kelly на 100 сделках
 
@@ -643,35 +644,39 @@ class AIEngine:
     # ─────────────────────────────────────────────────────────────────────────
 
     def _build_models(self):
+        # v4.1: параметры моделей урезаны (меньше деревьев/итераций/слоёв) —
+        # RAM-оптимизация для хостинга с жёстким лимитом памяти (256-512MB).
+        # Точность падает незначительно, но пиковая память при обучении
+        # (самый частый источник OOM) снижается в 1.5-2 раза.
         self._slots = [
             _ModelSlot("RF", _make_pipeline(
                 RandomForestClassifier(
-                    n_estimators=300, max_depth=10, min_samples_split=3,
+                    n_estimators=150, max_depth=9, min_samples_split=3,
                     min_samples_leaf=2, max_features="sqrt",
                     class_weight="balanced", random_state=42, n_jobs=1)
             )),
             _ModelSlot("ET", _make_pipeline(
                 ExtraTreesClassifier(
-                    n_estimators=250, max_depth=9, min_samples_split=3,
+                    n_estimators=120, max_depth=8, min_samples_split=3,
                     class_weight="balanced", random_state=7, n_jobs=1)
             )),
             _ModelSlot("GB", _make_pipeline(
                 GradientBoostingClassifier(
-                    n_estimators=200, max_depth=5, learning_rate=0.03,
+                    n_estimators=100, max_depth=4, learning_rate=0.05,
                     subsample=0.75, min_samples_leaf=2, random_state=42)
             )),
         ]
         if _HAS_HGB:
             self._slots.append(_ModelSlot("HGB", Pipeline([
                 ("clf", HistGradientBoostingClassifier(
-                    max_iter=300, max_depth=7, learning_rate=0.03,
+                    max_iter=150, max_depth=6, learning_rate=0.05,
                     min_samples_leaf=5, l2_regularization=0.05, random_state=42))
             ])))
         if _HAS_XGB:
             self._slots.append(_ModelSlot("XGB", Pipeline([
                 ("scaler", StandardScaler()),
                 ("clf", XGBClassifier(
-                    n_estimators=400, max_depth=6, learning_rate=0.03,
+                    n_estimators=150, max_depth=5, learning_rate=0.05,
                     subsample=0.75, colsample_bytree=0.75, min_child_weight=2,
                     gamma=0.05, reg_alpha=0.1, reg_lambda=0.8,
                     eval_metric="mlogloss", verbosity=0,
@@ -682,19 +687,19 @@ class AIEngine:
             self._slots.append(_ModelSlot("LGB", Pipeline([
                 ("scaler", StandardScaler()),
                 ("clf", LGBMClassifier(
-                    n_estimators=500, max_depth=6, learning_rate=0.03,
-                    num_leaves=63, subsample=0.75, colsample_bytree=0.75,
+                    n_estimators=150, max_depth=5, learning_rate=0.05,
+                    num_leaves=31, subsample=0.75, colsample_bytree=0.75,
                     min_child_samples=5, reg_alpha=0.1, reg_lambda=0.8,
                     class_weight="balanced", verbosity=-1, random_state=42))
             ])))
-        # MLP v2: глубже + Dropout-эффект через higher alpha
+        # MLP v2: облегчённая сеть — было (256,128,64,32), теперь (64,32)
         self._slots.append(_ModelSlot("MLP", Pipeline([
             ("scaler", RobustScaler()),
             ("clf", MLPClassifier(
-                hidden_layer_sizes=(256, 128, 64, 32),
+                hidden_layer_sizes=(64, 32),
                 activation="relu", solver="adam",
                 alpha=5e-4, learning_rate="adaptive", learning_rate_init=0.001,
-                max_iter=500, early_stopping=True, n_iter_no_change=20,
+                max_iter=300, early_stopping=True, n_iter_no_change=15,
                 validation_fraction=0.15, random_state=42))
         ])))
         # Kelly trade history
@@ -770,6 +775,7 @@ class AIEngine:
             time.sleep(0.15)
             with self._lock:
                 slot.fit(X, y)
+            gc.collect()  # RAM: освобождаем временные буферы обучения дерева сразу после fit
             emit(f"model_{i}", start_pct + pct_per_step * 0.9,
                  f"{name_label} ✓", len(X))
             time.sleep(0.1)
@@ -1182,6 +1188,7 @@ class AIEngine:
                 slot.fit(X_arr, y_arr, sample_weight=w_arr)
             except Exception as e:
                 log.debug(f"[AI:{slot.name}] refit error: {e}")
+            gc.collect()  # RAM: старые деревья/веса модели освобождаются сразу, не ждём цикла GC
 
         self._trained = True
         self._new_confirms = 0
