@@ -1,3 +1,4 @@
+import os
 import threading
 import time
 from datetime import datetime
@@ -173,6 +174,14 @@ class Trader:
                 self.log(f"Ошибка в цикле: {e}", "ERROR")
                 self.last_tick_ts = time.time()
                 self.last_tick_ok = False
+            # На маломощных хостах (LOW_MEMORY_MODE) периодически отдаём ОС
+            # память, освобождённую GC (glibc malloc иначе держит её в аренах).
+            if os.getenv("LOW_MEMORY_MODE", "0") == "1":
+                try:
+                    from ai_engine import _release_memory
+                    _release_memory()
+                except Exception:
+                    pass
             time.sleep(15)
 
     def _record_equity(self):

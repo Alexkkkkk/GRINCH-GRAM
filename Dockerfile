@@ -17,6 +17,11 @@ COPY . .
 # /app/data — персистентная папка Bothost (сохраняется между деплоями)
 RUN mkdir -p /app/data
 
+# LOW_MEMORY_MODE: Bothost — жёсткий лимит RAM (был OOM/SIGKILL цикл).
+# Урезает AI-ансамбль до 3 моделей (RF+ET+GB, вместо 6) и включает
+# malloc_trim(0) после каждого fit(), чтобы освобождённая память реально
+# возвращалась ОС, а не оседала в аренах glibc malloc.
+ENV LOW_MEMORY_MODE=1
 ENV PORT=3000
 EXPOSE 3000
 

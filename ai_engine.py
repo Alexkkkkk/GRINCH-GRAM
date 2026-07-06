@@ -29,6 +29,8 @@ AI Engine v4 — QuantumBrain ULTRA: World-Class Self-Learning Trading AI for GR
   • Полная персистентность: PostgreSQL + experience.json
 """
 
+import os
+import ctypes
 import numpy as np
 import pandas as pd
 import threading
@@ -68,6 +70,28 @@ except Exception:
     _HAS_LGB = False
 
 log = logging.getLogger(__name__)
+
+# ─── Режим для маломощных хостов (Bothost и т.п.) ────────────────────────────
+# LOW_MEMORY_MODE=1 → урезанный ансамбль (3 модели вместо 6) + меньше буферов.
+# glibc malloc не всегда возвращает освобождённую gc.collect() память ОС —
+# добавляем malloc_trim(0), иначе RSS продолжает расти между переобучениями.
+LOW_MEMORY_MODE = os.getenv("LOW_MEMORY_MODE", "0") == "1"
+
+try:
+    _libc = ctypes.CDLL("libc.so.6")
+except Exception:
+    _libc = None
+
+
+def _release_memory():
+    """gc.collect() + malloc_trim(0) — реально отдаёт освобождённую память ОС
+    (без malloc_trim glibc может держать арены даже после gc.collect())."""
+    gc.collect()
+    if _libc is not None:
+        try:
+            _libc.malloc_trim(0)
+        except Exception:
+            pass
 
 
 # ─── Глобальные утилиты v4 ────────────────────────────────────────────────────
@@ -135,10 +159,10 @@ def _garman_klass_vol(o: np.ndarray, h: np.ndarray, l: np.ndarray, c: np.ndarray
 LOOK_AHEADS       = [3, 5, 8, 13]      # мульти-горизонт для 15м GRINCH (более длинный горизонт)
 ATR_LABEL_MULT    = 0.7                 # порог = 0.7 × ATR_pct (качественнее, меньше шума)
 CONFIRM_WEIGHT    = 15.0               # вес реальной сделки ×15 — доминирует над историей
-REPLAY_SIZE       = 800                # буфер опыта уменьшен (было 2000) — меньше RAM на X_arr/y_arr при рефите
+REPLAY_SIZE       = 300 if LOW_MEMORY_MODE else 800   # ещё меньше на маломощных хостах (Bothost)
 ACCURACY_WINDOW   = 100                # длиннее окно = стабильнее веса моделей
 META_MIN_SAMPLES  = 8                  # мета-слой активируется раньше (с 8 сделок)
-RETRAIN_EVERY     = 4                  # переобучение максимум раз в N тиков (было 2) — реже пиковая нагрузка на RAM
+RETRAIN_EVERY     = 8 if LOW_MEMORY_MODE else 4        # реже переобучение → реже пиковая нагрузка на RAM
 ANALYZE_CACHE_TTL = 12                  # сек — не пересчитывать 7 моделей повторно на тех же свечах
 KELLY_LOOKBACK    = 100                # стабильный Kelly на 100 сделках
 
@@ -648,6 +672,33 @@ class AIEngine:
         # RAM-оптимизация для хостинга с жёстким лимитом памяти (256-512MB).
         # Точность падает незначительно, но пиковая память при обучении
         # (самый частый источник OOM) снижается в 1.5-2 раза.
+        #
+        # LOW_MEMORY_MODE (Bothost и т.п.): всего 3 самые лёгкие модели
+        # (RF+ET+GB), без HGB/XGB/LGB/MLP — они держат в памяти сразу
+        # несколько полных копий обучающей выборки во время fit().
+        if LOW_MEMORY_MODE:
+            self._slots = [
+                _ModelSlot("RF", _make_pipeline(
+                    RandomForestClassifier(
+                        n_estimators=60, max_depth=7, min_samples_split=4,
+                        min_samples_leaf=2, max_features="sqrt",
+                        class_weight="balanced", random_state=42, n_jobs=1)
+                )),
+                _ModelSlot("ET", _make_pipeline(
+                    ExtraTreesClassifier(
+                        n_estimators=50, max_depth=6, min_samples_split=4,
+                        class_weight="balanced", random_state=7, n_jobs=1)
+                )),
+                _ModelSlot("GB", _make_pipeline(
+                    GradientBoostingClassifier(
+                        n_estimators=40, max_depth=3, learning_rate=0.08,
+                        subsample=0.7, min_samples_leaf=2, random_state=42)
+                )),
+            ]
+            self._kelly_wins: deque = deque(maxlen=KELLY_LOOKBACK)
+            self._kelly_pnls: deque = deque(maxlen=KELLY_LOOKBACK)
+            return
+
         self._slots = [
             _ModelSlot("RF", _make_pipeline(
                 RandomForestClassifier(
@@ -775,7 +826,7 @@ class AIEngine:
             time.sleep(0.15)
             with self._lock:
                 slot.fit(X, y)
-            gc.collect()  # RAM: освобождаем временные буферы обучения дерева сразу после fit
+            _release_memory()  # RAM: освобождаем временные буферы обучения дерева и отдаём память ОС
             emit(f"model_{i}", start_pct + pct_per_step * 0.9,
                  f"{name_label} ✓", len(X))
             time.sleep(0.1)
@@ -1188,7 +1239,7 @@ class AIEngine:
                 slot.fit(X_arr, y_arr, sample_weight=w_arr)
             except Exception as e:
                 log.debug(f"[AI:{slot.name}] refit error: {e}")
-            gc.collect()  # RAM: старые деревья/веса модели освобождаются сразу, не ждём цикла GC
+            _release_memory()  # RAM: старые деревья/веса модели освобождаются сразу и отдаются ОС
 
         self._trained = True
         self._new_confirms = 0
