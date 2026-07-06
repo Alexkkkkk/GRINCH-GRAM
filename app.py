@@ -84,12 +84,17 @@ if Compress is not None:
     Compress(app)
 def _resolve_secret_key():
     """Надёжный ключ сессий: env → постоянный файл → случайный.
-    Слабый зашитый ключ по умолчанию не используется (иначе cookie подделать)."""
+    Слабый зашитый ключ по умолчанию не используется (иначе cookie подделать).
+    Файл хранится в DATA_DIR (на Bothost = /app/data, переживает рестарт контейнера).
+    """
     import secrets as _secrets
     key = os.environ.get("SESSION_SECRET") or os.environ.get("SECRET_KEY")
     if key and key != "grinch-gram-secret-2024":
         return key
-    path = ".session_secret"
+    # Используем DATA_DIR (персистентный на Bothost) вместо рабочей директории
+    _data_dir = os.environ.get("DATA_DIR", os.path.join(os.path.dirname(os.path.abspath(__file__)), "data"))
+    os.makedirs(_data_dir, exist_ok=True)
+    path = os.path.join(_data_dir, ".session_secret")
     try:
         if os.path.exists(path):
             with open(path) as f:
@@ -333,13 +338,6 @@ def start_background():
             print(f"[Alerts] монитор не запущен: {_al_ex}")
 
 start_background()
-
-# ── AI Советник: запуск фонового потока автономии ──────────────────────────
-try:
-    from ai_advisor import start_background as _adv_start
-    _adv_start()
-except Exception as _adv_ex:
-    print(f"[Advisor] не запущен: {_adv_ex}")
 
 
 # ════════════════════════════════════════════════════════════════════════════

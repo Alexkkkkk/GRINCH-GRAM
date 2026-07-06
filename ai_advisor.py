@@ -701,7 +701,17 @@ def _build_snapshot(user_message: str = "") -> dict:
         from analytics_buffer import analytics_buffer as _ab
         n_ticks = _ab.tick_count()
         if n_ticks >= 3:
-            snap["analytics_buffer"] = _ab.get_advisor_summary(window=100)
+            # window=50 (~12 мин) вместо 100 — снижает объём токенов ~вдвое,
+            # устраняет Groq 413 (12000 TPM лимит бесплатного тарифа).
+            # Советник получает достаточно данных для решения (50×15с = 12.5 мин истории).
+            summary = _ab.get_advisor_summary(window=50)
+            # Обрезаем самые тяжёлые поля в ответе для экономии токенов
+            if isinstance(summary, dict):
+                if "recent_ticks" in summary:
+                    summary["recent_ticks"] = summary["recent_ticks"][-6:]  # только 6 последних
+                if isinstance(summary.get("price"), dict):
+                    summary["price"].pop("mini_candles", None)  # убираем мини-свечи из промпта
+            snap["analytics_buffer"] = summary
         else:
             snap["analytics_buffer"] = {
                 "status": f"накапливается данные: {n_ticks}/3 тиков получено",

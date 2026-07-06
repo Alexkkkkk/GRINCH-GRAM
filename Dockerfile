@@ -24,6 +24,9 @@ RUN mkdir -p /app/data
 # Bothost реального лимита памяти контейнера.
 ENV LOW_MEMORY_MODE=1
 ENV PORT=3000
+# Bothost: /app/data — персистентная директория (сохраняется между деплоями)
+# settings.json, session_secret и прочие рабочие файлы пишутся сюда
+ENV DATA_DIR=/app/data
 EXPOSE 3000
 
 # Health check: Bothost nginx начнёт роутить трафик только когда /health отвечает 200

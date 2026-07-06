@@ -123,6 +123,48 @@ class AnalyticsBuffer:
         if not ticks:
             return {"status": "данных пока нет — БД пуста или недоступна", "ticks": 0}
 
+        # ── Нормализация тиков: заполняем отсутствующие поля (старые/неполные записи) ─
+        def _norm(t: dict) -> dict:
+            """Гарантируем все ожидаемые поля — защита от KeyError на исторических данных."""
+            return {
+                "ts":          str(t.get("ts") or ""),
+                "p_usd":       _sf(t.get("p_usd")),
+                "p_ton":       _sf(t.get("p_ton")),
+                "rsi":         _sf(t.get("rsi"), 50.0),
+                "adx":         _sf(t.get("adx")),
+                "atr_pct":     _sf(t.get("atr_pct")),
+                "bb_pct":      _sf(t.get("bb_pct")),
+                "vol_ratio":   _sf(t.get("vol_ratio"), 1.0),
+                "macd_hist":   _sf(t.get("macd_hist")),
+                "stoch_rsi":   _sf(t.get("stoch_rsi"), 0.5),
+                "regime":      str(t.get("regime") or "?"),
+                "ai_sig":      str(t.get("ai_sig") or "HOLD"),
+                "ai_conf":     _sf(t.get("ai_conf")),
+                "prob_up":     _sf(t.get("prob_up")),
+                "prob_down":   _sf(t.get("prob_down")),
+                "var_ratio":   _sf(t.get("var_ratio"), 1.0),
+                "pump":        str(t.get("pump") or "NONE"),
+                "anomaly":     bool(t.get("anomaly")),
+                "mom":         str(t.get("mom") or "CALM"),
+                "bo":          str(t.get("bo") or "FLAT"),
+                "eq":          str(t.get("eq") or "?"),
+                "eq_score":    int(t.get("eq_score") or 0),
+                "sm":          _sf(t.get("sm")),
+                "sm_early":    bool(t.get("sm_early")),
+                "final":       str(t.get("final") or "HOLD"),
+                "blocked":     bool(t.get("blocked")),
+                "block_reason":str(t.get("block_reason") or "")[:50],
+                "pos":         int(t.get("pos") or 0),
+                "pnl_session": _sf(t.get("pnl_session")),
+                "ton_bal":     _sf(t.get("ton_bal")),
+                "liq_usd":     _sf(t.get("liq_usd")),
+                "dca_n":       int(t.get("dca_n") or 0),
+                "dca_avg_p":   _sf(t.get("dca_avg_p")),
+                "dca_pct":     _sf(t.get("dca_pct")),
+                "dca_ton":     _sf(t.get("dca_ton")),
+            }
+        ticks = [_norm(t) for t in ticks]
+
         n = len(ticks)
 
         # ── Ценовой ряд ───────────────────────────────────────────────────────

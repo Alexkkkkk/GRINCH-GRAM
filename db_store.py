@@ -151,8 +151,11 @@ def _init_pool():
         logger.warning("[DB] DATABASE_URL не задан — работаем без PostgreSQL")
         return
     try:
+        # LOW_MEMORY_MODE (Bothost 255MB): держим пул маленьким — каждое соединение
+        # psycopg2 добавляет ~4-8MB RSS + libpq буферы. 8 соединений вместо 16.
+        _max_conn = 8 if os.environ.get("LOW_MEMORY_MODE") == "1" else 16
         p = psycopg2.pool.ThreadedConnectionPool(
-            minconn=2, maxconn=16,
+            minconn=2, maxconn=_max_conn,
             dsn=DATABASE_URL,
             connect_timeout=10,
         )
