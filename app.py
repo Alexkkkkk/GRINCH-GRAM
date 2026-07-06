@@ -510,8 +510,8 @@ def api_memory():
     analytics_info = {}
     try:
         analytics_info = {
-            "ticks_buffer": len(getattr(analytics_buffer, "_ticks", []) or []),
-            "trades_buffer": len(getattr(analytics_buffer, "_trades", []) or []),
+            "ticks_stored": analytics_buffer.tick_count(),
+            "trades_closed_stored": analytics_buffer.trade_count(),
         }
     except Exception as e:
         analytics_info = {"error": str(e)}

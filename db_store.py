@@ -120,7 +120,20 @@ CREATE TABLE IF NOT EXISTS bot_ai_examples (
     created_at TIMESTAMP    DEFAULT NOW()
 );
 CREATE INDEX IF NOT EXISTS bot_ai_examples_created ON bot_ai_examples (created_at);
+
+-- Скользящая история рыночных тиков для AI-советника. Заменяет прежний
+-- in-memory analytics_buffer (deque, терялся при рестарте) — теперь снимки
+-- каждого тика переживают перезапуск бота. Таблица самоочищается в
+-- ticks_insert(), храня только последние TICKS_KEEP записей.
+CREATE TABLE IF NOT EXISTS bot_ticks (
+    id   BIGSERIAL    PRIMARY KEY,
+    ts   TIMESTAMP    NOT NULL DEFAULT NOW(),
+    data JSONB        NOT NULL
+);
+CREATE INDEX IF NOT EXISTS bot_ticks_ts ON bot_ticks (ts);
 """
+
+TICKS_KEEP = 3000
 
 
 # ── Инициализация пула ────────────────────────────────────────────────────────
@@ -306,6 +319,25 @@ def trades_count() -> int:
                 return row[0] if row else 0
     except Exception:
         return -1
+
+
+def trades_get_recent(limit: int = 30) -> list:
+    """Последние N закрытых сделок, НОВЫЕ ПЕРВЫМИ (DESC) — для AI-советника,
+    которому нужно "последнее сначала". Общие функции (trades_get_all) отдают
+    ASC — не путать порядок при использовании."""
+    if not _available:
+        return []
+    try:
+        with _conn() as conn:
+            with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+                cur.execute(
+                    "SELECT data FROM bot_trades ORDER BY closed_at DESC NULLS LAST LIMIT %s",
+                    (limit,)
+                )
+                return [row["data"] for row in cur.fetchall()]
+    except Exception as e:
+        logger.warning(f"[DB] trades_get_recent error: {e}")
+        return []
 
 
 def trades_bulk_insert(trades: list):
@@ -562,6 +594,66 @@ def ai_examples_count() -> int:
     except Exception as e:
         logger.warning(f"[DB] ai_examples_count error: {e}")
         return 0
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+#  TICKS (скользящая история рынка для AI-советника, замена analytics_buffer)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def ticks_insert(data: dict):
+    """Пишет один снимок тика в БД (переживает рестарт, в отличие от
+    прежнего in-memory буфера). Best-effort: ошибка не должна ронять цикл.
+    Самоочищается — оставляет только последние TICKS_KEEP записей."""
+    if not _available:
+        return
+    try:
+        import random
+        with _conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "INSERT INTO bot_ticks (data) VALUES (%s)",
+                    (_jdumps(data, ensure_ascii=False),)
+                )
+                if random.random() < 0.02:
+                    cur.execute("""
+                        DELETE FROM bot_ticks WHERE id NOT IN (
+                            SELECT id FROM bot_ticks ORDER BY id DESC LIMIT %s
+                        )
+                    """, (TICKS_KEEP,))
+    except Exception as e:
+        logger.warning(f"[DB] ticks_insert error: {e}")
+
+
+def ticks_get_recent(limit: int = 100) -> list:
+    """Последние N тиков в ХРОНОЛОГИЧЕСКОМ порядке (старые → новые), как
+    раньше отдавал analytics_buffer._ticks. Возвращает [] если БД недоступна."""
+    if not _available:
+        return []
+    try:
+        with _conn() as conn:
+            with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+                cur.execute(
+                    "SELECT data FROM bot_ticks ORDER BY id DESC LIMIT %s",
+                    (limit,)
+                )
+                rows = cur.fetchall()
+                return [row["data"] for row in reversed(rows)]
+    except Exception as e:
+        logger.warning(f"[DB] ticks_get_recent error: {e}")
+        return []
+
+
+def ticks_count() -> int:
+    if not _available:
+        return -1
+    try:
+        with _conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute("SELECT COUNT(*) FROM bot_ticks")
+                row = cur.fetchone()
+                return row[0] if row else 0
+    except Exception:
+        return -1
 
 
 # ═══════════════════════════════════════════════════════════════════════════════

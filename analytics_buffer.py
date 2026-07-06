@@ -1,10 +1,15 @@
 """
-analytics_buffer.py — Высокопроизводительный кольцевой буфер всей торговой аналитики.
+analytics_buffer.py — Аналитика торгового бота на основе PostgreSQL.
 
-Накапливает снимки каждого тика, событий сделок и сигналов AI.
-Метод get_advisor_summary() строит богатый контекст для Groq-советника,
-позволяя ему изучать ИСТОРИЮ рынка и корректировать параметры не вслепую,
-а на основе реальных данных за последние N минут.
+Раньше это был in-memory кольцевой буфер (deque), который полностью терял
+историю тиков и сделок при каждом рестарте процесса. Теперь тики пишутся
+в таблицу bot_ticks (db_store.py) и переживают перезапуск, а статистика по
+сделкам строится из постоянной таблицы bot_trades — единственного источника
+истины по закрытым сделкам (пишется из experience_manager.record_trade()).
+
+Публичный API сохранён без изменений (push_tick, get_advisor_summary,
+tick_count, ...), поэтому вызывающий код в trader.py/app.py/ai_advisor.py
+не пришлось менять — изменилась только реализация хранения.
 
 DeDust GRINCH: https://dedust.io/coins/EQA6G0uVERDZTkLNa0drWBna1F5TSbogy7UXEWU5ERHz4uJL
 Token address: EQA6G0uVERDZTkLNa0drWBna1F5TSbogy7UXEWU5ERHz4uJL
@@ -12,60 +17,34 @@ Token address: EQA6G0uVERDZTkLNa0drWBna1F5TSbogy7UXEWU5ERHz4uJL
 from __future__ import annotations
 
 import math
-import os
-import threading
 import logging
-from collections import deque
 from datetime import datetime
 from typing import Dict, List, Optional
 
+import db_store as _db
+
 logger = logging.getLogger(__name__)
-
-_LOW_MEM = os.getenv("LOW_MEMORY_MODE", "0") == "1"
-
-# ─── Размеры буферов ──────────────────────────────────────────────────────────
-# LOW_MEMORY_MODE: короче окно (~50 мин вместо ~100) — каждый tick-снимок это
-# несколько float/dict полей, при 400 записях набегает заметная доля RAM.
-TICK_BUFFER_SIZE  = 200 if _LOW_MEM else 400
-TRADE_BUFFER_SIZE = 60  if _LOW_MEM else 100
 
 GRINCH_DEDUST_URL  = "https://dedust.io/coins/EQA6G0uVERDZTkLNa0drWBna1F5TSbogy7UXEWU5ERHz4uJL"
 GRINCH_TOKEN_ADDR  = "EQA6G0uVERDZTkLNa0drWBna1F5TSbogy7UXEWU5ERHz4uJL"
 
+DEFAULT_TICK_WINDOW = 100
+TRADE_WINDOW         = 30
+
 
 class AnalyticsBuffer:
     """
-    Центральный хаб аналитики торгового бота GRINCH-GRAM.
-
-    Три кольцевых буфера:
-      • _ticks   — полный снимок рынка каждые ~15 сек
-      • _trades  — события открытия/закрытия/DCA-докупки
-
-    Метод get_advisor_summary() строит компактный, насыщенный контекст для
-    Groq-советника: тренды цены, распределение режимов, качество AI-сигналов,
-    DCA-прогресс, умные деньги, паттерны успешных входов.
+    Центральный хаб аналитики торгового бота GRINCH-GRAM — теперь без
+    собственного состояния в памяти. Тики читаются/пишутся через bot_ticks,
+    статистика по сделкам — через bot_trades (обе таблицы в PostgreSQL).
     """
-
-    def __init__(self):
-        self._lock   = threading.Lock()
-        self._ticks: deque  = deque(maxlen=TICK_BUFFER_SIZE)
-        self._trades: deque = deque(maxlen=TRADE_BUFFER_SIZE)
-        self._global_stats: Dict[str, int] = {
-            "total_ticks":         0,
-            "total_buy_signals":   0,
-            "total_sell_signals":  0,
-            "total_hold_signals":  0,
-            "total_blocked":       0,
-            "total_opens":         0,
-            "total_closes":        0,
-        }
 
     # ─── Публичный API записи ─────────────────────────────────────────────────
 
     def push_tick(self, data: dict) -> None:
         """
         Вызывается из trader._tick() / trader._tick_dca() каждый тик (≈15 сек).
-        Записывает полный снимок рыночного состояния.
+        Записывает полный снимок рыночного состояния в БД (bot_ticks).
         """
         entry = {
             "ts":             datetime.utcnow().strftime("%H:%M:%S"),
@@ -112,47 +91,21 @@ class AnalyticsBuffer:
             "dca_pct":        _sf(data.get("dca_profit_pct")),
             "dca_ton":        _sf(data.get("dca_profit_ton")),
         }
-        with self._lock:
-            self._ticks.append(entry)
-            gs = self._global_stats
-            gs["total_ticks"] += 1
-            sig = entry["final"]
-            if sig == "BUY":
-                gs["total_buy_signals"] += 1
-            elif sig == "SELL":
-                gs["total_sell_signals"] += 1
-            else:
-                gs["total_hold_signals"] += 1
-            if entry["blocked"]:
-                gs["total_blocked"] += 1
+        _db.ticks_insert(entry)
 
     def push_trade(self, event_type: str, data: dict) -> None:
         """
-        Вызывается при открытии/закрытии сделки.
-        event_type: "OPEN" | "CLOSE" | "DCA_BUY" | "DCA_SELL"
+        Оставлен для обратной совместимости вызовов из trader.py.
+        Реальная запись закрытых сделок уже происходит через
+        experience_manager.record_trade() → db_store.trades_upsert()
+        (таблица bot_trades), поэтому здесь дополнительного хранения не
+        требуется — no-op, чтобы не дублировать источники истины.
         """
-        entry = {
-            "ts":      datetime.utcnow().strftime("%H:%M:%S"),
-            "type":    event_type,
-            "price":   _sf(data.get("price")),
-            "stake":   _sf(data.get("stake_ton")),
-            "pnl_ton": _sf(data.get("pnl_ton")),
-            "pnl_pct": _sf(data.get("pnl_pct")),
-            "regime":  str(data.get("regime") or "?"),
-            "ai_conf": _sf(data.get("ai_conf")),
-            "reason":  str(data.get("close_reason") or ""),
-            "dca_n":   int(data.get("dca_entries") or 0),
-        }
-        with self._lock:
-            self._trades.append(entry)
-            if event_type in ("OPEN", "DCA_BUY"):
-                self._global_stats["total_opens"] += 1
-            elif event_type in ("CLOSE", "DCA_SELL"):
-                self._global_stats["total_closes"] += 1
+        return
 
     # ─── Аналитика для советника ──────────────────────────────────────────────
 
-    def get_advisor_summary(self, window: int = 100) -> dict:
+    def get_advisor_summary(self, window: int = DEFAULT_TICK_WINDOW) -> dict:
         """
         Компактный аналитический отчёт для Groq AI-советника.
         window — кол-во последних тиков (100 тиков ≈ 25 мин при 15-сек тике).
@@ -160,14 +113,15 @@ class AnalyticsBuffer:
         Возвращает структурированный dict со всеми ключевыми метриками:
         ценовой тренд, индикаторы, режимы, качество AI-сигналов, DCA-прогресс,
         умные деньги, история сделок и список последних 12 тиков.
+        Данные читаются из PostgreSQL (bot_ticks/bot_trades) — переживают
+        рестарт бота, в отличие от прежнего in-memory буфера.
         """
-        with self._lock:
-            ticks  = list(self._ticks)[-window:]
-            trades = list(self._trades)[-30:]
-            gs     = dict(self._global_stats)
+        ticks = _db.ticks_get_recent(window)
+        raw_trades = _db.trades_get_recent(TRADE_WINDOW)
+        trades = [_trade_from_db(t) for t in reversed(raw_trades)]  # ASC как раньше
 
         if not ticks:
-            return {"status": "буфер пустой — данных ещё нет", "ticks": 0}
+            return {"status": "данных пока нет — БД пуста или недоступна", "ticks": 0}
 
         n = len(ticks)
 
@@ -330,7 +284,7 @@ class AnalyticsBuffer:
                 "trend": "↑" if liq_vals[-1] > _mean(liq_vals[:len(liq_vals)//2] or liq_vals) else "↓",
             }
 
-        # ── История сделок из буфера ──────────────────────────────────────────
+        # ── История сделок из bot_trades (закрытые, ВСЕ по определению) ───────
         closed = [tr for tr in trades if tr["type"] in ("CLOSE", "DCA_SELL")]
         wins   = [tr for tr in closed if tr["pnl_ton"] > 0]
         losses = [tr for tr in closed if tr["pnl_ton"] <= 0]
@@ -386,7 +340,10 @@ class AnalyticsBuffer:
             "liquidity":      liq_block,
             "trade_stats":    trade_block,
             "recent_ticks":   recent,
-            "session_totals": gs,
+            "session_totals": {
+                "total_ticks": _db.ticks_count(),
+                "total_trades_closed": _db.trades_count(),
+            },
         }
 
     def get_full_summary(self, window: int = 200) -> dict:
@@ -394,16 +351,38 @@ class AnalyticsBuffer:
         return self.get_advisor_summary(window=window)
 
     def tick_count(self) -> int:
-        with self._lock:
-            return len(self._ticks)
+        return max(0, _db.ticks_count())
 
     def trade_count(self) -> int:
-        with self._lock:
-            return len(self._trades)
+        return max(0, _db.trades_count())
 
     def get_stats(self) -> dict:
-        with self._lock:
-            return dict(self._global_stats)
+        return {
+            "total_ticks": _db.ticks_count(),
+            "total_trades_closed": _db.trades_count(),
+        }
+
+
+# ─── Преобразование строки bot_trades в формат отчёта ─────────────────────────
+
+def _trade_from_db(t: dict) -> dict:
+    """Приводит сырой dict сделки из bot_trades к компактной форме, которую
+    раньше строил push_trade() для in-memory буфера."""
+    reason = str(t.get("close_reason") or t.get("reason") or "")
+    closed_at = str(t.get("closed_at") or "")
+    ts = closed_at[11:19] if len(closed_at) >= 19 else closed_at
+    return {
+        "ts":      ts,
+        "type":    "DCA_SELL" if "dca_target" in reason else "CLOSE",
+        "price":   _sf(t.get("exit_price")),
+        "stake":   _sf(t.get("stake_ton")),
+        "pnl_ton": _sf(t.get("pnl")),
+        "pnl_pct": _sf(t.get("pnl_pct")),
+        "regime":  str(t.get("exit_regime") or t.get("entry_regime") or "?"),
+        "ai_conf": _sf(t.get("exit_ai_confidence") or t.get("ai_confidence")),
+        "reason":  reason,
+        "dca_n":   int(t.get("dca_entries") or 0),
+    }
 
 
 # ─── Математические хелперы ───────────────────────────────────────────────────
@@ -461,5 +440,5 @@ def _mode(items: list) -> str:
     return max(counts, key=counts.get)
 
 
-# ─── Глобальный синглтон ──────────────────────────────────────────────────────
+# ─── Глобальный синглтон (сохранён для совместимости вызовов) ────────────────
 analytics_buffer: AnalyticsBuffer = AnalyticsBuffer()
