@@ -36,6 +36,14 @@ import psycopg2.pool
 logger = logging.getLogger(__name__)
 
 # ── БД: приоритет у внешней (EXTERNAL_DATABASE_URL), иначе Replit PostgreSQL (DATABASE_URL) ─────
+# ⚠️ ВАЖНО: секрет EXTERNAL_DATABASE_URL указывает на внешнюю БД пользователя
+# (pghost.ru, база "bothost_db_..."). Именно там хранятся ВСЕ настройки бота,
+# история сделок и опыт ИИ. НЕ МЕНЯТЬ / НЕ ПЕРЕЗАПИСЫВАТЬ этот секрет и не
+# убирать приоритет EXTERNAL_DATABASE_URL над DATABASE_URL — иначе бот молча
+# переключится на пустую служебную БД Replit и "потеряет" всю историю
+# (данные на pghost.ru при этом никуда не денутся, просто бот перестанет их
+# видеть). Сам секрет хранится в Replit Secrets, а не в коде — см. skill
+# environment-secrets, значение сюда никогда не вписывать.
 DATABASE_URL = os.environ.get("EXTERNAL_DATABASE_URL") or os.environ.get("DATABASE_URL")
 
 _pool: psycopg2.pool.ThreadedConnectionPool | None = None
