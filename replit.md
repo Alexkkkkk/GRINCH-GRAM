@@ -27,7 +27,8 @@ python3 main.py
 |---|---|
 | `SESSION_SECRET` | Секрет Flask-сессий |
 | `TON_MNEMONIC` | Мнемоника кошелька TON (для реальной торговли) |
-| `DATABASE_URL` | PostgreSQL строка подключения |
+| `DATABASE_URL` | PostgreSQL строка подключения (Replit, fallback) |
+| `EXTERNAL_DATABASE_URL` | Строка подключения к внешней PostgreSQL (приоритетна над `DATABASE_URL`) |
 | `ADMIN_USERNAME` | Логин для входа в дашборд |
 | `ADMIN_PASSWORD` | Пароль для входа в дашборд |
 | `GROQ_API_KEY` | Ключ Groq AI-советника (опционально, можно задать через дашборд) |

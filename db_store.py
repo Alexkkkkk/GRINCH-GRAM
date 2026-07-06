@@ -35,8 +35,8 @@ import psycopg2.pool
 
 logger = logging.getLogger(__name__)
 
-# ── БД берётся из переменной окружения DATABASE_URL (Replit PostgreSQL) ─────
-DATABASE_URL = os.environ.get("DATABASE_URL")
+# ── БД: приоритет у внешней (EXTERNAL_DATABASE_URL), иначе Replit PostgreSQL (DATABASE_URL) ─────
+DATABASE_URL = os.environ.get("EXTERNAL_DATABASE_URL") or os.environ.get("DATABASE_URL")
 
 _pool: psycopg2.pool.ThreadedConnectionPool | None = None
 _pool_lock = threading.Lock()
