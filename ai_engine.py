@@ -165,7 +165,8 @@ def _garman_klass_vol(o: np.ndarray, h: np.ndarray, l: np.ndarray, c: np.ndarray
 LOOK_AHEADS       = [3, 5, 8, 13]      # мульти-горизонт для 15м GRINCH (более длинный горизонт)
 ATR_LABEL_MULT    = 0.7                 # порог = 0.7 × ATR_pct (качественнее, меньше шума)
 CONFIRM_WEIGHT    = 15.0               # вес реальной сделки ×15 — доминирует над историей
-REPLAY_SIZE       = 300 if LOW_MEMORY_MODE else 800   # ещё меньше на маломощных хостах (Bothost)
+REPLAY_SIZE       = 200 if LOW_MEMORY_MODE else 800   # ещё меньше на маломощных хостах (Bothost)
+CONFIRMED_CAP     = 250 if LOW_MEMORY_MODE else None   # кап на буфер подтверждённых сделок (иначе растёт вечно)
 ACCURACY_WINDOW   = 100                # длиннее окно = стабильнее веса моделей
 META_MIN_SAMPLES  = 8                  # мета-слой активируется раньше (с 8 сделок)
 RETRAIN_EVERY     = 8 if LOW_MEMORY_MODE else 4        # реже переобучение → реже пиковая нагрузка на RAM
@@ -683,21 +684,24 @@ class AIEngine:
         # (RF+ET+GB), без HGB/XGB/LGB/MLP — они держат в памяти сразу
         # несколько полных копий обучающей выборки во время fit().
         if LOW_MEMORY_MODE:
+            # Дожатые до минимума размеры (было 60/50/40 деревьев) — каждое
+            # дерево меньше держит в памяти при fit(), пиковая RSS ниже.
+            # Точность падает незначительно (ансамбль усредняет 3 модели).
             self._slots = [
                 _ModelSlot("RF", _make_pipeline(
                     RandomForestClassifier(
-                        n_estimators=60, max_depth=7, min_samples_split=4,
+                        n_estimators=35, max_depth=6, min_samples_split=4,
                         min_samples_leaf=2, max_features="sqrt",
                         class_weight="balanced", random_state=42, n_jobs=1)
                 )),
                 _ModelSlot("ET", _make_pipeline(
                     ExtraTreesClassifier(
-                        n_estimators=50, max_depth=6, min_samples_split=4,
+                        n_estimators=30, max_depth=5, min_samples_split=4,
                         class_weight="balanced", random_state=7, n_jobs=1)
                 )),
                 _ModelSlot("GB", _make_pipeline(
                     GradientBoostingClassifier(
-                        n_estimators=40, max_depth=3, learning_rate=0.08,
+                        n_estimators=25, max_depth=3, learning_rate=0.09,
                         subsample=0.7, min_samples_leaf=2, random_state=42)
                 )),
             ]
@@ -1111,6 +1115,13 @@ class AIEngine:
             self._confirmed_X.append(self._last_buy_features.copy())
             self._confirmed_y.append(label)
             self._confirmed_w.append(weight)
+            # LOW_MEMORY_MODE: без кепа этот буфер растёт вечно (годы работы
+            # бота = тысячи сделок) — держим только последние CONFIRMED_CAP.
+            if CONFIRMED_CAP is not None and len(self._confirmed_X) > CONFIRMED_CAP:
+                excess = len(self._confirmed_X) - CONFIRMED_CAP
+                del self._confirmed_X[:excess]
+                del self._confirmed_y[:excess]
+                del self._confirmed_w[:excess]
             self._last_buy_features = None
             self._new_confirms += 1
 
@@ -1174,6 +1185,12 @@ class AIEngine:
                 self._confirmed_X = [np.array(x, dtype=float) for x in X]
                 self._confirmed_y = [int(v) for v in data.get("confirmed_y", [])]
                 self._confirmed_w = [float(v) for v in data.get("confirmed_w", [])]
+                # LOW_MEMORY_MODE: если на диске накопилось больше CONFIRMED_CAP
+                # (например, опыт до включения кепа) — обрезаем при восстановлении.
+                if CONFIRMED_CAP is not None and len(self._confirmed_X) > CONFIRMED_CAP:
+                    self._confirmed_X = self._confirmed_X[-CONFIRMED_CAP:]
+                    self._confirmed_y = self._confirmed_y[-CONFIRMED_CAP:]
+                    self._confirmed_w = self._confirmed_w[-CONFIRMED_CAP:]
                 acc = data.get("slot_acc", {}) or {}
                 for s in self._slots:
                     h = acc.get(s.name)

@@ -12,6 +12,7 @@ Token address: EQA6G0uVERDZTkLNa0drWBna1F5TSbogy7UXEWU5ERHz4uJL
 from __future__ import annotations
 
 import math
+import os
 import threading
 import logging
 from collections import deque
@@ -20,9 +21,13 @@ from typing import Dict, List, Optional
 
 logger = logging.getLogger(__name__)
 
+_LOW_MEM = os.getenv("LOW_MEMORY_MODE", "0") == "1"
+
 # ─── Размеры буферов ──────────────────────────────────────────────────────────
-TICK_BUFFER_SIZE  = 400   # ~100 мин при тике 15 сек (≈ сессионный контекст)
-TRADE_BUFFER_SIZE = 100   # последние 100 событий сделок (OPEN/CLOSE)
+# LOW_MEMORY_MODE: короче окно (~50 мин вместо ~100) — каждый tick-снимок это
+# несколько float/dict полей, при 400 записях набегает заметная доля RAM.
+TICK_BUFFER_SIZE  = 200 if _LOW_MEM else 400
+TRADE_BUFFER_SIZE = 60  if _LOW_MEM else 100
 
 GRINCH_DEDUST_URL  = "https://dedust.io/coins/EQA6G0uVERDZTkLNa0drWBna1F5TSbogy7UXEWU5ERHz4uJL"
 GRINCH_TOKEN_ADDR  = "EQA6G0uVERDZTkLNa0drWBna1F5TSbogy7UXEWU5ERHz4uJL"
