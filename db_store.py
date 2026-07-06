@@ -92,6 +92,21 @@ CREATE TABLE IF NOT EXISTS bot_wallet_meta (
     updated_at TIMESTAMP    DEFAULT NOW()
 );
 
+-- Тяжёлые модели (HGB/XGB/LGBM/MLP), убранные из "горячего" процесса ради RAM
+-- на LOW_MEMORY_MODE-хостах (Bothost). Обучаются ТОЛЬКО в изолированном
+-- сабпроцессе deep_retrain_worker.py (см. trader.py), который импортирует
+-- тяжёлые библиотеки в своём собственном процессе и завершается — вся его
+-- память возвращается ОС полностью, в отличие от gc.collect() в живом процессе.
+-- Основной процесс с этими моделями работает ТОЛЬКО через БД: читает готовый
+-- pickle-блоб отсюда (и то — лишь если разрешает LOW_MEMORY_MODE/хост).
+CREATE TABLE IF NOT EXISTS bot_ai_deep_models (
+    model_name VARCHAR(50)  PRIMARY KEY,
+    blob       BYTEA        NOT NULL,
+    accuracy   DOUBLE PRECISION,
+    n_examples INTEGER,
+    trained_at TIMESTAMP    DEFAULT NOW()
+);
+
 -- Полная история подтверждённых обучающих примеров ИИ — append-only, БЕЗ лимита.
 -- В отличие от оперативного буфера в памяти (ai_engine._confirmed_X, урезан
 -- ради RAM), сюда пишется КАЖДЫЙ пример без исключения. Раз в 2 дня фоновая
@@ -547,6 +562,75 @@ def ai_examples_count() -> int:
     except Exception as e:
         logger.warning(f"[DB] ai_examples_count error: {e}")
         return 0
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+#  DEEP MODELS (HGB/XGB/LGBM/MLP) — обучаются только в изолированном
+#  сабпроцессе deep_retrain_worker.py, хранятся ТОЛЬКО в БД (см. bot_ai_deep_models)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def deep_model_save(model_name: str, blob: bytes, accuracy: float, n_examples: int):
+    """Сохраняет обученный тяжёлый модель (pickle-блоб) в БД. Вызывается
+    ТОЛЬКО из deep_retrain_worker.py (отдельный процесс), никогда из живого
+    торгового процесса — так его RAM никогда не растёт от этих моделей."""
+    if not _available:
+        return
+    try:
+        with _conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute("""
+                    INSERT INTO bot_ai_deep_models (model_name, blob, accuracy, n_examples, trained_at)
+                    VALUES (%s, %s, %s, %s, NOW())
+                    ON CONFLICT (model_name) DO UPDATE SET
+                        blob = EXCLUDED.blob,
+                        accuracy = EXCLUDED.accuracy,
+                        n_examples = EXCLUDED.n_examples,
+                        trained_at = NOW()
+                """, (model_name, psycopg2.Binary(blob), float(accuracy), int(n_examples)))
+    except Exception as e:
+        logger.warning(f"[DB] deep_model_save({model_name}) error: {e}")
+
+
+def deep_models_load_all() -> dict:
+    """Возвращает {model_name: {"blob": bytes, "accuracy": float, "n_examples": int,
+    "trained_at": datetime}} для всех сохранённых тяжёлых моделей. Загружать в
+    оперативную память живого процесса можно ТОЛЬКО если хост подтверждённо
+    располагает запасом RAM (не на LOW_MEMORY_MODE)."""
+    if not _available:
+        return {}
+    try:
+        with _conn() as conn:
+            with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+                cur.execute("SELECT model_name, blob, accuracy, n_examples, trained_at FROM bot_ai_deep_models")
+                return {
+                    row["model_name"]: {
+                        "blob": bytes(row["blob"]),
+                        "accuracy": row["accuracy"],
+                        "n_examples": row["n_examples"],
+                        "trained_at": row["trained_at"],
+                    }
+                    for row in cur.fetchall()
+                }
+    except Exception as e:
+        logger.warning(f"[DB] deep_models_load_all error: {e}")
+        return {}
+
+
+def deep_models_meta() -> list:
+    """Лёгкая версия без блобов — для дашборда/статуса (не грузит модели в RAM)."""
+    if not _available:
+        return []
+    try:
+        with _conn() as conn:
+            with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+                cur.execute("""
+                    SELECT model_name, accuracy, n_examples, trained_at
+                    FROM bot_ai_deep_models ORDER BY model_name
+                """)
+                return [dict(row) for row in cur.fetchall()]
+    except Exception as e:
+        logger.warning(f"[DB] deep_models_meta error: {e}")
+        return []
 
 
 # ═══════════════════════════════════════════════════════════════════════════════

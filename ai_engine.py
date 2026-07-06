@@ -616,6 +616,60 @@ class _ModelSlot:
         return sum(self._history) / len(self._history)
 
 
+class _DeepModelSlot:
+    """Обёртка над тяжёлой моделью (HGB/XGB/LGBM/MLP), обученной в изолированном
+    сабпроцессе deep_retrain_worker.py и загруженной из БД (bot_ai_deep_models).
+
+    В отличие от `_ModelSlot`, никогда не переобучается в живом процессе —
+    только читает готовый pickle. Используется ТОЛЬКО когда хост подтверждённо
+    располагает запасом RAM (LOW_MEMORY_MODE=0), иначе эти модели остаются
+    исключительно в БД и не занимают память торгового процесса."""
+
+    def __init__(self, name: str, model, classes_sorted: list, uses_remap: bool,
+                 accuracy: float = 0.5):
+        self.name = f"{name}(db)"
+        self._model = model
+        self._classes_sorted = classes_sorted   # напр. [-1, 0, 1]
+        self._uses_remap = uses_remap           # XGB хранит классы 0..N-1
+        self.weight = max(0.15, (accuracy or 0.5) ** 2)
+        self._history = deque(maxlen=ACCURACY_WINDOW)
+
+    def fit(self, X, y, sample_weight=None):
+        pass  # переобучается только в сабпроцессе, не здесь
+
+    def predict_proba(self, X):
+        proba = self._model.predict_proba(X)
+        if self._uses_remap:
+            # proba столбцы уже в порядке classes_sorted (0..N-1 -> remap)
+            return proba
+        # для не-remap моделей столбцы соответствуют self._model.classes_,
+        # приводим к порядку classes_sorted для единообразия с _ModelSlot
+        model_classes = list(getattr(self._model, "classes_", self._classes_sorted))
+        if model_classes == self._classes_sorted:
+            return proba
+        out = np.zeros((proba.shape[0], len(self._classes_sorted)))
+        for i, c in enumerate(model_classes):
+            if c in self._classes_sorted:
+                out[:, self._classes_sorted.index(c)] = proba[:, i]
+        return out
+
+    @property
+    def classes_(self):
+        return np.array(self._classes_sorted)
+
+    def record(self, correct: bool):
+        self._history.append(1 if correct else 0)
+        if self._history:
+            acc = sum(self._history) / len(self._history)
+            self.weight = max(0.15, acc ** 2)
+
+    @property
+    def accuracy(self) -> float:
+        if not self._history:
+            return 0.5
+        return sum(self._history) / len(self._history)
+
+
 def _make_pipeline(clf):
     return Pipeline([("scaler", StandardScaler()), ("clf", clf)])
 
@@ -766,6 +820,51 @@ class AIEngine:
         # Kelly trade history
         self._kelly_wins:   deque = deque(maxlen=KELLY_LOOKBACK)
         self._kelly_pnls:   deque = deque(maxlen=KELLY_LOOKBACK)
+
+    def load_deep_models(self) -> int:
+        """Подгружает в живой ансамбль тяжёлые модели (HGB/XGB/LGBM/MLP),
+        обученные в изолированном сабпроцессе deep_retrain_worker.py и
+        сохранённые в БД (bot_ai_deep_models) — а не обучает их сама.
+
+        НАМЕРЕННО пропускается в LOW_MEMORY_MODE: сама распаковка pickle
+        требует, чтобы xgboost/lightgbm были импортированы в ЭТОМ процессе,
+        а именно этот импорт (не создание объекта) стоил тех же тысяч
+        мегабайт, что уронили Bothost ранее — см. память проекта. На хостах
+        без подтверждённого запаса RAM эти модели остаются только в БД.
+
+        Возвращает число успешно подгруженных моделей."""
+        if LOW_MEMORY_MODE:
+            log.info("[AI] deep-модели пропущены: LOW_MEMORY_MODE=1 (только в БД)")
+            return 0
+        try:
+            import db_store
+            import pickle
+        except Exception as e:
+            log.warning(f"[AI] load_deep_models: не удалось импортировать зависимости: {e}")
+            return 0
+
+        rows = db_store.deep_models_load_all()
+        if not rows:
+            return 0
+
+        with self._lock:
+            # убираем предыдущие deep-слоты (обновление свежими из БД)
+            self._slots = [s for s in self._slots if not isinstance(s, _DeepModelSlot)]
+            loaded = 0
+            for name, row in rows.items():
+                try:
+                    payload = pickle.loads(row["blob"])
+                    slot = _DeepModelSlot(
+                        name, payload["model"], payload["classes_sorted"],
+                        payload["uses_remap"], row.get("accuracy") or 0.5,
+                    )
+                    self._slots.append(slot)
+                    loaded += 1
+                except Exception as e:
+                    log.warning(f"[AI] load_deep_models({name}) error: {e}")
+        if loaded:
+            log.info(f"[AI] 📦 Подгружено {loaded} deep-моделей из БД в живой ансамбль")
+        return loaded
 
     # ─────────────────────────────────────────────────────────────────────────
     # Прогресс

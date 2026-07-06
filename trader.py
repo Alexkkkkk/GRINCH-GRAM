@@ -123,14 +123,52 @@ class Trader:
                     self.log("🔁 Запускаю глубокое переобучение ИИ на полной истории из БД...", "INFO")
                     ok = self.ai.deep_retrain_from_db(window=2000)
                     if ok:
-                        self.log("✅ Глубокое переобучение на истории из БД завершено", "INFO")
+                        self.log("✅ Глубокое переобучение (лёгкие модели) завершено", "INFO")
                 except Exception as e:
                     self.log(f"⚠️ Ошибка глубокого переобучения: {e}", "WARN")
+
+                # Тяжёлые модели (HGB/XGB/LGBM/MLP), убранные из "горячего"
+                # процесса ради RAM — обучаются ТОЛЬКО в изолированном
+                # сабпроцессе (свой PID, своя память ОС), результат кладётся
+                # в БД. Так их импорт xgboost/lightgbm никогда не раздувает
+                # RSS основного торгового процесса.
+                self._run_deep_model_subprocess()
+
                 time.sleep(self._DEEP_RETRAIN_INTERVAL_S)
 
         self._deep_retrain_thread = threading.Thread(
             target=_worker, daemon=True, name="deep-retrain")
         self._deep_retrain_thread.start()
+
+    def _run_deep_model_subprocess(self):
+        """Запускает deep_retrain_worker.py отдельным процессом ОС, ждёт его
+        завершения (обычно занимает минуты), затем — если хост подтверждённо
+        не в LOW_MEMORY_MODE — подгружает свежеобученные модели из БД в живой
+        ансамбль. На LOW_MEMORY_MODE-хостах модели остаются только в БД."""
+        import subprocess
+        import sys
+        try:
+            self.log("🧪 Обучаю тяжёлые модели (HGB/XGB/LGBM/MLP) в изолированном процессе...", "INFO")
+            result = subprocess.run(
+                [sys.executable, "deep_retrain_worker.py"],
+                cwd=os.path.dirname(os.path.abspath(__file__)) or ".",
+                capture_output=True, text=True, timeout=1800,
+            )
+            for line in (result.stdout or "").splitlines()[-20:]:
+                self.log(f"[deep-retrain] {line}", "INFO")
+            if result.returncode != 0:
+                for line in (result.stderr or "").splitlines()[-10:]:
+                    self.log(f"[deep-retrain][err] {line}", "WARN")
+                return
+            loaded = self.ai.load_deep_models()
+            if loaded:
+                self.log(f"✅ Тяжёлые модели обновлены и подгружены ({loaded} шт.)", "INFO")
+            else:
+                self.log("ℹ️ Тяжёлые модели обучены и сохранены в БД (не подгружены в живой процесс — LOW_MEMORY_MODE)", "INFO")
+        except subprocess.TimeoutExpired:
+            self.log("⚠️ Обучение тяжёлых моделей превысило лимит времени — прервано", "WARN")
+        except Exception as e:
+            self.log(f"⚠️ Ошибка запуска сабпроцесса глубокого обучения: {e}", "WARN")
 
     def stop(self):
         self.running = False
