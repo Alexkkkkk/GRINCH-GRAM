@@ -34,3 +34,4 @@
 - [AI inference caching](ai-inference-caching.md) — AIEngine.analyze() caches result by candle fingerprint (skip 7-model recompute if candles unchanged); retrain gated on data_changed, not just tick count.
 - [Advisor DEX snapshot](advisor-dex-snapshot.md) — ai_advisor snapshot has a `dex` section built from coin_info (buy/sell ratio, net recent flow) so the LLM can decide to trade more actively on real DeDust order flow.
 - [More-active-trading defaults](more-active-trading-defaults.md) — without GROQ_API_KEY the LLM advisor can't self-tune; "торговать активнее" must be applied by editing source defaults + settings_store directly, not just waiting for an advisor run.
+- [notify_trade_closed thread safety](notify-trade-closed-safety.md) — global _last_trade_data/_session_stats must be mutated under _lock; snapshot counters (e.g. dca_entries_count) BEFORE resetting them; emit ONE notify per close event (duplicate calls double session stats).

@@ -854,14 +854,28 @@ class Trader:
                     t.update(trade)
                     break
 
-        self.open_trades = []
+        # Снимаем dca_entries ПЕРЕД сбросом (иначе советник получит 0)
+        _dca_entries_snap = self.dca_entries_count
+        self.open_trades       = []
         self.dca_entries_count = 0
         self.dca_total_stake   = 0.0
 
-        # ── AI Советник: триггер после DCA-закрытия ──────────────────
+        # ── AI Советник: ОДИН триггер на закрытие DCA-цикла ──────────
         try:
             from ai_advisor import notify_trade_closed
-            notify_trade_closed(total_pnl)
+            _ai_snap = self.last_ai or {}
+            notify_trade_closed(total_pnl, {
+                "pnl_ton":      round(total_pnl, 4),
+                "stake_ton":    total_stake,
+                "pnl_pct":      round(portfolio_pct, 2),
+                "close_reason": f"dca_target_{portfolio_pct:.1f}pct",
+                "strategy":     "DCA",
+                "dca_entries":  _dca_entries_snap,
+                "exit_price":   price_usd,
+                "outcome":      "win" if total_pnl >= 0 else "loss",
+                "regime":       (_ai_snap.get("regime") or {}).get("name", "DCA"),
+                "ai_conf":      float(_ai_snap.get("confidence", 0) or 0),
+            })
         except Exception:
             pass
 
@@ -901,13 +915,7 @@ class Trader:
         except Exception:
             pass
 
-        # ── AI Советник: триггер после DCA-закрытия ──────────────────
-        try:
-            from ai_advisor import notify_trade_closed
-            notify_trade_closed(total_pnl)
-        except Exception:
-            pass
-
+        # (второй вызов notify убран — один notify на один DCA-цикл)
         return True
 
     # ──────────────────────────────────────────
@@ -2312,10 +2320,17 @@ class Trader:
         except Exception as e:
             self.log(f"Память/адаптация: {e}", "WARN")
 
-        # ── Уведомляем AI Советника (триггер адаптации) ──────────────
+        # ── Уведомляем AI Советника (триггер адаптации) — полный контекст ─
         try:
             from ai_advisor import notify_trade_closed
-            notify_trade_closed(pnl)
+            notify_trade_closed(pnl, {
+                **{k: trade.get(k) for k in (
+                    "pnl_pct", "stake_ton", "exit_price", "close_reason",
+                    "outcome", "duration_min", "exit_ai_confidence",
+                    "exit_ai_signal", "exit_regime", "exit_rsi", "exit_atr_pct",
+                )},
+                "strategy": "AI",
+            })
         except Exception:
             pass
 
