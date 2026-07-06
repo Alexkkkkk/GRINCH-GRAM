@@ -103,7 +103,34 @@ class Trader:
         self.running = True
         self._thread = threading.Thread(target=self._loop, daemon=True)
         self._thread.start()
+        self._start_deep_retrain_thread()
         self.log("Торговый агент запущен", "INFO")
+
+    _DEEP_RETRAIN_INTERVAL_S = 2 * 24 * 3600  # раз в 2 дня
+
+    def _start_deep_retrain_thread(self):
+        """Фоновый поток: раз в 2 дня переобучает модели на ПОЛНОЙ истории
+        из БД (bot_ai_examples), а не только на урезанном оперативном буфере
+        в памяти. Так экономный режим не теряет старые обучающие примеры —
+        они хоронятся в БД навсегда и периодически используются целиком."""
+        if getattr(self, "_deep_retrain_thread", None) is not None:
+            return
+
+        def _worker():
+            time.sleep(600)  # даём боту дособрать немного данных после старта
+            while self.running:
+                try:
+                    self.log("🔁 Запускаю глубокое переобучение ИИ на полной истории из БД...", "INFO")
+                    ok = self.ai.deep_retrain_from_db(window=2000)
+                    if ok:
+                        self.log("✅ Глубокое переобучение на истории из БД завершено", "INFO")
+                except Exception as e:
+                    self.log(f"⚠️ Ошибка глубокого переобучения: {e}", "WARN")
+                time.sleep(self._DEEP_RETRAIN_INTERVAL_S)
+
+        self._deep_retrain_thread = threading.Thread(
+            target=_worker, daemon=True, name="deep-retrain")
+        self._deep_retrain_thread.start()
 
     def stop(self):
         self.running = False

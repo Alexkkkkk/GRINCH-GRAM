@@ -91,6 +91,20 @@ CREATE TABLE IF NOT EXISTS bot_wallet_meta (
     value      TEXT,
     updated_at TIMESTAMP    DEFAULT NOW()
 );
+
+-- Полная история подтверждённых обучающих примеров ИИ — append-only, БЕЗ лимита.
+-- В отличие от оперативного буфера в памяти (ai_engine._confirmed_X, урезан
+-- ради RAM), сюда пишется КАЖДЫЙ пример без исключения. Раз в 2 дня фоновая
+-- задача (_deep_retrain_worker в trader.py) вытягивает отсюда большое окно
+-- и дообучает модели на полной истории, не раздувая постоянную RAM.
+CREATE TABLE IF NOT EXISTS bot_ai_examples (
+    id         BIGSERIAL    PRIMARY KEY,
+    features   JSONB        NOT NULL,
+    label      INTEGER      NOT NULL,
+    weight     DOUBLE PRECISION NOT NULL,
+    created_at TIMESTAMP    DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS bot_ai_examples_created ON bot_ai_examples (created_at);
 """
 
 
@@ -477,6 +491,62 @@ def ai_state_get_all() -> dict:
     except Exception as e:
         logger.warning(f"[DB] ai_state_get_all error: {e}")
         return {}
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+#  AI EXAMPLES (полная append-only история обучающих примеров, без лимита)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def ai_example_insert(features: list, label: int, weight: float):
+    """Пишет один обучающий пример НАВСЕГДА (без ротации/лимита) — источник
+    истины для глубокого переобучения раз в 2 дня. Best-effort: ошибка не
+    должна ронять основной торговый цикл."""
+    if not _available:
+        return
+    try:
+        with _conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute("""
+                    INSERT INTO bot_ai_examples (features, label, weight)
+                    VALUES (%s, %s, %s)
+                """, (_jdumps(list(map(float, features))), int(label), float(weight)))
+    except Exception as e:
+        logger.warning(f"[DB] ai_example_insert error: {e}")
+
+
+def ai_examples_get_recent(limit: int = 2000) -> list:
+    """Последние N примеров (по времени), для глубокого переобучения на
+    полной истории. Возвращает [] если БД недоступна."""
+    if not _available:
+        return []
+    try:
+        with _conn() as conn:
+            with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+                cur.execute("""
+                    SELECT features, label, weight FROM bot_ai_examples
+                    ORDER BY id DESC LIMIT %s
+                """, (limit,))
+                rows = cur.fetchall()
+                return [
+                    {"features": row["features"], "label": row["label"], "weight": row["weight"]}
+                    for row in reversed(rows)
+                ]
+    except Exception as e:
+        logger.warning(f"[DB] ai_examples_get_recent error: {e}")
+        return []
+
+
+def ai_examples_count() -> int:
+    if not _available:
+        return 0
+    try:
+        with _conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute("SELECT COUNT(*) FROM bot_ai_examples")
+                return int(cur.fetchone()[0])
+    except Exception as e:
+        logger.warning(f"[DB] ai_examples_count error: {e}")
+        return 0
 
 
 # ═══════════════════════════════════════════════════════════════════════════════

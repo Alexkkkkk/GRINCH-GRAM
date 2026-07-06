@@ -1115,8 +1115,17 @@ class AIEngine:
             self._confirmed_X.append(self._last_buy_features.copy())
             self._confirmed_y.append(label)
             self._confirmed_w.append(weight)
+            # Полная история — НАВСЕГДА, в БД (не урезается). Оперативный буфер
+            # в памяти ниже урезается ради RAM, но ни один пример не теряется:
+            # раз в 2 дня _deep_retrain() подтягивает всю историю из БД обратно.
+            try:
+                import db_store
+                db_store.ai_example_insert(self._last_buy_features.tolist(), label, weight)
+            except Exception as e:
+                log.debug(f"[AI] ai_example_insert error: {e}")
             # LOW_MEMORY_MODE: без кепа этот буфер растёт вечно (годы работы
-            # бота = тысячи сделок) — держим только последние CONFIRMED_CAP.
+            # бота = тысячи сделок) — держим только последние CONFIRMED_CAP
+            # в оперативной памяти (полная история уже сохранена в БД выше).
             if CONFIRMED_CAP is not None and len(self._confirmed_X) > CONFIRMED_CAP:
                 excess = len(self._confirmed_X) - CONFIRMED_CAP
                 del self._confirmed_X[:excess]
@@ -1217,6 +1226,66 @@ class AIEngine:
             except Exception as e:
                 log.warning(f"[AI] import_experience error: {e}")
                 return 0
+
+    def deep_retrain_from_db(self, window: int = 2000):
+        """Глубокое переобучение на ПОЛНОЙ истории из БД (bot_ai_examples),
+        не только на урезанном оперативном буфере в памяти.
+
+        Вызывается редко (раз в 2 дня, из фонового потока в trader.py) —
+        временный всплеск RAM на время fit() ожидаем и приемлем, т.к. не
+        держится постоянно: после обучения большие массивы X/y/w удаляются,
+        а живой оперативный буфер (_confirmed_X) остаётся урезанным как обычно.
+        """
+        try:
+            import db_store
+        except Exception as e:
+            log.warning(f"[AI] deep_retrain: db_store недоступен ({e})")
+            return False
+
+        examples = db_store.ai_examples_get_recent(window)
+        if len(examples) < META_MIN_SAMPLES:
+            log.info(f"[AI] deep_retrain: в БД всего {len(examples)} примеров — пропуск")
+            return False
+
+        X_arr = np.array([e["features"] for e in examples], dtype=float)
+        y_arr = np.array([e["label"] for e in examples], dtype=int)
+        w_arr = np.array([e["weight"] for e in examples], dtype=float)
+
+        with self._lock:
+            if X_arr.shape[1] != len(self._feature_names):
+                log.warning(
+                    f"[AI] deep_retrain: признаков в БД {X_arr.shape[1]} ≠ "
+                    f"текущих {len(self._feature_names)} — пропуск (набор признаков менялся)"
+                )
+                return False
+
+            w_arr = w_arr / (w_arr.mean() + 1e-10)
+            classes = np.unique(y_arr)
+            if len(classes) < 2:
+                log.info("[AI] deep_retrain: недостаточно классов — пропуск")
+                return False
+
+            for slot in self._slots:
+                try:
+                    slot.fit(X_arr, y_arr, sample_weight=w_arr)
+                except Exception as e:
+                    log.debug(f"[AI:{slot.name}] deep_retrain fit error: {e}")
+                _release_memory()
+
+            try:
+                self._try_fit_meta_confirmed()
+            except Exception as e:
+                log.debug(f"[AI] deep_retrain meta error: {e}")
+
+            self._trained = True
+
+        # Большие временные массивы выходят из области видимости здесь и
+        # освобождаются gc — постоянная RAM возвращается к обычному уровню.
+        del X_arr, y_arr, w_arr
+        _release_memory()
+
+        log.info(f"[AI] 🔁 Глубокое переобучение завершено на {len(examples)} примерах из БД (окно={window})")
+        return True
 
     # ─────────────────────────────────────────────────────────────────────────
     # Внутренние методы: обучение
