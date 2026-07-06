@@ -29,8 +29,10 @@ EXPOSE 3000
 HEALTHCHECK --interval=15s --timeout=10s --start-period=60s --retries=3 \
     CMD curl -f http://localhost:3000/health || exit 1
 
-# Gunicorn: 1 воркер + 8 тредов — обязательно для Flask-SocketIO (async_mode=threading)
+# Gunicorn: 1 воркер + 4 треда — обязательно для Flask-SocketIO (async_mode=threading).
+# Тредов меньше, чем на обычном хосте (было 8) — каждый тред Python держит свой
+# стек и локальные буферы, на 256-512MB хосте это заметная доля RAM.
 # --max-requests: safety-сеть — воркер сам перезапускается после N запросов,
 # чтобы сбрасывать любой постепенный рост RAM (не даёт памяти "расползтись" за часы работы)
-CMD ["gunicorn", "--bind", "0.0.0.0:3000", "--workers", "1", "--threads", "8", "--timeout", "120", \
+CMD ["gunicorn", "--bind", "0.0.0.0:3000", "--workers", "1", "--threads", "4", "--timeout", "120", \
      "--max-requests", "2000", "--max-requests-jitter", "200", "main:app"]

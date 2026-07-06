@@ -117,7 +117,10 @@ class Trader:
         self.training = True
         self.log("🧠 Начинаю предобучение AI модели...", "INFO")
         try:
-            ohlcv = self.exchange.get_ohlcv(limit=300)
+            # LOW_MEMORY_MODE (Bothost и т.п.): меньше свечей → меньше признаков
+            # и меньше пиковая память при обучении 3 моделей на старте.
+            _pretrain_limit = 150 if os.getenv("LOW_MEMORY_MODE", "0") == "1" else 300
+            ohlcv = self.exchange.get_ohlcv(limit=_pretrain_limit)
             self.ai.pretrain(ohlcv, on_progress=self._emit_progress)
         except Exception as e:
             self.log(f"⚠️ Ошибка предобучения: {e}", "WARN")

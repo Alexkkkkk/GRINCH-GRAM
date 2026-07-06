@@ -51,31 +51,37 @@ from sklearn.pipeline import Pipeline
 import warnings
 warnings.filterwarnings("ignore")
 
-try:
-    from sklearn.ensemble import HistGradientBoostingClassifier
-    _HAS_HGB = True
-except ImportError:
-    _HAS_HGB = False
-
-try:
-    from xgboost import XGBClassifier
-    _HAS_XGB = True
-except Exception:
-    _HAS_XGB = False
-
-try:
-    from lightgbm import LGBMClassifier
-    _HAS_LGB = True
-except Exception:
-    _HAS_LGB = False
-
-log = logging.getLogger(__name__)
-
 # ─── Режим для маломощных хостов (Bothost и т.п.) ────────────────────────────
 # LOW_MEMORY_MODE=1 → урезанный ансамбль (3 модели вместо 6) + меньше буферов.
 # glibc malloc не всегда возвращает освобождённую gc.collect() память ОС —
 # добавляем malloc_trim(0), иначе RSS продолжает расти между переобучениями.
+# ВАЖНО: в LOW_MEMORY_MODE даже НЕиспользуемые модели (HGB/XGB/LGB) не должны
+# импортироваться — сам импорт xgboost/lightgbm занимает десятки МБ RSS,
+# даже если ни одна модель этого типа никогда не создаётся и не обучается.
 LOW_MEMORY_MODE = os.getenv("LOW_MEMORY_MODE", "0") == "1"
+
+if LOW_MEMORY_MODE:
+    _HAS_HGB = _HAS_XGB = _HAS_LGB = False
+else:
+    try:
+        from sklearn.ensemble import HistGradientBoostingClassifier
+        _HAS_HGB = True
+    except ImportError:
+        _HAS_HGB = False
+
+    try:
+        from xgboost import XGBClassifier
+        _HAS_XGB = True
+    except Exception:
+        _HAS_XGB = False
+
+    try:
+        from lightgbm import LGBMClassifier
+        _HAS_LGB = True
+    except Exception:
+        _HAS_LGB = False
+
+log = logging.getLogger(__name__)
 
 try:
     _libc = ctypes.CDLL("libc.so.6")
