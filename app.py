@@ -1,6 +1,8 @@
 import json
 import math
 import os
+import gc
+import resource
 import numpy as np
 from flask import Flask, render_template, jsonify, request, session, redirect, url_for
 from flask.json.provider import DefaultJSONProvider
@@ -21,6 +23,8 @@ from database import db
 from trader import Trader
 from ton_tracker import TONTracker
 from coin_info import coin_info
+from price_feed import price_feed
+from analytics_buffer import analytics_buffer
 
 log = logging.getLogger(__name__)
 
@@ -462,6 +466,72 @@ def health():
         "status": "ok",
         "trader": "running",
         "seconds_since_last_tick": round(age, 1),
+    }), 200
+
+
+@app.route("/api/memory")
+def api_memory():
+    """
+    Диагностика потребления RAM по компонентам — чтобы при следующем
+    инциденте (OOM на внешнем хостинге) сразу видеть, что именно раздуто:
+    модели AI, буферы опыта, кэши цен/аналитики или количество потоков.
+    Не требует psutil — используется resource.getrusage (встроен в Python).
+    """
+    rss_kb = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
+    rss_mb = round(rss_kb / 1024, 1)  # на Linux ru_maxrss уже в КБ
+
+    ai = getattr(trader, "ai", None)
+    ai_info = {}
+    if ai is not None:
+        try:
+            slots = getattr(ai, "_slots", []) or []
+            ai_info = {
+                "models": [s.name for s in slots],
+                "models_count": len(slots),
+                "replay_buffer_size": len(getattr(ai, "_replay_X", []) or []),
+                "confirmed_trades_buffer": len(getattr(ai, "_confirmed_X", []) or []),
+                "retrains_since_start": getattr(ai, "_retrains", 0),
+                "trained": bool(getattr(ai, "_trained", False)),
+            }
+        except Exception as e:
+            ai_info = {"error": str(e)}
+
+    analytics_info = {}
+    try:
+        analytics_info = {
+            "ticks_buffer": len(getattr(analytics_buffer, "_ticks", []) or []),
+            "trades_buffer": len(getattr(analytics_buffer, "_trades", []) or []),
+        }
+    except Exception as e:
+        analytics_info = {"error": str(e)}
+
+    cache_info = {}
+    try:
+        cache_info = {
+            "price_feed_cache_entries": len(getattr(price_feed, "_cache", {}) or {}),
+            "coin_info_market_cache":   len(getattr(coin_info, "_market_cache", {}) or {}),
+            "coin_info_trades_cache":   len(getattr(coin_info, "_trades_cache", {}) or {}),
+            "coin_info_pool_cache":     len(getattr(coin_info, "_pool_cache", {}) or {}),
+            "coin_info_exch_cache":     len(getattr(coin_info, "_exch_cache", {}) or {}),
+        }
+    except Exception as e:
+        cache_info = {"error": str(e)}
+
+    gc_info = {
+        "gc_objects_tracked": len(gc.get_objects()),
+        "gc_generation_counts": gc.get_count(),
+    }
+
+    return jsonify({
+        "process": {
+            "rss_mb": rss_mb,
+            "active_threads": threading.active_count(),
+            "thread_names": [t.name for t in threading.enumerate()],
+        },
+        "ai_engine": ai_info,
+        "analytics_buffer": analytics_info,
+        "caches": cache_info,
+        "gc": gc_info,
     }), 200
 
 
