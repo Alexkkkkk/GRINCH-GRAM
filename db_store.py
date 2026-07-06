@@ -139,9 +139,33 @@ CREATE TABLE IF NOT EXISTS bot_ticks (
     data JSONB        NOT NULL
 );
 CREATE INDEX IF NOT EXISTS bot_ticks_ts ON bot_ticks (ts);
+
+-- Полная история снимков кошелька: TON + GRINCH баланс, цены, P&L,
+-- цена входа. Самоочищается — хранит последние WALLET_SNAP_KEEP записей.
+-- Источник данных для дашборда «Кошелёк»: текущий баланс, история, аналитика.
+CREATE TABLE IF NOT EXISTS bot_wallet_snapshots (
+    id                BIGSERIAL         PRIMARY KEY,
+    ts                TIMESTAMP         NOT NULL DEFAULT NOW(),
+    ton_balance       DOUBLE PRECISION,
+    grinch_balance    DOUBLE PRECISION,
+    grinch_price_ton  DOUBLE PRECISION,
+    grinch_price_usd  DOUBLE PRECISION,
+    ton_price_usd     DOUBLE PRECISION,
+    grinch_value_ton  DOUBLE PRECISION,
+    grinch_value_usd  DOUBLE PRECISION,
+    total_equity_ton  DOUBLE PRECISION,
+    total_equity_usd  DOUBLE PRECISION,
+    entry_price_ton   DOUBLE PRECISION,
+    entry_price_usd   DOUBLE PRECISION,
+    pnl_ton           DOUBLE PRECISION,
+    pnl_pct           DOUBLE PRECISION,
+    pnl_usd           DOUBLE PRECISION
+);
+CREATE INDEX IF NOT EXISTS bot_wallet_snapshots_ts ON bot_wallet_snapshots (ts);
 """
 
 TICKS_KEEP = 3000
+WALLET_SNAP_KEEP = 5000
 
 
 # ── Инициализация пула ────────────────────────────────────────────────────────
@@ -665,6 +689,132 @@ def ticks_count() -> int:
                 return row[0] if row else 0
     except Exception:
         return -1
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+#  WALLET SNAPSHOTS (полная история баланса TON + GRINCH с ценами и P&L)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def wallet_snapshot_insert(snap: dict):
+    """Сохраняет снимок кошелька (TON + GRINCH + P&L) в БД. Best-effort.
+    Самоочищается: раз в ~5% вставок удаляет старые записи сверх WALLET_SNAP_KEEP."""
+    if not _available:
+        return
+    try:
+        import random
+        with _conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute("""
+                    INSERT INTO bot_wallet_snapshots
+                        (ts, ton_balance, grinch_balance, grinch_price_ton, grinch_price_usd,
+                         ton_price_usd, grinch_value_ton, grinch_value_usd,
+                         total_equity_ton, total_equity_usd,
+                         entry_price_ton, entry_price_usd, pnl_ton, pnl_pct, pnl_usd)
+                    VALUES (NOW(),%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+                """, (
+                    snap.get("ton_balance"),
+                    snap.get("grinch_balance"),
+                    snap.get("grinch_price_ton"),
+                    snap.get("grinch_price_usd"),
+                    snap.get("ton_price_usd"),
+                    snap.get("grinch_value_ton"),
+                    snap.get("grinch_value_usd"),
+                    snap.get("total_equity_ton"),
+                    snap.get("total_equity_usd"),
+                    snap.get("entry_price_ton"),
+                    snap.get("entry_price_usd"),
+                    snap.get("pnl_ton"),
+                    snap.get("pnl_pct"),
+                    snap.get("pnl_usd"),
+                ))
+                if random.random() < 0.05:
+                    cur.execute("""
+                        DELETE FROM bot_wallet_snapshots WHERE id NOT IN (
+                            SELECT id FROM bot_wallet_snapshots ORDER BY id DESC LIMIT %s
+                        )
+                    """, (WALLET_SNAP_KEEP,))
+    except Exception as e:
+        logger.debug(f"[DB] wallet_snapshot_insert error: {e}")
+
+
+def wallet_snapshots_get_recent(limit: int = 200) -> list:
+    """Последние N снимков кошелька в хронологическом порядке (старые → новые)."""
+    if not _available:
+        return []
+    try:
+        with _conn() as conn:
+            with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+                cur.execute("""
+                    SELECT ts, ton_balance, grinch_balance, grinch_price_ton, grinch_price_usd,
+                           ton_price_usd, grinch_value_ton, grinch_value_usd,
+                           total_equity_ton, total_equity_usd,
+                           entry_price_ton, entry_price_usd, pnl_ton, pnl_pct, pnl_usd
+                    FROM bot_wallet_snapshots
+                    ORDER BY id DESC LIMIT %s
+                """, (limit,))
+                rows = cur.fetchall()
+                return [
+                    {
+                        "ts":               row["ts"].isoformat() if row["ts"] else None,
+                        "ton_balance":      row["ton_balance"],
+                        "grinch_balance":   row["grinch_balance"],
+                        "grinch_price_ton": row["grinch_price_ton"],
+                        "grinch_price_usd": row["grinch_price_usd"],
+                        "ton_price_usd":    row["ton_price_usd"],
+                        "grinch_value_ton": row["grinch_value_ton"],
+                        "grinch_value_usd": row["grinch_value_usd"],
+                        "total_equity_ton": row["total_equity_ton"],
+                        "total_equity_usd": row["total_equity_usd"],
+                        "entry_price_ton":  row["entry_price_ton"],
+                        "entry_price_usd":  row["entry_price_usd"],
+                        "pnl_ton":          row["pnl_ton"],
+                        "pnl_pct":          row["pnl_pct"],
+                        "pnl_usd":          row["pnl_usd"],
+                    }
+                    for row in reversed(rows)
+                ]
+    except Exception as e:
+        logger.warning(f"[DB] wallet_snapshots_get_recent error: {e}")
+        return []
+
+
+def wallet_snapshot_get_latest() -> dict:
+    """Последний снимок кошелька."""
+    if not _available:
+        return {}
+    try:
+        with _conn() as conn:
+            with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+                cur.execute("""
+                    SELECT ts, ton_balance, grinch_balance, grinch_price_ton, grinch_price_usd,
+                           ton_price_usd, grinch_value_ton, grinch_value_usd,
+                           total_equity_ton, total_equity_usd,
+                           entry_price_ton, entry_price_usd, pnl_ton, pnl_pct, pnl_usd
+                    FROM bot_wallet_snapshots ORDER BY id DESC LIMIT 1
+                """)
+                row = cur.fetchone()
+                if not row:
+                    return {}
+                return {
+                    "ts":               row["ts"].isoformat() if row["ts"] else None,
+                    "ton_balance":      row["ton_balance"],
+                    "grinch_balance":   row["grinch_balance"],
+                    "grinch_price_ton": row["grinch_price_ton"],
+                    "grinch_price_usd": row["grinch_price_usd"],
+                    "ton_price_usd":    row["ton_price_usd"],
+                    "grinch_value_ton": row["grinch_value_ton"],
+                    "grinch_value_usd": row["grinch_value_usd"],
+                    "total_equity_ton": row["total_equity_ton"],
+                    "total_equity_usd": row["total_equity_usd"],
+                    "entry_price_ton":  row["entry_price_ton"],
+                    "entry_price_usd":  row["entry_price_usd"],
+                    "pnl_ton":          row["pnl_ton"],
+                    "pnl_pct":          row["pnl_pct"],
+                    "pnl_usd":          row["pnl_usd"],
+                }
+    except Exception as e:
+        logger.warning(f"[DB] wallet_snapshot_get_latest error: {e}")
+        return {}
 
 
 # ═══════════════════════════════════════════════════════════════════════════════

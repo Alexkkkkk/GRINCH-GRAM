@@ -202,6 +202,8 @@ wallet_tracker = WalletTracker()
 # Бот учится у реальных кошельков в пуле — отдаём трекер торговому движку
 trader.wallet_tracker = wallet_tracker
 
+from wallet_manager import wallet_manager as _wallet_mgr
+
 
 def _safe_status():
     def _walk(obj):
@@ -336,6 +338,11 @@ def start_background():
             alerts.start_monitor()
         except Exception as _al_ex:
             print(f"[Alerts] монитор не запущен: {_al_ex}")
+        # ── Кошелёк: полное отслеживание TON + GRINCH через БД ──────────
+        try:
+            _wallet_mgr.start(trader_ref=trader)
+        except Exception as _wm_ex:
+            print(f"[WalletManager] не запущен: {_wm_ex}")
 
 start_background()
 
@@ -754,6 +761,120 @@ def api_manual_buy():
 def api_manual_sell_all():
     result = trader.force_sell_all()
     return jsonify(result), (200 if result.get("ok") else 400)
+
+# ════════════════════════════════════════════════════════════════════════════
+#  Кошелёк — полное отслеживание TON + GRINCH через БД
+# ════════════════════════════════════════════════════════════════════════════
+
+@app.route("/api/wallet/full")
+def api_wallet_full():
+    """Полный статус кошелька: баланс TON + GRINCH, цены, P&L, потенциал, история."""
+    try:
+        status = _wallet_mgr.get_full_status()
+        return jsonify({"ok": True, **status})
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)}), 500
+
+
+@app.route("/api/wallet/snapshot")
+def api_wallet_snapshot():
+    """Последний снимок кошелька (быстро, без истории)."""
+    try:
+        snap = _wallet_mgr.get_snapshot()
+        return jsonify({"ok": True, "snapshot": snap})
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)}), 500
+
+
+@app.route("/api/wallet/history")
+def api_wallet_history():
+    """История снимков кошелька из PostgreSQL."""
+    try:
+        limit = min(int(request.args.get("limit", 200)), 500)
+        history = _wallet_mgr.get_history(limit)
+        return jsonify({"ok": True, "count": len(history), "history": history})
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)}), 500
+
+
+@app.route("/api/wallet/analytics")
+def api_wallet_analytics():
+    """Аналитика GRINCH-позиции: сколько монет, по какой цене куплено, P&L по целям."""
+    try:
+        import db_store
+        status = _wallet_mgr.get_full_status()
+        snap   = status.get("snapshot", {})
+
+        # Торговая история по GRINCH из БД
+        trades = db_store.trades_get_recent(50)
+        grinch_trades = [t for t in trades if "GRINCH" in str(t.get("symbol", "GRINCH"))]
+
+        # Статистика: сколько куплено/продано GRINCH суммарно
+        total_bought_grinch = sum(
+            t.get("amount", 0) or 0 for t in grinch_trades
+            if t.get("side") == "buy" or t.get("type") == "buy"
+        )
+        total_sold_grinch   = sum(
+            t.get("amount", 0) or 0 for t in grinch_trades
+            if t.get("side") == "sell" or t.get("type") == "sell"
+        )
+        total_ton_spent = sum(
+            (t.get("stake_ton", 0) or t.get("ton_spent", 0) or 0)
+            for t in grinch_trades if t.get("side") == "buy" or t.get("type") == "buy"
+        )
+        total_ton_received = sum(
+            (t.get("proceeds_ton", 0) or 0)
+            for t in grinch_trades if t.get("side") == "sell" or t.get("type") == "sell"
+        )
+
+        # Цена безубытка по открытым позициям
+        open_trades_enriched = getattr(trader, "open_trades", [])
+        breakeven_ton = None
+        if open_trades_enriched:
+            be_list = [t.get("breakeven_price") for t in open_trades_enriched if t.get("breakeven_price")]
+            if be_list:
+                breakeven_ton = be_list[-1]
+
+        return jsonify({
+            "ok":    True,
+            "snapshot": snap,
+            "position": {
+                "in_position":      status.get("in_position", False),
+                "grinch_count":     status.get("grinch_count", 0),
+                "entry_price_ton":  status.get("entry_price_ton"),
+                "entry_price_usd":  status.get("entry_price_usd"),
+                "current_price_ton": status.get("current_price_ton"),
+                "current_price_usd": status.get("current_price_usd"),
+                "pnl_ton":          status.get("pnl_ton"),
+                "pnl_pct":          status.get("pnl_pct"),
+                "pnl_usd":          status.get("pnl_usd"),
+                "breakeven_ton":    breakeven_ton,
+            },
+            "potential":   status.get("potential", {}),
+            "price_range": status.get("price_range", {}),
+            "cumulative": {
+                "total_bought_grinch":  round(total_bought_grinch, 2),
+                "total_sold_grinch":    round(total_sold_grinch, 2),
+                "total_ton_spent":      round(total_ton_spent, 4),
+                "total_ton_received":   round(total_ton_received, 4),
+                "net_pnl_ton":          round(total_ton_received - total_ton_spent, 4),
+            },
+            "recent_trades": grinch_trades[:20],
+        })
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)}), 500
+
+
+@app.route("/api/wallet/refresh", methods=["POST"])
+def api_wallet_refresh():
+    """Принудительно обновить снимок кошелька прямо сейчас."""
+    try:
+        _wallet_mgr._poll()
+        snap = _wallet_mgr.get_snapshot()
+        return jsonify({"ok": True, "snapshot": snap})
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)}), 500
+
 
 @app.route("/api/db/sync_status")
 def api_db_sync_status():

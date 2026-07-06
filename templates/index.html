@@ -590,10 +590,52 @@
     <!-- ─── TAB: КОШЕЛЁК ─── -->
     <div class="tab-pane tab-hidden" id="tab-wallet">
 
-      <!-- Portfolio total + ROI ring -->
+      <!-- ══ FULL WALLET HEADER: Портфель TON + GRINCH ══ -->
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px">
+        <!-- TON Card -->
+        <div class="card card-c" style="background:linear-gradient(135deg,rgba(0,152,234,.12),rgba(0,152,234,.04));border:1px solid rgba(0,152,234,.25)">
+          <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
+            <span style="font-size:20px">◆</span>
+            <div>
+              <div style="font-size:10px;color:#0098ea;font-weight:700;letter-spacing:.5px">TON</div>
+              <div style="font-size:9px;color:#6a7d9f">The Open Network</div>
+            </div>
+            <button onclick="refreshWalletFull()" style="margin-left:auto;background:rgba(0,152,234,.15);border:1px solid rgba(0,152,234,.3);border-radius:6px;padding:3px 8px;color:#0098ea;font-size:10px;cursor:pointer">⟳</button>
+          </div>
+          <div id="wf-ton-bal" style="font-size:26px;font-weight:900;font-family:monospace;color:#e8eef8">—</div>
+          <div id="wf-ton-usd" style="font-size:11px;color:#6a7d9f;margin-top:2px">≈ $—</div>
+          <div style="margin-top:8px;padding-top:8px;border-top:1px solid rgba(0,152,234,.1)">
+            <div style="display:flex;justify-content:space-between;font-size:10px">
+              <span style="color:#6a7d9f">Цена TON</span>
+              <span id="wf-ton-price" style="color:#0098ea;font-weight:700">—</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- GRINCH Card -->
+        <div class="card card-c" style="background:linear-gradient(135deg,rgba(0,255,136,.1),rgba(0,255,136,.03));border:1px solid rgba(0,255,136,.2)">
+          <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
+            <span style="font-size:20px">🐸</span>
+            <div>
+              <div style="font-size:10px;color:#00ff88;font-weight:700;letter-spacing:.5px">GRINCH</div>
+              <div style="font-size:9px;color:#6a7d9f">TON Jetton</div>
+            </div>
+          </div>
+          <div id="wf-grn-bal" style="font-size:22px;font-weight:900;font-family:monospace;color:#e8eef8">—</div>
+          <div id="wf-grn-usd" style="font-size:11px;color:#6a7d9f;margin-top:2px">≈ $— · ≈ — TON</div>
+          <div style="margin-top:8px;padding-top:8px;border-top:1px solid rgba(0,255,136,.1)">
+            <div style="display:flex;justify-content:space-between;font-size:10px">
+              <span style="color:#6a7d9f">Цена GRINCH</span>
+              <span id="wf-grn-price" style="color:#00ff88;font-weight:700">—</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ══ TOTAL PORTFOLIO ══ -->
       <div class="portfolio-total-wrap">
         <div class="portfolio-total-left">
-          <div class="pt-label">ПОРТФЕЛЬ</div>
+          <div class="pt-label">ПОРТФЕЛЬ ИТОГО</div>
           <div class="pt-value" id="pt-total">—</div>
           <div class="pt-change" id="pt-change">—</div>
         </div>
@@ -621,12 +663,91 @@
         <div class="roi-goal-sub" id="roi-goal-sub">Накапливаем историю…</div>
       </div>
 
-      <!-- Wallet balances -->
-      <div class="card card-c wallet-card">
-        <div class="wallet-title">◆ TON × 🐸 GRINCH Кошелёк
-          <button class="btn-wallet-refresh" onclick="refreshTon()">⟳</button>
+      <!-- ══ GRINCH POSITION ANALYSIS ══ -->
+      <div class="card card-c" id="grinch-position-card">
+        <div class="card-title ctit">
+          🐸 GRINCH Позиция — Полный анализ
+          <span id="wf-position-badge" style="display:none;font-size:10px;font-weight:700;padding:2px 8px;border-radius:8px;background:rgba(0,255,136,.15);color:#00ff88;border:1px solid rgba(0,255,136,.3)">В ПОЗИЦИИ</span>
+          <span id="wf-no-position-badge" style="font-size:10px;color:#6a7d9f">нет позиции</span>
         </div>
-        <div class="wallet-balances">
+
+        <!-- Количество GRINCH + цена покупки -->
+        <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:10px">
+          <div style="background:rgba(0,255,136,.06);border:1px solid rgba(0,255,136,.12);border-radius:8px;padding:8px;text-align:center">
+            <div style="font-size:9px;color:#6a7d9f;margin-bottom:3px">GRINCH на кошельке</div>
+            <div id="wf-pos-grinch" style="font-size:16px;font-weight:900;font-family:monospace;color:#00ff88">—</div>
+          </div>
+          <div style="background:rgba(0,152,234,.06);border:1px solid rgba(0,152,234,.12);border-radius:8px;padding:8px;text-align:center">
+            <div style="font-size:9px;color:#6a7d9f;margin-bottom:3px">Куплено по цене</div>
+            <div id="wf-entry-ton" style="font-size:13px;font-weight:800;font-family:monospace;color:#0098ea">—</div>
+            <div id="wf-entry-usd" style="font-size:10px;color:#6a7d9f;margin-top:1px">—</div>
+          </div>
+          <div id="wf-pnl-card" style="background:rgba(255,255,136,.06);border:1px solid rgba(255,255,136,.12);border-radius:8px;padding:8px;text-align:center">
+            <div style="font-size:9px;color:#6a7d9f;margin-bottom:3px">P&amp;L (с комиссией)</div>
+            <div id="wf-pnl-ton" style="font-size:16px;font-weight:900;font-family:monospace;color:#6a7d9f">—</div>
+            <div id="wf-pnl-pct" style="font-size:11px;color:#6a7d9f">—</div>
+          </div>
+        </div>
+
+        <!-- Текущая цена vs цена входа -->
+        <div style="background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.06);border-radius:8px;padding:10px;margin-bottom:10px">
+          <div style="font-size:10px;font-weight:700;color:#8892b0;margin-bottom:6px;letter-spacing:.5px">ЦЕНА GRINCH</div>
+          <div style="display:grid;grid-template-columns:1fr auto 1fr;gap:8px;align-items:center">
+            <div>
+              <div style="font-size:9px;color:#6a7d9f">Куплено по</div>
+              <div id="wf-entry-price-display" style="font-size:14px;font-weight:800;font-family:monospace;color:#0098ea">— GRAM</div>
+            </div>
+            <div style="text-align:center;color:#3d4f6a">→</div>
+            <div>
+              <div style="font-size:9px;color:#6a7d9f">Текущая цена</div>
+              <div id="wf-cur-price-display" style="font-size:14px;font-weight:800;font-family:monospace;color:#00ff88">— GRAM</div>
+            </div>
+          </div>
+          <!-- Движение цены прогресс-бар -->
+          <div style="margin-top:8px;background:rgba(255,255,255,.06);border-radius:4px;height:4px;overflow:hidden">
+            <div id="wf-price-move-bar" style="height:100%;width:50%;background:linear-gradient(90deg,#0098ea,#00ff88);border-radius:4px;transition:width .8s"></div>
+          </div>
+          <div style="display:flex;justify-content:space-between;font-size:9px;color:#3d4f6a;margin-top:2px">
+            <span>цена входа</span><span id="wf-price-move-pct" style="color:#8892b0">0%</span><span>текущая</span>
+          </div>
+        </div>
+
+        <!-- Потенциал при разных целях -->
+        <div id="wf-potential-block" style="display:none">
+          <div style="font-size:10px;font-weight:700;color:#ffd166;margin-bottom:6px;letter-spacing:.5px">🎯 ПОТЕНЦИАЛ ПРИБЫЛИ (расчёт с учётом комиссий)</div>
+          <div id="wf-potential-grid" style="display:grid;grid-template-columns:repeat(5,1fr);gap:4px"></div>
+        </div>
+
+        <!-- Точка безубытка -->
+        <div id="wf-breakeven-row" style="display:none;margin-top:10px;padding:8px 10px;background:rgba(255,107,107,.07);border:1px solid rgba(255,107,107,.2);border-radius:8px">
+          <div style="font-size:9px;color:#6a7d9f;margin-bottom:2px">🔴 Точка безубытка (с газом)</div>
+          <div id="wf-breakeven-val" style="font-size:13px;font-weight:800;font-family:monospace;color:#ff6b6b">—</div>
+        </div>
+      </div>
+
+      <!-- ══ EQUITY HISTORY CHART ══ -->
+      <div class="card card-c wallet-card">
+        <div class="wallet-title">
+          📈 История баланса TON + GRINCH
+          <span id="eq-range-lbl" style="font-size:10px;color:#8892b0;margin-left:6px"></span>
+          <button class="btn-wallet-refresh" onclick="refreshWalletFull()" style="margin-left:auto">⟳</button>
+        </div>
+
+        <!-- Chart tabs: TON / GRINCH / Equity -->
+        <div style="display:flex;gap:6px;margin-bottom:8px">
+          <button id="eq-tab-equity" onclick="switchEqTab('equity')" style="padding:4px 10px;font-size:10px;border-radius:6px;border:1px solid rgba(0,255,136,.3);background:rgba(0,255,136,.15);color:#00ff88;cursor:pointer;font-weight:700">Портфель</button>
+          <button id="eq-tab-ton"    onclick="switchEqTab('ton')"    style="padding:4px 10px;font-size:10px;border-radius:6px;border:1px solid rgba(255,255,255,.1);background:transparent;color:#6a7d9f;cursor:pointer">TON</button>
+          <button id="eq-tab-grinch" onclick="switchEqTab('grinch')" style="padding:4px 10px;font-size:10px;border-radius:6px;border:1px solid rgba(255,255,255,.1);background:transparent;color:#6a7d9f;cursor:pointer">GRINCH</button>
+          <button id="eq-tab-pnl"    onclick="switchEqTab('pnl')"    style="padding:4px 10px;font-size:10px;border-radius:6px;border:1px solid rgba(255,255,255,.1);background:transparent;color:#6a7d9f;cursor:pointer">P&amp;L</button>
+        </div>
+
+        <div style="position:relative;height:120px;margin:6px 0 10px">
+          <canvas id="eq-chart" style="width:100%;height:120px;display:block;border-radius:8px"></canvas>
+          <div id="eq-empty" style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:11px;color:#4a5568">Накапливаем историю…</div>
+        </div>
+
+        <!-- Balance summary -->
+        <div class="wallet-balances" style="margin-bottom:10px">
           <div class="wb-item wb-ton">
             <div class="wb-icon">◆</div><div class="wb-label">TON</div>
             <div class="wb-amount" id="wb-ton-bal">—</div><div class="wb-usd" id="wb-ton-usd">≈ $—</div>
@@ -636,14 +757,7 @@
             <div class="wb-amount" id="wb-grn-bal">—</div><div class="wb-usd" id="wb-grn-usd">≈ $—</div>
           </div>
         </div>
-        <div class="wallet-eq-title">
-          <span>📈 История баланса</span>
-          <span id="eq-range-lbl" style="font-size:10px;color:#8892b0;margin-left:6px"></span>
-        </div>
-        <div style="position:relative;height:90px;margin:6px 0 10px">
-          <canvas id="eq-chart" style="width:100%;height:90px;display:block;border-radius:8px"></canvas>
-          <div id="eq-empty" style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:11px;color:#4a5568">Накапливаем историю…</div>
-        </div>
+
         <div class="wallet-section-lbl">◆ Адрес TON кошелька</div>
         <div class="wallet-addr-row">
           <code id="ton-addr" class="wallet-addr">—</code>
@@ -653,6 +767,54 @@
         <div class="ton-deposits-title">◆ Последние поступления TON</div>
         <div id="ton-deposits" class="ton-deposits"><div class="ton-empty">Загрузка…</div></div>
         <div id="ton-error" class="ton-error" style="display:none"></div>
+      </div>
+
+      <!-- ══ GRINCH ANALYTICS — ИСТОРИЯ СДЕЛОК ══ -->
+      <div class="card card-c" id="grinch-analytics-card">
+        <div class="card-title ctit">📊 Аналитика GRINCH — История покупок/продаж</div>
+
+        <!-- Cumulative stats -->
+        <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin-bottom:10px">
+          <div style="background:rgba(0,255,136,.06);border:1px solid rgba(0,255,136,.1);border-radius:8px;padding:8px;text-align:center">
+            <div style="font-size:9px;color:#6a7d9f;margin-bottom:2px">Куплено GRINCH</div>
+            <div id="wfa-bought" style="font-size:14px;font-weight:800;font-family:monospace;color:#00ff88">—</div>
+          </div>
+          <div style="background:rgba(255,69,58,.06);border:1px solid rgba(255,69,58,.1);border-radius:8px;padding:8px;text-align:center">
+            <div style="font-size:9px;color:#6a7d9f;margin-bottom:2px">Продано GRINCH</div>
+            <div id="wfa-sold" style="font-size:14px;font-weight:800;font-family:monospace;color:#ff453a">—</div>
+          </div>
+          <div style="background:rgba(0,212,255,.06);border:1px solid rgba(0,212,255,.1);border-radius:8px;padding:8px;text-align:center">
+            <div style="font-size:9px;color:#6a7d9f;margin-bottom:2px">Чистый P&amp;L</div>
+            <div id="wfa-pnl" style="font-size:14px;font-weight:800;font-family:monospace;color:#00d4ff">—</div>
+          </div>
+        </div>
+
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:10px;font-size:11px">
+          <div style="background:rgba(255,255,255,.03);border-radius:6px;padding:8px">
+            <div style="color:#6a7d9f;margin-bottom:3px">Потрачено TON</div>
+            <div id="wfa-ton-spent" style="font-weight:700;color:#0098ea">—</div>
+          </div>
+          <div style="background:rgba(255,255,255,.03);border-radius:6px;padding:8px">
+            <div style="color:#6a7d9f;margin-bottom:3px">Получено TON</div>
+            <div id="wfa-ton-recv" style="font-weight:700;color:#00ff88">—</div>
+          </div>
+        </div>
+
+        <!-- Recent trades -->
+        <div style="font-size:10px;font-weight:700;color:#8892b0;margin-bottom:6px;letter-spacing:.5px">📋 ПОСЛЕДНИЕ СДЕЛКИ GRINCH</div>
+        <div id="wfa-trades-list" style="max-height:200px;overflow-y:auto;display:flex;flex-direction:column;gap:4px">
+          <div style="text-align:center;color:#4a5568;font-size:11px;padding:20px">Загрузка…</div>
+        </div>
+      </div>
+
+      <!-- ══ AI ADVISOR WALLET CONTEXT ══ -->
+      <div class="card card-c" id="wallet-ai-context-card">
+        <div class="card-title ctit">🤖 ИИ-анализ позиции GRINCH
+          <button onclick="loadWalletAI()" style="margin-left:auto;background:rgba(160,0,255,.15);border:1px solid rgba(160,0,255,.3);border-radius:6px;padding:3px 10px;color:#a06fff;font-size:10px;cursor:pointer">🔄 Обновить</button>
+        </div>
+        <div id="wallet-ai-body" style="font-size:11px;color:#6a7d9f">
+          Нажмите «Обновить» для загрузки AI-анализа текущей позиции GRINCH…
+        </div>
       </div>
 
       <!-- Liquidator -->
@@ -1487,6 +1649,469 @@ function showToast(msg, type) {
 
 // Авто-обновление статуса советника каждые 15 секунд
 setInterval(advLoadStatus, 15000);
+</script>
+
+<!-- ═══════════════════════════════════════════════════════════════════════════
+     КОШЕЛЁК: Полное отслеживание TON + GRINCH (wallet_manager.py)
+     ══════════════════════════════════════════════════════════════════════════ -->
+<script>
+(function() {
+'use strict';
+
+// ── состояние ──────────────────────────────────────────────────────────────
+let _walletData    = null;       // последний ответ /api/wallet/full
+let _walletHistory = [];         // последняя загруженная история
+let _eqTab         = 'equity';   // активная вкладка графика
+let _eqChart       = null;       // Chart.js instance
+let _walletTimer   = null;       // таймер автообновления
+
+// ── форматирование ──────────────────────────────────────────────────────────
+function fmtTon(v, decimals)  { if (v==null) return '\u2014'; const d=decimals!=null?decimals:4; return Number(v).toFixed(d)+' TON'; }
+function fmtUsd(v)  { if (v==null) return '\u2014'; return '\u2248 \u0024'+Number(v).toLocaleString('ru',{minimumFractionDigits:2,maximumFractionDigits:4}); }
+function fmtGrn(v)  { if (v==null) return '\u2014'; const n=Number(v); return n>=1000 ? n.toLocaleString('ru',{maximumFractionDigits:0}) : n.toFixed(2); }
+function fmtPrice(v){ if (v==null) return '\u2014'; return Number(v).toFixed(10).replace(/0+$/,'').replace(/\.$/,''); }
+function fmtPct(v)  { if (v==null) return '\u2014'; const n=Number(v); return (n>=0?'+':'')+n.toFixed(2)+'%'; }
+function fmtTs(ts)  {
+  if (!ts) return '';
+  try { return new Date(ts+'Z').toLocaleTimeString('ru',{hour:'2-digit',minute:'2-digit',second:'2-digit'}); }
+  catch(e){ return ts.slice(11,19)||''; }
+}
+// Форматирование числа как USD строку без проблем с $ в шаблонизаторе
+function usdStr(n)  { return '\u0024'+Number(n).toFixed(2); }
+function usdStr8(n) { return '\u0024'+Number(n).toFixed(8).replace(/0+$/,'').replace(/\.$/,''); }
+
+function pnlColor(v) { return v==null?'#6a7d9f':Number(v)>0?'#00ff88':Number(v)<0?'#ff453a':'#ffd700'; }
+
+// ── /api/wallet/full ────────────────────────────────────────────────────────
+function refreshWalletFull() {
+  fetch('/api/wallet/full')
+    .then(r=>r.json())
+    .then(renderWalletFull)
+    .catch(e=>console.warn('[Wallet]',e));
+}
+
+function renderWalletFull(d) {
+  if (!d || !d.ok) return;
+  _walletData = d;
+
+  const snap  = d.snapshot || {};
+  const pnl   = d.pnl_ton;
+  const pnlPct= d.pnl_pct;
+  const inPos = d.in_position;
+
+  // ── TON card ──
+  const tonBal   = snap.ton_balance;
+  const tonUsd   = snap.ton_price_usd;
+  const tonUsdVal= (tonBal!=null&&tonUsd)?tonBal*tonUsd:null;
+  _setTxt('wf-ton-bal',  tonBal!=null ? Number(tonBal).toFixed(4) : '\u2014');
+  _setTxt('wf-ton-usd',  fmtUsd(tonUsdVal));
+  _setTxt('wf-ton-price',tonUsd ? usdStr(tonUsd) : '\u2014');
+
+  // ── GRINCH card ──
+  const grnBal    = snap.grinch_balance;
+  const grnUsd    = snap.grinch_value_usd;
+  const grnTonVal = snap.grinch_value_ton;
+  const grnPrice  = snap.grinch_price_usd;
+  _setTxt('wf-grn-bal',  grnBal!=null ? fmtGrn(grnBal)+' \uD83D\uDC38' : '\u2014');
+  _setTxt('wf-grn-usd',  '\u2248 '+(grnUsd!=null ? usdStr8(grnUsd) : '\u0024\u2014')+' \u00B7 \u2248 '+(grnTonVal!=null ? Number(grnTonVal).toFixed(4)+' TON' : '\u2014 TON'));
+  _setTxt('wf-grn-price',grnPrice ? usdStr8(grnPrice) : '\u2014');
+
+  // ── portfolio total ──
+  const totTon = snap.total_equity_ton;
+  const totUsd = snap.total_equity_usd;
+  _setTxt('pt-total', totTon!=null ? Number(totTon).toFixed(4)+' TON'+(totUsd?' / '+usdStr(totUsd):'') : '\u2014');
+
+  // Also update legacy header/wallet balance fields
+  _setTxt('wb-ton-bal', tonBal!=null ? Number(tonBal).toFixed(4) : '—');
+  _setTxt('wb-ton-usd', fmtUsd(tonUsdVal));
+  _setTxt('wb-grn-bal', grnBal!=null ? fmtGrn(grnBal) : '—');
+  _setTxt('wb-grn-usd', fmtUsd(grnUsd));
+
+  // ── GRINCH position card ──
+  const posBadge   = document.getElementById('wf-position-badge');
+  const noBadge    = document.getElementById('wf-no-position-badge');
+  if (posBadge) posBadge.style.display   = inPos ? 'inline-block' : 'none';
+  if (noBadge)  noBadge.style.display    = inPos ? 'none' : 'inline-block';
+
+  _setTxt('wf-pos-grinch', grnBal!=null ? fmtGrn(grnBal)+' GRINCH' : '—');
+
+  const entryTon = d.entry_price_ton;
+  const entryUsd = d.entry_price_usd;
+  const curTon   = d.current_price_ton;
+  const curUsd   = d.current_price_usd;
+
+  _setTxt('wf-entry-ton', entryTon ? fmtPrice(entryTon)+' GRAM' : '\u043D\u0435\u0442 \u043F\u043E\u0437\u0438\u0446\u0438\u0438');
+  _setTxt('wf-entry-usd', entryUsd ? '\u2248 '+usdStr8(entryUsd) : '');
+  _setTxt('wf-entry-price-display', entryTon ? fmtPrice(entryTon)+' GRAM' : '—');
+  _setTxt('wf-cur-price-display',   curTon   ? fmtPrice(curTon)+'  GRAM' : '—');
+
+  // P&L card
+  const pnlCard = document.getElementById('wf-pnl-card');
+  if (pnlCard) pnlCard.style.background = pnl!=null ? (pnl>0?'rgba(0,255,136,.07)':pnl<0?'rgba(255,69,58,.07)':'rgba(255,255,136,.06)') : 'rgba(255,255,136,.06)';
+  const pnlTonEl = document.getElementById('wf-pnl-ton');
+  const pnlPctEl = document.getElementById('wf-pnl-pct');
+  if (pnlTonEl) { pnlTonEl.textContent = pnl!=null ? (pnl>=0?'+':'')+Number(pnl).toFixed(4)+' TON' : '—'; pnlTonEl.style.color = pnlColor(pnl); }
+  if (pnlPctEl) { pnlPctEl.textContent = pnlPct!=null ? fmtPct(pnlPct) : '—'; pnlPctEl.style.color = pnlColor(pnlPct); }
+
+  // Price movement bar
+  if (entryTon && curTon) {
+    const movePct = (curTon - entryTon) / entryTon * 100;
+    const bar = document.getElementById('wf-price-move-bar');
+    const lbl = document.getElementById('wf-price-move-pct');
+    if (bar) {
+      // 0%→50%, +10%→75%, -10%→25% etc  (clamped 0-100)
+      const pos = Math.max(0, Math.min(100, 50 + movePct * 2.5));
+      bar.style.width = pos+'%';
+      bar.style.background = movePct>=0 ? 'linear-gradient(90deg,#0098ea,#00ff88)' : 'linear-gradient(90deg,#ff453a,#ff8c00)';
+    }
+    if (lbl) { lbl.textContent = fmtPct(movePct); lbl.style.color = pnlColor(movePct); }
+  }
+
+  // Potential profit table
+  const potential = d.potential || {};
+  const potGrid   = document.getElementById('wf-potential-grid');
+  const potBlock  = document.getElementById('wf-potential-block');
+  if (potBlock) potBlock.style.display = inPos && Object.keys(potential).length ? 'block' : 'none';
+  if (potGrid && inPos) {
+    potGrid.innerHTML = Object.entries(potential).map(([k,v]) => {
+      const p   = v?.pnl_ton;
+      const col = p!=null ? (p>0?'#00ff88':p<0?'#ff453a':'#ffd700') : '#6a7d9f';
+      return `<div style="background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.08);border-radius:6px;padding:6px 4px;text-align:center">
+        <div style="font-size:9px;color:#6a7d9f;margin-bottom:2px">${k}</div>
+        <div style="font-size:12px;font-weight:800;font-family:monospace;color:${col}">${p!=null?(p>=0?'+':'')+Number(p).toFixed(3):'—'}</div>
+        <div style="font-size:9px;color:#3d4f6a">TON</div>
+      </div>`;
+    }).join('');
+  }
+
+  // ROI ring / goal (P&L % towards 20% target)
+  if (pnlPct!=null) {
+    const progress = Math.max(0, Math.min(100, (Number(pnlPct) / 20) * 100));
+    const arc = document.getElementById('roi-ring-arc');
+    const pctTxt = document.getElementById('roi-ring-pct');
+    const goalPct= document.getElementById('roi-goal-pct');
+    const goalBar= document.getElementById('roi-goal-bar');
+    const goalSub= document.getElementById('roi-goal-sub');
+    if (arc) { const c=175.9; arc.setAttribute('stroke-dasharray', (c*progress/100)+' '+c); arc.setAttribute('stroke', Number(pnlPct)>=20?'#ffd700':Number(pnlPct)>0?'#00ff88':'#ff453a'); }
+    if (pctTxt)  pctTxt.textContent  = Math.round(Number(pnlPct))+'%';
+    if (goalPct) goalPct.textContent = fmtPct(pnlPct);
+    if (goalBar) goalBar.style.width = progress+'%';
+    if (goalSub) goalSub.textContent = Number(pnlPct)>=20 ? '🎯 Цель достигнута! Можно фиксировать прибыль.' : (Number(pnlPct)>0 ? '📈 '+fmtPct(pnlPct)+' к цели +20% — продолжаем.' : '⏳ Ждём точку выхода…');
+  }
+
+  // Equity change badge
+  if (d.equity_change_pct!=null) {
+    const el = document.getElementById('pt-change');
+    if (el) { el.textContent = fmtPct(d.equity_change_pct); el.style.color = pnlColor(d.equity_change_pct); }
+  }
+
+  // Load history for chart
+  if (d.history && d.history.length) {
+    _walletHistory = d.history;
+    drawEqChart();
+  }
+  
+  // Update equity range label
+  if (_walletHistory.length) {
+    const first = _walletHistory[0];
+    const last  = _walletHistory[_walletHistory.length-1];
+    const el = document.getElementById('eq-range-lbl');
+    if (el && first && last) el.textContent = fmtTs(first.ts)+' – '+fmtTs(last.ts);
+  }
+}
+
+// ── equity chart tabs ────────────────────────────────────────────────────────
+const EQ_TABS = {
+  equity: { field:'total_equity_ton',  label:'Портфель TON',   color:'#00ff88' },
+  ton:    { field:'ton_balance',        label:'TON баланс',     color:'#0098ea' },
+  grinch: { field:'grinch_value_ton',   label:'GRINCH (в TON)', color:'#00ff88' },
+  pnl:    { field:'pnl_ton',            label:'P&L TON',        color:'#ffd700' },
+};
+
+function switchEqTab(tab) {
+  _eqTab = tab;
+  Object.keys(EQ_TABS).forEach(k => {
+    const btn = document.getElementById('eq-tab-'+k);
+    if (!btn) return;
+    const active = k===tab;
+    btn.style.background  = active ? 'rgba(0,255,136,.15)' : 'transparent';
+    btn.style.borderColor = active ? 'rgba(0,255,136,.3)' : 'rgba(255,255,255,.1)';
+    btn.style.color       = active ? '#00ff88' : '#6a7d9f';
+    btn.style.fontWeight  = active ? '700' : '400';
+  });
+  drawEqChart();
+}
+
+function drawEqChart() {
+  const canvas = document.getElementById('eq-chart');
+  const empty  = document.getElementById('eq-empty');
+  if (!canvas) return;
+
+  const hist = _walletHistory;
+  if (!hist || hist.length < 2) {
+    if (empty) empty.style.display = 'flex';
+    return;
+  }
+  if (empty) empty.style.display = 'none';
+
+  const cfg  = EQ_TABS[_eqTab] || EQ_TABS.equity;
+  const vals = hist.map(h => h[cfg.field] != null ? Number(h[cfg.field]) : null);
+  const labels = hist.map(h => fmtTs(h.ts));
+
+  // Destroy old chart
+  if (_eqChart) { try { _eqChart.destroy(); } catch(e){} _eqChart=null; }
+
+  const ctx = canvas.getContext('2d');
+  const hasNonNull = vals.some(v=>v!=null);
+  if (!hasNonNull) { if (empty) empty.style.display = 'flex'; return; }
+
+  // Decide color (pnl goes red for negatives)
+  const last = vals.filter(v=>v!=null).slice(-1)[0];
+  let lineColor = cfg.color;
+  if (_eqTab==='pnl' && last!=null && last<0) lineColor='#ff453a';
+
+  _eqChart = new Chart(ctx, {
+    type: 'line',
+    data: {
+      labels,
+      datasets: [{
+        data: vals,
+        borderColor: lineColor,
+        backgroundColor: lineColor+'1a',
+        borderWidth: 2,
+        pointRadius: hist.length > 60 ? 0 : 2,
+        pointHoverRadius: 4,
+        tension: 0.35,
+        fill: true,
+        spanGaps: true,
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: { display:false },
+        tooltip: {
+          mode: 'index',
+          callbacks: {
+            label: (item) => {
+              const v = item.raw;
+              if (v==null) return '—';
+              return cfg.label+': '+(v>=0?'+':'')+Number(v).toFixed(4)+' TON';
+            }
+          }
+        }
+      },
+      scales: {
+        x: { display:false },
+        y: {
+          grid: { color:'rgba(255,255,255,.04)' },
+          ticks: { color:'#6a7d9f', font:{size:9}, maxTicksLimit:4,
+            callback: v => v!=null ? Number(v).toFixed(2) : '' }
+        }
+      }
+    }
+  });
+}
+
+// ── analytics tab ────────────────────────────────────────────────────────────
+function loadWalletAnalytics() {
+  fetch('/api/wallet/analytics')
+    .then(r=>r.json())
+    .then(renderWalletAnalytics)
+    .catch(e=>console.warn('[WalletAnalytics]',e));
+}
+
+function renderWalletAnalytics(d) {
+  if (!d||!d.ok) return;
+  const cum = d.cumulative || {};
+  const pos = d.position  || {};
+
+  _setTxt('wfa-bought', cum.total_bought_grinch!=null ? fmtGrn(cum.total_bought_grinch)+' 🐸' : '—');
+  _setTxt('wfa-sold',   cum.total_sold_grinch  !=null ? fmtGrn(cum.total_sold_grinch)  +' 🐸' : '—');
+  const netPnl = cum.net_pnl_ton;
+  const netEl  = document.getElementById('wfa-pnl');
+  if (netEl) { netEl.textContent = netPnl!=null ? (netPnl>=0?'+':'')+Number(netPnl).toFixed(4)+' TON' : '—'; netEl.style.color = pnlColor(netPnl); }
+  _setTxt('wfa-ton-spent', cum.total_ton_spent!=null ? Number(cum.total_ton_spent).toFixed(4)+' TON' : '—');
+  _setTxt('wfa-ton-recv',  cum.total_ton_received!=null ? Number(cum.total_ton_received).toFixed(4)+' TON' : '—');
+
+  const list = document.getElementById('wfa-trades-list');
+  if (list) {
+    const trades = d.recent_trades || [];
+    if (!trades.length) {
+      list.innerHTML = '<div style="text-align:center;color:#4a5568;font-size:11px;padding:20px">Нет торговых данных</div>';
+      return;
+    }
+    list.innerHTML = trades.map(t => {
+      const isBuy  = (t.side||t.type||'').toString().includes('buy');
+      const col    = isBuy ? '#00ff88' : '#ff453a';
+      const icon   = isBuy ? '🟢 BUY' : '🔴 SELL';
+      const profit = t.profit_ton || t.pnl_ton || t.net_profit;
+      const amount = t.amount  ? fmtGrn(t.amount)+' 🐸' : '—';
+      const stake  = t.stake_ton || t.ton_spent;
+      const ts     = t.timestamp || t.close_time || t.created_at || '';
+      return `<div style="background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.06);border-radius:6px;padding:7px 10px;display:flex;align-items:center;gap:8px;font-size:11px">
+        <span style="font-size:10px;font-weight:700;color:${col};min-width:50px">${icon}</span>
+        <div style="flex:1">
+          <div style="font-weight:700;color:#ccd6f6">${amount}</div>
+          ${stake ? '<div style="color:#6a7d9f;font-size:10px">Стейк: '+Number(stake).toFixed(4)+' TON</div>' : ''}
+        </div>
+        ${profit!=null ? `<div style="text-align:right"><div style="font-weight:700;color:${pnlColor(profit)}">${profit>=0?'+':''}${Number(profit).toFixed(4)} TON</div></div>` : ''}
+        <div style="color:#3d4f6a;font-size:10px;min-width:40px;text-align:right">${fmtTs(ts)}</div>
+      </div>`;
+    }).join('');
+  }
+}
+
+// ── AI советник: контекст позиции ────────────────────────────────────────────
+function loadWalletAI() {
+  const body = document.getElementById('wallet-ai-body');
+  if (!body) return;
+  body.innerHTML = '<span style="color:#6a7d9f">⚙️ Загружаем AI-анализ позиции GRINCH…</span>';
+
+  // Используем статус /api/advisor/status + текущий снимок кошелька
+  Promise.all([
+    fetch('/api/advisor/status').then(r=>r.json()),
+    fetch('/api/wallet/full').then(r=>r.json()),
+  ]).then(([adv, wf]) => {
+    const snap  = wf?.snapshot || {};
+    const inPos = wf?.in_position;
+    const pnl   = wf?.pnl_ton;
+    const pnlPct= wf?.pnl_pct;
+    const entry = wf?.entry_price_ton;
+    const cur   = wf?.current_price_ton;
+
+    let lines = [];
+
+    // Состояние позиции
+    if (inPos) {
+      lines.push(`<div style="margin-bottom:6px;padding:8px;background:rgba(0,255,136,.06);border-radius:6px;border:1px solid rgba(0,255,136,.15)">
+        <div style="color:#00ff88;font-weight:700;margin-bottom:4px">🐸 Открытая позиция GRINCH</div>
+        <div style="color:#8892b0;font-size:10px;line-height:1.6">
+          Количество: <b style="color:#ccd6f6">${fmtGrn(snap.grinch_balance)} GRINCH</b><br>
+          Куплено по: <b style="color:#0098ea">${entry?fmtPrice(entry)+' GRAM':'—'}</b><br>
+          Текущая: <b style="color:#00ff88">${cur?fmtPrice(cur)+' GRAM':'—'}</b><br>
+          P&amp;L: <b style="color:${pnlColor(pnl)}">${pnl!=null?(pnl>=0?'+':'')+Number(pnl).toFixed(4)+' TON':'—'} (${pnlPct!=null?fmtPct(pnlPct):'—'})</b>
+        </div>
+      </div>`);
+    } else {
+      lines.push(`<div style="margin-bottom:6px;padding:8px;background:rgba(255,255,255,.03);border-radius:6px;border:1px solid rgba(255,255,255,.06);color:#6a7d9f">
+        ⏸️ Нет открытой позиции GRINCH.
+      </div>`);
+    }
+
+    // Последний совет
+    const last = adv?.last_advice;
+    if (last) {
+      const v   = last.market_verdict || '—';
+      const col = {'НАКАПЛИВАТЬ':'#00ff88','АКТИВНО_ТОРГОВАТЬ':'#00d4ff','ОСТОРОЖНО':'#ffd166','ПАУЗА':'#ff6b6b'}[v] || '#ffd166';
+      lines.push(`<div style="padding:8px;background:rgba(255,255,255,.02);border-radius:6px;border:1px solid rgba(255,255,255,.06)">
+        <div style="font-size:10px;font-weight:700;color:#8892b0;margin-bottom:4px">📊 Последний AI-совет (${last.timestamp||''})</div>
+        <div style="font-size:12px;font-weight:700;color:${col};margin-bottom:4px">${v}</div>
+        <div style="font-size:10px;color:#8892b0;line-height:1.55">${last.analysis||''}</div>
+      </div>`);
+    } else {
+      lines.push('<div style="color:#4a5568;font-size:11px">AI советник ещё не запускался. Откройте вкладку Настройки → AI Советник и нажмите «Анализ».</div>');
+    }
+
+    body.innerHTML = lines.join('');
+  }).catch(e => {
+    body.innerHTML = '<span style="color:#ff6b6b">Ошибка: '+e+'</span>';
+  });
+}
+
+// ── helpers ──────────────────────────────────────────────────────────────────
+function _setTxt(id, txt) {
+  const el = document.getElementById(id);
+  if (el) el.textContent = txt;
+}
+
+// ── legacy refreshTon (compat) ───────────────────────────────────────────────
+// Оригинальная функция refreshTon() вызывает /api/wallet и заполняет
+// старые поля.  Мы её перезаписываем, чтобы она вызывала и полный /api/wallet/full.
+window.refreshTon = function() {
+  // legacy /api/wallet
+  fetch('/api/wallet').then(r=>r.json()).then(data => {
+    const addr  = document.getElementById('ton-addr');
+    const deps  = document.getElementById('ton-deposits');
+    const err   = document.getElementById('ton-error');
+    if (addr) addr.textContent = data.address || '—';
+    if (err)  err.style.display = 'none';
+    if (deps) {
+      const txs = data.transactions || [];
+      if (!txs.length) { deps.innerHTML='<div class="ton-empty">Нет поступлений</div>'; return; }
+      deps.innerHTML = txs.map(tx => {
+        const amt = tx.value_ton ? parseFloat(tx.value_ton).toFixed(2) : '?';
+        const msg = tx.message_text || tx.comment || '';
+        const ts  = fmtTs(tx.timestamp || tx.ts || '');
+        return `<div class="ton-tx"><span class="ton-tx-amt">+${amt} TON</span><span class="ton-tx-msg">${msg}</span><span class="ton-tx-ts">${ts}</span></div>`;
+      }).join('');
+    }
+  }).catch(e => {
+    const err = document.getElementById('ton-error');
+    if (err) { err.textContent='⚠️ '+e; err.style.display='block'; }
+  });
+  // полный снимок
+  refreshWalletFull();
+};
+
+window.copyTon = function() {
+  const addr = document.getElementById('ton-addr');
+  if (!addr) return;
+  navigator.clipboard.writeText(addr.textContent).then(() => {
+    const c = document.getElementById('ton-copied');
+    if (c) { c.style.display='block'; setTimeout(()=>c.style.display='none',2000); }
+  });
+};
+
+// ── auto-refresh ─────────────────────────────────────────────────────────────
+function _startWalletAutoRefresh() {
+  clearInterval(_walletTimer);
+  refreshWalletFull();
+  loadWalletAnalytics();
+  _walletTimer = setInterval(() => {
+    const tab = document.getElementById('tab-wallet');
+    if (tab && !tab.classList.contains('tab-hidden')) {
+      refreshWalletFull();
+    }
+  }, 30000);
+}
+
+// ── hook into tab switch ──────────────────────────────────────────────────────
+// Wrap switchMainTab to load wallet data when wallet tab is opened
+const _origSwitchMainTab = window.switchMainTab;
+window.switchMainTab = function(tab) {
+  _origSwitchMainTab && _origSwitchMainTab(tab);
+  if (tab === 'wallet') {
+    refreshWalletFull();
+    loadWalletAnalytics();
+  }
+};
+
+// ── Chart.js ensure loaded ───────────────────────────────────────────────────
+function _waitChartJs(cb) {
+  if (typeof Chart !== 'undefined') { cb(); return; }
+  const script = document.createElement('script');
+  script.src = 'https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js';
+  script.onload = cb;
+  document.head.appendChild(script);
+}
+
+// ── init on DOM ready ─────────────────────────────────────────────────────────
+document.addEventListener('DOMContentLoaded', () => {
+  _waitChartJs(() => {
+    _startWalletAutoRefresh();
+    refreshTon();
+  });
+});
+
+// Expose globally
+window.refreshWalletFull = refreshWalletFull;
+window.loadWalletAI      = loadWalletAI;
+window.loadWalletAnalytics = loadWalletAnalytics;
+window.switchEqTab       = switchEqTab;
+
+})(); // IIFE end
 </script>
 
 <div id="toast-container"></div>

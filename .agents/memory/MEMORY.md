@@ -1,4 +1,5 @@
 - [Gunicorn background threads](gunicorn-background-threads.md) — start pollers at module import (not __main__), or they silently never run in the deployed app.
+- [Wallet manager](wallet-manager.md) — full TON+GRINCH tracking via bot_wallet_snapshots DB table; dollar signs in JS must use \u0024 helper; _poll_lock prevents concurrent race; P&L cost = total_stake+buy_gas*n_entries.
 - [Manual trading on/off switch](manual-trading-switch.md) — 3 separate stop mechanisms (running/AI-pause/manual toggle); new trade code paths must also check the manual `trading_enabled` guard.
 - [Real-time price feed](price-feed.md) — free CoinGecko/DexScreener prices; use adaptive decimals (fixed round(x,2) zeroes sub-cent coins like GRINCH).
 - [Coin info + DEX trade feed](coin-info-feed.md) — DexScreener stats + GeckoTerminal trades; decide buy/sell by GRINCH token address, not the `kind` field.

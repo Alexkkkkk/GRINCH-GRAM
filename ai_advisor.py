@@ -599,25 +599,57 @@ def _build_snapshot(user_message: str = "") -> dict:
         snap["market"]    = {}
         snap["portfolio"] = {}
 
-    # ── Баланс кошелька (ключевой вход для управления ставками) ─────────────
+    # ── Баланс кошелька + P&L позиции из wallet_manager (полные данные) ────────
     try:
-        from trader import trader as _tr
-        _bal = _tr._get_balance_cached() if hasattr(_tr, '_get_balance_cached') else {}
-        if not _bal:
-            _bal = _tr.exchange.get_balance() if hasattr(_tr, 'exchange') else {}
-        _ton = float(_bal.get("TON", 0) or 0)
-        _grn = float(_bal.get("GRINCH", 0) or 0)
-        _reserve = float(getattr(__import__('config').Config, 'GAS_RESERVE_TON', 0.45))
-        _buy_gas = float(getattr(__import__('config').Config, 'BUY_GAS_TON', 0.103))
+        from wallet_manager import wallet_manager as _wm
+        _wsnap = _wm.get_snapshot()
+        _ton   = float(_wsnap.get("ton_balance",    0) or 0)
+        _grn   = float(_wsnap.get("grinch_balance", 0) or 0)
+        from config import Config as _Cfg
+        _reserve   = float(getattr(_Cfg, 'GAS_RESERVE_TON', 0.45))
+        _buy_gas   = float(getattr(_Cfg, 'BUY_GAS_TON', 0.103))
         _spendable = max(0.0, _ton - _reserve - _buy_gas)
         snap["wallet"] = {
-            "ton_balance":   round(_ton, 4),
-            "grinch_balance": round(_grn, 2),
-            "spendable_ton": round(_spendable, 4),
-            "gas_reserve":   _reserve,
+            "ton_balance":      round(_ton, 4),
+            "grinch_balance":   round(_grn, 2),
+            "spendable_ton":    round(_spendable, 4),
+            "gas_reserve":      _reserve,
+            "grinch_price_ton": _wsnap.get("grinch_price_ton"),
+            "grinch_price_usd": _wsnap.get("grinch_price_usd"),
+            "ton_price_usd":    _wsnap.get("ton_price_usd"),
+            "grinch_value_ton": _wsnap.get("grinch_value_ton"),
+            "total_equity_ton": _wsnap.get("total_equity_ton"),
+            "total_equity_usd": _wsnap.get("total_equity_usd"),
+        }
+        # ── Позиция GRINCH: цена входа и P&L ──────────────────────────────
+        snap["position"] = {
+            "in_position":       _grn > 0,
+            "grinch_count":      round(_grn, 2),
+            "entry_price_ton":   _wsnap.get("entry_price_ton"),
+            "entry_price_usd":   _wsnap.get("entry_price_usd"),
+            "current_price_ton": _wsnap.get("grinch_price_ton"),
+            "current_price_usd": _wsnap.get("grinch_price_usd"),
+            "pnl_ton":           _wsnap.get("pnl_ton"),
+            "pnl_pct":           _wsnap.get("pnl_pct"),
+            "pnl_usd":           _wsnap.get("pnl_usd"),
         }
     except Exception:
-        snap["wallet"] = {"ton_balance": 0, "grinch_balance": 0, "spendable_ton": 0}
+        try:
+            from trader import trader as _tr
+            _bal = _tr._get_balance_cached() if hasattr(_tr, '_get_balance_cached') else {}
+            if not _bal:
+                _bal = _tr.exchange.get_balance() if hasattr(_tr, 'exchange') else {}
+            _ton = float(_bal.get("TON", 0) or 0)
+            _grn = float(_bal.get("GRINCH", 0) or 0)
+            from config import Config as _Cfg
+            _reserve   = float(getattr(_Cfg, 'GAS_RESERVE_TON', 0.45))
+            _buy_gas   = float(getattr(_Cfg, 'BUY_GAS_TON', 0.103))
+            _spendable = max(0.0, _ton - _reserve - _buy_gas)
+            snap["wallet"]   = {"ton_balance": round(_ton,4), "grinch_balance": round(_grn,2), "spendable_ton": round(_spendable,4), "gas_reserve": _reserve}
+            snap["position"] = {"in_position": _grn>0, "grinch_count": round(_grn,2)}
+        except Exception:
+            snap["wallet"]   = {"ton_balance": 0, "grinch_balance": 0, "spendable_ton": 0}
+            snap["position"] = {"in_position": False}
 
     # Ликвидность пула (LiquidityGuard)
     try:
