@@ -149,11 +149,24 @@ if _DATABASE_URL:
     try:
         app.config["SQLALCHEMY_DATABASE_URI"] = _DATABASE_URL
         app.config["SQLALCHEMY_ENGINE_OPTIONS"] = {
-            "pool_recycle": 300,
-            "pool_pre_ping": True,
-            # Жёсткий таймаут подключения: если PostgreSQL не отвечает за 10с — падаем с ошибкой
-            # вместо бесконечного зависания. Bothost запускает контейнер заново при падении.
-            "connect_args": {"connect_timeout": 10},
+            "pool_recycle": 300,   # пересоздаём соединения раз в 5 мин (pghost обрывает долгие idle)
+            "pool_pre_ping": True, # проверяем соединение перед выдачей из пула
+            "pool_timeout": 10,    # максимум 10с ждём свободного соединения из пула
+            "max_overflow": 5,     # не более 5 соединений сверх pool_size
+            "connect_args": {
+                # Таймаут TCP-соединения к pghost.ru
+                "connect_timeout": 10,
+                # TCP keepalives — обнаруживают мёртвые соединения за ~60с
+                # вместо ожидания ОС-таймаута (могут быть минуты)
+                "keepalives": 1,
+                "keepalives_idle": 30,
+                "keepalives_interval": 10,
+                "keepalives_count": 3,
+                # statement_timeout — убивает зависший SQL-запрос через 9с.
+                # Синхронизировано с db_store.py чтобы ни один путь к pghost.ru
+                # не мог подвесить процесс дольше, чем на один тик торгового цикла.
+                "options": "-c statement_timeout=9000",
+            },
         }
         _startup_log.info("db.init_app start")
         db.init_app(app)
