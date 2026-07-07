@@ -215,10 +215,9 @@ def _init_pool():
         except Exception as e:
             last_err = e
             if attempt < len(_timeouts):
-                import time as _time
                 wait = attempt * 5
                 print(f"[DB] ⚠️ Попытка {attempt}/{len(_timeouts)} не удалась ({e}) — повтор через {wait}с")
-                _time.sleep(wait)
+                time.sleep(wait)
     print(f"[DB] ⚠️ Ошибка подключения к PostgreSQL: {last_err} — используем JSON-файлы")
     _available = False
 
