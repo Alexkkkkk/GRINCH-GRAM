@@ -19,13 +19,19 @@ FROM python:3.11-slim
 # поэтому WORKDIR должен быть /usr/src/app — иначе наш код перезапишется.
 WORKDIR /usr/src/app
 
-# Системные зависимости (нужны для cryptography, numpy, pandas)
+# Только curl — нужен для HEALTHCHECK.
+# gcc/g++ НЕ нужны: все пакеты (numpy, pandas, cryptography, xgboost,
+# psycopg2-binary и т.д.) поставляются готовыми binary wheels для
+# Python 3.11 / Linux x86_64 и не требуют компиляции.
+# Удаление компилятора экономит ~400 МБ места на диске при сборке.
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    gcc g++ libffi-dev libssl-dev curl && \
+    curl && \
     rm -rf /var/lib/apt/lists/*
 
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+# --prefer-binary: pip выберет готовое колесо вместо сборки из исходников,
+# даже если версия wheel чуть старше — страховка от случайной компиляции.
+RUN pip install --no-cache-dir --prefer-binary -r requirements.txt
 
 COPY . .
 

@@ -1,0 +1,31 @@
+# ── Контроль версий ────────────────────────────────────────────────────────
+.git/
+.gitignore
+
+# ── Replit / IDE ───────────────────────────────────────────────────────────
+.replit
+.local/
+.agents/
+.cache/
+uv.lock
+
+# ── Артефакты сборки Python ────────────────────────────────────────────────
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.egg-info/
+dist/
+build/
+
+# ── Runtime-данные (пишутся в /app/data на Bothost, не нужны в образе) ────
+experience.json
+wallets.json
+settings.json
+backups/
+*.log
+
+# ── Вспомогательные файлы разработки ──────────────────────────────────────
+attached_assets/
+screenshots/
+*.md
