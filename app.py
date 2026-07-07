@@ -131,9 +131,11 @@ def _resolve_secret_key():
         return _secrets.token_hex(32)
 
 
+_startup_log.info("resolve_secret_key start")
 _SECRET_KEY = _resolve_secret_key()
 app.config["SECRET_KEY"] = _SECRET_KEY
 app.secret_key = _SECRET_KEY
+_startup_log.info("secret_key OK")
 
 # ── База данных — приоритет у внешней БД (EXTERNAL_DATABASE_URL), иначе Replit PostgreSQL (DATABASE_URL) ───
 # Если ни одна переменная не задана — мультипользовательские функции отключены,
@@ -142,14 +144,25 @@ _DATABASE_URL = os.environ.get("EXTERNAL_DATABASE_URL") or os.environ.get("DATAB
 _db_available = False
 UserWallet = None  # заглушка; перезаписывается ниже если DB доступна
 
+_startup_log.info("DB setup start — URL: %s", ("SET (" + _DATABASE_URL.split("@")[-1] + ")") if _DATABASE_URL else "NOT SET")
 if _DATABASE_URL:
     try:
         app.config["SQLALCHEMY_DATABASE_URI"] = _DATABASE_URL
-        app.config["SQLALCHEMY_ENGINE_OPTIONS"] = {"pool_recycle": 300, "pool_pre_ping": True}
+        app.config["SQLALCHEMY_ENGINE_OPTIONS"] = {
+            "pool_recycle": 300,
+            "pool_pre_ping": True,
+            # Жёсткий таймаут подключения: если PostgreSQL не отвечает за 10с — падаем с ошибкой
+            # вместо бесконечного зависания. Bothost запускает контейнер заново при падении.
+            "connect_args": {"connect_timeout": 10},
+        }
+        _startup_log.info("db.init_app start")
         db.init_app(app)
+        _startup_log.info("db.init_app OK — entering app context")
         with app.app_context():
+            _startup_log.info("db.create_all start")
             from models import UserWallet   # noqa: F401
             db.create_all()
+            _startup_log.info("db.create_all OK — running migrations")
             # Безопасная миграция — добавляем колонки если их нет (PostgreSQL)
             _new_cols = [
                 ("virtual_ton_balance", "FLOAT DEFAULT 0"),
@@ -174,11 +187,14 @@ if _DATABASE_URL:
                 db.session.rollback()
         _db_available = True
         log.info("[DB] SQLAlchemy подключена (%s)", _DATABASE_URL.split("@")[-1] if "@" in _DATABASE_URL else "ok")
+        _startup_log.info("DB setup DONE ✅")
     except Exception as _db_err:
         log.warning("[DB] SQLAlchemy недоступна (%s) — мультипользовательские функции отключены", _db_err)
+        _startup_log.warning("DB setup FAILED: %s", _db_err)
         _db_available = False
 else:
     log.warning("[DB] DATABASE_URL / EXTERNAL_DATABASE_URL не заданы — мультипользовательские функции отключены")
+    _startup_log.warning("DB setup SKIPPED — нет URL")
 
 # ── SocketIO ──────────────────────────────────────────────────────────────────
 _orig_dumps = json.dumps
@@ -203,6 +219,7 @@ def _safe_loads(s, **kw):
     return json.loads(s, **kw)
 
 
+_startup_log.info("SocketIO init start")
 import flask_socketio
 flask_socketio.json = type("_J", (), {
     "dumps": staticmethod(_safe_dumps),
@@ -215,27 +232,36 @@ socketio = SocketIO(app, cors_allowed_origins="*", async_mode="threading",
                         "dumps": staticmethod(_safe_dumps),
                         "loads": staticmethod(json.loads),
                     })())
+_startup_log.info("SocketIO OK")
 
 # ── Торговые движки ───────────────────────────────────────────────────────────
+_startup_log.info("Trader() init start")
 trader = Trader()
+_startup_log.info("Trader() OK")
 ton    = TONTracker(Config.TON_WALLET)
+_startup_log.info("TONTracker OK")
 
 from user_trader import UserTradingManager, encrypt_mnemonic, decrypt_mnemonic
 user_mgr = UserTradingManager()
 trader.signal_callbacks.append(user_mgr.on_signal)
+_startup_log.info("UserTradingManager OK")
 
 from grinch_liquidator import grinch_liquidator
 import liquidity_guard
+_startup_log.info("grinch_liquidator OK")
 
 from deposit_monitor import DepositMonitor
 deposit_monitor = DepositMonitor(Config.TON_WALLET)
+_startup_log.info("DepositMonitor OK")
 
 from wallet_tracker import WalletTracker
 wallet_tracker = WalletTracker()
 # Бот учится у реальных кошельков в пуле — отдаём трекер торговому движку
 trader.wallet_tracker = wallet_tracker
+_startup_log.info("WalletTracker OK")
 
 from wallet_manager import wallet_manager as _wallet_mgr
+_startup_log.info("WalletManager OK")
 
 
 def _safe_status():
