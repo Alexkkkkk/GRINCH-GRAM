@@ -14,6 +14,7 @@ import json
 import logging
 import os
 import threading
+import time
 from contextlib import contextmanager
 from datetime import datetime
 
@@ -48,7 +49,10 @@ DATABASE_URL = os.environ.get("EXTERNAL_DATABASE_URL") or os.environ.get("DATABA
 
 _pool: psycopg2.pool.ThreadedConnectionPool | None = None
 _pool_lock = threading.Lock()
-_available = False   # True только если пул успешно создан
+_available = False           # True только если пул успешно создан
+_last_rebuild_attempt: float = 0.0   # UNIX-время последней попытки rebuild
+_rebuild_in_progress: bool = False   # гейт: только один rebuild-поток за раз
+_REBUILD_BACKOFF_S: int = 60         # минимальный интервал между rebuild-попытками
 
 # ── DDL ──────────────────────────────────────────────────────────────────────
 _DDL = """
@@ -169,6 +173,24 @@ WALLET_SNAP_KEEP = 5000
 
 
 # ── Инициализация пула ────────────────────────────────────────────────────────
+def _make_pool(connect_timeout: int) -> psycopg2.pool.ThreadedConnectionPool:
+    """Создаёт пул с полными настройками таймаутов и TCP keepalives."""
+    _max_conn = 8 if os.environ.get("LOW_MEMORY_MODE") == "1" else 16
+    return psycopg2.pool.ThreadedConnectionPool(
+        minconn=2, maxconn=_max_conn,
+        dsn=DATABASE_URL,
+        connect_timeout=connect_timeout,
+        # TCP keepalives — обнаруживают мёртвые соединения без ожидания ОС-таймаута
+        keepalives=1,
+        keepalives_idle=30,       # начать keepalive через 30с простоя
+        keepalives_interval=10,   # повторять каждые 10с
+        keepalives_count=3,       # 3 неответа → соединение мёртвое
+        # statement_timeout — убивает зависший запрос на стороне сервера через 9с.
+        # Это главная защита от блокировки торгового цикла при лагах pghost.ru.
+        options="-c statement_timeout=9000",
+    )
+
+
 def _init_pool():
     global _pool, _available
     if not DATABASE_URL:
@@ -180,12 +202,7 @@ def _init_pool():
     last_err = None
     for attempt, timeout in enumerate(_timeouts, 1):
         try:
-            _max_conn = 8 if os.environ.get("LOW_MEMORY_MODE") == "1" else 16
-            p = psycopg2.pool.ThreadedConnectionPool(
-                minconn=2, maxconn=_max_conn,
-                dsn=DATABASE_URL,
-                connect_timeout=timeout,
-            )
+            p = _make_pool(connect_timeout=timeout)
             conn = p.getconn()
             with conn.cursor() as cur:
                 cur.execute(_DDL)
@@ -210,16 +227,108 @@ def is_available() -> bool:
     return _available
 
 
+def _check_available() -> bool:
+    """Единая точка проверки доступности БД для всех публичных функций.
+
+    Если _available=False но backoff прошёл — пробует lazy reconnect.
+    Это позволяет модулю самостоятельно восстановиться после временного
+    сбоя pghost.ru без перезапуска процесса.
+    """
+    if _available and _pool is not None:
+        return True
+    # Lazy reconnect с backoff-гейтом (не чаще _REBUILD_BACKOFF_S)
+    _try_rebuild_pool()
+    return bool(_available and _pool is not None)
+
+
+def _try_rebuild_pool(*, _from_conn: bool = False) -> bool:
+    """Пересоздаёт пул соединений.  Возвращает True если успешно.
+
+    Гарантии:
+    - Только один rebuild-поток работает одновременно (_rebuild_in_progress гейт).
+    - Минимум _REBUILD_BACKOFF_S между попытками (backoff).
+    - При ОШИБКЕ rebuild: _available НЕ сбрасывается в False — если старый пул
+      ещё частично работает, бот продолжает. Следующая попытка — через backoff.
+    - Не вызывает old.closeall(): активные соединения дренируются сами через
+      pool_ref в _conn() и закрываются когда их возвращают в старый пул.
+    """
+    global _pool, _available, _last_rebuild_attempt, _rebuild_in_progress
+
+    now = time.time()
+    with _pool_lock:
+        if _rebuild_in_progress:
+            return False  # уже идёт rebuild в другом потоке
+        if (now - _last_rebuild_attempt) < _REBUILD_BACKOFF_S:
+            return False  # слишком рано, ждём backoff
+        _rebuild_in_progress = True
+        _last_rebuild_attempt = now
+
+    try:
+        p = _make_pool(connect_timeout=15)
+        with _pool_lock:
+            _pool = p
+            _available = True
+            _rebuild_in_progress = False
+        print("[DB] 🔄 Пул пересоздан после сбоя соединений")
+        return True
+    except Exception as e:
+        with _pool_lock:
+            _rebuild_in_progress = False
+            # НЕ меняем _available: если старый пул ещё жив — не ломаем его.
+            # Если _pool is None (БД никогда не подключалась) — оставляем False.
+        next_retry = _REBUILD_BACKOFF_S
+        print(f"[DB] ⚠️ Rebuild пула не удался: {e}. Следующая попытка через {next_retry}с")
+        return False
+
+
 @contextmanager
 def _conn():
-    """Context-manager: берёт соединение из пула, auto-commit/rollback."""
+    """Context-manager: берёт соединение из пула, auto-commit/rollback.
+
+    Ключевые гарантии:
+    1. pool_ref фиксируется до getconn() — putconn() всегда идёт в тот же объект,
+       даже если _try_rebuild_pool() заменит глобальный _pool в другом потоке.
+    2. Lazy reconnect: если _available=False (после initial-fail или долгого outage),
+       _conn() пробует синхронно пересоздать пул перед тем как бросить исключение.
+    3. При OperationalError соединение помечается broken, пул перестраивается
+       асинхронно — не блокируя вызывающий поток.
+    """
     global _pool, _available
+
+    # Lazy reconnect: БД была недоступна, но backoff прошёл — пробуем снова.
+    if not _available or _pool is None:
+        _try_rebuild_pool()   # синхронно; торговый цикл — фоновый поток, блок ок
+
     if not _available or _pool is None:
         raise RuntimeError("DB not available")
-    conn = _pool.getconn()
+
+    # Захватываем ссылку на пул ДО getconn(), чтобы putconn() всегда шёл
+    # в тот же объект пула — даже если _try_rebuild_pool() заменит _pool.
+    pool_ref = _pool
+    conn = pool_ref.getconn()
+
+    # Если соединение помечено закрытым — вернуть в pool_ref и взять свежее
+    if getattr(conn, "closed", 0):
+        try:
+            pool_ref.putconn(conn, close=True)
+        except Exception:
+            pass
+        conn = pool_ref.getconn()
+
+    _broken = False
     try:
         yield conn
         conn.commit()
+    except psycopg2.OperationalError:
+        # Сеть упала или pghost.ru недоступен — помечаем соединение как сломанное
+        _broken = True
+        try:
+            conn.rollback()
+        except Exception:
+            pass
+        # Асинхронно пересоздаём пул (с backoff-гейтом), не блокируя поток
+        threading.Thread(target=_try_rebuild_pool, daemon=True).start()
+        raise
     except Exception:
         try:
             conn.rollback()
@@ -227,7 +336,10 @@ def _conn():
             pass
         raise
     finally:
-        _pool.putconn(conn)
+        try:
+            pool_ref.putconn(conn, close=_broken)
+        except Exception:
+            pass
 
 
 # ── Инициализируем при импорте ────────────────────────────────────────────────
@@ -240,7 +352,7 @@ with _pool_lock:
 # ═══════════════════════════════════════════════════════════════════════════════
 
 def settings_get_section(section: str) -> dict:
-    if not _available:
+    if not _check_available():
         return {}
     try:
         with _conn() as conn:
@@ -256,7 +368,7 @@ def settings_get_section(section: str) -> dict:
 
 
 def settings_update_section(section: str, updates: dict):
-    if not _available:
+    if not _check_available():
         return
     try:
         with _conn() as conn:
@@ -274,7 +386,7 @@ def settings_update_section(section: str, updates: dict):
 
 def settings_get(section: str, key: str):
     """Читает одно значение из bot_settings. Возвращает None если не найдено."""
-    if not _available:
+    if not _check_available():
         return None
     try:
         with _conn() as conn:
@@ -291,7 +403,7 @@ def settings_get(section: str, key: str):
 
 
 def settings_get_all() -> dict:
-    if not _available:
+    if not _check_available():
         return {}
     try:
         with _conn() as conn:
@@ -312,7 +424,7 @@ def settings_get_all() -> dict:
 # ═══════════════════════════════════════════════════════════════════════════════
 
 def trades_upsert(trade: dict):
-    if not _available:
+    if not _check_available():
         return
     trade_id = str(trade.get("id") or "")
     if not trade_id:
@@ -338,7 +450,7 @@ def trades_upsert(trade: dict):
 
 
 def trades_get_all(limit: int = 1000) -> list:
-    if not _available:
+    if not _check_available():
         return []
     try:
         with _conn() as conn:
@@ -354,7 +466,7 @@ def trades_get_all(limit: int = 1000) -> list:
 
 
 def trades_count() -> int:
-    if not _available:
+    if not _check_available():
         return -1
     try:
         with _conn() as conn:
@@ -370,7 +482,7 @@ def trades_get_recent(limit: int = 30) -> list:
     """Последние N закрытых сделок, НОВЫЕ ПЕРВЫМИ (DESC) — для AI-советника,
     которому нужно "последнее сначала". Общие функции (trades_get_all) отдают
     ASC — не путать порядок при использовании."""
-    if not _available:
+    if not _check_available():
         return []
     try:
         with _conn() as conn:
@@ -386,7 +498,7 @@ def trades_get_recent(limit: int = 30) -> list:
 
 
 def trades_bulk_insert(trades: list):
-    if not _available or not trades:
+    if not _check_available() or not trades:
         return
     try:
         with _conn() as conn:
@@ -416,7 +528,7 @@ def trades_bulk_insert(trades: list):
 # ═══════════════════════════════════════════════════════════════════════════════
 
 def equity_insert(point: dict):
-    if not _available:
+    if not _check_available():
         return
     try:
         ts_str = point.get("t")
@@ -438,7 +550,7 @@ def equity_insert(point: dict):
 
 
 def equity_get_all(limit: int = 3000) -> list:
-    if not _available:
+    if not _check_available():
         return []
     try:
         with _conn() as conn:
@@ -464,7 +576,7 @@ def equity_get_all(limit: int = 3000) -> list:
 
 
 def equity_count() -> int:
-    if not _available:
+    if not _check_available():
         return -1
     try:
         with _conn() as conn:
@@ -477,7 +589,7 @@ def equity_count() -> int:
 
 
 def equity_bulk_insert(points: list):
-    if not _available or not points:
+    if not _check_available() or not points:
         return
     try:
         with _conn() as conn:
@@ -505,7 +617,7 @@ def equity_bulk_insert(points: list):
 # ═══════════════════════════════════════════════════════════════════════════════
 
 def open_trades_save(trades: list):
-    if not _available:
+    if not _check_available():
         return
     try:
         with _conn() as conn:
@@ -526,7 +638,7 @@ def open_trades_save(trades: list):
 
 
 def open_trades_get() -> list:
-    if not _available:
+    if not _check_available():
         return []
     try:
         with _conn() as conn:
@@ -543,7 +655,7 @@ def open_trades_get() -> list:
 # ═══════════════════════════════════════════════════════════════════════════════
 
 def ai_state_set(key: str, value):
-    if not _available:
+    if not _check_available():
         return
     try:
         with _conn() as conn:
@@ -559,7 +671,7 @@ def ai_state_set(key: str, value):
 
 
 def ai_state_get(key: str, default=None):
-    if not _available:
+    if not _check_available():
         return default
     try:
         with _conn() as conn:
@@ -573,7 +685,7 @@ def ai_state_get(key: str, default=None):
 
 
 def ai_state_get_all() -> dict:
-    if not _available:
+    if not _check_available():
         return {}
     try:
         with _conn() as conn:
@@ -593,7 +705,7 @@ def ai_example_insert(features: list, label: int, weight: float):
     """Пишет один обучающий пример НАВСЕГДА (без ротации/лимита) — источник
     истины для глубокого переобучения раз в 2 дня. Best-effort: ошибка не
     должна ронять основной торговый цикл."""
-    if not _available:
+    if not _check_available():
         return
     try:
         with _conn() as conn:
@@ -609,7 +721,7 @@ def ai_example_insert(features: list, label: int, weight: float):
 def ai_examples_get_recent(limit: int = 2000) -> list:
     """Последние N примеров (по времени), для глубокого переобучения на
     полной истории. Возвращает [] если БД недоступна."""
-    if not _available:
+    if not _check_available():
         return []
     try:
         with _conn() as conn:
@@ -629,7 +741,7 @@ def ai_examples_get_recent(limit: int = 2000) -> list:
 
 
 def ai_examples_count() -> int:
-    if not _available:
+    if not _check_available():
         return 0
     try:
         with _conn() as conn:
@@ -645,7 +757,7 @@ def ai_examples_export_all():
     """Возвращает генератор строк (id, created_at, label, weight, features...)
     для потокового CSV-экспорта всех обучающих примеров из БД.
     Читает чанками по 1000, чтобы не держать всё в RAM."""
-    if not _available:
+    if not _check_available():
         return
     try:
         with _conn() as conn:
@@ -676,7 +788,7 @@ def ticks_insert(data: dict):
     """Пишет один снимок тика в БД (переживает рестарт, в отличие от
     прежнего in-memory буфера). Best-effort: ошибка не должна ронять цикл.
     Самоочищается — оставляет только последние TICKS_KEEP записей."""
-    if not _available:
+    if not _check_available():
         return
     try:
         import random
@@ -699,7 +811,7 @@ def ticks_insert(data: dict):
 def ticks_get_recent(limit: int = 100) -> list:
     """Последние N тиков в ХРОНОЛОГИЧЕСКОМ порядке (старые → новые), как
     раньше отдавал analytics_buffer._ticks. Возвращает [] если БД недоступна."""
-    if not _available:
+    if not _check_available():
         return []
     try:
         with _conn() as conn:
@@ -716,7 +828,7 @@ def ticks_get_recent(limit: int = 100) -> list:
 
 
 def ticks_count() -> int:
-    if not _available:
+    if not _check_available():
         return -1
     try:
         with _conn() as conn:
@@ -735,7 +847,7 @@ def ticks_count() -> int:
 def wallet_snapshot_insert(snap: dict):
     """Сохраняет снимок кошелька (TON + GRINCH + P&L) в БД. Best-effort.
     Самоочищается: раз в ~5% вставок удаляет старые записи сверх WALLET_SNAP_KEEP."""
-    if not _available:
+    if not _check_available():
         return
     try:
         import random
@@ -776,7 +888,7 @@ def wallet_snapshot_insert(snap: dict):
 
 def wallet_snapshots_get_recent(limit: int = 200) -> list:
     """Последние N снимков кошелька в хронологическом порядке (старые → новые)."""
-    if not _available:
+    if not _check_available():
         return []
     try:
         with _conn() as conn:
@@ -817,7 +929,7 @@ def wallet_snapshots_get_recent(limit: int = 200) -> list:
 
 def wallet_snapshot_get_latest() -> dict:
     """Последний снимок кошелька."""
-    if not _available:
+    if not _check_available():
         return {}
     try:
         with _conn() as conn:
@@ -863,7 +975,7 @@ def deep_model_save(model_name: str, blob: bytes, accuracy: float, n_examples: i
     """Сохраняет обученный тяжёлый модель (pickle-блоб) в БД. Вызывается
     ТОЛЬКО из deep_retrain_worker.py (отдельный процесс), никогда из живого
     торгового процесса — так его RAM никогда не растёт от этих моделей."""
-    if not _available:
+    if not _check_available():
         return
     try:
         with _conn() as conn:
@@ -886,7 +998,7 @@ def deep_models_load_all() -> dict:
     "trained_at": datetime}} для всех сохранённых тяжёлых моделей. Загружать в
     оперативную память живого процесса можно ТОЛЬКО если хост подтверждённо
     располагает запасом RAM (не на LOW_MEMORY_MODE)."""
-    if not _available:
+    if not _check_available():
         return {}
     try:
         with _conn() as conn:
@@ -908,7 +1020,7 @@ def deep_models_load_all() -> dict:
 
 def deep_models_meta() -> list:
     """Лёгкая версия без блобов — для дашборда/статуса (не грузит модели в RAM)."""
-    if not _available:
+    if not _check_available():
         return []
     try:
         with _conn() as conn:
@@ -928,7 +1040,7 @@ def deep_models_meta() -> list:
 # ═══════════════════════════════════════════════════════════════════════════════
 
 def wallets_save(wallets: dict, events: list, seen: list, last_poll: float):
-    if not _available:
+    if not _check_available():
         return
     try:
         with _conn() as conn:
@@ -957,7 +1069,7 @@ def wallets_save(wallets: dict, events: list, seen: list, last_poll: float):
 
 def wallets_load() -> tuple[dict, list, set, float]:
     """Возвращает (wallets, events, seen_set, last_poll)."""
-    if not _available:
+    if not _check_available():
         return {}, [], set(), 0.0
     try:
         with _conn() as conn:
@@ -977,7 +1089,7 @@ def wallets_load() -> tuple[dict, list, set, float]:
 
 
 def wallets_count() -> int:
-    if not _available:
+    if not _check_available():
         return -1
     try:
         with _conn() as conn:
