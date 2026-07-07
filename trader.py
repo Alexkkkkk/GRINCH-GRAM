@@ -28,13 +28,10 @@ class Trader:
         }
         self._thread = None
         # ── Ручной выключатель торговли ──────────────────────────────────
-        # ВСЕГДА False при старте процесса (требование пользователя): бот
-        # анализирует рынок, показывает данные в дашборде, но НЕ совершает
-        # сделок, пока пользователь явно не включит торговлю кнопкой.
-        # Это НЕ то же самое, что exp.is_paused() (авто-пауза ИИ по просадке) —
-        # отдельный, полностью ручной флаг, не хранится как "включено" между
-        # перезапусками.
-        self.trading_enabled = False
+        # После ДЕПЛОЯ (первый запуск, нет сохранённого состояния) — False.
+        # После ПЕРЕЗАГРУЗКИ (рестарт процесса) — восстанавливается из DB.
+        # Это НЕ то же самое, что exp.is_paused() (авто-пауза ИИ по просадке).
+        self.trading_enabled = self._load_trading_enabled()
         self._last_disabled_log_ts = 0.0
         self.signal_callbacks = []
         self.on_training_progress = None
@@ -209,12 +206,33 @@ class Trader:
     # ──────────────────────────────────────────
     # Ручной выключатель торговли (не путать с start/stop всего агента)
     # ──────────────────────────────────────────
+    @staticmethod
+    def _load_trading_enabled() -> bool:
+        """Загружает последнее состояние кнопки торговли из DB/settings.
+        Возвращает False если сохранённого состояния нет (первый запуск / деплой)."""
+        try:
+            import db_store as _dbs
+            val = _dbs.settings_get("trader_state", "trading_enabled")
+            return str(val).lower() == "true" if val is not None else False
+        except Exception:
+            return False
+
+    def _save_trading_enabled(self, state: bool) -> None:
+        """Сохраняет состояние кнопки торговли в DB для пережития рестартов."""
+        try:
+            import db_store as _dbs
+            _dbs.settings_update_section("trader_state", {"trading_enabled": str(state)})
+        except Exception:
+            pass
+
     def enable_trading(self):
         self.trading_enabled = True
+        self._save_trading_enabled(True)
         self.log("🟢 Торговля ВКЛЮЧЕНА пользователем — бот может открывать/закрывать сделки", "INFO")
 
     def disable_trading(self):
         self.trading_enabled = False
+        self._save_trading_enabled(False)
         self.log("🔴 Торговля ВЫКЛЮЧЕНА пользователем — бот приостановил все сделки", "WARN")
 
     def _trading_disabled_guard(self) -> bool:
