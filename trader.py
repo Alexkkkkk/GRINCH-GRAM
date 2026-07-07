@@ -210,6 +210,9 @@ class Trader:
     def stop(self):
         self.running = False
         self.training = False
+        # Сбрасываем ссылку на deep-retrain поток, чтобы при повторном
+        # start() он был создан заново (_start_deep_retrain_thread проверяет is not None).
+        self._deep_retrain_thread = None
         self.log("Торговый агент остановлен", "WARN")
 
     # ──────────────────────────────────────────

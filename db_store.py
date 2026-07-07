@@ -264,6 +264,15 @@ def _try_rebuild_pool(*, _from_conn: bool = False) -> bool:
 
     try:
         p = _make_pool(connect_timeout=15)
+        # После пересоздания пула прогоняем DDL, чтобы гарантировать
+        # наличие всех таблиц (например, при reconnect к «чистой» БД).
+        conn = p.getconn()
+        try:
+            with conn.cursor() as cur:
+                cur.execute(_DDL)
+            conn.commit()
+        finally:
+            p.putconn(conn)
         with _pool_lock:
             _pool = p
             _available = True

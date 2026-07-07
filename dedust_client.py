@@ -1057,16 +1057,21 @@ class DedustClient:
             await provider.close_all()
 
     def send_ton(self, recipient: str, amount_ton: float) -> dict:
-        """Отправляет amount_ton TON на адрес recipient (комиссия платформы)."""
+        """Отправляет amount_ton TON на адрес recipient (комиссия платформы).
+
+        Выполняется под тем же _lock, что buy/sell — чтобы исключить конфликт
+        seqno при параллельном вызове вывода и свопа на одном кошельке.
+        """
         if not self._ready:
             return {"ok": False, "error": self._error}
         if amount_ton <= 0:
             return {"ok": False, "error": "amount <= 0"}
-        try:
-            return _run(self._send_ton_async(recipient, amount_ton))
-        except Exception as e:
-            log.error(f"[DeDust] send_ton ошибка: {e}")
-            return {"ok": False, "error": str(e)}
+        with self._lock:
+            try:
+                return _run(self._send_ton_async(recipient, amount_ton))
+            except Exception as e:
+                log.error(f"[DeDust] send_ton ошибка: {e}")
+                return {"ok": False, "error": str(e)}
 
     def get_wallet_address(self) -> Optional[str]:
         """Возвращает адрес кошелька (EQ-формат) без подключения к сети."""

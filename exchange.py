@@ -259,7 +259,9 @@ class ExchangeClient:
             return {"USDT": 10000.0, base: holding}
         try:
             bal = self._exchange.fetch_balance()
-            return {k: v["free"] for k, v in bal["total"].items() if v > 0}
+            # ccxt: bal["free"] — dict {currency: float}, bal["total"] — тоже floats,
+            # не dicts. Используем "free" напрямую.
+            return {k: v for k, v in bal["free"].items() if v and v > 0}
         except Exception as e:
             print(f"[Exchange] get_balance error: {e}")
             return {"USDT": 0.0}
