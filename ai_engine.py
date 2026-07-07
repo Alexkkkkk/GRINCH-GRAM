@@ -738,25 +738,25 @@ class AIEngine:
         # (RF+ET+GB), без HGB/XGB/LGB/MLP — они держат в памяти сразу
         # несколько полных копий обучающей выборки во время fit().
         if LOW_MEMORY_MODE:
-            # Дожатые до минимума размеры (было 60/50/40 деревьев) — каждое
-            # дерево меньше держит в памяти при fit(), пиковая RSS ниже.
-            # Точность падает незначительно (ансамбль усредняет 3 модели).
+            # ULTRA-LOW: минимально возможные деревья — RSS во время fit() ~80MB
+            # (было 35/30/25 → OOM на Bothost 256MB; теперь 12/10/8).
+            # max_depth ограничен чтобы дерево занимало < 1 MB в памяти.
             self._slots = [
                 _ModelSlot("RF", _make_pipeline(
                     RandomForestClassifier(
-                        n_estimators=35, max_depth=6, min_samples_split=4,
-                        min_samples_leaf=2, max_features="sqrt",
+                        n_estimators=12, max_depth=4, min_samples_split=6,
+                        min_samples_leaf=3, max_features="sqrt",
                         class_weight="balanced", random_state=42, n_jobs=1)
                 )),
                 _ModelSlot("ET", _make_pipeline(
                     ExtraTreesClassifier(
-                        n_estimators=30, max_depth=5, min_samples_split=4,
+                        n_estimators=10, max_depth=4, min_samples_split=6,
                         class_weight="balanced", random_state=7, n_jobs=1)
                 )),
                 _ModelSlot("GB", _make_pipeline(
                     GradientBoostingClassifier(
-                        n_estimators=25, max_depth=3, learning_rate=0.09,
-                        subsample=0.7, min_samples_leaf=2, random_state=42)
+                        n_estimators=8, max_depth=2, learning_rate=0.12,
+                        subsample=0.6, min_samples_leaf=4, random_state=42)
                 )),
             ]
             self._kelly_wins: deque = deque(maxlen=KELLY_LOOKBACK)
