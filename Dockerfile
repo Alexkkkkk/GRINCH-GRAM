@@ -28,10 +28,14 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     curl && \
     rm -rf /var/lib/apt/lists/*
 
-COPY requirements.txt .
-# --prefer-binary: pip выберет готовое колесо вместо сборки из исходников,
-# даже если версия wheel чуть старше — страховка от случайной компиляции.
-RUN pip install --no-cache-dir --prefer-binary -r requirements.txt
+# requirements-bothost.txt = requirements.txt без xgboost (131.7 МБ),
+# ccxt (5.8 МБ) и eventlet (0.4 МБ) — они переполняли диск при сборке.
+# xgboost при LOW_MEMORY_MODE=1 всё равно не импортируется (ai_engine.py:63).
+# ccxt импортируется лениво внутри try/except в exchange.py — без него бот
+# просто остаётся в DeDust-режиме. eventlet не используется совсем.
+COPY requirements-bothost.txt .
+# --prefer-binary: pip выберет готовое колесо вместо сборки из исходников.
+RUN pip install --no-cache-dir --prefer-binary -r requirements-bothost.txt
 
 COPY . .
 
