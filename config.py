@@ -275,6 +275,36 @@ class Config:
     DCA_AI_DROP_CAP         = float(os.getenv("DCA_AI_DROP_CAP",     "50"))  # макс. порог докупки %
     DCA_AI_PULLBACK_CAP     = float(os.getenv("DCA_AI_PULLBACK_CAP", "50"))  # макс. ожидание отката %
 
+    # ── Каскадный выход: продаём частями, ловим памп ─────────────────────────
+    # Уровень 1 (+20%): продаём 50% позиции, фиксируем гарантированную прибыль.
+    # Уровень 2 (+40%): продаём оставшиеся 50%, ловим дополнительный памп.
+    # При отключении — стандартная продажа всего на уровне 1.
+    DCA_CASCADE_ENABLED    = bool(int(os.getenv("DCA_CASCADE_ENABLED",    "1")))
+    DCA_CASCADE_LEVEL1_PCT = float(os.getenv("DCA_CASCADE_LEVEL1_PCT", "20"))  # % прибыли → продать 50%
+    DCA_CASCADE_LEVEL2_PCT = float(os.getenv("DCA_CASCADE_LEVEL2_PCT", "40"))  # % прибыли → продать остаток
+
+    # ── Умный реentri: после ТП входим быстрее если AI бычий ────────────────
+    # Вместо ожидания -25% отката: при AI-уверенности ≥ порога достаточно -8%.
+    DCA_SMART_REENTRY_ENABLED    = bool(int(os.getenv("DCA_SMART_REENTRY_ENABLED",    "1")))
+    DCA_SMART_REENTRY_PULLBACK_PCT = float(os.getenv("DCA_SMART_REENTRY_PULLBACK_PCT", "8"))  # откат для быстрого реentri
+    DCA_SMART_REENTRY_MIN_AI_CONF  = float(os.getenv("DCA_SMART_REENTRY_MIN_AI_CONF",  "60")) # мин. AI-уверенность (%)
+
+    # ── Компаундирование: автоматический реинвест части прибыли ─────────────
+    # После каждого прибыльного цикла ставка растёт на RATIO% от профита.
+    # Пример: прибыль 20 TON → +30% = +6 TON к следующей ставке.
+    # Накопленный бонус ограничен MAX_TON и сохраняется между циклами.
+    DCA_COMPOUND_ENABLED   = bool(int(os.getenv("DCA_COMPOUND_ENABLED",   "1")))
+    DCA_COMPOUND_RATIO     = float(os.getenv("DCA_COMPOUND_RATIO",     "0.30")) # доля прибыли в реинвест
+    DCA_COMPOUND_MAX_TON   = float(os.getenv("DCA_COMPOUND_MAX_TON",   "500"))  # макс. бонус (TON)
+
+    # ── Адаптивный DCA-триггер: докупаем агрессивнее в ракетных движениях ───
+    # Если цена выросла > FAST_MOVE_PCT за последние несколько тиков → рынок
+    # летит вверх. В этом режиме порог докупки снижается до FAST_DROP_PCT
+    # (вместо стандартных 12%) чтобы не пропустить откат во время ракеты.
+    DCA_ADAPTIVE_TRIGGER_ENABLED  = bool(int(os.getenv("DCA_ADAPTIVE_TRIGGER_ENABLED",  "1")))
+    DCA_ADAPTIVE_FAST_MOVE_PCT    = float(os.getenv("DCA_ADAPTIVE_FAST_MOVE_PCT",    "5"))  # порог "ракетного" движения %
+    DCA_ADAPTIVE_FAST_DROP_PCT    = float(os.getenv("DCA_ADAPTIVE_FAST_DROP_PCT",    "6"))  # агрессивный порог докупки %
+
     # ── Защита прибыли: если портфель +N TON И рынок падает → продаём всё ───
     # Продаёт весь GRINCH немедленно, если:
     #   1) текущая прибыль портфеля >= PROFIT_PROTECT_TON (в TON)

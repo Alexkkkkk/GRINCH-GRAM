@@ -949,7 +949,7 @@
               <small style="color:#8892b0">Продать ВСЁ когда суммарный GRINCH вырос на N% от вложенных TON</small>
             </label>
             <label>Докупка при падении (%)
-              <input type="number" id="cfg-dca-drop" value="25" min="5" max="90" step="1">
+              <input type="number" id="cfg-dca-drop" value="12" min="1" max="90" step="1">
               <small style="color:#8892b0">Купить ещё если цена упала на N% от цены последней покупки</small>
             </label>
             <label>Ждать откат после продажи (%)
@@ -960,6 +960,79 @@
               <input type="number" id="cfg-dca-max-entries" value="10" min="1" max="50" step="1">
               <small style="color:#8892b0">Максимум раз докупиться в одном цикле (защита от бесконечного усреднения)</small>
             </label>
+
+            <!-- ── 4 улучшения DCA ──────────────────────────────────── -->
+            <div style="margin-top:14px;padding:10px;background:rgba(255,214,0,.07);border:1px solid rgba(255,214,0,.2);border-radius:8px">
+              <div style="font-size:11px;font-weight:700;color:#ffd166;margin-bottom:10px">⚡ Улучшения DCA</div>
+
+              <!-- Каскадный выход -->
+              <label class="cfg-check">
+                <input type="checkbox" id="cfg-dca-cascade" checked>
+                <span style="font-weight:600;color:#00ff88">🎯 Каскадный выход (продажа частями)</span>
+              </label>
+              <div style="padding-left:22px;margin-bottom:8px">
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px">
+                  <label style="font-size:11px">Уровень 1 (%) — продать 50%
+                    <input type="number" id="cfg-dca-cascade-l1" value="20" min="5" max="100" step="1" style="font-size:11px">
+                  </label>
+                  <label style="font-size:11px">Уровень 2 (%) — продать остаток
+                    <input type="number" id="cfg-dca-cascade-l2" value="40" min="5" max="200" step="1" style="font-size:11px">
+                  </label>
+                </div>
+                <small style="color:#8892b0">+20% → фиксируем 50% прибыли, +40% → продаём остаток</small>
+              </div>
+
+              <!-- Умный реentri -->
+              <label class="cfg-check">
+                <input type="checkbox" id="cfg-dca-smart-reentry" checked>
+                <span style="font-weight:600;color:#00d4ff">⚡ Умный реentri (AI бычий → меньший откат)</span>
+              </label>
+              <div style="padding-left:22px;margin-bottom:8px">
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px">
+                  <label style="font-size:11px">Откат для реentri (%)
+                    <input type="number" id="cfg-dca-reentry-pullback" value="8" min="1" max="50" step="1" style="font-size:11px">
+                  </label>
+                  <label style="font-size:11px">Мин. AI-уверенность (%)
+                    <input type="number" id="cfg-dca-reentry-ai-conf" value="60" min="30" max="99" step="1" style="font-size:11px">
+                  </label>
+                </div>
+                <small style="color:#8892b0">Вместо -25% откат: при AI BUY ≥60% достаточно -8%</small>
+              </div>
+
+              <!-- Компаундирование -->
+              <label class="cfg-check">
+                <input type="checkbox" id="cfg-dca-compound" checked>
+                <span style="font-weight:600;color:#ffd166">🔄 Компаундирование (реинвест прибыли)</span>
+              </label>
+              <div style="padding-left:22px;margin-bottom:8px">
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px">
+                  <label style="font-size:11px">Доля прибыли в реинвест (0–1)
+                    <input type="number" id="cfg-dca-compound-ratio" value="0.30" min="0.01" max="0.9" step="0.05" style="font-size:11px">
+                  </label>
+                  <label style="font-size:11px">Макс. бонус (TON)
+                    <input type="number" id="cfg-dca-compound-max" value="500" min="10" max="10000" step="10" style="font-size:11px">
+                  </label>
+                </div>
+                <small style="color:#8892b0">Прибыль 20 TON → +30% = +6 TON к следующей ставке</small>
+              </div>
+
+              <!-- Адаптивный триггер -->
+              <label class="cfg-check">
+                <input type="checkbox" id="cfg-dca-adaptive" checked>
+                <span style="font-weight:600;color:#ff79c6">⚡ Адаптивный триггер (агрессивнее при ракете)</span>
+              </label>
+              <div style="padding-left:22px">
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px">
+                  <label style="font-size:11px">Порог «ракетного» движения (%)
+                    <input type="number" id="cfg-dca-fast-move" value="5" min="1" max="30" step="0.5" style="font-size:11px">
+                  </label>
+                  <label style="font-size:11px">Агрессивный порог докупки (%)
+                    <input type="number" id="cfg-dca-fast-drop" value="6" min="1" max="30" step="0.5" style="font-size:11px">
+                  </label>
+                </div>
+                <small style="color:#8892b0">Если рынок вырос >5% за 75 сек → докупать уже при -6% (не -12%)</small>
+              </div>
+            </div>
           </div>
 
           <!-- DCA Status Panel -->
@@ -972,6 +1045,8 @@
               <span style="color:#8892b0">Прибыль порт.:</span><span id="dca-profit" style="font-weight:700">—</span>
               <span style="color:#8892b0">Цена входа:</span>    <span id="dca-last-buy" style="font-weight:700">—</span>
               <span style="color:#8892b0">Пик (откат от):</span><span id="dca-peak" style="font-weight:700">—</span>
+              <span style="color:#8892b0">Каскад:</span>        <span id="dca-cascade-status" style="font-weight:700">—</span>
+              <span style="color:#8892b0">Компаунд-бонус:</span><span id="dca-compound-bonus" style="font-weight:700">—</span>
             </div>
             <div style="margin-top:8px">
               <div style="font-size:10px;color:#8892b0;margin-bottom:3px">Прогресс к цели <span id="dca-target-label">+20%</span></div>

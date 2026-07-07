@@ -1104,6 +1104,19 @@ def api_config_get():
         "dca_drop_trigger_pct": Config.DCA_DROP_TRIGGER_PCT,
         "dca_pullback_wait_pct": Config.DCA_PULLBACK_WAIT_PCT,
         "dca_max_entries":      Config.DCA_MAX_ENTRIES,
+        # DCA улучшения (4 механизма)
+        "dca_cascade_enabled":    Config.DCA_CASCADE_ENABLED,
+        "dca_cascade_level1_pct": Config.DCA_CASCADE_LEVEL1_PCT,
+        "dca_cascade_level2_pct": Config.DCA_CASCADE_LEVEL2_PCT,
+        "dca_smart_reentry_enabled":     Config.DCA_SMART_REENTRY_ENABLED,
+        "dca_smart_reentry_pullback_pct": Config.DCA_SMART_REENTRY_PULLBACK_PCT,
+        "dca_smart_reentry_min_ai_conf":  Config.DCA_SMART_REENTRY_MIN_AI_CONF,
+        "dca_compound_enabled":   Config.DCA_COMPOUND_ENABLED,
+        "dca_compound_ratio":     Config.DCA_COMPOUND_RATIO,
+        "dca_compound_max_ton":   Config.DCA_COMPOUND_MAX_TON,
+        "dca_adaptive_trigger_enabled":  Config.DCA_ADAPTIVE_TRIGGER_ENABLED,
+        "dca_adaptive_fast_move_pct":    Config.DCA_ADAPTIVE_FAST_MOVE_PCT,
+        "dca_adaptive_fast_drop_pct":    Config.DCA_ADAPTIVE_FAST_DROP_PCT,
         # Детектор крупных продаж
         "large_sell_dca_enabled":  Config.LARGE_SELL_DCA_ENABLED,
         "large_sell_dca_ton":      Config.LARGE_SELL_DCA_TON,
@@ -1193,9 +1206,26 @@ def api_config_set():
             trader.log(f"🔄 DCA режим {'включён' if new_dca else 'выключен'}", "INFO")
     if (v := num("dca_stake_ton",         1,   10000)) is not None: Config.DCA_STAKE_TON         = v
     if (v := num("dca_target_profit_pct", 1,   200))   is not None: Config.DCA_TARGET_PROFIT_PCT = v
-    if (v := num("dca_drop_trigger_pct",  5,   90))    is not None: Config.DCA_DROP_TRIGGER_PCT  = v
+    if (v := num("dca_drop_trigger_pct",  1,   90))    is not None: Config.DCA_DROP_TRIGGER_PCT  = v
     if (v := num("dca_pullback_wait_pct", 5,   90))    is not None: Config.DCA_PULLBACK_WAIT_PCT = v
     if (v := num("dca_max_entries",       1,   50))    is not None: Config.DCA_MAX_ENTRIES       = int(v)
+    # DCA улучшения
+    if "dca_cascade_enabled" in data:
+        Config.DCA_CASCADE_ENABLED = bool(data["dca_cascade_enabled"])
+    if (v := num("dca_cascade_level1_pct", 5, 100))  is not None: Config.DCA_CASCADE_LEVEL1_PCT = v
+    if (v := num("dca_cascade_level2_pct", 5, 200))  is not None: Config.DCA_CASCADE_LEVEL2_PCT = v
+    if "dca_smart_reentry_enabled" in data:
+        Config.DCA_SMART_REENTRY_ENABLED = bool(data["dca_smart_reentry_enabled"])
+    if (v := num("dca_smart_reentry_pullback_pct", 1, 50))  is not None: Config.DCA_SMART_REENTRY_PULLBACK_PCT = v
+    if (v := num("dca_smart_reentry_min_ai_conf",  30, 99)) is not None: Config.DCA_SMART_REENTRY_MIN_AI_CONF  = v
+    if "dca_compound_enabled" in data:
+        Config.DCA_COMPOUND_ENABLED = bool(data["dca_compound_enabled"])
+    if (v := num("dca_compound_ratio",   0.01, 0.9))   is not None: Config.DCA_COMPOUND_RATIO   = v
+    if (v := num("dca_compound_max_ton", 10,   10000)) is not None: Config.DCA_COMPOUND_MAX_TON  = v
+    if "dca_adaptive_trigger_enabled" in data:
+        Config.DCA_ADAPTIVE_TRIGGER_ENABLED = bool(data["dca_adaptive_trigger_enabled"])
+    if (v := num("dca_adaptive_fast_move_pct", 1, 30)) is not None: Config.DCA_ADAPTIVE_FAST_MOVE_PCT = v
+    if (v := num("dca_adaptive_fast_drop_pct", 1, 30)) is not None: Config.DCA_ADAPTIVE_FAST_DROP_PCT = v
 
     # Детектор крупных продаж
     if "large_sell_dca_enabled" in data:
@@ -1250,6 +1280,19 @@ def api_config_set():
             "DCA_DROP_TRIGGER_PCT": Config.DCA_DROP_TRIGGER_PCT,
             "DCA_PULLBACK_WAIT_PCT": Config.DCA_PULLBACK_WAIT_PCT,
             "DCA_MAX_ENTRIES":      Config.DCA_MAX_ENTRIES,
+            # DCA улучшения (4 механизма)
+            "DCA_CASCADE_ENABLED":    Config.DCA_CASCADE_ENABLED,
+            "DCA_CASCADE_LEVEL1_PCT": Config.DCA_CASCADE_LEVEL1_PCT,
+            "DCA_CASCADE_LEVEL2_PCT": Config.DCA_CASCADE_LEVEL2_PCT,
+            "DCA_SMART_REENTRY_ENABLED":     Config.DCA_SMART_REENTRY_ENABLED,
+            "DCA_SMART_REENTRY_PULLBACK_PCT": Config.DCA_SMART_REENTRY_PULLBACK_PCT,
+            "DCA_SMART_REENTRY_MIN_AI_CONF":  Config.DCA_SMART_REENTRY_MIN_AI_CONF,
+            "DCA_COMPOUND_ENABLED":   Config.DCA_COMPOUND_ENABLED,
+            "DCA_COMPOUND_RATIO":     Config.DCA_COMPOUND_RATIO,
+            "DCA_COMPOUND_MAX_TON":   Config.DCA_COMPOUND_MAX_TON,
+            "DCA_ADAPTIVE_TRIGGER_ENABLED":  Config.DCA_ADAPTIVE_TRIGGER_ENABLED,
+            "DCA_ADAPTIVE_FAST_MOVE_PCT":    Config.DCA_ADAPTIVE_FAST_MOVE_PCT,
+            "DCA_ADAPTIVE_FAST_DROP_PCT":    Config.DCA_ADAPTIVE_FAST_DROP_PCT,
             # Детектор крупных продаж
             "LARGE_SELL_DCA_ENABLED":  Config.LARGE_SELL_DCA_ENABLED,
             "LARGE_SELL_DCA_TON":      Config.LARGE_SELL_DCA_TON,

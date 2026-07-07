@@ -68,6 +68,15 @@ class Trader:
         self.dca_last_buy_price = 0.0
         self.dca_entries_count  = 0
         self.dca_total_stake    = 0.0
+        # ── Каскадный выход ───────────────────────────────────────────
+        # True = уровень 1 (50%) уже продан, держим остаток до уровня 2
+        self.dca_cascade_half_sold = False
+        # ── Компаундирование ─────────────────────────────────────────
+        # Накопленный бонус к ставке из прибылей предыдущих циклов
+        self.dca_compound_bonus_ton = 0.0
+        # ── Адаптивный триггер ───────────────────────────────────────
+        # Скользящий буфер последних цен для детектора быстрого движения
+        self._dca_price_history: list = []
         # Детектор крупных продаж: время последней безусловной покупки по этому триггеру
         self._last_large_sell_buy_ts = 0.0
         # Защита прибыли: пик стоимости портфеля (TON) для детектора разворота
@@ -626,6 +635,21 @@ class Trader:
         except Exception as _lse:
             self.log(f"⚠️ Large Sell DCA check error: {_lse}", "WARN")
 
+        # ── Адаптивный триггер: отслеживаем скорость рынка ─────────────
+        # Буфер последних 5 цен (один тик = 15 сек → 5 тиков = 75 сек).
+        self._dca_price_history.append(price_usd)
+        if len(self._dca_price_history) > 5:
+            self._dca_price_history = self._dca_price_history[-5:]
+        # Считаем движение за последние тики: «ракетный» рост → агрессивный триггер докупки
+        _fast_market = False
+        if (Config.DCA_ADAPTIVE_TRIGGER_ENABLED
+                and len(self._dca_price_history) >= 3):
+            oldest = self._dca_price_history[0]
+            if oldest > 0:
+                _price_velocity = (price_usd - oldest) / oldest * 100
+                if abs(_price_velocity) >= Config.DCA_ADAPTIVE_FAST_MOVE_PCT:
+                    _fast_market = True
+
         # ── Фаза 1: Ожидание отката после продажи ───────────────────
         if self.dca_wait_pullback:
             # Обновляем пик
@@ -638,27 +662,45 @@ class Trader:
                 return
 
             drop_from_peak_pct = (self.dca_peak_price - price_usd) / self.dca_peak_price * 100
-            pullback_needed    = Config.DCA_PULLBACK_WAIT_PCT
 
+            # ── Умный реentri: AI бычий → не ждём полного отката ────
+            _ai_conf_now = float((self.last_ai or {}).get("confidence", 0) or 0)
+            _ai_signal   = (self.last_ai or {}).get("ai_signal", "HOLD")
+            _smart_reentry_possible = (
+                Config.DCA_SMART_REENTRY_ENABLED
+                and _ai_signal in ("BUY",)
+                and _ai_conf_now >= Config.DCA_SMART_REENTRY_MIN_AI_CONF
+            )
+            pullback_needed = (
+                Config.DCA_SMART_REENTRY_PULLBACK_PCT
+                if _smart_reentry_possible
+                else Config.DCA_PULLBACK_WAIT_PCT
+            )
+
+            _reentry_tag = (
+                f"⚡ умный реentri (AI={_ai_conf_now:.0f}%, откат -{Config.DCA_SMART_REENTRY_PULLBACK_PCT:.0f}%)"
+                if _smart_reentry_possible
+                else f"стандартный откат -{Config.DCA_PULLBACK_WAIT_PCT:.0f}%"
+            )
             self.log(
                 f"⏳ DCA ожидание отката: пик ${self.dca_peak_price:.8f} → "
-                f"сейчас ${price_usd:.8f} | "
-                f"откат {drop_from_peak_pct:.1f}% / нужно {pullback_needed:.0f}%",
+                f"${price_usd:.8f} | откат {drop_from_peak_pct:.1f}% / нужно {pullback_needed:.0f}% "
+                f"({_reentry_tag})",
                 "INFO"
             )
 
             if drop_from_peak_pct >= pullback_needed:
+                mode_label = "умный реentri (AI бычий)" if _smart_reentry_possible else "новый цикл после отката"
                 self.log(
                     f"✅ DCA: откат {drop_from_peak_pct:.1f}% ≥ {pullback_needed:.0f}% — "
-                    f"запускаем новый цикл покупок!",
+                    f"{mode_label}!",
                     "INFO"
                 )
                 self.dca_wait_pullback  = False
                 self.dca_peak_price     = 0.0
                 self.dca_entries_count  = 0
                 self.dca_total_stake    = 0.0
-                # Совершаем первую покупку нового цикла
-                self._dca_buy(price_usd, grinch_ton, "новый цикл после отката")
+                self._dca_buy(price_usd, grinch_ton, mode_label)
             return
 
         # ── Фаза 2: Проверка целевой прибыли портфеля ────────────────
@@ -669,65 +711,136 @@ class Trader:
                 portfolio_pct = (total_value_ton - total_cost_ton) / total_cost_ton * 100
                 entries       = len(self.open_trades)
                 total_grinch  = sum(t.get("amount", 0) for t in self.open_trades)
+                profit_ton_abs = total_value_ton - total_cost_ton
+                min_ton        = getattr(Config, "MIN_PROFIT_TON_ABS", 3.0)
 
+                # Показываем расширенный статус с индикатором каскада
+                _cascade_tag = (
+                    f" | 🎯 Ур.2 ({Config.DCA_CASCADE_LEVEL2_PCT:.0f}%) — держим остаток"
+                    if self.dca_cascade_half_sold else
+                    (f" | каскад вкл (Ур.1={Config.DCA_CASCADE_LEVEL1_PCT:.0f}%/Ур.2={Config.DCA_CASCADE_LEVEL2_PCT:.0f}%)"
+                     if Config.DCA_CASCADE_ENABLED else "")
+                )
+                _compound_tag = (
+                    f" | 🔄 компаунд +{self.dca_compound_bonus_ton:.1f} TON"
+                    if self.dca_compound_bonus_ton > 0 else ""
+                )
+                _adapt_tag = " | ⚡ РАКЕТА" if _fast_market else ""
                 self.log(
-                    f"📊 DCA портфель: {entries} позиций | "
+                    f"📊 DCA портфель: {entries} поз. | "
                     f"вложено {total_cost_ton:.2f} TON | "
                     f"сейчас {total_value_ton:.2f} TON | "
-                    f"прибыль {portfolio_pct:+.1f}% / цель +{Config.DCA_TARGET_PROFIT_PCT:.0f}%",
+                    f"прибыль {portfolio_pct:+.1f}%{_cascade_tag}{_compound_tag}{_adapt_tag}",
                     "INFO"
                 )
 
-                # Цель достигнута → продаём ВСЁ (при условии мин. 3 TON абсолютной прибыли)
-                if portfolio_pct >= Config.DCA_TARGET_PROFIT_PCT:
-                    profit_ton_abs = total_value_ton - total_cost_ton
-                    min_ton = getattr(Config, "MIN_PROFIT_TON_ABS", 3.0)
-                    if profit_ton_abs < min_ton:
-                        self.log(
-                            f"⏳ DCA: цель по % достигнута (+{portfolio_pct:.1f}%) "
-                            f"но прибыль {profit_ton_abs:.3f} TON < мин {min_ton:.1f} TON — "
-                            f"держим позицию, ждём роста",
-                            "INFO"
-                        )
-                    else:
-                        self.log(
-                            f"🎯 DCA ЦЕЛЬ: портфель +{portfolio_pct:.1f}% ≥ "
-                            f"+{Config.DCA_TARGET_PROFIT_PCT:.0f}% | прибыль {profit_ton_abs:.2f} TON ✅ "
-                            f"— продаём ВСЁ! ({total_grinch:.2f} GRINCH)",
-                            "INFO"
-                        )
-                    closed = self._dca_sell_all(price_usd, grinch_ton, portfolio_pct) if profit_ton_abs >= min_ton else False
-                    if closed:
-                        self.dca_wait_pullback = True
-                        self.dca_peak_price    = price_usd
-                        self._emit_signal("SELL", price_usd, self.last_ai)
-                        self.log(
-                            f"⏳ DCA: продали всё, ждём откат -{Config.DCA_PULLBACK_WAIT_PCT:.0f}% "
-                            f"от текущего пика ${price_usd:.8f}",
-                            "INFO"
-                        )
-                    return
+                # ── КАСКАДНЫЙ ВЫХОД ──────────────────────────────────
+                if Config.DCA_CASCADE_ENABLED:
+                    # Уровень 2: продаём остаток (уровень 1 уже был продан)
+                    if self.dca_cascade_half_sold and portfolio_pct >= Config.DCA_CASCADE_LEVEL2_PCT:
+                        if profit_ton_abs >= min_ton:
+                            self.log(
+                                f"🚀 КАСКАД Ур.2: портфель +{portfolio_pct:.1f}% ≥ "
+                                f"+{Config.DCA_CASCADE_LEVEL2_PCT:.0f}% — продаём остаток! "
+                                f"({total_grinch:.2f} GRINCH)",
+                                "INFO"
+                            )
+                            closed = self._dca_sell_all(price_usd, grinch_ton, portfolio_pct)
+                        else:
+                            closed = False
+                            self.log(
+                                f"⏳ Каскад Ур.2: цель достигнута, но прибыль "
+                                f"{profit_ton_abs:.3f} TON < мин {min_ton:.1f} — ждём",
+                                "INFO"
+                            )
+                        if closed:
+                            self.dca_wait_pullback = True
+                            self.dca_peak_price    = price_usd
+                            self._emit_signal("SELL", price_usd, self.last_ai)
+                            self.log(
+                                f"✅ Каскад завершён! Ждём откат "
+                                f"-{Config.DCA_PULLBACK_WAIT_PCT:.0f}% от пика",
+                                "INFO"
+                            )
+                        return
 
-                # Проверяем DCA-докупку при падении цены
-                if self.dca_last_buy_price > 0:
+                    # Уровень 1: продаём 50% и держим остаток
+                    if (not self.dca_cascade_half_sold
+                            and portfolio_pct >= Config.DCA_CASCADE_LEVEL1_PCT):
+                        if profit_ton_abs >= min_ton:
+                            sold = self._dca_sell_partial(
+                                price_usd, grinch_ton, portfolio_pct, sell_fraction=0.5
+                            )
+                            if sold:
+                                self._emit_signal("SELL", price_usd, self.last_ai)
+                        else:
+                            self.log(
+                                f"⏳ Каскад Ур.1: цель +{portfolio_pct:.1f}% достигнута, "
+                                f"но прибыль {profit_ton_abs:.3f} TON < мин {min_ton:.1f} — ждём",
+                                "INFO"
+                            )
+                        return
+
+                else:
+                    # ── Стандартный выход: продаём ВСЁ на целевом % ─────
+                    if portfolio_pct >= Config.DCA_TARGET_PROFIT_PCT:
+                        if profit_ton_abs < min_ton:
+                            self.log(
+                                f"⏳ DCA: цель +{portfolio_pct:.1f}% но прибыль "
+                                f"{profit_ton_abs:.3f} TON < мин {min_ton:.1f} — ждём",
+                                "INFO"
+                            )
+                        else:
+                            self.log(
+                                f"🎯 DCA ЦЕЛЬ: +{portfolio_pct:.1f}% ≥ "
+                                f"+{Config.DCA_TARGET_PROFIT_PCT:.0f}% | "
+                                f"{profit_ton_abs:.2f} TON — продаём ВСЁ!",
+                                "INFO"
+                            )
+                        closed = self._dca_sell_all(price_usd, grinch_ton, portfolio_pct) \
+                            if profit_ton_abs >= min_ton else False
+                        if closed:
+                            self.dca_wait_pullback = True
+                            self.dca_peak_price    = price_usd
+                            self._emit_signal("SELL", price_usd, self.last_ai)
+                            self.log(
+                                f"⏳ DCA: продали всё, ждём откат "
+                                f"-{Config.DCA_PULLBACK_WAIT_PCT:.0f}%",
+                                "INFO"
+                            )
+                        return
+
+                # ── Докупка при падении (адаптивный триггер) ─────────
+                # Не докупаем если уже продали половину по каскаду (ждём ракету вверх)
+                if not self.dca_cascade_half_sold and self.dca_last_buy_price > 0:
                     drop_from_last_pct = (
                         (self.dca_last_buy_price - price_usd) / self.dca_last_buy_price * 100
                     )
-                    if drop_from_last_pct >= Config.DCA_DROP_TRIGGER_PCT:
+                    # Адаптивный порог: рынок летит → докупаем агрессивнее
+                    drop_trigger = (
+                        Config.DCA_ADAPTIVE_FAST_DROP_PCT
+                        if _fast_market
+                        else Config.DCA_DROP_TRIGGER_PCT
+                    )
+                    _trigger_tag = f"⚡ адаптивный {drop_trigger:.0f}%" if _fast_market \
+                        else f"стандартный {drop_trigger:.0f}%"
+                    if drop_from_last_pct >= drop_trigger:
                         if self.dca_entries_count < Config.DCA_MAX_ENTRIES:
                             self.log(
                                 f"📉 DCA ДОКУПКА: цена упала {drop_from_last_pct:.1f}% "
-                                f"от последней покупки ${self.dca_last_buy_price:.8f} → "
-                                f"${price_usd:.8f} | вход #{self.dca_entries_count + 1}",
+                                f"(триггер: {_trigger_tag}) | "
+                                f"вход #{self.dca_entries_count + 1}",
                                 "INFO"
                             )
-                            self._dca_buy(price_usd, grinch_ton,
-                                          f"докупка #{self.dca_entries_count + 1} "
-                                          f"(падение {drop_from_last_pct:.1f}%)")
+                            self._dca_buy(
+                                price_usd, grinch_ton,
+                                f"докупка #{self.dca_entries_count + 1} "
+                                f"(падение {drop_from_last_pct:.1f}%, {_trigger_tag})"
+                            )
                         else:
                             self.log(
-                                f"⏸️ DCA: достигнут лимит входов ({Config.DCA_MAX_ENTRIES}), "
-                                f"ждём восстановления портфеля",
+                                f"⏸️ DCA: лимит входов ({Config.DCA_MAX_ENTRIES}), "
+                                f"ждём восстановления",
                                 "WARN"
                             )
             return
@@ -762,8 +875,19 @@ class Trader:
         return total_cost_ton, total_value_ton
 
     def _dca_buy(self, price_usd, grinch_ton, reason=""):
-        """Открывает одну DCA позицию на DCA_STAKE_TON."""
+        """Открывает одну DCA позицию на DCA_STAKE_TON (+ compound-бонус если накоплен)."""
         stake_ton = Config.DCA_STAKE_TON
+        # ── Компаундирование: прибавляем реинвест-бонус к первой покупке цикла ──
+        if (Config.DCA_COMPOUND_ENABLED
+                and self.dca_compound_bonus_ton > 0
+                and self.dca_entries_count == 0):
+            stake_ton = stake_ton + self.dca_compound_bonus_ton
+            self.log(
+                f"🔄 Компаунд: базовая ставка {Config.DCA_STAKE_TON:.1f} TON "
+                f"+ бонус {self.dca_compound_bonus_ton:.2f} TON "
+                f"= {stake_ton:.2f} TON (реинвест накоплен за прошлые циклы)",
+                "INFO"
+            )
 
         # Проверяем баланс
         bal     = self.exchange.get_balance() or {}
@@ -878,6 +1002,76 @@ class Trader:
         finally:
             Config.TRADE_AMOUNT = orig_amount
 
+    def _dca_sell_partial(self, price_usd, grinch_ton, portfolio_pct, sell_fraction=0.5):
+        """Каскадный выход: продаёт sell_fraction (0.5 = 50%) от всей позиции.
+        Оставляет остаток открытым, пересчитывает stake_ton пропорционально."""
+        if not self.open_trades:
+            return False
+
+        total_grinch = sum(t.get("amount", 0) for t in self.open_trades)
+        if total_grinch <= 0:
+            return False
+
+        sell_amount = round(total_grinch * sell_fraction, 6)
+        if sell_amount <= 0:
+            return False
+
+        self.log(
+            f"🎯 КАСКАД Ур.1: продаём {sell_fraction*100:.0f}% позиции "
+            f"({sell_amount:.4f} GRINCH) @ +{portfolio_pct:.1f}% прибыли | "
+            f"держим {total_grinch - sell_amount:.4f} GRINCH до Ур.2 (+{Config.DCA_CASCADE_LEVEL2_PCT:.0f}%)",
+            "INFO"
+        )
+
+        if self.exchange.mode == "dedust":
+            sell_result = self.exchange.place_order("sell", sell_amount)
+            if not sell_result or sell_result.get("error"):
+                err = (sell_result or {}).get("error", "нет ответа")
+                self.log(f"⚠️ Каскад: продажа Ур.1 не исполнена — {err}", "WARN")
+                return False
+            self.log(
+                f"✅ Каскад Ур.1: продажа исполнена | id={sell_result.get('id', '—')}",
+                "INFO"
+            )
+
+        fee      = Config.FEE_PCT / 100.0
+        buy_gas  = Config.BUY_GAS_TON
+        sell_gas = Config.SELL_GAS_TON
+
+        # Уменьшаем amount/stake_ton во всех открытых позициях пропорционально
+        partial_pnl = 0.0
+        for trade in self.open_trades:
+            old_amount = trade.get("amount", 0) or 0
+            old_stake  = trade.get("stake_ton", 0) or 0
+            new_amount = round(old_amount * (1 - sell_fraction), 6)
+            new_stake  = round(old_stake  * (1 - sell_fraction), 4)
+            # PNL от проданной части
+            sold_part = old_amount * sell_fraction
+            if grinch_ton > 0 and sold_part > 0:
+                proceeds = sold_part * grinch_ton * (1 - fee) - sell_gas * sell_fraction
+                cost     = old_stake * sell_fraction + buy_gas * sell_fraction
+                partial_pnl += round(proceeds - cost, 6)
+            trade["amount"]    = new_amount
+            trade["stake_ton"] = new_stake
+
+        self.dca_total_stake   = sum(t.get("stake_ton", 0) for t in self.open_trades)
+        self.dca_cascade_half_sold = True
+        self.stats["total_pnl"] = round(self.stats["total_pnl"] + partial_pnl, 6)
+        if partial_pnl > 0:
+            self.stats["winning_trades"] += 1
+
+        try:
+            self.exp.save_open_trades(self._combined_open_trades())
+        except Exception:
+            pass
+
+        self.log(
+            f"✅ Каскад Ур.1 зафиксирован: PNL ≈ {partial_pnl:+.4f} TON | "
+            f"остаток {total_grinch*(1-sell_fraction):.4f} GRINCH ждёт +{Config.DCA_CASCADE_LEVEL2_PCT:.0f}%",
+            "SELL"
+        )
+        return True
+
     def _dca_sell_all(self, price_usd, grinch_ton, portfolio_pct):
         """Продаёт все DCA позиции одной продажей суммарного GRINCH."""
         if not self.open_trades:
@@ -970,11 +1164,27 @@ class Trader:
                     t.update(trade)
                     break
 
+        # ── Компаундирование: накапливаем бонус к следующей ставке ──────
+        if Config.DCA_COMPOUND_ENABLED and total_pnl > 0:
+            bonus = round(total_pnl * Config.DCA_COMPOUND_RATIO, 4)
+            old_bonus = self.dca_compound_bonus_ton
+            self.dca_compound_bonus_ton = min(
+                self.dca_compound_bonus_ton + bonus,
+                Config.DCA_COMPOUND_MAX_TON
+            )
+            self.log(
+                f"🔄 Компаунд: прибыль {total_pnl:.3f} TON × {Config.DCA_COMPOUND_RATIO:.0%} "
+                f"= +{bonus:.3f} TON → бонус {old_bonus:.2f} → {self.dca_compound_bonus_ton:.2f} TON "
+                f"(лимит {Config.DCA_COMPOUND_MAX_TON:.0f} TON)",
+                "INFO"
+            )
+
         # Снимаем dca_entries ПЕРЕД сбросом (иначе советник получит 0)
         _dca_entries_snap = self.dca_entries_count
-        self.open_trades       = []
-        self.dca_entries_count = 0
-        self.dca_total_stake   = 0.0
+        self.open_trades         = []
+        self.dca_entries_count   = 0
+        self.dca_total_stake     = 0.0
+        self.dca_cascade_half_sold = False   # сбрасываем каскад-флаг на новый цикл
 
         # ── AI Советник: ОДИН триггер на закрытие DCA-цикла ──────────
         try:
@@ -2683,5 +2893,19 @@ class Trader:
                 "pullback_wait_pct": Config.DCA_PULLBACK_WAIT_PCT,
                 "stake_ton":       Config.DCA_STAKE_TON,
                 "max_entries":     Config.DCA_MAX_ENTRIES,
+                # ── Новые поля: 4 улучшения ───────────────────────────
+                "cascade_enabled":     Config.DCA_CASCADE_ENABLED,
+                "cascade_half_sold":   self.dca_cascade_half_sold,
+                "cascade_level1_pct":  Config.DCA_CASCADE_LEVEL1_PCT,
+                "cascade_level2_pct":  Config.DCA_CASCADE_LEVEL2_PCT,
+                "compound_enabled":    Config.DCA_COMPOUND_ENABLED,
+                "compound_bonus_ton":  round(self.dca_compound_bonus_ton, 3),
+                "compound_ratio":      Config.DCA_COMPOUND_RATIO,
+                "smart_reentry_enabled": Config.DCA_SMART_REENTRY_ENABLED,
+                "smart_reentry_pullback": Config.DCA_SMART_REENTRY_PULLBACK_PCT,
+                "smart_reentry_ai_conf":  Config.DCA_SMART_REENTRY_MIN_AI_CONF,
+                "adaptive_trigger_enabled": Config.DCA_ADAPTIVE_TRIGGER_ENABLED,
+                "adaptive_fast_move_pct": Config.DCA_ADAPTIVE_FAST_MOVE_PCT,
+                "adaptive_fast_drop_pct": Config.DCA_ADAPTIVE_FAST_DROP_PCT,
             } if Config.DCA_MODE else None,
         }

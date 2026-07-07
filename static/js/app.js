@@ -329,6 +329,37 @@ function renderDcaState(st, active) {
     ? fmtGram(st.last_buy_price) : "—";
   if (g("dca-peak"))     g("dca-peak").textContent     = st.peak_price > 0
     ? fmtGram(st.peak_price) : "—";
+
+  // ── Каскадный выход ──────────────────────────────────────────
+  if (g("dca-cascade-status")) {
+    if (!st.cascade_enabled) {
+      g("dca-cascade-status").textContent = "выкл.";
+      g("dca-cascade-status").style.color = "#8892b0";
+    } else if (st.cascade_half_sold) {
+      g("dca-cascade-status").textContent =
+        `⚡ 50% продано → ждём +${st.cascade_level2_pct ?? 40}%`;
+      g("dca-cascade-status").style.color = "#ffd166";
+    } else {
+      g("dca-cascade-status").textContent =
+        `Ур.1=+${st.cascade_level1_pct ?? 20}% / Ур.2=+${st.cascade_level2_pct ?? 40}%`;
+      g("dca-cascade-status").style.color = "#00ff88";
+    }
+  }
+
+  // ── Компаунд-бонус ───────────────────────────────────────────
+  if (g("dca-compound-bonus")) {
+    const bonus = st.compound_bonus_ton ?? 0;
+    if (!st.compound_enabled) {
+      g("dca-compound-bonus").textContent = "выкл.";
+      g("dca-compound-bonus").style.color = "#8892b0";
+    } else if (bonus > 0) {
+      g("dca-compound-bonus").textContent = `+${Number(bonus).toFixed(2)} TON`;
+      g("dca-compound-bonus").style.color = "#ffd166";
+    } else {
+      g("dca-compound-bonus").textContent = "0 TON (накопится после профита)";
+      g("dca-compound-bonus").style.color = "#8892b0";
+    }
+  }
 }
 
 function renderSmartBuy(pb) {
@@ -1226,9 +1257,22 @@ async function saveDcaConfig() {
     dca_mode:             g("cfg-dca-mode")?.checked ?? false,
     dca_stake_ton:        parseFloat(g("cfg-dca-stake")?.value  || 100),
     dca_target_profit_pct: parseFloat(g("cfg-dca-target")?.value || 20),
-    dca_drop_trigger_pct: parseFloat(g("cfg-dca-drop")?.value   || 25),
+    dca_drop_trigger_pct: parseFloat(g("cfg-dca-drop")?.value   || 12),
     dca_pullback_wait_pct: parseFloat(g("cfg-dca-pullback")?.value || 25),
     dca_max_entries:      parseInt(g("cfg-dca-max-entries")?.value || 10, 10),
+    // ── 4 улучшения DCA ────────────────────────────────────
+    dca_cascade_enabled:       g("cfg-dca-cascade")?.checked ?? true,
+    dca_cascade_level1_pct:    parseFloat(g("cfg-dca-cascade-l1")?.value  || 20),
+    dca_cascade_level2_pct:    parseFloat(g("cfg-dca-cascade-l2")?.value  || 40),
+    dca_smart_reentry_enabled:      g("cfg-dca-smart-reentry")?.checked ?? true,
+    dca_smart_reentry_pullback_pct: parseFloat(g("cfg-dca-reentry-pullback")?.value || 8),
+    dca_smart_reentry_min_ai_conf:  parseFloat(g("cfg-dca-reentry-ai-conf")?.value  || 60),
+    dca_compound_enabled:      g("cfg-dca-compound")?.checked ?? true,
+    dca_compound_ratio:        parseFloat(g("cfg-dca-compound-ratio")?.value || 0.30),
+    dca_compound_max_ton:      parseFloat(g("cfg-dca-compound-max")?.value  || 500),
+    dca_adaptive_trigger_enabled:  g("cfg-dca-adaptive")?.checked ?? true,
+    dca_adaptive_fast_move_pct:    parseFloat(g("cfg-dca-fast-move")?.value || 5),
+    dca_adaptive_fast_drop_pct:    parseFloat(g("cfg-dca-fast-drop")?.value || 6),
   };
   try {
     const r = await fetch("/api/config", {
@@ -1415,9 +1459,22 @@ async function loadConfig() {
   }
   if (g("cfg-dca-stake"))       g("cfg-dca-stake").value       = cfg.dca_stake_ton          ?? 100;
   if (g("cfg-dca-target"))      g("cfg-dca-target").value      = cfg.dca_target_profit_pct  ?? 20;
-  if (g("cfg-dca-drop"))        g("cfg-dca-drop").value        = cfg.dca_drop_trigger_pct   ?? 25;
+  if (g("cfg-dca-drop"))        g("cfg-dca-drop").value        = cfg.dca_drop_trigger_pct   ?? 12;
   if (g("cfg-dca-pullback"))    g("cfg-dca-pullback").value    = cfg.dca_pullback_wait_pct  ?? 25;
   if (g("cfg-dca-max-entries")) g("cfg-dca-max-entries").value = cfg.dca_max_entries        ?? 10;
+  // ── 4 улучшения DCA ──────────────────────────────────────────────
+  if (g("cfg-dca-cascade"))        g("cfg-dca-cascade").checked        = cfg.dca_cascade_enabled       ?? true;
+  if (g("cfg-dca-cascade-l1"))     g("cfg-dca-cascade-l1").value       = cfg.dca_cascade_level1_pct    ?? 20;
+  if (g("cfg-dca-cascade-l2"))     g("cfg-dca-cascade-l2").value       = cfg.dca_cascade_level2_pct    ?? 40;
+  if (g("cfg-dca-smart-reentry"))  g("cfg-dca-smart-reentry").checked  = cfg.dca_smart_reentry_enabled ?? true;
+  if (g("cfg-dca-reentry-pullback")) g("cfg-dca-reentry-pullback").value = cfg.dca_smart_reentry_pullback_pct ?? 8;
+  if (g("cfg-dca-reentry-ai-conf"))  g("cfg-dca-reentry-ai-conf").value  = cfg.dca_smart_reentry_min_ai_conf  ?? 60;
+  if (g("cfg-dca-compound"))       g("cfg-dca-compound").checked       = cfg.dca_compound_enabled      ?? true;
+  if (g("cfg-dca-compound-ratio")) g("cfg-dca-compound-ratio").value   = cfg.dca_compound_ratio        ?? 0.30;
+  if (g("cfg-dca-compound-max"))   g("cfg-dca-compound-max").value     = cfg.dca_compound_max_ton      ?? 500;
+  if (g("cfg-dca-adaptive"))       g("cfg-dca-adaptive").checked       = cfg.dca_adaptive_trigger_enabled ?? true;
+  if (g("cfg-dca-fast-move"))      g("cfg-dca-fast-move").value        = cfg.dca_adaptive_fast_move_pct   ?? 5;
+  if (g("cfg-dca-fast-drop"))      g("cfg-dca-fast-drop").value        = cfg.dca_adaptive_fast_drop_pct   ?? 6;
 
   // Детектор крупных продаж
   if (g("cfg-lsd-enabled"))  g("cfg-lsd-enabled").checked   = cfg.large_sell_dca_enabled  ?? true;
