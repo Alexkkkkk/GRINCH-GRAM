@@ -166,25 +166,38 @@ class Trader:
         import subprocess
         import sys
         try:
-            self.log("🧪 Обучаю тяжёлые модели (HGB/XGB/LGBM/MLP) в изолированном процессе...", "INFO")
+            self.log("🧪 Запуск изолированного обучения тяжёлых моделей (HGB/XGB/LGBM/MLP)...", "INFO")
             result = subprocess.run(
                 [sys.executable, "deep_retrain_worker.py"],
                 cwd=os.path.dirname(os.path.abspath(__file__)) or ".",
                 capture_output=True, text=True, timeout=1800,
             )
-            for line in (result.stdout or "").splitlines()[-20:]:
-                self.log(f"[deep-retrain] {line}", "INFO")
+            stdout_lines = (result.stdout or "").splitlines()
+            # Показываем только значимые строки из сабпроцесса (без INFO-мусора БД)
+            for line in stdout_lines[-20:]:
+                if any(kw in line for kw in ("RESULT:", "acc=", "Итого:", "Примеров", "ошибка", "недоступна")):
+                    self.log(f"[deep-retrain] {line}", "INFO")
             if result.returncode != 0:
                 for line in (result.stderr or "").splitlines()[-10:]:
                     self.log(f"[deep-retrain][err] {line}", "WARN")
                 return
-            loaded = self.ai.load_deep_models()
-            if loaded:
-                self.log(f"✅ Тяжёлые модели обновлены и подгружены ({loaded} шт.)", "INFO")
+
+            # Парсим маркер RESULT:... для точного сообщения
+            result_marker = next(
+                (ln for ln in reversed(stdout_lines) if ln.startswith("RESULT:")), "")
+            if result_marker.startswith("RESULT:SAVED:"):
+                saved_n = result_marker.split(":")[-1]
+                loaded  = self.ai.load_deep_models()
+                if loaded:
+                    self.log(f"✅ Тяжёлые модели ({saved_n} шт.) обновлены в БД и подгружены в ансамбль", "INFO")
+                else:
+                    self.log(f"✅ Тяжёлые модели ({saved_n} шт.) обновлены в БД (LOW_MEMORY_MODE — в памяти не держим)", "INFO")
+            elif result_marker == "RESULT:SKIPPED":
+                self.log("ℹ️ Deep-обучение пропущено: мало примеров в БД (накапливается по мере торговли)", "INFO")
             else:
-                self.log("ℹ️ Тяжёлые модели обучены и сохранены в БД (не подгружены в живой процесс — LOW_MEMORY_MODE)", "INFO")
+                self.log("ℹ️ Deep-обучение завершено (статус неизвестен)", "INFO")
         except subprocess.TimeoutExpired:
-            self.log("⚠️ Обучение тяжёлых моделей превысило лимит времени — прервано", "WARN")
+            self.log("⚠️ Обучение тяжёлых моделей превысило лимит 30 мин — прервано", "WARN")
         except Exception as e:
             self.log(f"⚠️ Ошибка запуска сабпроцесса глубокого обучения: {e}", "WARN")
 
