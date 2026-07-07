@@ -3,10 +3,25 @@ import math
 import os
 import gc
 import resource
+import logging
+
+# ── Настройка логирования — как можно раньше, до любых импортов ──────────────
+# Это гарантирует, что все log.info/warning/error из любого модуля видны
+# в консоли Bothost (и Replit) даже если импорт падает на полпути.
+logging.basicConfig(
+    level=logging.DEBUG if os.environ.get("LOG_LEVEL", "").upper() == "DEBUG" else logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+    datefmt="%Y-%m-%d %H:%M:%S",
+)
+_startup_log = logging.getLogger("startup")
+_startup_log.info("=== APP IMPORT START ===")
+
 import numpy as np
+_startup_log.info("numpy OK")
 from flask import Flask, render_template, jsonify, request, session, redirect, url_for
 from flask.json.provider import DefaultJSONProvider
 from flask_socketio import SocketIO, emit
+_startup_log.info("flask OK")
 try:
     from flask_compress import Compress
 except ImportError:
@@ -17,14 +32,21 @@ except ImportError:
     orjson = None
 import threading
 import time
-import logging
+_startup_log.info("stdlib OK")
 from config import Config
+_startup_log.info("config OK")
 from database import db
+_startup_log.info("database OK")
 from trader import Trader
+_startup_log.info("trader OK")
 from ton_tracker import TONTracker
+_startup_log.info("ton_tracker OK")
 from coin_info import coin_info
+_startup_log.info("coin_info OK")
 from price_feed import price_feed
+_startup_log.info("price_feed OK")
 from analytics_buffer import analytics_buffer
+_startup_log.info("analytics_buffer OK — все модули загружены")
 
 log = logging.getLogger(__name__)
 

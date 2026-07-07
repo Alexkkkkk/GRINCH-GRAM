@@ -59,4 +59,8 @@ CMD gunicorn --bind 0.0.0.0:${PORT:-3000} \
     --timeout 120 \
     --max-requests 2000 \
     --max-requests-jitter 200 \
+    --capture-output \
+    --log-level debug \
+    --access-logfile - \
+    --error-logfile - \
     main:app
