@@ -135,21 +135,30 @@ class Trader:
             time.sleep(600)  # даём боту дособрать немного данных после старта
             while self.running:
                 try:
-                    self.log("🔁 Запускаю глубокое переобучение ИИ на полной истории из БД...", "INFO")
-                    ok = self.ai.deep_retrain_from_db(window=2000)
-                    if ok:
-                        self.log("✅ Глубокое переобучение (лёгкие модели) завершено", "INFO")
+                    try:
+                        self.log("🔁 Запускаю глубокое переобучение ИИ на полной истории из БД...", "INFO")
+                        ok = self.ai.deep_retrain_from_db(window=2000)
+                        if ok:
+                            self.log("✅ Глубокое переобучение (лёгкие модели) завершено", "INFO")
+                    except Exception as e:
+                        self.log(f"⚠️ Ошибка глубокого переобучения: {e}", "WARN")
+
+                    # Тяжёлые модели (HGB/XGB/LGBM/MLP), убранные из "горячего"
+                    # процесса ради RAM — обучаются ТОЛЬКО в изолированном
+                    # сабпроцессе (свой PID, своя память ОС), результат кладётся
+                    # в БД. Так их импорт xgboost/lightgbm никогда не раздувает
+                    # RSS основного торгового процесса.
+                    self._run_deep_model_subprocess()
+
                 except Exception as e:
-                    self.log(f"⚠️ Ошибка глубокого переобучения: {e}", "WARN")
-
-                # Тяжёлые модели (HGB/XGB/LGBM/MLP), убранные из "горячего"
-                # процесса ради RAM — обучаются ТОЛЬКО в изолированном
-                # сабпроцессе (свой PID, своя память ОС), результат кладётся
-                # в БД. Так их импорт xgboost/lightgbm никогда не раздувает
-                # RSS основного торгового процесса.
-                self._run_deep_model_subprocess()
-
-                time.sleep(self._DEEP_RETRAIN_INTERVAL_S)
+                    # Внешний catch: страховка от любых неожиданных исключений
+                    # (MemoryError, OSError и т.п.) — поток НЕ умирает, просто
+                    # ждёт следующего цикла переобучения.
+                    self.log(f"⚠️ [deep-retrain] критическая ошибка итерации: {e}", "WARN")
+                finally:
+                    # sleep всегда выполняется — даже после исключения,
+                    # чтобы поток не спинил CPU при повторяющихся сбоях.
+                    time.sleep(self._DEEP_RETRAIN_INTERVAL_S)
 
         self._deep_retrain_thread = threading.Thread(
             target=_worker, daemon=True, name="deep-retrain")

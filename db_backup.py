@@ -99,8 +99,7 @@ def run_backup() -> bool:
         dest.mkdir(parents=True, exist_ok=True)
 
         meta = {"timestamp": timestamp, "tables": {}}
-        conn = db_store._pool.getconn()
-        try:
+        with db_store._conn() as conn:
             with conn.cursor() as cur:
                 for table in TABLES:
                     try:
@@ -116,8 +115,6 @@ def run_backup() -> bool:
                     except Exception as e:
                         log.warning(f"[Backup] {table}: ошибка дампа — {e}")
                         meta["tables"][table] = f"ERROR: {e}"
-        finally:
-            db_store._pool.putconn(conn)
 
         (dest / "_meta.json").write_text(
             json.dumps(meta, ensure_ascii=False, indent=2),

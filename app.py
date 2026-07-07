@@ -365,6 +365,44 @@ def push_price():
         time.sleep(2)
 
 
+# ── Thread Supervisor ────────────────────────────────────────────────────────
+# Реестр критических daemon-потоков, которые должны работать постоянно.
+# Если поток умрёт (нормальный return или необработанное исключение),
+# супервайзер автоматически перезапустит его через RESTART_DELAY секунд.
+_supervised: dict[str, dict] = {}   # name → {"target": fn, "thread": Thread}
+_sup_lock = threading.Lock()
+_RESTART_DELAY = 5   # секунд между смертью потока и перезапуском
+
+
+def _supervise(name: str, target, args=(), kwargs=None):
+    """Запустить daemon-поток под наблюдением. При смерти — перезапуск."""
+    kwargs = kwargs or {}
+
+    def _wrapper():
+        while True:
+            try:
+                target(*args, **kwargs)
+            except Exception as e:
+                print(f"[Supervisor] ⚠️ Поток '{name}' упал с ошибкой: {e}")
+            else:
+                print(f"[Supervisor] ⚠️ Поток '{name}' завершился (неожиданно)")
+            # Любой выход из target (нормальный или по исключению) сюда
+            print(f"[Supervisor] 🔄 Перезапускаю '{name}' через {_RESTART_DELAY}с...")
+            time.sleep(_RESTART_DELAY)
+
+    t = threading.Thread(target=_wrapper, name=f"sup-{name}", daemon=True)
+    t.start()
+    with _sup_lock:
+        _supervised[name] = {"target": target, "thread": t}
+    return t
+
+
+def get_supervised_status() -> dict:
+    """Возвращает dict name→alive для всех supervise'd потоков."""
+    with _sup_lock:
+        return {name: info["thread"].is_alive() for name, info in _supervised.items()}
+
+
 def _load_users_bg():
     time.sleep(3)
     user_mgr.load_from_db(app)
@@ -391,9 +429,11 @@ def start_background():
         trader.on_training_progress = push_training_progress
         # Авто-старт торговли (обучение → торговля)
         trader.start()
-        threading.Thread(target=push_updates,    daemon=True).start()
-        threading.Thread(target=push_price,      daemon=True).start()
-        threading.Thread(target=_load_users_bg,  daemon=True).start()
+        # Критические UI-потоки под наблюдением супервайзера —
+        # при падении перезапускаются автоматически через 5с.
+        _supervise("push_updates", push_updates)
+        _supervise("push_price",   push_price)
+        threading.Thread(target=_load_users_bg, daemon=True).start()  # one-shot
         wallet_tracker.start()
         ton.start()
         import db_backup
@@ -550,11 +590,17 @@ def health():
             "rss_mb": rss_mb,
         }), 200
 
+    # Проверяем критические потоки-супервайзеры
+    sup = get_supervised_status()
+    dead_threads = [n for n, alive in sup.items() if not alive]
+
     return jsonify({
         "status": "ok",
         "trader": "running",
         "seconds_since_last_tick": round(age, 1),
         "rss_mb": rss_mb,
+        "threads": sup,
+        **({"dead_threads": dead_threads} if dead_threads else {}),
     }), 200
 
 
