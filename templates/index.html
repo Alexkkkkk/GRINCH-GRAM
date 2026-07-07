@@ -364,6 +364,7 @@
       <button class="tnb-btn active" id="tnb-market"   onclick="switchMainTab('market')">📈 РЫНОК</button>
       <button class="tnb-btn"        id="tnb-trades"   onclick="switchMainTab('trades')">💱 СДЕЛКИ</button>
       <button class="tnb-btn"        id="tnb-wallet"   onclick="switchMainTab('wallet')">💰 КОШЕЛЁК</button>
+      <button class="tnb-btn"        id="tnb-ai"       onclick="switchMainTab('ai')">🧠 ИИ</button>
       <button class="tnb-btn"        id="tnb-settings" onclick="switchMainTab('settings')">⚙️ НАСТРОЙКИ</button>
     </div>
 
@@ -1299,6 +1300,80 @@
 
     </div><!-- /#tab-settings -->
 
+    <!-- ─── TAB: ИИ — История обучения ─── -->
+    <div class="tab-pane tab-hidden" id="tab-ai">
+      <div style="padding:10px 0 4px;display:flex;flex-direction:column;gap:12px">
+
+        <!-- Статистика в карточках -->
+        <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px">
+          <div class="card card-c" style="padding:14px;text-align:center">
+            <div style="font-size:11px;color:#6a7d9f;margin-bottom:6px;text-transform:uppercase;letter-spacing:.5px">Примеров в БД</div>
+            <div id="ai-hist-total" style="font-size:28px;font-weight:800;color:#00ff88;font-family:'JetBrains Mono',monospace">—</div>
+            <div style="font-size:10px;color:#4a5d7f;margin-top:4px">накоплено навсегда</div>
+          </div>
+          <div class="card card-c" style="padding:14px;text-align:center">
+            <div style="font-size:11px;color:#6a7d9f;margin-bottom:6px;text-transform:uppercase;letter-spacing:.5px">Буфер в памяти</div>
+            <div id="ai-hist-buf" style="font-size:28px;font-weight:800;color:#00d4ff;font-family:'JetBrains Mono',monospace">—</div>
+            <div style="font-size:10px;color:#4a5d7f;margin-top:4px">для горячего обучения</div>
+          </div>
+          <div class="card card-c" style="padding:14px;text-align:center">
+            <div style="font-size:11px;color:#6a7d9f;margin-bottom:6px;text-transform:uppercase;letter-spacing:.5px">Переобучений</div>
+            <div id="ai-hist-retrains" style="font-size:28px;font-weight:800;color:#ffd166;font-family:'JetBrains Mono',monospace">—</div>
+            <div style="font-size:10px;color:#4a5d7f;margin-top:4px">с момента старта</div>
+          </div>
+        </div>
+
+        <!-- График накопления примеров -->
+        <div class="card card-c" style="padding:16px">
+          <div class="card-title ctit" style="margin-bottom:12px">📈 Накопление обучающих примеров</div>
+          <div id="ai-hist-chart" style="width:100%;height:120px;position:relative;overflow:hidden">
+            <svg id="ai-hist-svg" width="100%" height="100%" style="display:block"></svg>
+          </div>
+          <div style="display:flex;justify-content:space-between;font-size:10px;color:#4a5d7f;margin-top:4px">
+            <span>начало</span>
+            <span id="ai-hist-chart-max"></span>
+          </div>
+        </div>
+
+        <!-- Живой ансамбль -->
+        <div class="card card-c" style="padding:16px">
+          <div class="card-title ctit" style="margin-bottom:10px">⚡ Живые модели в памяти процесса</div>
+          <div id="ai-live-slots" style="display:flex;flex-wrap:wrap;gap:8px">
+            <span style="color:#4a5d7f;font-size:12px">Загрузка…</span>
+          </div>
+        </div>
+
+        <!-- Тяжёлые модели из БД -->
+        <div class="card card-c" style="padding:16px">
+          <div class="card-title ctit" style="margin-bottom:10px">🗄️ Тяжёлые модели в БД (HGB / XGB / LGBM / MLP)</div>
+          <div style="font-size:10px;color:#4a5d7f;margin-bottom:10px">
+            Обучаются раз в 2 дня в изолированном процессе — не нагружают основной процесс.
+            На LOW_MEMORY_MODE хостах остаются только здесь.
+          </div>
+          <div id="ai-deep-models-wrap">
+            <table id="ai-deep-table" style="width:100%;border-collapse:collapse;font-size:12px">
+              <thead>
+                <tr style="color:#6a7d9f;border-bottom:1px solid rgba(255,255,255,.06)">
+                  <th style="text-align:left;padding:6px 8px">Модель</th>
+                  <th style="text-align:center;padding:6px 8px">Точность</th>
+                  <th style="text-align:center;padding:6px 8px">Примеров</th>
+                  <th style="text-align:right;padding:6px 8px">Обучена</th>
+                  <th style="text-align:center;padding:6px 8px">Статус</th>
+                </tr>
+              </thead>
+              <tbody id="ai-deep-tbody">
+                <tr><td colspan="5" style="padding:16px;text-align:center;color:#4a5d7f">
+                  Тяжёлые модели появятся здесь после первого накопления<br>
+                  достаточного числа сделок (≥30) и срабатывания deep-retrain
+                </td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+      </div>
+    </div><!-- /#tab-ai -->
+
   </div><!-- /.right-panel-col -->
 
 </div><!-- /.main-grid-v2 -->
@@ -1390,19 +1465,18 @@
 
 <script>
 function switchMainTab(tab) {
-  ['market','trades','wallet','settings'].forEach(t => {
+  ['market','trades','wallet','ai','settings'].forEach(t => {
     document.getElementById('tab-'+t).classList.toggle('tab-hidden', t!==tab);
     const btn = document.getElementById('tnb-'+t);
     if (btn) btn.classList.toggle('active', t===tab);
   });
   if (tab==='market') setTimeout(()=>window.dispatchEvent(new Event('resize')), 60);
-
-  // Sync price display: when switching to market tab, update the echo fields
   if (tab==='market') {
     const p = document.getElementById('price');
     const echo = document.getElementById('price-echo');
     if (p && echo && p.textContent) echo.textContent = p.textContent;
   }
+  if (tab==='ai') loadAiHistory();
 }
 
 // Auto-sync price echo on price updates
@@ -1418,6 +1492,99 @@ document.addEventListener('DOMContentLoaded', () => {
   advLoadKey();
   alLoadConfig();
 });
+
+// ─── Вкладка ИИ: история обучения ────────────────────────────────────────────
+function loadAiHistory() {
+  fetch('/api/ai/history').then(r=>r.json()).then(d=>{
+    // Счётчики
+    document.getElementById('ai-hist-total').textContent    = d.total_db ?? 0;
+    document.getElementById('ai-hist-buf').textContent      = d.confirmed_buf ?? 0;
+    document.getElementById('ai-hist-retrains').textContent = d.retrains ?? 0;
+
+    // Живые слоты
+    const slotWrap = document.getElementById('ai-live-slots');
+    if (d.live_slots && d.live_slots.length) {
+      slotWrap.innerHTML = d.live_slots.map(s => {
+        const isDeep = s.name.includes('(db)');
+        const bg  = isDeep ? 'rgba(0,212,255,.12)' : 'rgba(0,255,136,.10)';
+        const bc  = isDeep ? 'rgba(0,212,255,.35)' : 'rgba(0,255,136,.30)';
+        const clr = isDeep ? '#00d4ff' : '#00ff88';
+        const tag = isDeep ? ' <span style="font-size:9px;color:#00d4ff;opacity:.7">БД</span>' : '';
+        return `<div style="display:inline-flex;align-items:center;gap:6px;padding:6px 12px;
+          border-radius:8px;border:1px solid ${bc};background:${bg}">
+          <span style="color:${clr};font-weight:700;font-size:12px">${s.name}</span>${tag}
+          <span style="color:#6a7d9f;font-size:11px">точн: <b style="color:#fff">${s.accuracy}%</b></span>
+          <span style="color:#6a7d9f;font-size:11px">вес: <b style="color:#ffd166">${s.weight}</b></span>
+        </div>`;
+      }).join('');
+    } else {
+      slotWrap.innerHTML = '<span style="color:#4a5d7f;font-size:12px">Модели загружаются…</span>';
+    }
+
+    // Тяжёлые модели
+    const tbody = document.getElementById('ai-deep-tbody');
+    if (d.deep_models && d.deep_models.length) {
+      tbody.innerHTML = d.deep_models.map(m => {
+        const acc     = m.accuracy != null ? (m.accuracy*100).toFixed(1)+'%' : '—';
+        const accClr  = m.accuracy > 0.6 ? '#00ff88' : m.accuracy > 0.5 ? '#ffd166' : '#ff6b6b';
+        const nEx     = m.n_examples ?? '—';
+        const trained = m.trained_at ?? '—';
+        return `<tr style="border-bottom:1px solid rgba(255,255,255,.04)">
+          <td style="padding:8px;font-weight:700;color:#00d4ff">${m.model_name}</td>
+          <td style="padding:8px;text-align:center;color:${accClr};font-weight:700">${acc}</td>
+          <td style="padding:8px;text-align:center;color:#aaa">${nEx}</td>
+          <td style="padding:8px;text-align:right;color:#6a7d9f;font-size:11px">${trained}</td>
+          <td style="padding:8px;text-align:center">
+            <span style="padding:2px 8px;border-radius:4px;font-size:10px;font-weight:700;
+              background:rgba(0,255,136,.15);color:#00ff88">✓ В БД</span>
+          </td>
+        </tr>`;
+      }).join('');
+    } else {
+      tbody.innerHTML = `<tr><td colspan="5" style="padding:20px;text-align:center;color:#4a5d7f;font-size:12px">
+        Тяжёлые модели появятся после накопления ≥30 сделок и срабатывания deep-retrain (раз в 2 дня)
+      </td></tr>`;
+    }
+
+    // Мини-график SVG накопления
+    _renderAiChart(d.cumulative || [], d.total_db || 0);
+  }).catch(()=>{});
+}
+
+function _renderAiChart(points, total) {
+  const svg = document.getElementById('ai-hist-svg');
+  if (!svg) return;
+  const W = svg.parentElement.clientWidth || 400;
+  const H = 110;
+  svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
+  if (!points || points.length < 2) {
+    svg.innerHTML = `<text x="${W/2}" y="${H/2}" text-anchor="middle"
+      fill="#4a5d7f" font-size="12">Данные появятся после первых сделок</text>`;
+    document.getElementById('ai-hist-chart-max').textContent = total ? total + ' примеров' : '';
+    return;
+  }
+  const maxY = Math.max(...points.map(p=>p.y), 1);
+  const pad  = 4;
+  const xs   = points.map((p,i) => pad + i*(W-pad*2)/(points.length-1));
+  const ys   = points.map(p => H-pad - (p.y/maxY)*(H-pad*2));
+  // Заливка под кривой
+  const fillPts = `${xs[0]},${H} ` + xs.map((x,i)=>`${x},${ys[i]}`).join(' ') + ` ${xs[xs.length-1]},${H}`;
+  // Линия
+  const linePts = xs.map((x,i)=>`${i===0?'M':'L'}${x},${ys[i]}`).join(' ');
+  svg.innerHTML = `
+    <defs>
+      <linearGradient id="gfill" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0%"   stop-color="#00ff88" stop-opacity=".35"/>
+        <stop offset="100%" stop-color="#00ff88" stop-opacity=".02"/>
+      </linearGradient>
+    </defs>
+    <polygon points="${fillPts}" fill="url(#gfill)"/>
+    <path d="${linePts}" fill="none" stroke="#00ff88" stroke-width="2" stroke-linejoin="round"/>
+    <circle cx="${xs[xs.length-1]}" cy="${ys[ys.length-1]}" r="3" fill="#00ff88"/>
+    <text x="${xs[xs.length-1]}" y="${ys[ys.length-1]-7}" text-anchor="middle"
+      fill="#00ff88" font-size="10" font-weight="700">${total}</text>`;
+  document.getElementById('ai-hist-chart-max').textContent = total + ' примеров всего';
+}
 
 // ─── AI Советник — Полная Автономия ──────────────────────────────────────────
 const ADV_COLORS = {'НАКАПЛИВАТЬ':'#00ff88','АКТИВНО_ТОРГОВАТЬ':'#00d4ff','ОСТОРОЖНО':'#ffd166','ПАУЗА':'#ff6b6b'};

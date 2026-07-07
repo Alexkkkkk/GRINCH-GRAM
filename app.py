@@ -654,6 +654,69 @@ def api_ai_decisions():
     log = getattr(trader, "decision_log", [])
     return jsonify(list(reversed(log))[:15])
 
+@app.route("/api/ai/history")
+def api_ai_history():
+    """История обучения ИИ: накопление примеров в БД + статус тяжёлых моделей."""
+    import db_store
+    from datetime import datetime, timedelta
+
+    # ── Всего примеров в БД ──────────────────────────────────────────────────
+    total_db = db_store.ai_examples_count()
+
+    # ── По дням: последние 30 дней (группировка в Python, не SQL) ───────────
+    recent = db_store.ai_examples_get_recent(limit=5000)
+    day_counts: dict = {}
+    for ex in recent:
+        # Примеры не хранят дату — берём только count total/batch; для графика
+        # используем порядковые блоки по 10 примеров с накоплением
+        pass  # handled below via cumulative
+
+    # Кумулятивный график: каждые N примеров → одна точка (до 60 точек)
+    N_POINTS = min(60, max(1, total_db // 5 or 1))
+    step = max(1, total_db // N_POINTS)
+    cumulative = []
+    for i in range(0, total_db, step):
+        cumulative.append({"x": i + step, "y": min(i + step, total_db)})
+    if not cumulative:
+        cumulative = [{"x": 0, "y": 0}]
+
+    # ── Тяжёлые модели из БД ────────────────────────────────────────────────
+    deep_meta = db_store.deep_models_meta()
+    for m in deep_meta:
+        if m.get("trained_at"):
+            m["trained_at"] = m["trained_at"].strftime("%d.%m.%Y %H:%M")
+
+    # ── Живой ансамбль ───────────────────────────────────────────────────────
+    ai = getattr(trader, "ai", None)
+    live_slots = []
+    confirmed_buf = 0
+    retrains = 0
+    trained = False
+    if ai is not None:
+        try:
+            slots = getattr(ai, "_slots", []) or []
+            live_slots = [
+                {"name": s.name,
+                 "accuracy": round(s.accuracy * 100, 1),
+                 "weight": round(getattr(s, "weight", 1.0), 3)}
+                for s in slots
+            ]
+            confirmed_buf = len(getattr(ai, "_confirmed_X", []) or [])
+            retrains      = getattr(ai, "_retrains", 0)
+            trained       = bool(getattr(ai, "_trained", False))
+        except Exception:
+            pass
+
+    return jsonify({
+        "total_db":      total_db,
+        "confirmed_buf": confirmed_buf,
+        "retrains":      retrains,
+        "trained":       trained,
+        "cumulative":    cumulative,
+        "deep_models":   deep_meta,
+        "live_slots":    live_slots,
+    })
+
 # ─── AI Советник (Groq LLaMA) ───────────────────────────────────────────────
 @app.route("/api/advisor/status")
 def api_advisor_status():
