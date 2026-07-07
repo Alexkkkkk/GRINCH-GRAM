@@ -114,38 +114,49 @@ app.config["SECRET_KEY"] = _SECRET_KEY
 app.secret_key = _SECRET_KEY
 
 # ── База данных — приоритет у внешней БД (EXTERNAL_DATABASE_URL), иначе Replit PostgreSQL (DATABASE_URL) ───
+# Если ни одна переменная не задана — мультипользовательские функции отключены,
+# но бот продолжает работу (JSON-файлы + db_store.py как всегда).
 _DATABASE_URL = os.environ.get("EXTERNAL_DATABASE_URL") or os.environ.get("DATABASE_URL")
-if not _DATABASE_URL:
-    raise RuntimeError("DATABASE_URL / EXTERNAL_DATABASE_URL environment variable is not set")
-app.config["SQLALCHEMY_DATABASE_URI"] = _DATABASE_URL
-app.config["SQLALCHEMY_ENGINE_OPTIONS"] = {"pool_recycle": 300, "pool_pre_ping": True}
-db.init_app(app)
+_db_available = False
+UserWallet = None  # заглушка; перезаписывается ниже если DB доступна
 
-with app.app_context():
-    from models import UserWallet   # noqa: F401
-    db.create_all()
-    # Безопасная миграция — добавляем колонки если их нет (PostgreSQL)
-    _new_cols = [
-        ("virtual_ton_balance", "FLOAT DEFAULT 0"),
-        ("virtual_grinch_held", "FLOAT DEFAULT 0"),
-        ("entry_price_ton",     "FLOAT"),
-        ("total_deposited",     "FLOAT DEFAULT 0"),
-        ("total_withdrawn",     "FLOAT DEFAULT 0"),
-        ("last_deposit_at",     "TIMESTAMP"),
-        ("last_checked_lt",     "BIGINT DEFAULT 0"),
-    ]
-    from sqlalchemy import text
-    for _col, _ctype in _new_cols:
-        try:
-            db.session.execute(text(
-                f"ALTER TABLE user_wallets ADD COLUMN IF NOT EXISTS {_col} {_ctype}"
-            ))
-        except Exception:
-            pass
+if _DATABASE_URL:
     try:
-        db.session.commit()
-    except Exception:
-        db.session.rollback()
+        app.config["SQLALCHEMY_DATABASE_URI"] = _DATABASE_URL
+        app.config["SQLALCHEMY_ENGINE_OPTIONS"] = {"pool_recycle": 300, "pool_pre_ping": True}
+        db.init_app(app)
+        with app.app_context():
+            from models import UserWallet   # noqa: F401
+            db.create_all()
+            # Безопасная миграция — добавляем колонки если их нет (PostgreSQL)
+            _new_cols = [
+                ("virtual_ton_balance", "FLOAT DEFAULT 0"),
+                ("virtual_grinch_held", "FLOAT DEFAULT 0"),
+                ("entry_price_ton",     "FLOAT"),
+                ("total_deposited",     "FLOAT DEFAULT 0"),
+                ("total_withdrawn",     "FLOAT DEFAULT 0"),
+                ("last_deposit_at",     "TIMESTAMP"),
+                ("last_checked_lt",     "BIGINT DEFAULT 0"),
+            ]
+            from sqlalchemy import text
+            for _col, _ctype in _new_cols:
+                try:
+                    db.session.execute(text(
+                        f"ALTER TABLE user_wallets ADD COLUMN IF NOT EXISTS {_col} {_ctype}"
+                    ))
+                except Exception:
+                    pass
+            try:
+                db.session.commit()
+            except Exception:
+                db.session.rollback()
+        _db_available = True
+        log.info("[DB] SQLAlchemy подключена (%s)", _DATABASE_URL.split("@")[-1] if "@" in _DATABASE_URL else "ok")
+    except Exception as _db_err:
+        log.warning("[DB] SQLAlchemy недоступна (%s) — мультипользовательские функции отключены", _db_err)
+        _db_available = False
+else:
+    log.warning("[DB] DATABASE_URL / EXTERNAL_DATABASE_URL не заданы — мультипользовательские функции отключены")
 
 # ── SocketIO ──────────────────────────────────────────────────────────────────
 _orig_dumps = json.dumps
@@ -1499,6 +1510,8 @@ def join_page():
 
 @app.route("/dashboard/<token>")
 def user_dashboard(token):
+    if not _db_available:
+        return "Мультипользовательские функции временно недоступны (нет подключения к БД)", 503
     status = user_mgr.get_status(token)
     if not status:
         with app.app_context():
@@ -1534,6 +1547,8 @@ def user_dashboard(token):
 
 @app.route("/api/user/register", methods=["POST"])
 def api_user_register():
+    if not _db_available:
+        return jsonify({"ok": False, "error": "БД недоступна — регистрация временно невозможна"}), 503
     data         = request.json or {}
     name         = str(data.get("name", "")).strip()[:80]
     ton_address  = str(data.get("ton_address", "")).strip()
@@ -1584,6 +1599,8 @@ def api_user_status(token):
 @app.route("/api/user/deposit", methods=["POST"])
 def api_user_deposit_manual():
     """Ручное зачисление депозита (для тестирования / после ручной проверки)."""
+    if not _db_available:
+        return jsonify({"ok": False, "error": "БД недоступна"}), 503
     data   = request.json or {}
     token  = str(data.get("token", ""))
     amount = float(data.get("amount", 0))
