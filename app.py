@@ -422,6 +422,7 @@ app.permanent_session_lifetime = timedelta(days=30)
 _PUBLIC_EXACT = {
     "/login", "/logout", "/favicon.ico",
     "/tonconnect-manifest.json", "/join", "/api/platform/stats",
+    "/health",  # health-check от Bothost/Docker должен проходить без авторизации
 }
 _PUBLIC_PREFIXES = ("/static/", "/dashboard/", "/api/user/")
 
