@@ -75,6 +75,17 @@ TUNABLE = {
     # ── DCA расширенные параметры ────────────────────────────────
     "dca_pullback_wait_pct":   (5.0,    50.0),   # % падения от пика для нового DCA-цикла
     "dca_max_entries":         (2.0,    20.0),   # макс. DCA-входов за цикл
+    # ── DCA улучшения: Каскадный выход ───────────────────────────
+    "dca_cascade_level1_pct":  (5.0,   100.0),  # % прибыли → продать 50% (Ур.1)
+    "dca_cascade_level2_pct":  (10.0,  200.0),  # % прибыли → продать остаток (Ур.2)
+    # ── DCA улучшения: Умный реentri ─────────────────────────────
+    "dca_smart_reentry_pullback_pct": (1.0, 30.0),   # откат для быстрого реentri
+    "dca_smart_reentry_min_ai_conf":  (30.0, 90.0),  # мин. AI-уверенность для реentri
+    # ── DCA улучшения: Компаундирование ──────────────────────────
+    "dca_compound_ratio":      (0.05,   0.80),   # доля прибыли в реинвест (0-1)
+    # ── DCA улучшения: Адаптивный триггер ────────────────────────
+    "dca_adaptive_fast_move_pct":  (1.0,  20.0),  # порог «ракетного» движения %
+    "dca_adaptive_fast_drop_pct":  (1.0,  20.0),  # агрессивный порог докупки при ракете %
     # ── Крупные продажи ──────────────────────────────────────────
     "large_sell_dca_ton":      (5.0,   500.0),   # TON для закупки на сигнале крупной продажи
     # ── Защита прибыли ───────────────────────────────────────────
@@ -94,6 +105,11 @@ STRATEGY_TOGGLES = {
     "smart_tp_enabled":       "Smart TP (удержание позиции при высокой уверенности AI)",
     "profit_protect_enabled": "Защита прибыли (фиксация при откате от пика)",
     "large_sell_dca_enabled": "Докупка на панике при крупных продажах китов",
+    # ── DCA улучшения (4 механизма) ──────────────────────────────
+    "dca_cascade_enabled":         "Каскадный выход DCA (продажа 50% на Ур.1, 50% на Ур.2)",
+    "dca_smart_reentry_enabled":   "Умный реentri DCA (меньший откат если AI бычий)",
+    "dca_compound_enabled":        "Компаундирование DCA (реинвест % прибыли в ставку)",
+    "dca_adaptive_trigger_enabled":"Адаптивный триггер DCA (агрессивнее при ракетном движении)",
 }
 
 TUNABLE_DESCRIPTIONS = {
@@ -126,6 +142,14 @@ TUNABLE_DESCRIPTIONS = {
     "smart_tp_tight_trail_pct":"Тугой трейлинг в режиме Smart TP (%)",
     "dca_pullback_wait_pct":   "Падение от пика перед новым DCA-циклом (%)",
     "dca_max_entries":         "Макс. DCA-входов за один цикл (шт.)",
+    # DCA улучшения
+    "dca_cascade_level1_pct":        "Каскад Ур.1 — % прибыли для продажи 50% позиции",
+    "dca_cascade_level2_pct":        "Каскад Ур.2 — % прибыли для продажи остатка",
+    "dca_smart_reentry_pullback_pct":"Умный реentri — мин. откат при AI BUY (%)",
+    "dca_smart_reentry_min_ai_conf": "Умный реentri — мин. уверенность AI для быстрого входа (%)",
+    "dca_compound_ratio":            "Компаунд — доля прибыли в реинвест (0–1)",
+    "dca_adaptive_fast_move_pct":    "Адаптивный триггер — порог 'ракетного' движения (%)",
+    "dca_adaptive_fast_drop_pct":    "Адаптивный триггер — агрессивный порог докупки (%)",
     "large_sell_dca_ton":      "TON для закупки при сигнале крупной продажи",
     "profit_protect_ton":      "Мин. прибыль TON для активации защиты прибыли",
     "rsi_overbought":          "RSI-уровень перекупленности (блок входа)",
@@ -465,6 +489,19 @@ def _build_snapshot(user_message: str = "") -> dict:
             "dca_pullback_wait_pct":    _g("DCA_PULLBACK_WAIT_PCT", 25.0),
             "dca_max_entries":          _g("DCA_MAX_ENTRIES", 10),
             "dca_stake_ton":            _g("DCA_STAKE_TON", 100.0),
+            # ── DCA улучшения: текущие параметры ──────────────────
+            "dca_cascade_enabled":          _g("DCA_CASCADE_ENABLED", True),
+            "dca_cascade_level1_pct":       _g("DCA_CASCADE_LEVEL1_PCT", 20.0),
+            "dca_cascade_level2_pct":       _g("DCA_CASCADE_LEVEL2_PCT", 40.0),
+            "dca_smart_reentry_enabled":    _g("DCA_SMART_REENTRY_ENABLED", True),
+            "dca_smart_reentry_pullback_pct": _g("DCA_SMART_REENTRY_PULLBACK_PCT", 8.0),
+            "dca_smart_reentry_min_ai_conf":  _g("DCA_SMART_REENTRY_MIN_AI_CONF", 60.0),
+            "dca_compound_enabled":         _g("DCA_COMPOUND_ENABLED", True),
+            "dca_compound_ratio":           _g("DCA_COMPOUND_RATIO", 0.30),
+            "dca_compound_max_ton":         _g("DCA_COMPOUND_MAX_TON", 500.0),
+            "dca_adaptive_trigger_enabled": _g("DCA_ADAPTIVE_TRIGGER_ENABLED", True),
+            "dca_adaptive_fast_move_pct":   _g("DCA_ADAPTIVE_FAST_MOVE_PCT", 5.0),
+            "dca_adaptive_fast_drop_pct":   _g("DCA_ADAPTIVE_FAST_DROP_PCT", 6.0),
             "trade_amount":             _g("TRADE_AMOUNT", 100.0),
             "min_profit_ton_abs":       _g("MIN_PROFIT_TON_ABS", 2.0),
             # ── AI фильтры входа ──
@@ -980,6 +1017,11 @@ _TOGGLE_ATTR = {
     "smart_tp_enabled":       "SMART_TP_ENABLED",
     "profit_protect_enabled": "PROFIT_PROTECT_ENABLED",
     "large_sell_dca_enabled": "LARGE_SELL_DCA_ENABLED",
+    # ── DCA улучшения ───────────────────────────────────────────
+    "dca_cascade_enabled":          "DCA_CASCADE_ENABLED",
+    "dca_smart_reentry_enabled":    "DCA_SMART_REENTRY_ENABLED",
+    "dca_compound_enabled":         "DCA_COMPOUND_ENABLED",
+    "dca_adaptive_trigger_enabled": "DCA_ADAPTIVE_TRIGGER_ENABLED",
 }
 
 
