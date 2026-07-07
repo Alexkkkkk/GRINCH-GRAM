@@ -1346,10 +1346,20 @@
         <!-- Тяжёлые модели из БД -->
         <div class="card card-c" style="padding:16px">
           <div class="card-title ctit" style="margin-bottom:10px">🗄️ Тяжёлые модели в БД (HGB / XGB / LGBM / MLP)</div>
-          <div style="font-size:10px;color:#4a5d7f;margin-bottom:10px">
-            Обучаются раз в 2 дня в изолированном процессе — не нагружают основной процесс.
-            На LOW_MEMORY_MODE хостах остаются только здесь.
+          <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:10px">
+            <div style="font-size:10px;color:#4a5d7f">
+              Обучаются раз в 2 дня в изолированном процессе — не нагружают основной процесс.<br>
+              На LOW_MEMORY_MODE хостах остаются только здесь.
+            </div>
+            <button id="btn-deep-retrain" onclick="triggerDeepRetrain()"
+              style="padding:7px 16px;border-radius:8px;border:1px solid rgba(0,212,255,.4);
+                background:rgba(0,212,255,.12);color:#00d4ff;font-size:12px;font-weight:700;
+                cursor:pointer;white-space:nowrap;transition:.2s">
+              🔁 Запустить переобучение
+            </button>
           </div>
+          <div id="ai-retrain-status" style="display:none;margin-bottom:8px;padding:8px 12px;
+            border-radius:8px;font-size:12px"></div>
           <div id="ai-deep-models-wrap">
             <table id="ai-deep-table" style="width:100%;border-collapse:collapse;font-size:12px">
               <thead>
@@ -1585,6 +1595,101 @@ function _renderAiChart(points, total) {
       fill="#00ff88" font-size="10" font-weight="700">${total}</text>`;
   document.getElementById('ai-hist-chart-max').textContent = total + ' примеров всего';
 }
+
+// ─── Deep-retrain: ручной запуск + поллинг статуса ───────────────────────────
+let _deepRetainPollTimer = null;
+
+function triggerDeepRetrain() {
+  const btn    = document.getElementById('btn-deep-retrain');
+  const status = document.getElementById('ai-retrain-status');
+  if (!btn || !status) return;
+
+  btn.disabled = true;
+  btn.textContent = '⏳ Запускаю…';
+
+  fetch('/api/ai/deep-retrain', {method:'POST'})
+    .then(r=>r.json())
+    .then(d=>{
+      if (d.status === 'already_running') {
+        _showRetrainStatus('info', '⏳ Переобучение уже идёт в фоне…');
+        _startRetrainPoll();
+        return;
+      }
+      if (d.ok) {
+        _showRetrainStatus('info', '🚀 Переобучение запущено. Займёт несколько минут…');
+        _startRetrainPoll();
+      } else {
+        _showRetrainStatus('error', '❌ ' + (d.msg || 'Ошибка запуска'));
+        _resetRetrainBtn();
+      }
+    })
+    .catch(()=>{ _showRetrainStatus('error','❌ Сетевая ошибка'); _resetRetrainBtn(); });
+}
+
+function _startRetrainPoll() {
+  if (_deepRetainPollTimer) clearInterval(_deepRetainPollTimer);
+  _deepRetainPollTimer = setInterval(_pollRetrainStatus, 5000);
+}
+
+function _pollRetrainStatus() {
+  fetch('/api/ai/deep-retrain/status')
+    .then(r=>r.json())
+    .then(d=>{
+      if (d.running) {
+        _showRetrainStatus('info', '⏳ Переобучение идёт… (это нормально занимает 2–5 минут)');
+        return;
+      }
+      clearInterval(_deepRetainPollTimer);
+      _deepRetainPollTimer = null;
+      if (d.error) {
+        _showRetrainStatus('error', '❌ Ошибка: ' + d.error);
+      } else {
+        const ts = d.last ? ` (${d.last})` : '';
+        _showRetrainStatus('ok', `✅ Переобучение завершено${ts}. Обновляю данные…`);
+        setTimeout(()=>{ loadAiHistory(); _hideRetrainStatus(); }, 1800);
+      }
+      _resetRetrainBtn();
+    })
+    .catch(()=>{});
+}
+
+function _showRetrainStatus(type, msg) {
+  const el = document.getElementById('ai-retrain-status');
+  if (!el) return;
+  const styles = {
+    info:  'background:rgba(0,212,255,.10);border:1px solid rgba(0,212,255,.25);color:#00d4ff',
+    ok:    'background:rgba(0,255,136,.10);border:1px solid rgba(0,255,136,.25);color:#00ff88',
+    error: 'background:rgba(255,107,107,.10);border:1px solid rgba(255,107,107,.25);color:#ff6b6b',
+  };
+  el.setAttribute('style', `display:block;margin-bottom:8px;padding:8px 12px;border-radius:8px;font-size:12px;${styles[type]||styles.info}`);
+  el.textContent = msg;
+}
+
+function _hideRetrainStatus() {
+  const el = document.getElementById('ai-retrain-status');
+  if (el) el.style.display = 'none';
+}
+
+function _resetRetrainBtn() {
+  const btn = document.getElementById('btn-deep-retrain');
+  if (!btn) return;
+  btn.disabled = false;
+  btn.textContent = '🔁 Запустить переобучение';
+}
+
+// Проверяем статус при каждом открытии вкладки (мог быть запущен ранее)
+const _origLoadAiHistory = loadAiHistory;
+loadAiHistory = function() {
+  _origLoadAiHistory();
+  fetch('/api/ai/deep-retrain/status').then(r=>r.json()).then(d=>{
+    if (d.running) {
+      const btn = document.getElementById('btn-deep-retrain');
+      if (btn) { btn.disabled = true; btn.textContent = '⏳ Идёт переобучение…'; }
+      _showRetrainStatus('info', '⏳ Переобучение идёт в фоне…');
+      _startRetrainPoll();
+    }
+  }).catch(()=>{});
+};
 
 // ─── AI Советник — Полная Автономия ──────────────────────────────────────────
 const ADV_COLORS = {'НАКАПЛИВАТЬ':'#00ff88','АКТИВНО_ТОРГОВАТЬ':'#00d4ff','ОСТОРОЖНО':'#ffd166','ПАУЗА':'#ff6b6b'};

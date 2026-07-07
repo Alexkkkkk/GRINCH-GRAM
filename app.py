@@ -717,6 +717,60 @@ def api_ai_history():
         "live_slots":    live_slots,
     })
 
+# ─── Ручной запуск deep-retrain ─────────────────────────────────────────────
+import threading as _threading
+
+_deep_retrain_manual_lock = _threading.Lock()
+_deep_retrain_manual_state = {"running": False, "last": None, "error": None}
+
+
+@app.route("/api/ai/deep-retrain", methods=["POST"])
+def api_ai_deep_retrain():
+    """Запускает глубокое переобучение ИИ вручную (не ждём 2 дня).
+    Не блокирует ответ — работает в фоновом потоке. Повторный вызов
+    во время активного запуска возвращает статус already_running."""
+    global _deep_retrain_manual_state
+    with _deep_retrain_manual_lock:
+        if _deep_retrain_manual_state["running"]:
+            return jsonify({"ok": False, "status": "already_running",
+                            "msg": "Переобучение уже идёт"})
+        _deep_retrain_manual_state["running"] = True
+        _deep_retrain_manual_state["error"]   = None
+
+    def _run():
+        global _deep_retrain_manual_state
+        try:
+            # 1) Лёгкие модели в оперативной памяти
+            ai = getattr(trader, "ai", None)
+            if ai is not None:
+                ai.deep_retrain_from_db(window=2000)
+            # 2) Тяжёлые модели в изолированном процессе
+            if hasattr(trader, "_run_deep_model_subprocess"):
+                trader._run_deep_model_subprocess()
+            _deep_retrain_manual_state["last"]    = \
+                __import__("datetime").datetime.now().strftime("%d.%m.%Y %H:%M")
+            _deep_retrain_manual_state["error"]   = None
+        except Exception as exc:
+            _deep_retrain_manual_state["error"] = str(exc)
+        finally:
+            _deep_retrain_manual_state["running"] = False
+
+    _threading.Thread(target=_run, daemon=True, name="manual-deep-retrain").start()
+    return jsonify({"ok": True, "status": "started",
+                    "msg": "Глубокое переобучение запущено в фоне"})
+
+
+@app.route("/api/ai/deep-retrain/status")
+def api_ai_deep_retrain_status():
+    """Возвращает текущий статус ручного deep-retrain."""
+    s = _deep_retrain_manual_state
+    return jsonify({
+        "running": s["running"],
+        "last":    s["last"],
+        "error":   s["error"],
+    })
+
+
 # ─── AI Советник (Groq LLaMA) ───────────────────────────────────────────────
 @app.route("/api/advisor/status")
 def api_advisor_status():
