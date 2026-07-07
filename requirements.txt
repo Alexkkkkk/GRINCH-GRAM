@@ -4,6 +4,9 @@ flask-socketio==5.6.1
 flask-sqlalchemy==3.1.1
 flask-compress==1.24
 gunicorn==26.0.0
+# eventlet не используется (async_mode="threading" в SocketIO) — оставлен
+# для совместимости окружения, но monkey_patch не вызывается намеренно:
+# pytoniq/dedust/aiohttp требуют чистый asyncio, eventlet их сломает.
 eventlet==0.41.0
 orjson
 
@@ -37,4 +40,4 @@ python-dotenv==1.1.0
 python-telegram-bot==21.1.1
 openai
 email-validator
-apscheduler
+apscheduler==3.11.3

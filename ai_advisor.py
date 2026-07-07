@@ -1121,7 +1121,7 @@ def run_advisor(auto_apply: bool = None, user_message: str = "",
             model=GROQ_MODEL,
             messages=messages,
             temperature=0.25,
-            max_completion_tokens=1200,
+            max_tokens=1200,
         )
         elapsed = round(time.time() - t0, 1)
         raw     = resp.choices[0].message.content or ""

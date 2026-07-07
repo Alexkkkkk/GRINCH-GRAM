@@ -127,13 +127,29 @@ class Trader:
         """Фоновый поток: раз в 2 дня переобучает модели на ПОЛНОЙ истории
         из БД (bot_ai_examples), а не только на урезанном оперативном буфере
         в памяти. Так экономный режим не теряет старые обучающие примеры —
-        они хоронятся в БД навсегда и периодически используются целиком."""
-        if getattr(self, "_deep_retrain_thread", None) is not None:
-            return
+        они хоронятся в БД навсегда и периодически используются целиком.
+
+        Инвариант «один поток за раз»:
+        - _deep_retrain_stop_event сигнализирует потоку о необходимости выйти;
+          event.wait(timeout) заменяет time.sleep, поэтому поток просыпается
+          немедленно при вызове stop(), а не ждёт 600с или 2 дня.
+        - Новый поток создаётся только если старый уже завершился (is_alive=False).
+        """
+        existing = getattr(self, "_deep_retrain_thread", None)
+        if existing is not None and existing.is_alive():
+            return  # старый поток ещё работает — не дублируем
+
+        # Создаём/сбрасываем событие остановки для нового потока
+        stop_event = threading.Event()
+        self._deep_retrain_stop_event = stop_event
 
         def _worker():
-            time.sleep(600)  # даём боту дособрать немного данных после старта
-            while self.running:
+            # Даём боту дособрать немного данных после старта; прерываемся
+            # сразу, если пришёл сигнал остановки (не ждём 600с зря).
+            if stop_event.wait(timeout=600):
+                return  # stop() вызван во время начального ожидания
+
+            while self.running and not stop_event.is_set():
                 try:
                     try:
                         self.log("🔁 Запускаю глубокое переобучение ИИ на полной истории из БД...", "INFO")
@@ -148,7 +164,8 @@ class Trader:
                     # сабпроцессе (свой PID, своя память ОС), результат кладётся
                     # в БД. Так их импорт xgboost/lightgbm никогда не раздувает
                     # RSS основного торгового процесса.
-                    self._run_deep_model_subprocess()
+                    if not stop_event.is_set():
+                        self._run_deep_model_subprocess()
 
                 except Exception as e:
                     # Внешний catch: страховка от любых неожиданных исключений
@@ -156,9 +173,9 @@ class Trader:
                     # ждёт следующего цикла переобучения.
                     self.log(f"⚠️ [deep-retrain] критическая ошибка итерации: {e}", "WARN")
                 finally:
-                    # sleep всегда выполняется — даже после исключения,
-                    # чтобы поток не спинил CPU при повторяющихся сбоях.
-                    time.sleep(self._DEEP_RETRAIN_INTERVAL_S)
+                    # Прерываемый sleep: просыпаемся мгновенно при stop(),
+                    # а не блокируемся на 2 дня.
+                    stop_event.wait(timeout=self._DEEP_RETRAIN_INTERVAL_S)
 
         self._deep_retrain_thread = threading.Thread(
             target=_worker, daemon=True, name="deep-retrain")
@@ -210,9 +227,14 @@ class Trader:
     def stop(self):
         self.running = False
         self.training = False
-        # Сбрасываем ссылку на deep-retrain поток, чтобы при повторном
-        # start() он был создан заново (_start_deep_retrain_thread проверяет is not None).
-        self._deep_retrain_thread = None
+        # Сигнализируем deep-retrain потоку о необходимости выйти.
+        # event.set() пробуждает event.wait() внутри _worker мгновенно —
+        # поток не будет ждать 600с или 2 дня до следующего цикла.
+        # Ссылку _deep_retrain_thread НЕ обнуляем: _start_deep_retrain_thread
+        # проверяет is_alive() и создаст новый поток только после завершения старого.
+        stop_event = getattr(self, "_deep_retrain_stop_event", None)
+        if stop_event is not None:
+            stop_event.set()
         self.log("Торговый агент остановлен", "WARN")
 
     # ──────────────────────────────────────────
