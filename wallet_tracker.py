@@ -447,26 +447,30 @@ class WalletTracker:
             seen       = list(self._seen)[-self.MAX_SEEN:]
             last_poll  = self.last_poll
 
-        # JSON backup
-        payload = {
-            "wallets": wallets,
-            "events": events,
-            "seen": seen,
-            "last_poll": last_poll,
-            "saved_at": datetime.now(timezone.utc).isoformat(),
-        }
-        tmp = STORE_PATH + ".tmp"
-        try:
-            with open(tmp, "w", encoding="utf-8") as fh:
-                json.dump(payload, fh, ensure_ascii=False)
-            os.replace(tmp, STORE_PATH)
-        except Exception:
-            pass
-
-        # DB
+        # DB — первичное хранилище, быстрый путь (не блокируем polling-поток)
         db = _db()
         if db:
             try:
                 db.wallets_save(wallets, events, seen, last_poll)
             except Exception as e:
                 logger.warning(f"[WalletTracker] DB save error: {e}")
+
+        # JSON backup — в фоновом потоке: 300 кошельков → json.dump занимает
+        # несколько миллисекунд и блокировал polling-цикл на каждой новой сделке.
+        def _write_json():
+            payload = {
+                "wallets": wallets,
+                "events":  events,
+                "seen":    seen,
+                "last_poll": last_poll,
+                "saved_at": datetime.now(timezone.utc).isoformat(),
+            }
+            tmp = STORE_PATH + ".tmp"
+            try:
+                with open(tmp, "w", encoding="utf-8") as fh:
+                    json.dump(payload, fh, ensure_ascii=False)
+                os.replace(tmp, STORE_PATH)
+            except Exception:
+                pass
+        threading.Thread(target=_write_json, daemon=True,
+                         name="wt-json-save").start()

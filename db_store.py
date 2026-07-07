@@ -376,18 +376,20 @@ def settings_get_section(section: str) -> dict:
 
 
 def settings_update_section(section: str, updates: dict):
-    if not _check_available():
+    if not _check_available() or not updates:
         return
     try:
+        from psycopg2.extras import execute_values
+        rows = [(section, k, _encode(v)) for k, v in updates.items()]
         with _conn() as conn:
             with conn.cursor() as cur:
-                for key, val in updates.items():
-                    cur.execute("""
-                        INSERT INTO bot_settings (section, key, value, updated_at)
-                        VALUES (%s, %s, %s, NOW())
-                        ON CONFLICT (section, key) DO UPDATE
-                          SET value = EXCLUDED.value, updated_at = NOW()
-                    """, (section, key, _encode(val)))
+                # Один round-trip вместо N отдельных INSERT — в разы быстрее
+                execute_values(cur, """
+                    INSERT INTO bot_settings (section, key, value, updated_at)
+                    VALUES %s
+                    ON CONFLICT (section, key) DO UPDATE
+                      SET value = EXCLUDED.value, updated_at = NOW()
+                """, rows, template="(%s, %s, %s, NOW())")
     except Exception as e:
         logger.warning(f"[DB] settings_update_section error: {e}")
 

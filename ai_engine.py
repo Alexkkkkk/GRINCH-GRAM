@@ -889,10 +889,8 @@ class AIEngine:
                 on_progress(dict(self.training_progress))
 
         emit("collecting", 0, "📡 Загрузка исторических данных GRINCH...")
-        time.sleep(0.2)
         n = len(ohlcv)
         emit("collecting", 8, f"📡 Загружено {n} свечей GRINCH/TON", n)
-        time.sleep(0.3)
 
         emit("features", 12, "🔬 Вычисление 45+ технических индикаторов...")
         df = self._build_features(ohlcv)
@@ -900,7 +898,6 @@ class AIEngine:
             emit("ready", 100, "⚠️ Недостаточно данных — ожидаем накопления")
             return
         emit("features", 26, f"🔬 ADX · OBV · CCI · Williams%R · Ichimoku · Heiken Ashi · {len(df.columns)} признаков", len(df))
-        time.sleep(0.3)
 
         emit("label", 30, "🧮 Адаптивная разметка (порог = ATR×0.6, горизонты 2/3/5 баров)...")
         X, y = self._make_dataset(df)
@@ -909,7 +906,6 @@ class AIEngine:
             return
         classes = np.unique(y)
         emit("label", 36, f"🧮 Набор: {len(X)} примеров · классы BUY/HOLD/SELL={np.sum(y==1)}/{np.sum(y==0)}/{np.sum(y==-1)}", len(X))
-        time.sleep(0.2)
 
         if len(classes) < 2:
             emit("ready", 100, "⚠️ Недостаточно разнообразия сигналов")
@@ -932,25 +928,20 @@ class AIEngine:
                 "HGB": "💥 HistGradientBoosting (XGBoost-режим, 150 эпох)",
             }.get(slot.name, slot.name)
             emit(f"model_{i}", start_pct, f"{name_label}...")
-            time.sleep(0.15)
             with self._lock:
                 slot.fit(X, y)
             _release_memory()  # RAM: освобождаем временные буферы обучения дерева и отдаём память ОС
             emit(f"model_{i}", start_pct + pct_per_step * 0.9,
                  f"{name_label} ✓", len(X))
-            time.sleep(0.1)
 
         with self._lock:
             self._trained = True
 
         emit("meta", 84, "🧠 Инициализация мета-слоя (стекинг ансамблей)...")
-        time.sleep(0.2)
         self._try_fit_meta(X, y)
         emit("meta", 90, "🧠 Мета-слой готов" if self._meta else "🧠 Мета-слой накапливает данные...", len(X))
-        time.sleep(0.2)
 
         emit("validate", 91, "🔎 Валидация ансамбля на последних данных...")
-        time.sleep(0.2)
         try:
             last     = X[[-1]]
             ensemble = self._ensemble_proba(last)
@@ -961,7 +952,6 @@ class AIEngine:
             emit("validate", 96, f"🔎 Уверенность: {best_pct}% · ключевой признак: {fi_top}", len(X))
         except Exception:
             emit("validate", 96, "🔎 Валидация завершена")
-        time.sleep(0.2)
 
         model_names_str = " · ".join(s.name for s in self._slots)
         emit("ready", 100, f"✅ QuantumBrain готов! {len(self._slots)} моделей ({model_names_str}) · {len(X)} баров · Kelly активен 🟢", len(X))

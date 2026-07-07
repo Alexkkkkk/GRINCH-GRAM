@@ -3,8 +3,8 @@ import os
 import random
 import threading
 import time
-import urllib.request
 from config import Config
+from http_client import SESSION as _HTTP_EX
 from datetime import datetime
 from price_feed import price_feed
 
@@ -179,13 +179,14 @@ class ExchangeClient:
                     f"/ohlcv/{tf}?aggregate={aggregate}&limit={max(limit, 100)}"
                     f"&currency={currency}&token={token}"
                 )
-                req = urllib.request.Request(url, headers={
+                # SESSION переиспользует keep-alive соединение к GeckoTerminal —
+                # нет повторного TCP/TLS handshake, каждый вызов на ~100–300 ms быстрее.
+                r = _HTTP_EX.get(url, timeout=8, headers={
                     "Accept": "application/json",
-                    # GeckoTerminal/Cloudflare блокирует дефолтный UA urllib (403)
                     "User-Agent": "Mozilla/5.0 (compatible; GrinchGram/1.0)",
                 })
-                with urllib.request.urlopen(req, timeout=8) as r:
-                    data = json.loads(r.read())
+                r.raise_for_status()
+                data = r.json()
                 raw = data["data"]["attributes"]["ohlcv_list"]  # newest-first, ts в секундах
                 fresh = [
                     [int(ts) * 1000, float(o), float(h), float(l), float(c), float(v)]

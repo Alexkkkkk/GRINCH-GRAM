@@ -420,7 +420,9 @@ def get_supervised_status() -> dict:
 
 
 def _load_users_bg():
-    time.sleep(3)
+    # Было 3с — было нужно «подождать пока Flask поднимется», но Flask уже
+    # слушает к этому моменту. 0.5с достаточно для finalization init-цикла.
+    time.sleep(0.5)
     user_mgr.load_from_db(app)
     deposit_monitor.start(app, user_mgr)
 

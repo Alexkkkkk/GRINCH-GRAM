@@ -18,10 +18,44 @@ from __future__ import annotations
 
 import math
 import logging
+import queue
+import threading
 from datetime import datetime
 from typing import Dict, List, Optional
 
 import db_store as _db
+
+# ── Фоновая запись тиков в БД ─────────────────────────────────────────────────
+# push_tick() вызывается в горячем торговом цикле каждые 15 с. Блокирующий
+# INSERT в PostgreSQL (pghost.ru, latency ~20–100 ms) задерживал весь тик.
+# Решение: складываем снимок в queue и тут же возвращаемся; отдельный
+# daemon-поток сливает очередь в БД без блокировки торгового цикла.
+_tick_q: queue.Queue = queue.Queue(maxsize=500)
+_tick_writer_started = False
+_tick_writer_lock = threading.Lock()
+
+
+def _tick_writer_loop():
+    """Фоновый поток: сливает очередь тиков в БД без блокировки трейдера."""
+    while True:
+        entry = _tick_q.get()
+        try:
+            _db.ticks_insert(entry)
+        except Exception:
+            pass
+        _tick_q.task_done()
+
+
+def _ensure_tick_writer():
+    global _tick_writer_started
+    if _tick_writer_started:
+        return
+    with _tick_writer_lock:
+        if not _tick_writer_started:
+            t = threading.Thread(target=_tick_writer_loop,
+                                 name="tick-writer", daemon=True)
+            t.start()
+            _tick_writer_started = True
 
 logger = logging.getLogger(__name__)
 
@@ -45,7 +79,9 @@ class AnalyticsBuffer:
         """
         Вызывается из trader._tick() / trader._tick_dca() каждый тик (≈15 сек).
         Записывает полный снимок рыночного состояния в БД (bot_ticks).
+        Запись НЕ блокирует торговый цикл — уходит в фоновую очередь.
         """
+        _ensure_tick_writer()
         entry = {
             "ts":             datetime.utcnow().strftime("%H:%M:%S"),
             # ── Цена ──────────────────────────────────────────────────────────
@@ -91,7 +127,12 @@ class AnalyticsBuffer:
             "dca_pct":        _sf(data.get("dca_profit_pct")),
             "dca_ton":        _sf(data.get("dca_profit_ton")),
         }
-        _db.ticks_insert(entry)
+        # Не блокируем торговый цикл — кидаем в очередь и сразу возвращаемся.
+        # Если очередь переполнена (редко) — тик просто пропускается, торговля идёт.
+        try:
+            _tick_q.put_nowait(entry)
+        except queue.Full:
+            pass
 
     def push_trade(self, event_type: str, data: dict) -> None:
         """
