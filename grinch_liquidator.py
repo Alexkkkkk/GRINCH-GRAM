@@ -60,6 +60,7 @@ class GrinchLiquidator:
     def __init__(self):
         self._lock           = threading.Lock()
         self._running        = False
+        self._stop_event     = threading.Event()   # мгновенная остановка
         self._thread         = None
         self._grinch_bal     = 0.0
         self._ton_bal        = None    # баланс TON кошелька (для проверки газа)
@@ -97,12 +98,15 @@ class GrinchLiquidator:
         if self._running:
             return
         self._running = True
-        self._thread  = threading.Thread(target=self._loop, daemon=True)
+        self._stop_event.clear()
+        self._thread  = threading.Thread(target=self._loop, daemon=True,
+                                         name="grinch-liquidator")
         self._thread.start()
         self._log("🟢 Авто-ликвидатор GRINCH запущен")
 
     def stop(self):
         self._running = False
+        self._stop_event.set()   # мгновенно пробуждает спящий поток
         self._log("🔴 Авто-ликвидатор остановлен", "WARN")
 
     # ── Публичный статус (для API / UI) ─────────────────────────────────────
@@ -150,10 +154,11 @@ class GrinchLiquidator:
 
     def _loop(self):
         # Стартуем позже всех чтобы не перегружать TonCenter
-        time.sleep(START_DELAY)
+        if self._stop_event.wait(timeout=START_DELAY):
+            return   # stop() вызван во время ожидания
         self._log(f"🔍 Начинаю мониторинг GRINCH (порог продажи: +{self.sell_rise_pct}%)")
 
-        while self._running:
+        while self._running and not self._stop_event.is_set():
             try:
                 now = time.time()
                 # Обновляем on-chain баланс раз в BAL_CHECK_INTERVAL
@@ -167,7 +172,7 @@ class GrinchLiquidator:
             except Exception as e:
                 self._log(f"Ошибка цикла: {e}", "ERROR")
 
-            time.sleep(PRICE_TICK_SECS)
+            self._stop_event.wait(timeout=PRICE_TICK_SECS)   # прерываемый сон
 
     # ── Получение баланса ────────────────────────────────────────────────────
 

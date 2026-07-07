@@ -35,6 +35,7 @@ class TONTracker:
         self._running     = False
         self._thread      = None
         self._backoff     = 0       # текущий backoff в секундах (при 429)
+        self._stop_event  = threading.Event()   # мгновенная остановка
 
     # ── Публичные методы ──────────────────────────────────────────────────
 
@@ -42,11 +43,14 @@ class TONTracker:
         if self._running:
             return
         self._running = True
-        self._thread  = threading.Thread(target=self._loop, daemon=True)
+        self._stop_event.clear()
+        self._thread  = threading.Thread(target=self._loop, daemon=True,
+                                         name="ton-tracker")
         self._thread.start()
 
     def stop(self):
         self._running = False
+        self._stop_event.set()   # мгновенно пробуждает спящий поток
 
     def get_data(self) -> dict:
         with self._lock:
@@ -159,12 +163,14 @@ class TONTracker:
 
     def _loop(self):
         # Первый запрос — с небольшой задержкой чтобы не конкурировать со стартом
-        time.sleep(5)
-        while self._running:
+        if self._stop_event.wait(timeout=5):
+            return   # stop() вызван во время ожидания
+        while self._running and not self._stop_event.is_set():
             if self.address:
                 if self._backoff > 0:
-                    time.sleep(self._backoff)
+                    wait = self._backoff
                     self._backoff = 0
+                    self._stop_event.wait(timeout=wait)
                 else:
                     self._do_refresh()
-            time.sleep(self.poll_interval)
+            self._stop_event.wait(timeout=self.poll_interval)   # прерываемый сон

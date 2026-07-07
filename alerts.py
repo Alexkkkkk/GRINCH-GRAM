@@ -76,8 +76,8 @@ def _compute_state():
 
 def _monitor_loop():
     global _last_state, _last_sent_ts
-    time.sleep(30)  # дать боту время на предобучение перед первой проверкой
-    while True:
+    _monitor_stop.wait(timeout=30)   # прерываемая начальная пауза
+    while not _monitor_stop.is_set():
         try:
             token, chat_id, enabled = _get_creds()
             state = _compute_state()
@@ -104,11 +104,12 @@ def _monitor_loop():
                         _last_sent_ts = time.time()
         except Exception as e:
             logger.warning(f"[Alerts] monitor loop error: {e}")
-        time.sleep(_POLL_INTERVAL_SEC)
+        _monitor_stop.wait(timeout=_POLL_INTERVAL_SEC)   # прерываемый сон
 
 
 _monitor_started = False
-_monitor_lock = threading.Lock()
+_monitor_lock    = threading.Lock()
+_monitor_stop    = threading.Event()   # мгновенная остановка монитора
 
 
 def start_monitor():
@@ -117,4 +118,14 @@ def start_monitor():
         if _monitor_started:
             return
         _monitor_started = True
-        threading.Thread(target=_monitor_loop, daemon=True).start()
+    _monitor_stop.clear()
+    threading.Thread(target=_monitor_loop, daemon=True,
+                     name="alerts-monitor").start()
+
+
+def stop_monitor():
+    """Останавливает монитор алертов мгновенно."""
+    global _monitor_started
+    with _monitor_lock:
+        _monitor_started = False
+    _monitor_stop.set()

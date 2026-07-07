@@ -116,7 +116,9 @@ class Trader:
         if self.running:
             return
         self.running = True
-        self._thread = threading.Thread(target=self._loop, daemon=True)
+        self._loop_stop_event = threading.Event()   # прерываемый сон главного цикла
+        self._thread = threading.Thread(target=self._loop, daemon=True,
+                                        name="trader-main")
         self._thread.start()
         self._start_deep_retrain_thread()
         self.log("Торговый агент запущен", "INFO")
@@ -227,14 +229,14 @@ class Trader:
     def stop(self):
         self.running = False
         self.training = False
-        # Сигнализируем deep-retrain потоку о необходимости выйти.
-        # event.set() пробуждает event.wait() внутри _worker мгновенно —
-        # поток не будет ждать 600с или 2 дня до следующего цикла.
-        # Ссылку _deep_retrain_thread НЕ обнуляем: _start_deep_retrain_thread
-        # проверяет is_alive() и создаст новый поток только после завершения старого.
-        stop_event = getattr(self, "_deep_retrain_stop_event", None)
-        if stop_event is not None:
-            stop_event.set()
+        # Пробуждаем главный торговый цикл мгновенно (time.sleep(15) → event.wait)
+        loop_event = getattr(self, "_loop_stop_event", None)
+        if loop_event is not None:
+            loop_event.set()
+        # Пробуждаем deep-retrain поток мгновенно
+        retrain_event = getattr(self, "_deep_retrain_stop_event", None)
+        if retrain_event is not None:
+            retrain_event.set()
         self.log("Торговый агент остановлен", "WARN")
 
     # ──────────────────────────────────────────
@@ -355,7 +357,8 @@ class Trader:
                     _release_memory()
                 except Exception:
                     pass
-            time.sleep(15)
+            # Прерываемый сон: stop() немедленно разбудит через _loop_stop_event
+            self._loop_stop_event.wait(timeout=15)
 
     def _record_equity(self):
         """Снимок капитала кошелька в память (троттлинг внутри менеджера)."""

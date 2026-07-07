@@ -132,18 +132,22 @@ def run_backup() -> bool:
 # ── Фоновый поток ─────────────────────────────────────────────────────────────
 
 def _worker():
-    """Бесконечный цикл: бэкап при старте, потом раз в 24 часа."""
+    """Бесконечный цикл: бэкап при старте, потом раз в 24 часа.
+    Использует _stop_event.wait() вместо time.sleep() — останавливается мгновенно.
+    """
     # Небольшая пауза чтобы дать БД подняться полностью
-    time.sleep(30)
-    while True:
+    if _stop_event.wait(timeout=30):
+        return   # stop() вызван во время ожидания
+    while not _stop_event.is_set():
         run_backup()
         next_run = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         log.info(f"[Backup] Следующий бэкап через 24 часа (старт: {next_run})")
-        time.sleep(INTERVAL_S)
+        _stop_event.wait(timeout=INTERVAL_S)   # прерываемый сон
 
 
-_started = False
-_lock    = threading.Lock()
+_started    = False
+_lock       = threading.Lock()
+_stop_event = threading.Event()   # сигнал мгновенной остановки потока
 
 
 def start():
@@ -153,6 +157,15 @@ def start():
         if _started:
             return
         _started = True
+    _stop_event.clear()
     t = threading.Thread(target=_worker, name="db-backup", daemon=True)
     t.start()
     log.info("[Backup] 🗄️ Авто-бэкап БД запущен (каждые 24 ч → backups/)")
+
+
+def stop():
+    """Останавливает фоновый поток бэкапа (пробуждает его мгновенно)."""
+    global _started
+    with _lock:
+        _started = False
+    _stop_event.set()

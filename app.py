@@ -369,32 +369,48 @@ def push_price():
 # Реестр критических daemon-потоков, которые должны работать постоянно.
 # Если поток умрёт (нормальный return или необработанное исключение),
 # супервайзер автоматически перезапустит его через RESTART_DELAY секунд.
-_supervised: dict[str, dict] = {}   # name → {"target": fn, "thread": Thread}
-_sup_lock = threading.Lock()
+_supervised: dict[str, dict] = {}   # name → {"target": fn, "thread": Thread, "stop": Event}
+_sup_lock    = threading.Lock()
 _RESTART_DELAY = 5   # секунд между смертью потока и перезапуском
 
 
 def _supervise(name: str, target, args=(), kwargs=None):
-    """Запустить daemon-поток под наблюдением. При смерти — перезапуск."""
-    kwargs = kwargs or {}
+    """Запустить daemon-поток под наблюдением. При смерти — перезапуск.
+
+    stop_event в _supervised[name]['stop'] позволяет остановить супервайзер
+    мгновенно через stop_supervised(name): event.set() прерывает
+    прерываемый restart-sleep и завершает _wrapper.
+    """
+    kwargs    = kwargs or {}
+    stop_ev   = threading.Event()
 
     def _wrapper():
-        while True:
+        while not stop_ev.is_set():
             try:
                 target(*args, **kwargs)
             except Exception as e:
                 print(f"[Supervisor] ⚠️ Поток '{name}' упал с ошибкой: {e}")
             else:
-                print(f"[Supervisor] ⚠️ Поток '{name}' завершился (неожиданно)")
-            # Любой выход из target (нормальный или по исключению) сюда
+                if not stop_ev.is_set():
+                    print(f"[Supervisor] ⚠️ Поток '{name}' завершился (неожиданно)")
+            if stop_ev.is_set():
+                break
             print(f"[Supervisor] 🔄 Перезапускаю '{name}' через {_RESTART_DELAY}с...")
-            time.sleep(_RESTART_DELAY)
+            stop_ev.wait(timeout=_RESTART_DELAY)   # прерываемый restart-sleep
 
     t = threading.Thread(target=_wrapper, name=f"sup-{name}", daemon=True)
     t.start()
     with _sup_lock:
-        _supervised[name] = {"target": target, "thread": t}
+        _supervised[name] = {"target": target, "thread": t, "stop": stop_ev}
     return t
+
+
+def stop_supervised(name: str):
+    """Остановить конкретный супервайзированный поток мгновенно."""
+    with _sup_lock:
+        info = _supervised.get(name)
+    if info:
+        info["stop"].set()
 
 
 def get_supervised_status() -> dict:

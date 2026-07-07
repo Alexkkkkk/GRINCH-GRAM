@@ -72,11 +72,12 @@ class WalletTracker:
     SMART_MIN_TRADES = 2    # минимум сделок, чтобы считать кошелёк «умным»
 
     def __init__(self):
-        self._lock = threading.RLock()
-        self._running = False
-        self._backoff = self.POLL_SEC
-        self.last_poll = 0.0
-        self.last_error = None
+        self._lock       = threading.RLock()
+        self._running    = False
+        self._stop_event = threading.Event()   # мгновенная остановка
+        self._backoff    = self.POLL_SEC
+        self.last_poll   = 0.0
+        self.last_error  = None
         # адрес -> агрегат
         self.wallets = {}
         # дедупликация увиденных сделок
@@ -90,21 +91,28 @@ class WalletTracker:
         if self._running:
             return
         self._running = True
-        t = threading.Thread(target=self._loop, daemon=True)
+        self._stop_event.clear()
+        t = threading.Thread(target=self._loop, daemon=True, name="wallet-tracker")
         t.start()
 
+    def stop(self):
+        """Останавливает опрос кошельков мгновенно."""
+        self._running = False
+        self._stop_event.set()
+
     def _loop(self):
-        time.sleep(self.START_DELAY)
-        while self._running:
+        if self._stop_event.wait(timeout=self.START_DELAY):
+            return   # stop() вызван во время расфазировки
+        while self._running and not self._stop_event.is_set():
             try:
                 self._poll_once()
                 self.last_error = None
                 self._backoff = self.POLL_SEC
-                time.sleep(self.POLL_SEC)
+                self._stop_event.wait(timeout=self.POLL_SEC)
             except Exception as e:           # noqa: BLE001
                 self.last_error = str(e)
                 self._backoff = min(self._backoff * 2, 300)
-                time.sleep(self._backoff)
+                self._stop_event.wait(timeout=self._backoff)
 
     # ------------------------------------------------------------ опрос ленты
     def _poll_once(self):

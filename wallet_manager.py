@@ -28,6 +28,7 @@ class WalletManager:
         self._history   = []           # кольцо в памяти (200 точек)
         self._thread    = None
         self._running   = False
+        self._stop_event = threading.Event()   # мгновенная остановка
         self._trader    = None         # ссылка на Trader для чтения open_trades
 
     # ─── запуск ────────────────────────────────────────────────────────────────
@@ -36,6 +37,7 @@ class WalletManager:
         if self._running:
             return
         self._running = True
+        self._stop_event.clear()
         self._trader  = trader_ref
         self._thread  = threading.Thread(
             target=self._loop, daemon=True, name="wallet-manager"
@@ -43,16 +45,21 @@ class WalletManager:
         self._thread.start()
         log.info("[WalletManager] ✅ Запущен (опрос каждые %ds)", POLL_SEC)
 
+    def stop(self):
+        """Останавливает фоновый опрос мгновенно."""
+        self._running = False
+        self._stop_event.set()
+
     # ─── главный цикл ──────────────────────────────────────────────────────────
 
     def _loop(self):
-        time.sleep(8)   # дать боту прогреться после старта
-        while self._running:
+        self._stop_event.wait(timeout=8)   # прерываемый прогрев после старта
+        while self._running and not self._stop_event.is_set():
             try:
                 self._poll()
             except Exception as exc:
                 log.warning("[WalletManager] ошибка опроса: %s", exc)
-            time.sleep(POLL_SEC)
+            self._stop_event.wait(timeout=POLL_SEC)   # прерываемый сон
 
     # ─── один опрос ────────────────────────────────────────────────────────────
 

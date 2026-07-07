@@ -31,6 +31,7 @@ _buys_paused: bool = False
 _pause_reason: str = ""
 _last_update_ts: float = 0.0
 _started = False
+_stop_event = threading.Event()   # мгновенная остановка потока
 
 
 def _evaluate(liq: float):
@@ -65,7 +66,7 @@ def _evaluate(liq: float):
 def _poll_loop():
     global _current_liq, _last_update_ts
     logger.info("[LiquidityGuard] 🟢 Мониторинг ликвидности GRINCH запущен")
-    while True:
+    while not _stop_event.is_set():
         try:
             data = coin_info.market("GRINCH") or {}
             liq = data.get("liquidity")
@@ -77,7 +78,7 @@ def _poll_loop():
                     _evaluate(_current_liq)
         except Exception as e:
             logger.error(f"[LiquidityGuard] ошибка опроса: {e}")
-        time.sleep(POLL_SEC)
+        _stop_event.wait(timeout=POLL_SEC)   # прерываемый сон
 
 
 def start():
@@ -86,7 +87,16 @@ def start():
         if _started:
             return
         _started = True
+    _stop_event.clear()
     threading.Thread(target=_poll_loop, daemon=True, name="liquidity-guard").start()
+
+
+def stop():
+    """Останавливает мониторинг мгновенно."""
+    global _started
+    with _lock:
+        _started = False
+    _stop_event.set()
 
 
 def is_buy_paused() -> bool:

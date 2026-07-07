@@ -30,30 +30,38 @@ class DepositMonitor:
         return 30 if os.getenv("TONCENTER_API_KEY") else 120
 
     def __init__(self, platform_address: str):
-        self.address  = platform_address
-        self._running = False
-        self._backoff = 0
+        self.address    = platform_address
+        self._running   = False
+        self._backoff   = 0
+        self._stop_event = threading.Event()   # мгновенная остановка
 
     def start(self, app, user_mgr):
         self._app      = app
         self._user_mgr = user_mgr
         self._running  = True
-        t = threading.Thread(target=self._loop, daemon=True)
+        self._stop_event.clear()
+        t = threading.Thread(target=self._loop, daemon=True,
+                             name="deposit-monitor")
         t.start()
         log.info(f"[DepositMonitor] Запущен. Наблюдение за {self.address[:20]}...")
 
+    def stop(self):
+        """Останавливает мониторинг депозитов мгновенно."""
+        self._running = False
+        self._stop_event.set()
+
     def _loop(self):
-        time.sleep(self.START_DELAY)   # ждём расфазировки
-        while self._running:
+        if self._stop_event.wait(timeout=self.START_DELAY):
+            return   # stop() вызван во время расфазировки
+        while self._running and not self._stop_event.is_set():
             try:
                 self._check()
             except Exception as e:
                 log.debug(f"[DepositMonitor] Ошибка: {e}")
+            wait_sec = self._backoff if self._backoff > 0 else self.POLL_SEC
             if self._backoff > 0:
-                time.sleep(self._backoff)
                 self._backoff = 0
-            else:
-                time.sleep(self.POLL_SEC)
+            self._stop_event.wait(timeout=wait_sec)   # прерываемый сон
 
     def _get(self, path: str, params: dict):
         qs  = urllib.parse.urlencode(params)
