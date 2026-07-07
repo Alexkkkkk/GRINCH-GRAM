@@ -40,3 +40,4 @@
 - [RAM optimization for AI ensemble](ram-optimization-ai-ensemble.md) — bot also runs on a low-RAM external host; pretrain()/refit spikes (not steady-state) caused OOM; shrink models + gc.collect() after fit, but ~200-250MB is an unavoidable numpy/pandas/sklearn/xgboost import floor.
 - [Bothost deployment config](bothost-deployment-config.md) — DATA_DIR=/app/data in Dockerfile (persistent volume); session_secret stored in DATA_DIR not CWD; EXTERNAL_DATABASE_URL has priority over DATABASE_URL in db_store; duplicate ai_advisor start_background removed from app.py (was called twice).
 - [Bothost locked settings](bothost-locked-settings.md) — ⛔ НЕЛЬЗЯ менять без явного разрешения: WORKDIR=/usr/src/app, PORT=${PORT:-3000} shell-форма, --worker-class gthread, LOW_MEMORY_MODE=1, DATA_DIR=/app/data.
+- [RAM floor и оптимизации скорости](ram-floor-speed.md) — numpy+pandas+sklearn+flask=173MB пол; 180MB недостижимо без замены sklearn; LOW_MEMORY_MODE=1 по умолч.

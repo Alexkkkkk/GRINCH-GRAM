@@ -59,7 +59,7 @@ warnings.filterwarnings("ignore")
 # ВАЖНО: в LOW_MEMORY_MODE даже НЕиспользуемые модели (HGB/XGB/LGB) не должны
 # импортироваться — сам импорт xgboost/lightgbm занимает десятки МБ RSS,
 # даже если ни одна модель этого типа никогда не создаётся и не обучается.
-LOW_MEMORY_MODE = os.getenv("LOW_MEMORY_MODE", "0") == "1"
+LOW_MEMORY_MODE = os.getenv("LOW_MEMORY_MODE", "1") == "1"  # по умолч. вкл. — 3 модели, RSS ≤180MB
 
 if LOW_MEMORY_MODE:
     _HAS_HGB = _HAS_XGB = _HAS_LGB = False

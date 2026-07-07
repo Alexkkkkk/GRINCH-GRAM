@@ -62,6 +62,13 @@ logger = logging.getLogger(__name__)
 GRINCH_DEDUST_URL  = "https://dedust.io/coins/EQA6G0uVERDZTkLNa0drWBna1F5TSbogy7UXEWU5ERHz4uJL"
 GRINCH_TOKEN_ADDR  = "EQA6G0uVERDZTkLNa0drWBna1F5TSbogy7UXEWU5ERHz4uJL"
 
+# ── Кэш get_advisor_summary() ─────────────────────────────────────────────────
+# Советник вызывает эту функцию раз в несколько минут; она делает тяжёлые DB-запросы
+# и Python-вычисления. Кэш 60с исключает многократный пересчёт при параллельных вызовах.
+_advisor_cache: dict = {}
+_advisor_cache_lock = threading.Lock()
+_ADVISOR_TTL = 60  # секунд
+
 DEFAULT_TICK_WINDOW = 100
 TRADE_WINDOW         = 30
 
@@ -156,7 +163,17 @@ class AnalyticsBuffer:
         умные деньги, история сделок и список последних 12 тиков.
         Данные читаются из PostgreSQL (bot_ticks/bot_trades) — переживают
         рестарт бота, в отличие от прежнего in-memory буфера.
+
+        Результат кэшируется на _ADVISOR_TTL секунд: советник вызывает эту
+        функцию раз в несколько минут, пересчитывать каждый раз нет смысла.
         """
+        import time as _time
+        cache_key = window
+        with _advisor_cache_lock:
+            entry = _advisor_cache.get(cache_key)
+            if entry and (_time.time() - entry["ts"]) < _ADVISOR_TTL:
+                return entry["data"]
+
         ticks = _db.ticks_get_recent(window)
         raw_trades = _db.trades_get_recent(TRADE_WINDOW)
         trades = [_trade_from_db(t) for t in reversed(raw_trades)]  # ASC как раньше
@@ -428,6 +445,10 @@ class AnalyticsBuffer:
                 "total_trades_closed": _db.trades_count(),
             },
         }
+
+        with _advisor_cache_lock:
+            _advisor_cache[cache_key] = {"data": result, "ts": _time.time()}
+        return result
 
     def get_full_summary(self, window: int = 200) -> dict:
         """Полный отчёт — для дашборда/API. Советник использует get_advisor_summary."""

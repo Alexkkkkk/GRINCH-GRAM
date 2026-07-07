@@ -19,7 +19,8 @@ class Trader:
         self.trades      = []
         self.open_trades = []
         self.logs        = []
-        self.last_ai     = {}
+        self.last_ai       = {}
+        self.last_analysis = {}   # кэш последнего strategy.analyze() — обновляется в _tick()
         self.stats = {
             "total_trades":   0,
             "winning_trades": 0,
@@ -108,8 +109,8 @@ class Trader:
     def log(self, msg, level="INFO"):
         entry = {"time": datetime.utcnow().strftime("%H:%M:%S"), "level": level, "msg": msg}
         self.logs.append(entry)
-        if len(self.logs) > 200:
-            self.logs = self.logs[-200:]
+        if len(self.logs) > 100:
+            self.logs = self.logs[-100:]
         print(f"[{entry['time']}] [{level}] {msg}")
 
     def start(self):
@@ -291,13 +292,20 @@ class Trader:
         try:
             # LOW_MEMORY_MODE (Bothost и т.п.): меньше свечей → меньше признаков
             # и меньше пиковая память при обучении 3 моделей на старте.
-            _pretrain_limit = 150 if os.getenv("LOW_MEMORY_MODE", "0") == "1" else 300
+            _pretrain_limit = 150 if os.getenv("LOW_MEMORY_MODE", "1") == "1" else 300
             ohlcv = self.exchange.get_ohlcv(limit=_pretrain_limit)
             self.ai.pretrain(ohlcv, on_progress=self._emit_progress)
         except Exception as e:
             self.log(f"⚠️ Ошибка предобучения: {e}", "WARN")
         self.training = False
         self.log("✅ Предобучение завершено. Запускаю торговый цикл.", "INFO")
+        # Сразу после предобучения — отдаём ОС временные буферы обучения.
+        # malloc_trim(0) возвращает glibc-арены даже то, что gc.collect() не отдал.
+        try:
+            from ai_engine import _release_memory
+            _release_memory()
+        except Exception:
+            pass
         # Объединяем позиции, восстановленные с диска, в одну
         self._merge_long_trades()
 
@@ -351,7 +359,7 @@ class Trader:
                 self.last_tick_ok = False
             # На маломощных хостах (LOW_MEMORY_MODE) периодически отдаём ОС
             # память, освобождённую GC (glibc malloc иначе держит её в аренах).
-            if os.getenv("LOW_MEMORY_MODE", "0") == "1":
+            if os.getenv("LOW_MEMORY_MODE", "1") == "1":
                 try:
                     from ai_engine import _release_memory
                     _release_memory()
@@ -1448,6 +1456,7 @@ class Trader:
 
         ohlcv  = self.exchange.get_ohlcv(limit=100)
         result = analyze(ohlcv)
+        self.last_analysis = result   # кэш для get_status() — не пересчитываем каждые 2с
         ai     = self.ai.analyze(ohlcv)
         self.last_ai = ai
 
@@ -2870,8 +2879,10 @@ class Trader:
         return out
 
     def get_status(self):
+        # Используем last_analysis из последнего торгового тика (обновляется каждые 15с).
+        # Fallback: считаем напрямую только при первом обращении до первого тика.
         ohlcv    = self.exchange.get_ohlcv(limit=100)
-        analysis = analyze(ohlcv)
+        analysis = self.last_analysis if self.last_analysis else analyze(ohlcv)
         # Единый источник «текущей цены» для всего UI: спотовая цена DexScreener
         # (price_feed.get), та же, что использует авто-ликвидатор и карточка монеты.
         # Иначе hero/кошелёк показывают close последней свечи (GeckoTerminal), а

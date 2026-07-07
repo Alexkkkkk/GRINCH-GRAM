@@ -278,15 +278,25 @@ _startup_log.info("WalletManager OK")
 
 
 def _safe_status():
+    raw = trader.get_status()
+    # orjson сериализует numpy-типы нативно и в 5–10× быстрее обхода _walk.
+    # Fallback на рекурсивный _walk только если orjson недоступен.
+    if orjson is not None:
+        try:
+            return orjson.loads(
+                orjson.dumps(raw, option=orjson.OPT_SERIALIZE_NUMPY | orjson.OPT_NON_STR_KEYS)
+            )
+        except Exception:
+            pass
     def _walk(obj):
-        if isinstance(obj, dict):             return {k: _walk(v) for k, v in obj.items()}
-        if isinstance(obj, (list, tuple)):    return [_walk(v) for v in obj]
-        if isinstance(obj, (np.integer,)):    return int(obj)
-        if isinstance(obj, (np.floating,)):   return float(obj)
-        if isinstance(obj, (np.bool_,)):      return bool(obj)
-        if isinstance(obj, np.ndarray):       return obj.tolist()
+        if isinstance(obj, dict):          return {k: _walk(v) for k, v in obj.items()}
+        if isinstance(obj, (list, tuple)): return [_walk(v) for v in obj]
+        if isinstance(obj, np.integer):    return int(obj)
+        if isinstance(obj, np.floating):   return float(obj)
+        if isinstance(obj, np.bool_):      return bool(obj)
+        if isinstance(obj, np.ndarray):    return obj.tolist()
         return obj
-    return _walk(trader.get_status())
+    return _walk(raw)
 
 
 # ── Фоновые потоки ────────────────────────────────────────────────────────────
