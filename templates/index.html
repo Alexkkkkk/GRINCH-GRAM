@@ -1325,7 +1325,15 @@
 
         <!-- График накопления примеров -->
         <div class="card card-c" style="padding:16px">
-          <div class="card-title ctit" style="margin-bottom:12px">📈 Накопление обучающих примеров</div>
+          <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:12px">
+            <div class="card-title ctit" style="margin:0">📈 Накопление обучающих примеров</div>
+            <a id="btn-csv-export" href="/api/ai/examples/export.csv" download
+              style="padding:6px 14px;border-radius:8px;border:1px solid rgba(255,209,102,.35);
+                background:rgba(255,209,102,.10);color:#ffd166;font-size:12px;font-weight:700;
+                text-decoration:none;white-space:nowrap;display:inline-block">
+              ⬇️ Скачать CSV
+            </a>
+          </div>
           <div id="ai-hist-chart" style="width:100%;height:120px;position:relative;overflow:hidden">
             <svg id="ai-hist-svg" width="100%" height="100%" style="display:block"></svg>
           </div>

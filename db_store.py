@@ -641,6 +641,33 @@ def ai_examples_count() -> int:
         return 0
 
 
+def ai_examples_export_all():
+    """Возвращает генератор строк (id, created_at, label, weight, features...)
+    для потокового CSV-экспорта всех обучающих примеров из БД.
+    Читает чанками по 1000, чтобы не держать всё в RAM."""
+    if not _available:
+        return
+    try:
+        with _conn() as conn:
+            with conn.cursor(name="export_cur",
+                             cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+                cur.itersize = 1000
+                cur.execute("""
+                    SELECT id, created_at, label, weight, features
+                    FROM bot_ai_examples ORDER BY id
+                """)
+                for row in cur:
+                    yield {
+                        "id":         row["id"],
+                        "created_at": row["created_at"],
+                        "label":      row["label"],
+                        "weight":     row["weight"],
+                        "features":   row["features"],  # уже list[float] из JSONB
+                    }
+    except Exception as e:
+        logger.warning(f"[DB] ai_examples_export_all error: {e}")
+
+
 # ═══════════════════════════════════════════════════════════════════════════════
 #  TICKS (скользящая история рынка для AI-советника, замена analytics_buffer)
 # ═══════════════════════════════════════════════════════════════════════════════

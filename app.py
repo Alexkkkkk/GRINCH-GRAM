@@ -771,6 +771,59 @@ def api_ai_deep_retrain_status():
     })
 
 
+# ─── Экспорт обучающих примеров в CSV ───────────────────────────────────────
+@app.route("/api/ai/examples/export.csv")
+def api_ai_examples_export():
+    """Потоковая отдача всех обучающих примеров из bot_ai_examples в CSV.
+    Использует серверный курсор — не тянет всё в RAM сразу."""
+    import csv
+    import io
+    import db_store
+
+    # Имена признаков из живого AI (если доступны)
+    ai = getattr(trader, "ai", None)
+    feat_names = (list(getattr(ai, "_feature_names", [])) or []) if ai else []
+
+    def _generate():
+        first = True
+        header_written = False
+        for row in db_store.ai_examples_export_all():
+            feats = row["features"] or []
+            if first:
+                # Строим заголовок
+                if feat_names:
+                    cols = feat_names[:len(feats)]
+                    # если признаков в строке больше, чем в именах — добавляем f_N
+                    cols += [f"feat_{i}" for i in range(len(cols), len(feats))]
+                else:
+                    cols = [f"feat_{i}" for i in range(len(feats))]
+                buf = io.StringIO()
+                w = csv.writer(buf)
+                w.writerow(["id", "created_at", "label", "weight"] + cols)
+                yield buf.getvalue()
+                header_written = True
+                first = False
+            buf = io.StringIO()
+            w = csv.writer(buf)
+            ts = row["created_at"].strftime("%Y-%m-%d %H:%M:%S") if row["created_at"] else ""
+            w.writerow([row["id"], ts, row["label"], round(row["weight"], 6)] + list(feats))
+            yield buf.getvalue()
+        if not header_written:
+            yield "id,created_at,label,weight\n"
+            yield "# Примеров пока нет\n"
+
+    total = db_store.ai_examples_count()
+    filename = f"ai_examples_{total}.csv"
+    return app.response_class(
+        _generate(),
+        mimetype="text/csv",
+        headers={
+            "Content-Disposition": f'attachment; filename="{filename}"',
+            "X-Accel-Buffering": "no",
+        },
+    )
+
+
 # ─── AI Советник (Groq LLaMA) ───────────────────────────────────────────────
 @app.route("/api/advisor/status")
 def api_advisor_status():
