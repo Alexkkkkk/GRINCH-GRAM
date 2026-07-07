@@ -187,7 +187,7 @@ def _make_pool(connect_timeout: int) -> psycopg2.pool.ThreadedConnectionPool:
         keepalives_count=3,       # 3 неответа → соединение мёртвое
         # statement_timeout — убивает зависший запрос на стороне сервера через 9с.
         # Это главная защита от блокировки торгового цикла при лагах pghost.ru.
-        options="-c statement_timeout=9000",
+        options="-c statement_timeout=7000",
     )
 
 
@@ -602,22 +602,21 @@ def equity_bulk_insert(points: list):
     if not _check_available() or not points:
         return
     try:
+        rows = []
+        for p in points:
+            ts_str = p.get("t")
+            try:
+                ts = datetime.fromisoformat(ts_str) if ts_str else datetime.utcnow()
+            except Exception:
+                ts = datetime.utcnow()
+            rows.append((ts, p.get("ton"), p.get("grinch"),
+                         p.get("grinch_usd"), p.get("equity_ton")))
         with _conn() as conn:
             with conn.cursor() as cur:
-                for p in points:
-                    ts_str = p.get("t")
-                    try:
-                        ts = datetime.fromisoformat(ts_str) if ts_str else datetime.utcnow()
-                    except Exception:
-                        ts = datetime.utcnow()
-                    cur.execute("""
-                        INSERT INTO bot_equity (ts, ton, grinch, grinch_usd, equity_ton)
-                        VALUES (%s, %s, %s, %s, %s)
-                    """, (
-                        ts,
-                        p.get("ton"), p.get("grinch"),
-                        p.get("grinch_usd"), p.get("equity_ton"),
-                    ))
+                psycopg2.extras.execute_values(cur, """
+                    INSERT INTO bot_equity (ts, ton, grinch, grinch_usd, equity_ton)
+                    VALUES %s
+                """, rows)
     except Exception as e:
         logger.warning(f"[DB] equity_bulk_insert error: {e}")
 
@@ -630,19 +629,20 @@ def open_trades_save(trades: list):
     if not _check_available():
         return
     try:
+        rows = [
+            (str(t.get("id") or ""), _jdumps(t, ensure_ascii=False))
+            for t in trades if t.get("id")
+        ]
         with _conn() as conn:
             with conn.cursor() as cur:
                 cur.execute("DELETE FROM bot_open_trades")
-                for t in trades:
-                    tid = str(t.get("id") or "")
-                    if not tid:
-                        continue
-                    cur.execute("""
+                if rows:
+                    psycopg2.extras.execute_values(cur, """
                         INSERT INTO bot_open_trades (trade_id, data, updated_at)
-                        VALUES (%s, %s, NOW())
+                        VALUES %s
                         ON CONFLICT (trade_id) DO UPDATE
                           SET data = EXCLUDED.data, updated_at = NOW()
-                    """, (tid, _jdumps(t, ensure_ascii=False)))
+                    """, rows, template="(%s, %s, NOW())")
     except Exception as e:
         logger.warning(f"[DB] open_trades_save error: {e}")
 

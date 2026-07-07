@@ -49,6 +49,7 @@ from sklearn.neural_network import MLPClassifier
 from sklearn.preprocessing import StandardScaler, RobustScaler
 from sklearn.pipeline import Pipeline
 import warnings
+import concurrent.futures as _cf
 warnings.filterwarnings("ignore")
 
 # ─── Режим для маломощных хостов (Bothost и т.п.) ────────────────────────────
@@ -1035,27 +1036,37 @@ class AIEngine:
 
         confidence = round(max_prob * 100, 1)
 
-        # ── Дополнительная аналитика ──────────────────────────────────────
-        regime     = self._detect_regime(df)
-        patterns   = self._detect_candle_patterns(df)
-        sr_levels  = self._support_resistance(df)
-        forecast   = self._price_forecast(df)
-        importance = self._feature_importance()
-        anomaly    = self._detect_anomaly(df)
-        model_info = self._model_stats()
-        kelly      = self._compute_kelly()
+        # ── Дополнительная аналитика — параллельно ────────────────────────
+        # Все вызовы независимы и read-only, поэтому запускаем одновременно
+        # в пуле из 6 потоков. GIL снимается в numpy/sklearn C-коде.
+        _close_arr = df["close"].values[-40:] if len(df) >= 40 else None
+        with _cf.ThreadPoolExecutor(max_workers=6) as _apool:
+            _fr   = _apool.submit(self._detect_regime, df)
+            _fp   = _apool.submit(self._detect_candle_patterns, df)
+            _fs   = _apool.submit(self._support_resistance, df)
+            _ff   = _apool.submit(self._price_forecast, df)
+            _fi   = _apool.submit(self._feature_importance)
+            _fan  = _apool.submit(self._detect_anomaly, df)
+            _fmi  = _apool.submit(self._model_stats)
+            _fk   = _apool.submit(self._compute_kelly)
+            _fmom = _apool.submit(_momentum_engine.detect, df)
+            _fbo  = _apool.submit(_breakout_engine.detect, df)
+            _fpu  = _apool.submit(_pump_detector.detect, df)
+            _fvr  = (_apool.submit(_variance_ratio, _close_arr, 5)
+                     if _close_arr is not None else None)
 
-        # ── Momentum Engine: детектор взрывного движения ─────────────────
-        momentum = _momentum_engine.detect(df)
-
-        # ── Breakout Engine: предсказатель GRINCH-пампа ──────────────────
-        breakout = _breakout_engine.detect(df)
-
-        # ── v4: GRINCH Pump Detector ──────────────────────────────────────
-        pump = _pump_detector.detect(df)
-
-        # ── Variance Ratio для текущего окна ─────────────────────────────
-        curr_vr = _variance_ratio(df["close"].values[-40:], q=5) if len(df) >= 40 else 1.0
+        regime     = _fr.result()
+        patterns   = _fp.result()
+        sr_levels  = _fs.result()
+        forecast   = _ff.result()
+        importance = _fi.result()
+        anomaly    = _fan.result()
+        model_info = _fmi.result()
+        kelly      = _fk.result()
+        momentum   = _fmom.result()
+        breakout   = _fbo.result()
+        pump       = _fpu.result()
+        curr_vr    = _fvr.result() if _fvr is not None else 1.0
 
         # ── Режимно-зависимая коррекция + все бусты ──────────────────────
         # Источники: режим, momentum, breakout, pump_detector, variance_ratio
@@ -1415,12 +1426,27 @@ class AIEngine:
         if len(classes) < 2:
             return
 
-        for slot in self._slots:
-            try:
-                slot.fit(X_arr, y_arr, sample_weight=w_arr)
-            except Exception as e:
-                log.debug(f"[AI:{slot.name}] refit error: {e}")
-            _release_memory()  # RAM: старые деревья/веса модели освобождаются сразу и отдаются ОС
+        if not LOW_MEMORY_MODE and len(self._slots) > 1:
+            # Параллельный рефит: не более 2 одновременных обучений чтобы не
+            # допустить пикового всплеска RAM (каждый fit() держит временные
+            # буферы ~50-100 MB). GIL снимается в C-коде sklearn/numpy.
+            def _fit_one(slot):
+                try:
+                    slot.fit(X_arr, y_arr, sample_weight=w_arr)
+                except Exception as e:
+                    log.debug(f"[AI:{slot.name}] refit error: {e}")
+            with _cf.ThreadPoolExecutor(max_workers=2) as _rpool:
+                futs = {_rpool.submit(_fit_one, s): s for s in self._slots}
+                for fut in _cf.as_completed(futs):
+                    fut.result()
+                    _release_memory()  # освобождаем после каждой завершённой модели
+        else:
+            for slot in self._slots:
+                try:
+                    slot.fit(X_arr, y_arr, sample_weight=w_arr)
+                except Exception as e:
+                    log.debug(f"[AI:{slot.name}] refit error: {e}")
+                _release_memory()  # RAM: старые деревья/веса освобождаются сразу
 
         self._trained = True
         self._new_confirms = 0
