@@ -526,7 +526,25 @@ class GRINCHPumpDetector:
                 elif vr > 1.05:
                     vr_score = 5.0
 
-            score = rsi_score + bb_score + vol_score + macd_score + kalman_score + vr_score
+            # ── 7. Живой ордер-флоу DEX (DexScreener/GeckoTerminal) ─────────
+            # Реальный поток сделок сильнее любого OHLCV-признака:
+            # если 65%+ объёма = покупки И нетто-флоу положительный → сильное накопление.
+            import time as _ti
+            flow_score = 0.0
+            _flow_age  = _ti.time() - _order_flow_updated_at
+            if _flow_age < 120:  # свежий флоу (< 2 мин)
+                if _order_flow_buy_ratio >= 0.65:
+                    flow_score = 20.0
+                elif _order_flow_buy_ratio >= 0.55:
+                    flow_score = 10.0
+                elif _order_flow_buy_ratio <= 0.40:
+                    flow_score = -10.0  # больше продавцов — штраф
+                if _order_flow_net_flow > 20:
+                    flow_score += 10.0
+                elif _order_flow_net_flow < -20:
+                    flow_score -= 10.0
+
+            score = rsi_score + bb_score + vol_score + macd_score + kalman_score + vr_score + flow_score
             score = min(100.0, score)
 
             # Паттерн
@@ -549,6 +567,7 @@ class GRINCHPumpDetector:
                 "macd_score":  round(macd_score, 1),
                 "kalman_score":round(kalman_score, 1),
                 "vr_score":    round(vr_score, 1),
+                "flow_score":  round(flow_score, 1),
             }
         except Exception as e:
             log.debug(f"[GRINCHPumpDetector] error: {e}")
@@ -564,6 +583,27 @@ class GRINCHPumpDetector:
 
 
 _pump_detector = GRINCHPumpDetector()
+
+# ─── Глобальный инжектор ордер-флоу ─────────────────────────────────────────
+# Заполняется из coin_info.py / trader.py каждый тик.
+# Значения используются в GRINCHPumpDetector и _build_features().
+_order_flow_buy_ratio:  float = 0.5    # 0-1 (доля покупок в объёме DEX)
+_order_flow_net_flow:   float = 0.0    # нетто-поток (buy_vol - sell_vol, нормализован)
+_order_flow_updated_at: float = 0.0
+
+
+def inject_order_flow(buy_ratio: float, net_flow_pct: float) -> None:
+    """
+    Инъекция живого ордер-флоу из DexScreener/GeckoTerminal.
+
+    buy_ratio:    доля покупок за последний период (0-1)
+    net_flow_pct: нетто-флоу в % от объёма (-100..+100)
+    """
+    global _order_flow_buy_ratio, _order_flow_net_flow, _order_flow_updated_at
+    import time as _t
+    _order_flow_buy_ratio  = max(0.0, min(1.0, float(buy_ratio)))
+    _order_flow_net_flow   = max(-100.0, min(100.0, float(net_flow_pct)))
+    _order_flow_updated_at = _t.time()
 
 
 class _ModelSlot:

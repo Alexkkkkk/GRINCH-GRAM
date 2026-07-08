@@ -7,6 +7,15 @@ import os, json, logging, threading, time, re
 from datetime import datetime
 from collections import deque
 from typing import Optional
+try:
+    import brain_fusion as _bf
+except Exception as _bfe:
+    import logging as _bflog2
+    _bflog2.getLogger("ai_advisor").warning(f"brain_fusion не загружен: {_bfe}")
+    class _BFStub2:
+        def update_advisor(self, *a, **kw): pass
+        def get_state(self): return {}
+    _bf = _BFStub2()
 
 logger = logging.getLogger(__name__)
 
@@ -571,6 +580,12 @@ def _build_snapshot(user_message: str = "") -> dict:
         }
     except Exception:
         snap["ai_engine"] = {}
+
+    # ── BrainFusion: полное состояние единого мозга ───────────────────────────
+    try:
+        snap["brain_fusion"] = _bf.get_state()
+    except Exception:
+        snap["brain_fusion"] = {}
 
     # Производительность (история сделок)
     try:
@@ -1190,6 +1205,19 @@ def run_advisor(auto_apply: bool = None, user_message: str = "",
 
         if applied:
             logger.info(f"[Advisor] Применено {len(applied)} изм.: {'; '.join(applied[:3])}")
+
+        # ── BrainFusion: передаём вердикт LLM в единый мозг ─────────────
+        try:
+            _bf.update_advisor(
+                verdict=parsed.get("market_verdict", "ОСТОРОЖНО"),
+                confidence=float(parsed.get("confidence", 0.5)),
+                regime=snap.get("ai", {}).get("regime", {}).get("name", "UNKNOWN")
+                       if snap else "UNKNOWN",
+                advice=parsed.get("analysis", "")[:200],
+                next_check_min=suggested_next,
+            )
+        except Exception as _bfe:
+            pass
 
         return result
 

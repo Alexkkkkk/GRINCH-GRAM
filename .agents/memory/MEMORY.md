@@ -1,3 +1,4 @@
+- [BrainFusion integration](brain-fusion-integration.md) — central consensus brain; use RLock not Lock (get_state calls get_wallet_analysis recursively); wrap import in try/except stub; coerce ai_conf to float in should_skip_confirmation; restore Config params in BOTH pending-buy and immediate-open paths.
 - [Gunicorn background threads](gunicorn-background-threads.md) — start pollers at module import (not __main__), or they silently never run in the deployed app.
 - [Git last-update display](git-last-update-display.md) — training banner shows last git commit date via `git log`; cache success only, not failure, so it self-heals.
 - [Replit vs Bothost ports](replit-vs-bothost-ports.md) — Replit workflow/preview must bind port 5000 (webview rule); Bothost Docker deploy is a separate target locked to PORT=3000 — don't "fix" one to match the other.

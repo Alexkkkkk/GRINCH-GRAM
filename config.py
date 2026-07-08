@@ -359,6 +359,36 @@ class Config:
     # волна накопления), бот входит быстрее — без ожидания 2-го подтверждения.
     SMART_EARLY_WINDOW_SEC = int(os.getenv("SMART_EARLY_WINDOW_SEC", "600"))  # окно «прямо сейчас» (10 мин)
     SMART_EARLY_MIN_TON    = float(os.getenv("SMART_EARLY_MIN_TON", "10"))    # мин. покупки умных за окно
+    # ── Скальпинг-режим: быстрые сделки 5-8% в RANGING/SQUEEZE рынке ──────
+    # Когда AI обнаруживает боковик и ATR < порога — используем меньшие цели.
+    # ТОЛЬКО В ПЛЮС: скальп TP ≥ 2×DEX_fees + газ (~5% gross → ~3% нетто).
+    # Режимы где скальп работает: RANGING, SQUEEZE, TRANSITION
+    SCALPING_ENABLED        = bool(int(os.getenv("SCALPING_ENABLED",       "1")))
+    SCALP_TARGET_NET_PCT    = float(os.getenv("SCALP_TARGET_NET_PCT",      "4.0"))   # 4% нетто (быстро)
+    SCALP_TP_PCT            = float(os.getenv("SCALP_TP_PCT",              "6.0"))   # gross (4% нетто + 2% DEX)
+    SCALP_TRAIL_PCT         = float(os.getenv("SCALP_TRAIL_PCT",           "3.0"))   # trail в боковике
+    SCALP_MIN_AI_CONF       = float(os.getenv("SCALP_MIN_AI_CONF",         "55.0"))  # мин. AI уверенность
+    SCALP_MAX_ATR_PCT       = float(os.getenv("SCALP_MAX_ATR_PCT",         "5.5"))   # ATR < X% → рынок спокойный
+
+    # ── BrainFusion: единый мозг (AI + TA + советник) ───────────────────
+    # Когда все три источника согласны с ≥78% → входим без ожидания тика
+    FUSION_ENABLED              = bool(int(os.getenv("FUSION_ENABLED",          "1")))
+    FUSION_SKIP_CONFIRM_CONF    = float(os.getenv("FUSION_SKIP_CONFIRM_CONF",   "78.0"))
+    # Мультипликатор позиции при памп-сигнале от fusion (ограничен 2×)
+    FUSION_PUMP_BOOST_MAX       = float(os.getenv("FUSION_PUMP_BOOST_MAX",      "1.8"))
+
+    # ── Быстрый ре-вход: после прибыльного закрытия ──────────────────────
+    # Fusion бычий + прибыль была → не ждём полного отката DCA_PULLBACK_WAIT
+    # Используется только если AI BUY ≥ FAST_REENTRY_MIN_CONF
+    FAST_REENTRY_ENABLED        = bool(int(os.getenv("FAST_REENTRY_ENABLED",    "1")))
+    FAST_REENTRY_PULLBACK_PCT   = float(os.getenv("FAST_REENTRY_PULLBACK_PCT",  "5.0"))  # 5% откат достаточно
+    FAST_REENTRY_MIN_CONF       = float(os.getenv("FAST_REENTRY_MIN_CONF",      "60.0")) # мин AI уверенность
+
+    # ── Онлайн-инъекция ордер-флоу в AI: DEX buy/sell ratio ─────────────
+    # Реальный поток заявок из DexScreener/GeckoTerminal обогащает AI-фичи
+    # (без этого AI видит только OHLCV свечи, а не живой поток сделок)
+    ORDER_FLOW_INJECT_ENABLED   = bool(int(os.getenv("ORDER_FLOW_INJECT_ENABLED", "1")))
+
     # Режим торговли: "demo" | "dedust"
     TRADE_MODE = os.getenv("TRADE_MODE", "dedust")
     # Защита от проскальзывания: максимально допустимое отклонение цены свопа

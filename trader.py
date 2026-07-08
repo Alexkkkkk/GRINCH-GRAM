@@ -8,6 +8,45 @@ from strategy import analyze
 from ai_engine import AIEngine
 from experience_manager import experience_manager
 import liquidity_guard
+try:
+    import brain_fusion as _bf
+except Exception as _bf_err:
+    import logging as _bflog
+    _bflog.getLogger("trader").warning(f"brain_fusion не загружен: {_bf_err} — используем заглушку")
+
+    class _BFStub:
+        """Заглушка BrainFusion — все методы возвращают безопасные значения."""
+        class _FakeSig:
+            action = "HOLD"; consensus_conf = 0.0; skip_confirmation = False
+            is_scalp_window = False; is_pump_window = False
+            scalp_tp_pct = 6.0; scalp_trail_pct = 3.5; position_boost = 1.0
+            regime = "UNKNOWN"; reasoning = "stub"
+        def update_ai(self, *a, **kw): pass
+        def update_ta(self, *a, **kw): pass
+        def update_advisor(self, *a, **kw): pass
+        def update_wallet(self, *a, **kw): pass
+        def get_fusion_signal(self): return self._FakeSig()
+        def should_skip_confirmation(self, *a): return False
+        def is_bullish_consensus(self, *a): return False
+        def is_scalp_window(self): return False
+        def on_trade_closed(self, *a, **kw): pass
+        def log_decision(self, *a, **kw): pass
+        def get_state(self): return {}
+
+    class _BFModule:
+        brain = _BFStub()
+        def update_ai(self, *a, **kw): pass
+        def update_ta(self, *a, **kw): pass
+        def update_advisor(self, *a, **kw): pass
+        def update_wallet(self, *a, **kw): pass
+        def get_fusion_signal(self): return _BFStub._FakeSig()
+        def should_skip_confirmation(self, *a): return False
+        def is_bullish_consensus(self, *a): return False
+        def is_scalp_window(self): return False
+        def on_trade_closed(self, *a, **kw): pass
+        def log_decision(self, *a, **kw): pass
+        def get_state(self): return {}
+    _bf = _BFModule()
 
 
 class Trader:
@@ -739,7 +778,7 @@ class Trader:
 
             drop_from_peak_pct = (self.dca_peak_price - price_usd) / self.dca_peak_price * 100
 
-            # ── Умный реentri: AI бычий → не ждём полного отката ────
+            # ── Умный реentri: AI/BrainFusion бычий → не ждём полного отката ────
             _ai_conf_now = float((self.last_ai or {}).get("confidence", 0) or 0)
             _ai_signal   = (self.last_ai or {}).get("ai_signal", "HOLD")
             _smart_reentry_possible = (
@@ -747,17 +786,28 @@ class Trader:
                 and _ai_signal in ("BUY",)
                 and _ai_conf_now >= Config.DCA_SMART_REENTRY_MIN_AI_CONF
             )
-            pullback_needed = (
-                Config.DCA_SMART_REENTRY_PULLBACK_PCT
-                if _smart_reentry_possible
-                else Config.DCA_PULLBACK_WAIT_PCT
+            # BrainFusion быстрый ре-вход: fusion консенсус бычий + небольшой откат
+            _fusion_fast_reentry = (
+                getattr(Config, "FAST_REENTRY_ENABLED", True)
+                and _ai_signal == "BUY"
+                and _ai_conf_now >= getattr(Config, "FAST_REENTRY_MIN_CONF", 60.0)
+                and _bf.is_bullish_consensus(_ai_conf_now)
             )
-
-            _reentry_tag = (
-                f"⚡ умный реentri (AI={_ai_conf_now:.0f}%, откат -{Config.DCA_SMART_REENTRY_PULLBACK_PCT:.0f}%)"
-                if _smart_reentry_possible
-                else f"стандартный откат -{Config.DCA_PULLBACK_WAIT_PCT:.0f}%"
-            )
+            # Выбираем наименьший требуемый откат из доступных режимов
+            if _fusion_fast_reentry:
+                pullback_needed = getattr(Config, "FAST_REENTRY_PULLBACK_PCT", 5.0)
+                _reentry_tag = (
+                    f"🧠 fusion быстрый ре-вход (AI={_ai_conf_now:.0f}%, "
+                    f"откат -{pullback_needed:.0f}%)"
+                )
+            elif _smart_reentry_possible:
+                pullback_needed = Config.DCA_SMART_REENTRY_PULLBACK_PCT
+                _reentry_tag = (
+                    f"⚡ умный реentri (AI={_ai_conf_now:.0f}%, откат -{Config.DCA_SMART_REENTRY_PULLBACK_PCT:.0f}%)"
+                )
+            else:
+                pullback_needed = Config.DCA_PULLBACK_WAIT_PCT
+                _reentry_tag = f"стандартный откат -{Config.DCA_PULLBACK_WAIT_PCT:.0f}%"
             self.log(
                 f"⏳ DCA ожидание отката: пик ${self.dca_peak_price:.8f} → "
                 f"${price_usd:.8f} | откат {drop_from_peak_pct:.1f}% / нужно {pullback_needed:.0f}% "
@@ -1304,6 +1354,11 @@ class Trader:
             f"портфель был +{portfolio_pct:.1f}%",
             "SELL"
         )
+        # ── BrainFusion: обратная связь после закрытия ───────────────────
+        try:
+            _bf.on_trade_closed(total_pnl, was_scalp=False)
+        except Exception:
+            pass
 
         # Обновляем память
         try:
@@ -1459,6 +1514,43 @@ class Trader:
         self.last_analysis = result   # кэш для get_status() — не пересчитываем каждые 2с
         ai     = self.ai.analyze(ohlcv)
         self.last_ai = ai
+
+        # ── BrainFusion: обновляем единый мозг ───────────────────────────
+        try:
+            _bf.update_ai(ai)
+            _bf.update_ta(result)
+            # ── Инъекция живого ордер-флоу DEX (DexScreener txns) ────────
+            try:
+                from coin_info import coin_info as _ci
+                _ci_data = _ci.get_market("GRINCH")
+                _buy_r = _ci_data.get("ratio_h1") or _ci_data.get("ratio_h6") or 0.5
+                _b_h1  = _ci_data.get("buys_h1") or 0
+                _s_h1  = _ci_data.get("sells_h1") or 0
+                _total_h1 = _b_h1 + _s_h1
+                _net_flow = ((_b_h1 - _s_h1) / _total_h1 * 100.0) if _total_h1 > 0 else 0.0
+                import ai_engine as _ae
+                _ae.inject_order_flow(float(_buy_r), _net_flow)
+            except Exception:
+                pass
+            # Обновляем баланс кошелька для анализа в мозге
+            from price_feed import price_feed as _pf2
+            _gton = _pf2.get_grinch_ton_price() or 0.0
+            _bal  = getattr(self, "_last_balance_cache", {}) or {}
+            _open_pnl = 0.0
+            if self.open_trades and _gton > 0:
+                _stake0 = self.open_trades[0].get("stake_ton", 0)
+                _amt0   = self.open_trades[0].get("amount", 0)
+                _ep0    = self.open_trades[0].get("entry_price_ton", 0)
+                if _ep0 > 0 and _amt0 > 0:
+                    _open_pnl = (_gton - _ep0) / _ep0 * 100.0
+            _bf.update_wallet(
+                ton_bal=float(_bal.get("TON", 0) or 0),
+                grinch_bal=float(_bal.get("GRINCH", 0) or 0),
+                grinch_price_ton=_gton,
+                open_pnl_pct=_open_pnl,
+            )
+        except Exception as _bfe:
+            pass
 
         signal      = result["signal"]
         ai_signal   = ai.get("ai_signal", "HOLD")
@@ -1678,9 +1770,19 @@ class Trader:
             elif anomaly and not hard_override:
                 blocked = f"рыночная аномалия Z={ai['anomaly']['z_price']:.2f}"
             elif Config.AI_AUTONOMOUS_MODE:
+                # ── BrainFusion: пропускаем подтверждение если все три источника согласны ──
+                _fusion_skip = (
+                    getattr(Config, "FUSION_ENABLED", True) and
+                    _bf.should_skip_confirmation(conf)
+                )
                 # Автономный режим: A/B грейд = 1 подтверждение, C = 2
                 auto_confirm = 1 if entry_quality in ("A", "B") else 2
-                if self._buy_confirm_count < auto_confirm and not sm_early:
+                if _fusion_skip and not blocked:
+                    self.log(
+                        f"⚡ BrainFusion: пропуск ожидания — консенсус AI+TA+LLM ≥{Config.FUSION_SKIP_CONFIRM_CONF:.0f}%",
+                        "INFO"
+                    )
+                elif self._buy_confirm_count < auto_confirm and not sm_early:
                     blocked = (
                         f"жду {auto_confirm} подтверждение(я) AI "
                         f"({self._buy_confirm_count}/{auto_confirm}) [{entry_quality}]"
@@ -1740,16 +1842,70 @@ class Trader:
         if final_signal == "BUY" and blocked:
             self.log(f"⏸️ Вход отменён: {blocked}", "WARN")
         elif final_signal == "BUY" and not self.open_short_trades:
+            # ── BrainFusion: скальпинг + памп-ускоритель ─────────────────
+            # Сохраняем исходные параметры ВСЕГДА перед модификацией
+            _save_tp    = Config.TAKE_PROFIT_PCT
+            _save_trail = Config.TRAILING_STOP_PCT
+            _save_net   = Config.TARGET_NET_PCT
+            _save_mult  = Config.AI_SIZE_MULT
+            _scalp_mode = False
+            _pump_mode  = False
+
+            _fusion_sig = _bf.get_fusion_signal() if getattr(Config, "FUSION_ENABLED", True) else None
+
+            # Скальп: RANGING/SQUEEZE + ATR мал → меньший TP/trail
+            if _fusion_sig and _fusion_sig.is_scalp_window and getattr(Config, "SCALPING_ENABLED", True):
+                Config.TAKE_PROFIT_PCT   = _fusion_sig.scalp_tp_pct
+                Config.TRAILING_STOP_PCT = _fusion_sig.scalp_trail_pct
+                Config.TARGET_NET_PCT    = getattr(Config, "SCALP_TARGET_NET_PCT", 4.0)
+                _scalp_mode = True
+                self.log(
+                    f"⚡ СКАЛЬП-РЕЖИМ [{regime_name}]: "
+                    f"TP={_fusion_sig.scalp_tp_pct:.1f}% | "
+                    f"Trail={_fusion_sig.scalp_trail_pct:.1f}% | "
+                    f"Цель +{Config.TARGET_NET_PCT:.1f}% нетто",
+                    "INFO"
+                )
+                _bf.log_decision({"mode": "SCALP", "regime": regime_name,
+                                  "scalp_tp": _fusion_sig.scalp_tp_pct, "conf": conf})
+
+            # Памп-ускоритель: UPTREND/BREAKOUT/EXPLOSIVE → увеличиваем позицию
+            if _fusion_sig and _fusion_sig.is_pump_window and not _scalp_mode:
+                _boost = min(getattr(Config, "FUSION_PUMP_BOOST_MAX", 1.8),
+                             _fusion_sig.position_boost)
+                if _boost > 1.05:
+                    Config.AI_SIZE_MULT = min(
+                        getattr(Config, "FUSION_PUMP_BOOST_MAX", 1.8),
+                        Config.AI_SIZE_MULT * _boost
+                    )
+                    _pump_mode = True
+                    self.log(
+                        f"🚀 BrainFusion ПАМП-УСКОРИТЕЛЬ: позиция ×{_boost:.2f} "
+                        f"(AI_SIZE_MULT {_save_mult:.2f} → {Config.AI_SIZE_MULT:.2f})",
+                        "INFO"
+                    )
+
             # ── Smart BUY: ждём откат или покупаем сразу ──────────────────
             # Грейд A при высокой уверенности — покупаем сразу (не ждём откат)
             is_elite_instant = (entry_quality == "A" and conf >= Config.SMART_BUY_SKIP_CONF - 10)
+            # В скальп-режиме не ждём откат — рынок боковик, откат может не прийти
             use_smart = (
                 Config.SMART_BUY_ENABLED
-                and not is_elite_instant            # А-грейд + сильный AI → сразу
+                and not is_elite_instant
+                and not _scalp_mode              # скальп: входим немедленно
                 and conf < Config.SMART_BUY_SKIP_CONF
-                and not self._pending_buy           # не дублируем ожидание
+                and not self._pending_buy
             )
             if use_smart:
+                # Восстанавливаем параметры ДО pending — изменения конфига не нужны,
+                # т.к. реальный вход будет в следующем тике (Smart BUY ждёт откат).
+                # pump-boost здесь тоже лишний — _open_trade ещё не вызван.
+                if _scalp_mode:
+                    Config.TAKE_PROFIT_PCT   = _save_tp
+                    Config.TRAILING_STOP_PCT = _save_trail
+                    Config.TARGET_NET_PCT    = _save_net
+                if _pump_mode:
+                    Config.AI_SIZE_MULT = _save_mult
                 target = self.exchange._round(price * (1 - pullback_pct / 100))
                 self._pending_buy = {
                     "target":        target,
@@ -1774,8 +1930,10 @@ class Trader:
                     "INFO"
                 )
             else:
-                # AI очень уверен ИЛИ A-грейд + сильный сигнал — берём сразу
-                if is_elite_instant:
+                # AI очень уверен / скальп / A-грейд — берём сразу
+                if _scalp_mode:
+                    pass  # уже залогировано выше
+                elif is_elite_instant:
                     self.log(
                         f"🚀 ЭЛИТНЫЙ ВХОД [{entry_quality}]: AI {conf}% + {entry_score} факторов → покупаем немедленно",
                         "INFO"
@@ -1783,11 +1941,16 @@ class Trader:
                 elif conf >= Config.SMART_BUY_SKIP_CONF:
                     self.log(f"⚡ Smart BUY пропущен: AI {conf}% ≥ {Config.SMART_BUY_SKIP_CONF}% — покупаем сразу", "INFO")
                 opened = self._open_trade("buy", price, result, ai)
-                # Сигнал пользователям шлём ТОЛЬКО если реальный ордер исполнился —
-                # иначе у юзеров спишется виртуальный TON и откроется позиция без
-                # реальной сделки (рассинхрон балансов, блокировка вывода).
+                # Восстанавливаем параметры TP/trail/mult ПОСЛЕ открытия сделки
+                if _scalp_mode:
+                    Config.TAKE_PROFIT_PCT   = _save_tp
+                    Config.TRAILING_STOP_PCT = _save_trail
+                    Config.TARGET_NET_PCT    = _save_net
+                if _pump_mode:
+                    Config.AI_SIZE_MULT = _save_mult
+                # Сигнал пользователям шлём ТОЛЬКО если реальный ордер исполнился
                 if opened:
-                    self._buy_confirm_count = 0   # сбрасываем после входа
+                    self._buy_confirm_count = 0
                     self._emit_signal("BUY", price, ai)
         elif final_signal == "SELL":
             if self.open_trades:
