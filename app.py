@@ -4,6 +4,7 @@ import os
 import gc
 import resource
 import logging
+import subprocess
 
 # ── Настройка логирования — как можно раньше, до любых импортов ──────────────
 # Это гарантирует, что все log.info/warning/error из любого модуля видны
@@ -698,6 +699,37 @@ def api_memory():
     }), 200
 
 
+_GIT_LAST_UPDATE_CACHE = {"value": None}
+
+
+def _git_last_update():
+    """Дата и время последнего коммита из git-репозитория (последнее обновление с GitHub).
+
+    Успешный результат кешируется навсегда (дата коммита не меняется без перезапуска).
+    Неудача НЕ кешируется, чтобы временная недоступность git могла восстановиться
+    на следующем запросе, а не залипнуть на "—" до перезапуска процесса.
+    """
+    if _GIT_LAST_UPDATE_CACHE["value"] is not None:
+        return _GIT_LAST_UPDATE_CACHE["value"]
+    try:
+        out = subprocess.run(
+            ["git", "log", "-1", "--format=%cI"],
+            cwd=os.path.dirname(os.path.abspath(__file__)),
+            capture_output=True, text=True, timeout=2,
+        )
+        if out.returncode == 0:
+            iso = out.stdout.strip()
+            if iso:
+                from datetime import datetime
+                dt = datetime.fromisoformat(iso)
+                result = dt.strftime("%d.%m.%Y %H:%M")
+                _GIT_LAST_UPDATE_CACHE["value"] = result
+                return result
+    except Exception as e:
+        log.debug(f"[GitInfo] не удалось получить дату последнего коммита: {e}")
+    return "—"
+
+
 # ════════════════════════════════════════════════════════════════════════════
 #  Главный дашборд
 # ════════════════════════════════════════════════════════════════════════════
@@ -715,7 +747,8 @@ def index():
         init_price, init_gram, init_running, init_ai, init_balance = 0, 0, False, {}, {}
     return render_template("index.html", symbol=Config.SYMBOL, demo=Config.DEMO_MODE,
                            init_price=init_price, init_gram=init_gram, init_running=init_running,
-                           init_ai=init_ai, init_balance=init_balance)
+                           init_ai=init_ai, init_balance=init_balance,
+                           git_last_update=_git_last_update())
 
 
 @app.route("/api/status")

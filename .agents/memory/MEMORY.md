@@ -1,4 +1,6 @@
 - [Gunicorn background threads](gunicorn-background-threads.md) — start pollers at module import (not __main__), or they silently never run in the deployed app.
+- [Git last-update display](git-last-update-display.md) — training banner shows last git commit date via `git log`; cache success only, not failure, so it self-heals.
+- [Replit vs Bothost ports](replit-vs-bothost-ports.md) — Replit workflow/preview must bind port 5000 (webview rule); Bothost Docker deploy is a separate target locked to PORT=3000 — don't "fix" one to match the other.
 - [Wallet manager](wallet-manager.md) — full TON+GRINCH tracking via bot_wallet_snapshots DB table; dollar signs in JS must use \u0024 helper; _poll_lock prevents concurrent race; P&L cost = total_stake+buy_gas*n_entries.
 - [Manual trading on/off switch](manual-trading-switch.md) — 3 separate stop mechanisms (running/AI-pause/manual toggle); new trade code paths must also check the manual `trading_enabled` guard.
 - [Real-time price feed](price-feed.md) — free CoinGecko/DexScreener prices; use adaptive decimals (fixed round(x,2) zeroes sub-cent coins like GRINCH).
