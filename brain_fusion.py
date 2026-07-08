@@ -322,19 +322,28 @@ class BrainFusion:
             fs.position_boost = min(2.0, pump_mult)
 
         # ── Пропуск подтверждения ─────────────────────────────────────────
-        # Пропускаем ожидание когда:
-        #   1) AI уверенность ≥ порога
-        #   2) Все доступные источники согласны (нет противоречий)
-        all_agree = (
-            (not ai_fresh  or self._ai.signal == fs.action) and
-            (not ta_fresh  or self._ta.signal in (fs.action, "HOLD")) and
-            (not adv_fresh or adv_num * (1 if fs.action=="BUY" else -1) >= 0)
-        )
+        # Читаем порог из Config (если доступен), иначе модульная константа
+        try:
+            from config import Config as _Cfg
+            _skip_thresh = float(getattr(_Cfg, "FUSION_SKIP_CONFIRM_CONF", FUSION_SKIP_CONFIRM_CONF))
+        except Exception:
+            _skip_thresh = FUSION_SKIP_CONFIRM_CONF
+
+        # Требуем ПОЛНОГО консенсуса: AI+TA+LLM все согласны
+        # (не только AI — чтобы не давать преждевременные BUY)
+        ai_agrees  = not ai_fresh  or self._ai.signal == fs.action
+        ta_agrees  = not ta_fresh  or self._ta.signal in (fs.action, "HOLD")
+        adv_agrees = (not adv_fresh
+                      or adv_num * (1 if fs.action == "BUY" else -1 if fs.action == "SELL" else 0) >= 0)
+        all_agree = ai_agrees and ta_agrees and adv_agrees
+
+        # Для пропуска нужно: AI свежий + уверенность ≥ порога + все согласны + EV OK
         fs.skip_confirmation = (
             ai_fresh
-            and self._ai.confidence >= FUSION_SKIP_CONFIRM_CONF
+            and self._ai.confidence >= _skip_thresh
             and all_agree
             and self._ai.ev_ok
+            and fs.action != "HOLD"   # не пропускаем для HOLD-сигналов
         )
 
         # ── Вклад источников (для лога) ───────────────────────────────────
@@ -365,19 +374,20 @@ class BrainFusion:
         return self.get_fusion_signal().is_scalp_window
 
     def should_skip_confirmation(self, ai_conf=0.0) -> bool:
-        """True если нужно входить сразу без ожидания подтверждающего тика."""
+        """
+        True если все три источника (AI+TA+LLM) согласны выше порога.
+        Требует ПОЛНОГО консенсуса — AI-alone недостаточно.
+        """
         try:
             ai_conf = float(ai_conf or 0.0)  # защита от None/строк
         except (TypeError, ValueError):
             ai_conf = 0.0
         with self._lock:
-            # Быстрая проверка без полного вычисления fusion
             if not self._ai.updated_at:
                 return False
-            if ai_conf >= FUSION_SKIP_CONFIRM_CONF and self._ai.ev_ok:
-                return True
-            # Или fusion signal говорит пропустить
-            return self._compute_fusion().skip_confirmation
+            # Всегда вычисляем полный fusion-консенсус (AI+TA+LLM)
+            fs = self._compute_fusion()
+            return fs.skip_confirmation
 
     def is_bullish_consensus(self, min_conf: float = 58.0) -> bool:
         """True если большинство источников говорят BUY с уверенностью ≥ порога."""
