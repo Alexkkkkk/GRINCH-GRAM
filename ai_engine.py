@@ -728,6 +728,24 @@ class AIEngine:
         # Кулдаун онлайн-рефита: не чаще 1 раза в 60 с (защита от refit-storm)
         self._last_online_refit_ts: float = 0.0
 
+        # ── v4.4: OOD-детектор ────────────────────────────────────────────
+        # Хранит mean/std признаков обучающей выборки.
+        # В analyze() вычисляем долю признаков > 3σ — если >25% → аномалия.
+        self._ood_mean: np.ndarray | None = None
+        self._ood_std:  np.ndarray | None = None
+
+        # ── v4.4: Специализированные модели по режиму рынка ──────────────
+        # trend_slot: RF только на трендовых примерах (UPTREND/SQUEEZE)
+        # rev_slot:   RF только на боковых (RANGING/VOLATILE/DOWNTREND)
+        self._trend_slot = None   # sklearn Pipeline | None
+        self._rev_slot   = None   # sklearn Pipeline | None
+
+        # ── v4.4: Walk-forward оценка и timestamp рефита ─────────────────
+        self._wf_accs:       dict  = {}    # {slot_name: float} — held-out accuracy
+        self._last_refit_ts: float = 0.0  # для Confidence Decay
+        # Disagreement (std prob_up по слотам) — вычисляется в _ensemble_proba
+        self._last_disagreement: float = 0.0
+
         # ── Модели ───────────────────────────────────────────────────────
         self._slots: list[_ModelSlot] = []
         self._meta: Pipeline | None   = None
@@ -1063,6 +1081,68 @@ class AIEngine:
             except Exception:
                 pass
 
+        # ── v4.4: Фильтр несогласия ансамбля (Disagreement Filter) ─────────
+        # std(prob_up по всем слотам) > 12% = модели кардинально расходятся.
+        # Снижаем prob_up пропорционально расхождению (до -10%↓).
+        _disagreement = self._last_disagreement
+        if _disagreement > 0.12:
+            _dis_penalty = min(0.10, (_disagreement - 0.12) * 1.5)
+            prob_up = max(0.0, prob_up - _dis_penalty)
+            _rem = 1.0 - prob_up
+            _dh  = prob_down + prob_hold
+            if _dh > 1e-10:
+                prob_down = prob_down / _dh * _rem
+                prob_hold = prob_hold / _dh * _rem
+            log.debug(f"[AI v4.4 Dis] std={_disagreement*100:.1f}% → -{_dis_penalty*100:.1f}% prob_up")
+
+        # ── v4.4: Специализированная модель по режиму рынка ─────────────
+        # 20% веса от специалиста (trend или rev) по текущему regime_enc.
+        # UPTREND/SQUEEZE(≥1) → trend_slot; остальные(≤-1) → rev_slot.
+        _specialist_adj = 0.0
+        try:
+            _re_idx = (self._feature_names.index("regime_enc")
+                       if "regime_enc" in self._feature_names else -1)
+            _cur_re = float(X[-1, _re_idx]) if _re_idx >= 0 else 0.0
+            _spec = (self._trend_slot if _cur_re >= 1
+                     else (self._rev_slot if _cur_re <= 0 else None))
+            if _spec is not None:
+                _sp_p   = _spec.predict_proba(last)[0]
+                _sp_cls = _spec.named_steps["clf"].classes_
+                _sp_up  = float(self._align_proba(_sp_p, _sp_cls)[2])
+                _old_up = prob_up
+                prob_up = 0.80 * prob_up + 0.20 * _sp_up
+                _rem = 1.0 - prob_up
+                _dh  = prob_down + prob_hold
+                if _dh > 1e-10:
+                    prob_down = prob_down / _dh * _rem
+                    prob_hold = prob_hold / _dh * _rem
+                _specialist_adj = round((prob_up - _old_up) * 100, 1)
+        except Exception:
+            pass
+
+        # ── v4.4: OOD-детектор (Out-of-Distribution) ─────────────────────
+        # Доля признаков текущего тика > 3σ от обучающей выборки.
+        # >25% → аномальный рынок → снижаем prob_up, блокируем BUY при >40%.
+        _ood_score = 0.0
+        if self._ood_mean is not None and self._ood_std is not None:
+            try:
+                _zs = np.abs((X[-1] - self._ood_mean) / self._ood_std)
+                _ood_score = float(np.mean(_zs > 3.0))
+                if _ood_score > 0.25:
+                    _ood_penalty = min(0.15, _ood_score * 0.40)
+                    prob_up = max(0.0, prob_up - _ood_penalty)
+                    _rem = 1.0 - prob_up
+                    _dh  = prob_down + prob_hold
+                    if _dh > 1e-10:
+                        prob_down = prob_down / _dh * _rem
+                        prob_hold = prob_hold / _dh * _rem
+                    log.debug(
+                        f"[AI v4.4 OOD] {_ood_score*100:.0f}% признаков >3σ "
+                        f"→ -{_ood_penalty*100:.1f}% prob_up"
+                    )
+            except Exception:
+                pass
+
         # ── v4: Асимметричные пороги сигналов ────────────────────────────
         # BUY ≥ 50%: больше точность, меньше ложных входов (было 43%)
         # SELL ≥ 62%: profit-only → AI SELL только при высокой уверенности
@@ -1234,6 +1314,21 @@ class AIEngine:
             ai_signal = "BUY"
             self._last_buy_features = X[-1].copy()
 
+        # ── v4.4: Decay уверенности при устаревшей модели ────────────────
+        # Модель, не обновлявшаяся > 2 часов в изменившемся рынке, ненадёжна.
+        # Плавный штраф: 0% при <120 мин, до -10% при >300 мин.
+        if self._last_refit_ts > 0:
+            _age_min = (time.time() - self._last_refit_ts) / 60.0
+            if _age_min > 120:
+                _decay = min(0.10, (_age_min - 120) / 300.0 * 0.10)
+                confidence = round(max(1.0, confidence * (1.0 - _decay)), 1)
+                if ai_signal == "BUY" and confidence < BUY_THRESHOLD * 100:
+                    ai_signal = "HOLD"
+                log.debug(
+                    f"[AI v4.4 Decay] Модель {_age_min:.0f} мин без рефита "
+                    f"→ decay={_decay*100:.1f}% conf={confidence}%"
+                )
+
         result = {
             "ai_signal":    ai_signal,
             "confidence":   confidence,
@@ -1256,6 +1351,9 @@ class AIEngine:
             "momentum":     momentum,
             "breakout":     breakout,
             "total_boost":  round(total_boost, 1),
+            "disagreement": round(_disagreement * 100, 1),
+            "ood_score":    round(_ood_score * 100, 1),
+            "specialist_adj": _specialist_adj,
         }
 
         # ── Сохраняем в кэш: следующий тик с теми же свечами получит
@@ -1584,6 +1682,13 @@ class AIEngine:
         self._trained = True
         self._new_confirms = 0
 
+        # ── v4.4: OOD-статистики обучающей выборки ────────────────────────
+        try:
+            self._ood_mean = X_arr.mean(axis=0)
+            self._ood_std  = X_arr.std(axis=0) + 1e-10
+        except Exception:
+            pass
+
         # Переобучаем мета-слой при каждом рефите, если есть подтверждённые данные
         if len(self._confirmed_X) >= META_MIN_SAMPLES:
             try:
@@ -1593,6 +1698,21 @@ class AIEngine:
 
         # Отражаем непрерывное самообучение в UI (банер обучения)
         self._retrains += 1
+        self._last_refit_ts = time.time()
+
+        # ── v4.4: Walk-forward оценка весов (каждые 3 рефита) ─────────────
+        if self._retrains % 3 == 0 and len(X_arr) >= 60:
+            try:
+                self._update_weights_walkforward(X_arr, y_arr, w_arr)
+            except Exception as e:
+                log.debug(f"[AI] walk-forward error: {e}")
+
+        # ── v4.4: Специализированные модели по режиму рынка ──────────────
+        try:
+            self._fit_regime_specialists(X_arr, y_arr, w_arr)
+        except Exception as e:
+            log.debug(f"[AI] regime specialists error: {e}")
+
         # ── v4.3: Калибровка вероятностей (изотоническая регрессия) ─────────
         # Приводим predict_proba каждой модели к реальным win-rate по сделкам.
         # Активируется при >= 20 подтверждённых сделках — до этого слишком мало данных.
@@ -1619,6 +1739,93 @@ class AIEngine:
             self.training_progress["sharpe"]     = sharpe
         except Exception:
             pass
+
+    def _fit_regime_specialists(self, X_arr: np.ndarray, y_arr: np.ndarray, w_arr: np.ndarray):
+        """v4.4: Два лёгких RF-специалиста, обученных на конкретном режиме рынка.
+
+        trend_slot → только UPTREND(2) + SQUEEZE(1) примеры.
+        rev_slot   → RANGING(0) + VOLATILE(-1) + DOWNTREND(-2).
+
+        В _analyze_locked() специалист добавляет 20% веса к prob_up — тонкая
+        коррекция, а не замена ансамблю. Помогает в явно трендовом/боковом рынке.
+        """
+        if "regime_enc" not in self._feature_names:
+            return
+        re_idx  = self._feature_names.index("regime_enc")
+        re_vals = X_arr[:, re_idx]
+
+        n_trees = 50 if LOW_MEMORY_MODE else 80
+        masks = {
+            "trend": re_vals >= 1,    # UPTREND(2) + SQUEEZE(1)
+            "rev":   re_vals <= 0,    # RANGING/VOLATILE/DOWNTREND
+        }
+        for name, mask in masks.items():
+            X_s, y_s, w_s = X_arr[mask], y_arr[mask], w_arr[mask]
+            if len(X_s) < 20 or len(np.unique(y_s)) < 2:
+                continue
+            try:
+                from sklearn.ensemble import RandomForestClassifier
+                pipe = Pipeline([
+                    ("scaler", RobustScaler()),
+                    ("clf", RandomForestClassifier(
+                        n_estimators=n_trees, max_depth=6,
+                        class_weight="balanced", random_state=42,
+                        n_jobs=1, min_samples_leaf=3,
+                    ))
+                ])
+                pipe.fit(X_s, y_s, clf__sample_weight=w_s)
+                if name == "trend":
+                    self._trend_slot = pipe
+                else:
+                    self._rev_slot = pipe
+                log.debug(f"[AI v4.4] Специалист {name}: {len(X_s)} примеров")
+            except Exception as e:
+                log.debug(f"[AI v4.4] specialist {name} error: {e}")
+
+        if self._trend_slot is not None or self._rev_slot is not None:
+            log.info(
+                f"[AI] 🎯 Режимные специалисты: "
+                f"trend={'✓' if self._trend_slot else '—'} "
+                f"rev={'✓' if self._rev_slot else '—'}"
+            )
+
+    def _update_weights_walkforward(self, X_arr: np.ndarray, y_arr: np.ndarray, w_arr: np.ndarray):
+        """v4.4: Честная оценка каждой модели на отложенных данных (временной split 70/30).
+
+        Проблема accuracy^2 из feedback: мало образцов → высокая дисперсия.
+        Walk-forward fit: обучаем на первых 70%, тестируем на последних 30% — без
+        утечки из будущего. Вес = EMA(текущий_вес, wf_accuracy^2, alpha=0.4).
+        """
+        from sklearn.base import clone
+
+        split = int(len(X_arr) * 0.70)
+        if split < 20 or len(X_arr) - split < 10:
+            return
+        X_tr, X_te = X_arr[:split], X_arr[split:]
+        y_tr, y_te = y_arr[:split], y_arr[split:]
+
+        new_accs = {}
+        for slot in self._slots:
+            try:
+                tmp = clone(slot.pipeline)
+                tmp.fit(X_tr, y_tr)   # без sample_weight — нам нужна честная точность
+                acc = float(np.mean(tmp.predict(X_te) == y_te))
+                new_accs[slot.name] = acc
+                wf_weight = max(0.15, acc ** 2)
+                slot.weight = 0.60 * slot.weight + 0.40 * wf_weight
+            except Exception as e:
+                log.debug(f"[AI WF] {slot.name}: {e}")
+            finally:
+                _release_memory()
+
+        if new_accs:
+            self._wf_accs = new_accs
+            avg = np.mean(list(new_accs.values())) * 100
+            log.info(
+                f"[AI] 📊 Walk-forward: {len(new_accs)} моделей, "
+                f"avg_acc={avg:.1f}% · "
+                + ", ".join(f"{k}={v*100:.0f}%" for k, v in sorted(new_accs.items()))
+            )
 
     def _fit_calibrators(self):
         """v4.3: Бинарная изотоническая калибровка вероятности BUY.
@@ -1736,13 +1943,21 @@ class AIEngine:
         total_weight = sum(s.weight for s in self._slots)
         proba_sum = np.zeros(3)   # индексы: 0=down(-1) 1=hold(0) 2=up(1)
 
+        _slot_up_vals = []   # для вычисления disagreement в _analyze_locked
         for slot in self._slots:
             try:
                 proba   = slot.predict_proba(X)[0]   # shape=(n_classes,)
                 aligned = self._align_proba(proba, slot.classes_)
                 proba_sum += aligned * slot.weight
+                _slot_up_vals.append(float(aligned[2]))
             except Exception:
                 pass
+
+        # v4.4: сохраняем disagreement (std prob_up по слотам) как side-effect
+        if len(_slot_up_vals) >= 2:
+            self._last_disagreement = float(np.std(_slot_up_vals))
+        else:
+            self._last_disagreement = 0.0
 
         base_ens = proba_sum / max(total_weight, 1e-8)
 

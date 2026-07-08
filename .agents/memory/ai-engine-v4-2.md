@@ -15,6 +15,18 @@ description: Changes made when migrating to 2GB server — LOW_MEMORY_MODE off, 
 
 **Why EV-filter takes priority**: EV filter is a profitability guardrail that blocks BUY when expected value ≤ 0 over confirmed trade history. Adaptive thresholds are a market-context filter. EV must always win.
 
+## v4.4 additions (5 improvements)
+
+**Ensemble disagreement**: `_ensemble_proba()` stores `self._last_disagreement = std(prob_up across slots)` as side-effect. In `_analyze_locked()`: if `disagreement > 0.12` → reduce `prob_up` by up to -10%. No extra predict calls (piggybacks on existing loop).
+
+**OOD detector**: `_refit_all()` saves `_ood_mean`/`_ood_std` from `X_arr`. In `_analyze_locked()`: fraction of features > 3σ = `_ood_score`. If >25% → reduce `prob_up` up to -15%, exposed in result dict.
+
+**Regime specialists**: `_fit_regime_specialists()` trains two lightweight RF Pipelines (80 trees, depth 6). `trend_slot` on `regime_enc >= 1` samples; `rev_slot` on `regime_enc <= 0`. Applied in `_analyze_locked()` as 20% blend. **Key invariant**: inference threshold `<= 0` for rev (not `<= -1`) must match training scope.
+
+**Walk-forward weights**: `_update_weights_walkforward()` every 3rd retrain. 70/30 time-series split, `clone(slot.pipeline).fit(X_tr)` (no sample_weight — honest eval), then `slot.weight = 0.6*current + 0.4*wf_acc^2`.
+
+**Confidence decay**: `_last_refit_ts` set in `_refit_all()`. In `_analyze_locked()`: model age >120 min → decay up to -10% confidence; if BUY confidence drops below `BUY_THRESHOLD*100` → flip to HOLD.
+
 ## v4.3 additions (AI engine improvements)
 
 **Adaptive horizon weights**: `self._horizon_weights` updated per `feedback()` call. UPTREND/BREAKOUT win → boost long horizons (8,13); RANGING/VOLATILE win → boost short (3,5). After each update: **normalize to preserve sum = sum(HORIZON_WEIGHTS_DEFAULT=7.0)** to prevent saturation. `_make_dataset()` uses `list(self._horizon_weights)` instead of constant.
