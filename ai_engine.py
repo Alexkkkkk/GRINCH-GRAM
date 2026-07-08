@@ -188,6 +188,7 @@ VR_MEAN_REV_THRESH= 0.85    # Variance Ratio < 0.85 → возвратный →
 # Минимальный размер прибыли для profit-biased разметки (% от цены)
 # DEX: 2% round-trip fee + ~0.3% gas impact на 100 TON ставке → ~2.3% порог
 PROFIT_BIAS_PCT   = 0.025   # label=BUY только если ожидаемый рост > 2.5%
+HORIZON_WEIGHTS_DEFAULT = [1.0, 1.5, 2.0, 2.5]  # начальные веса горизонтов [3,5,8,13] — адаптируются по сделкам
 
 
 # ─── Momentum Engine — детектор взрывного движения GRINCH ─────────────────────
@@ -714,6 +715,19 @@ class AIEngine:
         # Текущие признаки последнего BUY-сигнала (для feedback)
         self._last_buy_features: np.ndarray | None = None
 
+        # ── v4.3: Адаптивные веса горизонтов (обновляются из feedback) ──
+        # Длинные горизонты лучше в тренде; короткие — в боковике.
+        # Адаптация через EMA с каждой закрытой сделкой.
+        self._horizon_weights: list = list(HORIZON_WEIGHTS_DEFAULT)
+
+        # ── v4.3: Бинарная изотоническая калибровка BUY-вероятности ────────
+        # IsotonicRegression: raw_prob_up → calibrated_prob_up.
+        # Бинарная (win/loss), а не 3-классовая — совпадает с confirmed_y={1,-1}.
+        # Применяется ПОСЛЕ _ensemble_proba к скаляру prob_up (не к слотам).
+        self._buy_calibrator = None  # IsotonicRegression | None
+        # Кулдаун онлайн-рефита: не чаще 1 раза в 60 с (защита от refit-storm)
+        self._last_online_refit_ts: float = 0.0
+
         # ── Модели ───────────────────────────────────────────────────────
         self._slots: list[_ModelSlot] = []
         self._meta: Pipeline | None   = None
@@ -997,16 +1011,24 @@ class AIEngine:
 
         # ── Авто-переобучение (только когда реально пришли новые данные) ──
         data_changed = candle_key != self._last_retrain_key
+        _now = time.time()
         should_retrain = (
             (data_changed and self._tick_count % RETRAIN_EVERY == 0) or
-            self._new_confirms >= 5
+            # v4.3: онлайн-обучение — рефит после подтверждённой сделки,
+            # но не чаще 1 раза в 60 с (защита от refit-storm).
+            (self._new_confirms >= 1 and (_now - self._last_online_refit_ts) >= 60.0)
         )
+        if should_retrain and self._new_confirms >= 1:
+            self._last_online_refit_ts = _now
         if should_retrain:
             self._last_retrain_key = candle_key
             self._replay_X = list(X)
             self._replay_y = list(y)
             self._replay_w = [1.0] * len(X)
-            self._refit_all()
+            try:
+                self._refit_all()
+            except Exception as e:
+                log.warning(f"[AI] _refit_all error (продолжаю с прежними моделями): {e}")
 
         if not self._trained:
             return self._empty_result()
@@ -1021,6 +1043,25 @@ class AIEngine:
             return self._empty_result()
 
         prob_up, prob_hold, prob_down = float(ens[2]), float(ens[1]), float(ens[0])
+
+        # ── v4.3: Бинарная калибровка prob_up (IsotonicRegression) ──────
+        # Применяем ТОЛЬКО к prob_up — исправляем overconfidence RF и
+        # underconfidence GB. prob_hold/prob_down перенормируются пропорционально.
+        if self._buy_calibrator is not None:
+            try:
+                cal_up = float(self._buy_calibrator.predict([prob_up])[0])
+                # Перенормировка: остаток делим пропорционально down/hold
+                remainder = 1.0 - cal_up
+                dh_sum = prob_down + prob_hold
+                if dh_sum > 1e-10:
+                    prob_down = prob_down / dh_sum * remainder
+                    prob_hold = prob_hold / dh_sum * remainder
+                else:
+                    prob_down = remainder / 2
+                    prob_hold = remainder / 2
+                prob_up = cal_up
+            except Exception:
+                pass
 
         # ── v4: Асимметричные пороги сигналов ────────────────────────────
         # BUY ≥ 50%: больше точность, меньше ложных входов (было 43%)
@@ -1290,6 +1331,39 @@ class AIEngine:
                 except Exception as e:
                     log.debug(f"[AI] meta fit error: {e}")
 
+            # ── v4.3: Адаптивные веса горизонтов по режиму и исходу ──────
+            # UPTREND/BREAKOUT + WIN  → длинные горизонты (8,13) надёжнее
+            # RANGING/VOLATILE + WIN  → короткие (3,5) надёжнее
+            # Проигрыш: инвертируем логику (ошибались — меняем акцент)
+            _adj = [0.0, 0.0, 0.0, 0.0]
+            if is_win:
+                if regime in ("UPTREND", "BREAKOUT"):
+                    _adj = [-0.03, -0.01, +0.01, +0.03]
+                elif regime in ("RANGING", "SQUEEZE", "VOLATILE", "TRANSITION"):
+                    _adj = [+0.03, +0.01, -0.01, -0.03]
+            else:
+                if regime in ("UPTREND", "BREAKOUT"):
+                    _adj = [+0.03, +0.01, -0.01, -0.03]
+                elif regime in ("RANGING", "SQUEEZE", "VOLATILE", "TRANSITION"):
+                    _adj = [-0.03, -0.01, +0.01, +0.03]
+            if any(a != 0.0 for a in _adj):
+                for idx in range(len(self._horizon_weights)):
+                    self._horizon_weights[idx] = max(0.5, min(5.0,
+                        self._horizon_weights[idx] + _adj[idx]
+                    ))
+                # Нормализация: сохраняем сумму весов = сумме дефолтных значений
+                # Без неё длинные серии уводят веса в насыщение (+5.0 или 0.5)
+                _default_sum = sum(HORIZON_WEIGHTS_DEFAULT)
+                _cur_sum = sum(self._horizon_weights)
+                if _cur_sum > 1e-10:
+                    self._horizon_weights = [
+                        w * _default_sum / _cur_sum for w in self._horizon_weights
+                    ]
+                log.debug(
+                    f"[AI v4.3] Горизонты: {[round(w,2) for w in self._horizon_weights]} "
+                    f"(режим={regime} исход={outcome})"
+                )
+
         log.info(
             f"[AI] Feedback: {outcome}({regime}) PNL={pnl:+.4f} TON conf={conf:.0f}% "
             f"→ {len(self._confirmed_X)} подтверждённых примеров "
@@ -1433,6 +1507,25 @@ class AIEngine:
 
     def _refit_all(self):
         """Полный рефит всех моделей = история + реальные сделки (с затуханием по давности)."""
+        # ── v4.3: Проверка совместимости признаков (ПЕРВЫМ — до любых массивов) ──
+        # Если confirmed_X содержит старые векторы после изменения feature engineering,
+        # np.array() упадёт с ValueError. Проверяем ДО конкатенации и сбрасываем.
+        if self._confirmed_X and self._replay_X:
+            try:
+                n_replay = np.asarray(self._replay_X[0]).shape[0]
+                n_conf   = np.asarray(self._confirmed_X[0]).shape[0]
+                if n_replay != n_conf:
+                    log.warning(
+                        f"[AI] Размер признаков изменился: replay={n_replay} vs confirmed={n_conf} "
+                        f"→ сбрасываю буфер подтверждённых сделок (история сохранена в БД)"
+                    )
+                    self._confirmed_X.clear()
+                    self._confirmed_y.clear()
+                    self._confirmed_w.clear()
+                    self._buy_calibrator = None
+            except Exception:
+                pass
+
         # ── Recency decay: более свежий опыт важнее ──────────────────────
         # Исторические данные: равный вес 1.0
         n_hist = len(self._replay_X)
@@ -1500,6 +1593,15 @@ class AIEngine:
 
         # Отражаем непрерывное самообучение в UI (банер обучения)
         self._retrains += 1
+        # ── v4.3: Калибровка вероятностей (изотоническая регрессия) ─────────
+        # Приводим predict_proba каждой модели к реальным win-rate по сделкам.
+        # Активируется при >= 20 подтверждённых сделках — до этого слишком мало данных.
+        if len(self._confirmed_X) >= 20:
+            try:
+                self._fit_calibrators()
+            except Exception as e:
+                log.debug(f"[AI] calibration error: {e}")
+
         try:
             accs = [s.accuracy for s in self._slots if s.accuracy is not None]
             avg_acc = round(sum(accs) / len(accs) * 100, 1) if accs else 0.0
@@ -1517,6 +1619,43 @@ class AIEngine:
             self.training_progress["sharpe"]     = sharpe
         except Exception:
             pass
+
+    def _fit_calibrators(self):
+        """v4.3: Бинарная изотоническая калибровка вероятности BUY.
+
+        Проблема без калибровки: RF занижает уверенность (compression к 0.5),
+        XGB завышает. После калибровки prob_up правдиво отражает win-rate.
+
+        Подход: IsotonicRegression(raw_prob_up → win_rate).
+        Бинарная задача (win=1 / loss=0) — точно соответствует confirmed_y.
+        Применяется в _analyze_locked() к скаляру prob_up ПОСЛЕ _ensemble_proba().
+        """
+        from sklearn.isotonic import IsotonicRegression
+
+        X_cal = np.array(self._confirmed_X, dtype=float)
+        # confirmed_y: 1=win, -1=loss → переводим в 1=win, 0=loss для регрессии
+        y_bin = np.array([1 if v == 1 else 0 for v in self._confirmed_y], dtype=int)
+
+        if len(np.unique(y_bin)) < 2 or len(X_cal) < 20:
+            return   # нужны и выигрыши, и проигрыши; < 20 — слишком мало
+
+        # Прогоняем confirmed_X через текущий ансамбль → получаем raw prob_up
+        raw_probs = []
+        for x in X_cal:
+            try:
+                ens = self._ensemble_proba(x[np.newaxis, :])
+                raw_probs.append(float(ens[2]))  # index 2 = prob_up
+            except Exception:
+                raw_probs.append(0.5)
+        raw_probs = np.array(raw_probs)
+
+        iso = IsotonicRegression(out_of_bounds='clip', increasing=True)
+        iso.fit(raw_probs, y_bin)
+        self._buy_calibrator = iso
+        log.info(
+            f"[AI] 📐 BUY-калибровка обновлена (IsotonicRegression, "
+            f"{len(X_cal)} сделок, win_rate={y_bin.mean()*100:.0f}%)"
+        )
 
     def _try_fit_meta(self, X, y):
         """Первый запуск мета-слоя на исторических данных.
@@ -1599,8 +1738,7 @@ class AIEngine:
 
         for slot in self._slots:
             try:
-                proba = slot.predict_proba(X)[0]   # shape=(n_classes,)
-                # Выравниваем к [-1, 0, 1]
+                proba   = slot.predict_proba(X)[0]   # shape=(n_classes,)
                 aligned = self._align_proba(proba, slot.classes_)
                 proba_sum += aligned * slot.weight
             except Exception:
@@ -1792,6 +1930,24 @@ class AIEngine:
         cvd      = (bull_vol - bear_vol).cumsum()
         df["cvd_norm"] = cvd / (v.rolling(20).sum() + 1e-10)
 
+        # ── v4.3: Buy/Sell Volume Ratio ───────────────────────────────────
+        # Соотношение объёмов бычьих и медвежьих свечей за 10 баров.
+        # > 1.0 = покупатели доминируют; < 1.0 = продавцы доминируют.
+        buy_vol_10  = bull_vol.rolling(10, min_periods=3).sum()
+        sell_vol_10 = bear_vol.rolling(10, min_periods=3).sum()
+        df["vol_buy_sell_ratio"] = buy_vol_10 / (sell_vol_10 + 1e-10)
+
+        # ── v4.3: Краткосрочное VWAP-отклонение (10 баров) ───────────────
+        # Дополняет долгосрочный vwap_dev — ловит внутридневные дисбалансы.
+        vwap_10        = (v * (h + l + c) / 3).rolling(10, min_periods=3).sum() / (v.rolling(10, min_periods=3).sum() + 1e-10)
+        df["vwap_dev_10"] = (c - vwap_10) / (vwap_10 + 1e-10)
+
+        # ── v4.3: Volume Z-score ──────────────────────────────────────────
+        # Нормализованный объём: >2σ = всплеск, <-2σ = затишье.
+        vol_mu50       = v.rolling(50, min_periods=10).mean()
+        vol_sigma50    = v.rolling(50, min_periods=10).std()
+        df["vol_zscore"] = (v - vol_mu50) / (vol_sigma50 + 1e-10)
+
         # ── Price Acceleration (2-я производная) ──────────────────────────
         vel  = c.pct_change(1)                         # скорость
         df["accel"] = vel.diff()                       # ускорение (2-я произв.)
@@ -1910,6 +2066,10 @@ class AIEngine:
             "buy_pressure",   # давление покупателей (5 баров)
             # ── v4.2 NEW: Режим рынка как признак ────────────────────────
             "regime_enc",     # числовой режим: -2=DOWNTREND…+2=UPTREND
+            # ── v4.3 NEW: Объёмный профиль ───────────────────────────────
+            "vol_buy_sell_ratio",  # соотношение объёмов покупок/продаж (10 баров)
+            "vwap_dev_10",         # краткосрочное VWAP-отклонение (10 баров)
+            "vol_zscore",          # z-score объёма относительно 50-барного MA
         ]
         # Оставляем только существующие столбцы
         feature_cols = [col for col in feature_cols if col in df.columns]
@@ -1926,7 +2086,8 @@ class AIEngine:
         # Порог = max(ATR×0.7, PROFIT_BIAS_PCT=2.5%) → AI не обучается на
         # мелких движениях, которые не окупают комиссию 2% round-trip.
         # Горизонты [3,5,8,13] × взвешенное голосование → стабильные сигналы.
-        HORIZON_WEIGHTS = [1.0, 1.5, 2.0, 2.5]   # веса по горизонтам LOOK_AHEADS
+        # v4.3: адаптивные веса горизонтов (обновляются через feedback по режиму и исходу сделки)
+        HORIZON_WEIGHTS = list(self._horizon_weights)
         y = np.zeros(n, dtype=int)
         for i in range(n - max_la):
             atr_thresh    = ATR_LABEL_MULT * (atr_pct[i] + 1e-10)
