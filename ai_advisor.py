@@ -13,14 +13,35 @@ logger = logging.getLogger(__name__)
 # ── Groq (бесплатно, OpenAI-совместимый API) ──────────────────────────────
 GROQ_API_KEY  = os.getenv("GROQ_API_KEY", "")
 
-# Загружаем ключ из settings_store (если сохранён через дашборд)
-try:
-    from settings_store import get_section as _ss_get
-    _adv_sec = _ss_get("advisor")
-    if _adv_sec.get("groq_api_key"):
-        GROQ_API_KEY = _adv_sec["groq_api_key"]
-except Exception:
-    pass
+# ── Файл хранения ключа (DATA_DIR/groq_key.txt) ───────────────────────────
+_DATA_DIR    = os.getenv("DATA_DIR", os.path.join(os.path.dirname(os.path.abspath(__file__)), "data"))
+_GROQ_KEY_FILE = os.path.join(_DATA_DIR, "groq_key.txt")
+
+
+def _read_key_file() -> str:
+    """Читает ключ из файла. Возвращает пустую строку если файл отсутствует."""
+    try:
+        with open(_GROQ_KEY_FILE, "r", encoding="utf-8") as f:
+            return f.read().strip()
+    except (FileNotFoundError, OSError):
+        return ""
+
+
+def _write_key_file(key: str):
+    """Сохраняет ключ в файл (создаёт DATA_DIR при необходимости)."""
+    try:
+        os.makedirs(_DATA_DIR, exist_ok=True)
+        tmp = _GROQ_KEY_FILE + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as f:
+            f.write(key.strip())
+        os.replace(tmp, _GROQ_KEY_FILE)
+    except OSError as e:
+        logger.error(f"[Advisor] ❌ Не удалось сохранить ключ в файл: {e}")
+
+
+# Загружаем ключ: env → файл
+if not GROQ_API_KEY:
+    GROQ_API_KEY = _read_key_file()
 GROQ_BASE_URL = "https://api.groq.com/openai/v1"
 # llama-3.1-8b-instant имеет TPM-лимит всего 6000 токенов/мин на бесплатном
 # тарифе — снапшот рынка (~11000 токенов) в него не помещается (413).
@@ -445,19 +466,13 @@ short_trading_enabled:
 # Клиент Groq
 # ──────────────────────────────────────────────────────────────────────────
 def _effective_key() -> str:
-    """Актуальный ключ: сначала in-memory (быстро), иначе перечитываем
-    из settings_store (на случай если БД была недоступна на момент импорта)."""
+    """Актуальный ключ: сначала in-memory (быстро), иначе перечитываем из файла."""
     global GROQ_API_KEY
     if GROQ_API_KEY:
         return GROQ_API_KEY
-    try:
-        from settings_store import get_section as _ss_get
-        sec = _ss_get("advisor")
-        key = (sec or {}).get("groq_api_key", "")
-        if key:
-            GROQ_API_KEY = key
-    except Exception as e:
-        logger.warning(f"[Advisor] не удалось перечитать ключ из settings_store: {e}")
+    key = _read_key_file()
+    if key:
+        GROQ_API_KEY = key
     return GROQ_API_KEY
 
 
@@ -1414,12 +1429,14 @@ def set_config(interval_min: int = None, trades_trigger: int = None):
 
 
 def reload_key(key: str = None):
-    """Обновить ключ Groq. key=None — читать из env, key=str — установить напрямую."""
+    """Обновить ключ Groq и сохранить в файл. key=None — читать из env/файла."""
     global GROQ_API_KEY
     if key is not None:
-        GROQ_API_KEY = key.strip()
+        k = key.strip()
+        GROQ_API_KEY = k
+        _write_key_file(k)
     else:
-        GROQ_API_KEY = os.getenv("GROQ_API_KEY", "")
+        GROQ_API_KEY = os.getenv("GROQ_API_KEY", "") or _read_key_file()
     return bool(GROQ_API_KEY)
 
 

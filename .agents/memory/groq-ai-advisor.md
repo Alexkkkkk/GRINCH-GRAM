@@ -3,7 +3,7 @@ name: Groq AI Advisor
 description: How the Groq-based autonomous trading advisor is wired, its known startup race condition, and safety boundaries.
 ---
 
-`ai_advisor.py` provides an autonomous advisor: Groq LLM (via OpenAI-compatible API, model `llama-3.3-70b-versatile`) reviews bot state/trades and can auto-tune trading parameters (a bounded `TUNABLE` dict), never rewrites source code. Key is entered via the dashboard (Settings tab) and persisted in `settings_store` (DB-first, JSON fallback), not just env vars.
+`ai_advisor.py` provides an autonomous advisor: Groq LLM (via OpenAI-compatible API, model `llama-3.3-70b-versatile`) reviews bot state/trades and can auto-tune trading parameters (a bounded `TUNABLE` dict), never rewrites source code. Key is entered via the dashboard (Settings tab) and persisted in **`DATA_DIR/groq_key.txt`** (plain text file on disk, atomic write via `.tmp` + `os.replace`). No longer uses `settings_store`/DB for the key. Priority: env var `GROQ_API_KEY` → file. Helpers: `_read_key_file()` / `_write_key_file()` in `ai_advisor.py`. `reload_key(key)` writes to file + sets in-memory. GET/POST `/api/advisor/apikey` routes in `app.py` use `_read_key_file` / `reload_key` directly.
 
 **Startup race condition:** the module read the Groq key once at import time from `settings_store`. If the DB connection wasn't ready yet at that exact moment, `GROQ_API_KEY` stayed empty for the process lifetime even though the key was correctly stored, making the advisor silently report "key not set" until next restart.
 
