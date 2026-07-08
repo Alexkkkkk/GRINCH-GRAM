@@ -19,6 +19,7 @@ numpy==1.26.4
 pandas==2.2.2
 scikit-learn==1.5.0
 xgboost
+lightgbm
 joblib
 
 # ── Technical Analysis ─────────────────────────────────────────────────────────
@@ -54,6 +55,34 @@ flask-socketio
 flask-sqlalchemy
 gunicorn
 joblib
+numpy
+openai
+orjson
+pandas
+psycopg2-binary
+python-dotenv
+python-telegram-bot
+pytoniq
+pytoniq-core
+requests
+scikit-learn
+sqlalchemy
+ta
+xgboost
+aiohttp
+apscheduler
+ccxt
+cryptography
+dedust
+email-validator
+eventlet
+flask
+flask-compress
+flask-socketio
+flask-sqlalchemy
+gunicorn
+joblib
+lightgbm
 numpy
 openai
 orjson

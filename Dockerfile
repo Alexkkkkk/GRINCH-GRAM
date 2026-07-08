@@ -19,7 +19,7 @@ RUN mkdir -p /app/data
 VOLUME ["/app/data"]
 
 ENV DATA_DIR=/app/data
-ENV LOW_MEMORY_MODE=1
+ENV LOW_MEMORY_MODE=0
 ENV PORT=3000
 
 EXPOSE 3000

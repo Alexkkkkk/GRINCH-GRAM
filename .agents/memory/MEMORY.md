@@ -43,3 +43,4 @@
 - [Bothost deployment config](bothost-deployment-config.md) — DATA_DIR=/app/data in Dockerfile (persistent volume); session_secret stored in DATA_DIR not CWD; EXTERNAL_DATABASE_URL has priority over DATABASE_URL in db_store; duplicate ai_advisor start_background removed from app.py (was called twice).
 - [Bothost locked settings](bothost-locked-settings.md) — ⛔ НЕЛЬЗЯ менять без явного разрешения: WORKDIR=/usr/src/app, PORT=${PORT:-3000} shell-форма, --worker-class gthread, LOW_MEMORY_MODE=1, DATA_DIR=/app/data.
 - [RAM floor и оптимизации скорости](ram-floor-speed.md) — numpy+pandas+sklearn+flask=173MB пол; 180MB недостижимо без замены sklearn; LOW_MEMORY_MODE=1 по умолч.
+- [AI Engine v4.2 upgrades](ai-engine-v4-2.md) — 2GB сервер: LOW_MEMORY_MODE=0, regime_enc фича, адаптивные пороги, EV-блок имеет приоритет над адаптивными порогами.

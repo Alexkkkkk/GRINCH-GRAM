@@ -59,7 +59,7 @@ warnings.filterwarnings("ignore")
 # ВАЖНО: в LOW_MEMORY_MODE даже НЕиспользуемые модели (HGB/XGB/LGB) не должны
 # импортироваться — сам импорт xgboost/lightgbm занимает десятки МБ RSS,
 # даже если ни одна модель этого типа никогда не создаётся и не обучается.
-LOW_MEMORY_MODE = os.getenv("LOW_MEMORY_MODE", "1") == "1"  # по умолч. вкл. — 3 модели, RSS ≤180MB
+LOW_MEMORY_MODE = os.getenv("LOW_MEMORY_MODE", "0") == "1"  # по умолч. выкл. — 7 моделей, 2GB сервер
 
 if LOW_MEMORY_MODE:
     _HAS_HGB = _HAS_XGB = _HAS_LGB = False
@@ -1079,6 +1079,7 @@ class AIEngine:
 
         regime_name = regime.get("name", "UNKNOWN")
         total_boost = 0.0
+        _ev_blocked = False  # v4.2: флаг EV-блока — адаптивные пороги НЕ перезаписывают его
 
         if ai_signal == "BUY":
             # ── Momentum буст (скорость цены) ────────────────────────────
@@ -1145,6 +1146,7 @@ class AIEngine:
                 ai_signal = "HOLD"
                 confidence = min(confidence, 45.0)
                 total_boost = 0.0
+                _ev_blocked = True  # v4.2: флаг — адаптивные пороги НЕ отменяют EV-блок
 
         elif ai_signal == "SELL" and regime_name == "DOWNTREND":
             # Шорт в нисходящем тренде — небольшой буст уверенности
@@ -1152,6 +1154,44 @@ class AIEngine:
             confidence = round(min(99.0, confidence + 5.0), 1)
             total_boost = 5.0
             log.debug(f"[AI v4 Boost] SELL+DOWNTREND +5% → {old_conf}%→{confidence}%")
+
+        # ── v4.2: Адаптивные пороги по режиму рынка ──────────────────────
+        # Статичный BUY_THRESHOLD не учитывает рыночный контекст.
+        # В UPTREND тренд "подталкивает" — порог снижается (больше входов).
+        # В RANGING/VOLATILE/DOWNTREND неопределённость выше — порог растёт.
+        # Применяется ПОСЛЕ всех бустов как финальный фильтр сигнала.
+        # ВАЖНО: EV-фильтр (выше) имеет приоритет — его блок необратим.
+        _regime_buy_thr = {
+            "UPTREND":    BUY_THRESHOLD - 0.04,   # 0.42 — тренд в нашу сторону
+            "BREAKOUT":   BUY_THRESHOLD - 0.03,   # 0.43 — выход из сжатия
+            "SQUEEZE":    BUY_THRESHOLD + 0.04,   # 0.50 — ещё не определился
+            "RANGING":    BUY_THRESHOLD + 0.07,   # 0.53 — боковик, осторожно
+            "TRANSITION": BUY_THRESHOLD + 0.06,   # 0.52 — переходная фаза
+            "VOLATILE":   BUY_THRESHOLD + 0.09,   # 0.55 — высокая волатильность
+            "DOWNTREND":  BUY_THRESHOLD + 0.14,   # 0.60 — против тренда, редко
+        }
+        _eff_buy_thr = float(np.clip(
+            _regime_buy_thr.get(regime_name, BUY_THRESHOLD),
+            0.35, 0.70
+        ))
+        if ai_signal == "BUY" and prob_up < _eff_buy_thr:
+            log.debug(
+                f"[AI v4.2 AdaptThr] BUY отменён: prob_up={prob_up*100:.1f}% "
+                f"< порог {_eff_buy_thr*100:.0f}% (режим={regime_name})"
+            )
+            ai_signal = "HOLD"
+            confidence = min(confidence, 49.0)
+        elif (ai_signal == "HOLD" and not _ev_blocked
+              and prob_up >= _eff_buy_thr
+              and prob_up > prob_down and prob_up > prob_hold):
+            # В UPTREND/BREAKOUT со сниженным порогом включаем ранее пропущенный BUY.
+            # Только если HOLD не был выставлен EV-фильтром (тот имеет приоритет).
+            log.debug(
+                f"[AI v4.2 AdaptThr] HOLD→BUY: prob_up={prob_up*100:.1f}% "
+                f">= порог {_eff_buy_thr*100:.0f}% (режим={regime_name})"
+            )
+            ai_signal = "BUY"
+            self._last_buy_features = X[-1].copy()
 
         result = {
             "ai_signal":    ai_signal,
@@ -1675,6 +1715,21 @@ class AIEngine:
         dx        = 100 * (plus_di - minus_di).abs() / (plus_di + minus_di + 1e-10)
         df["adx"] = dx.ewm(alpha=1/14, adjust=False).mean()
 
+        # ── Режим рынка (числовой признак для AI) ─────────────────────────
+        # Векторизованная кодировка режима по всем строкам DataFrame.
+        # Кодировка: UPTREND=2, SQUEEZE=1, RANGING=0, VOLATILE=-1, DOWNTREND=-2
+        # Приоритет совпадает с _detect_regime(): SQUEEZE/VOLATILE → тренд → боковик.
+        # Используются уже вычисленные признаки (ema, adx, bb_w, bb_squeeze).
+        _sq     = df["bb_squeeze"].astype(bool)
+        _hv     = df["bb_w"] > df["bb_w"].rolling(20, min_periods=5).mean() * 1.4
+        _t_up   = (df["ema_9"] > df["ema_21"]) & (df["ema_21"] > df["ema_50"]) & (df["adx"] > 20)
+        _t_down = (df["ema_9"] < df["ema_21"]) & (df["ema_21"] < df["ema_50"]) & (df["adx"] > 20)
+        df["regime_enc"] = np.where(_sq,   1,          # SQUEEZE первый (как в _detect_regime)
+                           np.where(_hv,  -1,          # VOLATILE второй
+                           np.where(_t_up, 2,          # затем UPTREND
+                           np.where(_t_down, -2,       # затем DOWNTREND
+                           0)))).astype(float)         # иначе RANGING/TRANSITION
+
         # ── Ichimoku (упрощённый: tenkan / kijun) ─────────────────────────
         df["tenkan"] = (h.rolling(9).max() + l.rolling(9).min()) / 2
         df["kijun"]  = (h.rolling(26).max() + l.rolling(26).min()) / 2
@@ -1853,6 +1908,8 @@ class AIEngine:
             "pump_score",     # GRINCH-специфичный сигнал накопления
             "candle_strength",# сила свечи (тело × направление)
             "buy_pressure",   # давление покупателей (5 баров)
+            # ── v4.2 NEW: Режим рынка как признак ────────────────────────
+            "regime_enc",     # числовой режим: -2=DOWNTREND…+2=UPTREND
         ]
         # Оставляем только существующие столбцы
         feature_cols = [col for col in feature_cols if col in df.columns]
