@@ -36,6 +36,102 @@ import time
 _startup_log.info("stdlib OK")
 from config import Config
 _startup_log.info("config OK")
+
+
+# ── Загружаем сохранённые настройки дашборда поверх env-дефолтов ─────────────
+def _apply_saved_config():
+    """При старте восстанавливаем все параметры Config, сохранённые через /api/config."""
+
+    def _bool(v):
+        if isinstance(v, bool): return v
+        return str(v).lower() in ("true", "1", "yes")
+
+    def _safe_set(attr, v, cast):
+        """Безопасно конвертирует и применяет одну настройку — ошибка в одном поле не ломает остальные."""
+        try:
+            setattr(Config, attr, cast(v))
+        except Exception as exc:
+            _startup_log.warning(f"[Config] ⚠️ Пропущено {attr}={v!r}: {exc}")
+
+    try:
+        from settings_store import get_section
+        saved = get_section("config")
+        if not saved:
+            _startup_log.info("[Config] Сохранённых настроек нет, используем дефолты")
+            return
+
+        applied = 0
+        for attr, cast in [
+            ("SYMBOL",            str),
+            ("TRADE_AMOUNT",      float),
+            ("MAX_OPEN_TRADES",   lambda v: int(float(v))),
+            ("TAKE_PROFIT_PCT",   float),
+            ("TRAILING_STOP_PCT", float),
+            ("MIN_AI_CONFIDENCE", float),
+            ("USE_DYNAMIC_TARGETS", _bool),
+            ("TREND_FILTER",      _bool),
+            # Smart BUY
+            ("SMART_BUY_ENABLED",        _bool),
+            ("SMART_BUY_PULLBACK_PCT",   float),
+            ("SMART_BUY_MAX_WAIT_TICKS", lambda v: int(float(v))),
+            ("SMART_BUY_SKIP_CONF",      float),
+            # Smart TP
+            ("SMART_TP_ENABLED",         _bool),
+            ("SMART_TP_MIN_CONF",        float),
+            ("SMART_TP_TIGHT_TRAIL_PCT", float),
+            # Авто-TP
+            ("MIN_PROFIT_TON",          float),
+            ("AI_TP_ADAPT_MIN_TRADES",  lambda v: int(float(v))),
+            ("AI_TP_CAP_PCT",           float),
+            # DCA стратегия
+            ("DCA_MODE",             _bool),
+            ("DCA_STAKE_TON",        float),
+            ("DCA_TARGET_PROFIT_PCT",float),
+            ("DCA_DROP_TRIGGER_PCT", float),
+            ("DCA_PULLBACK_WAIT_PCT",float),
+            ("DCA_MAX_ENTRIES",      lambda v: int(float(v))),
+            ("DCA_CASCADE_ENABLED",  _bool),
+            ("DCA_CASCADE_LEVEL1_PCT",float),
+            ("DCA_CASCADE_LEVEL2_PCT",float),
+            ("DCA_SMART_REENTRY_ENABLED",      _bool),
+            ("DCA_SMART_REENTRY_PULLBACK_PCT", float),
+            ("DCA_SMART_REENTRY_MIN_AI_CONF",  float),
+            ("DCA_COMPOUND_ENABLED",  _bool),
+            ("DCA_COMPOUND_RATIO",    float),
+            ("DCA_COMPOUND_MAX_TON",  float),
+            ("DCA_ADAPTIVE_TRIGGER_ENABLED", _bool),
+            ("DCA_ADAPTIVE_FAST_MOVE_PCT",   float),
+            ("DCA_ADAPTIVE_FAST_DROP_PCT",   float),
+            # Детектор крупных продаж
+            ("LARGE_SELL_DCA_ENABLED",  _bool),
+            ("LARGE_SELL_DCA_TON",      float),
+            ("LARGE_SELL_MIN_TON",      float),
+            ("LARGE_SELL_COOLDOWN_SEC", lambda v: int(float(v))),
+            # Защита прибыли
+            ("PROFIT_PROTECT_ENABLED",  _bool),
+            ("PROFIT_PROTECT_TON",      float),
+            ("PROFIT_PROTECT_DROP_PCT", float),
+            ("PROFIT_PROTECT_AI_SELL",  _bool),
+            # FEE_PCT — особый: синхронизирует FEE_ROUND_TRIP
+            ("FEE_PCT", float),
+        ]:
+            if (v := saved.get(attr)) is not None:
+                _safe_set(attr, v, cast)
+                if attr == "FEE_PCT":
+                    Config.FEE_ROUND_TRIP = Config.FEE_PCT * 2
+                applied += 1
+
+        _startup_log.info(f"[Config] ✅ Восстановлено {applied} сохранённых настроек из settings_store")
+    except Exception as e:
+        _startup_log.warning(f"[Config] ⚠️ Не удалось загрузить сохранённые настройки: {e}")
+    finally:
+        # Гарантия: ONLY_PROFIT_EXIT всегда True, независимо от исхода загрузки
+        Config.ONLY_PROFIT_EXIT = True
+
+
+_apply_saved_config()
+_startup_log.info("saved config applied")
+
 from database import db
 _startup_log.info("database OK")
 from trader import Trader
