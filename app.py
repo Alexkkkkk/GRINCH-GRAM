@@ -752,6 +752,7 @@ def api_admin_self_update():
         "settings_store.py", "user_trader.py", "wallet_manager.py",
         "wallet_tracker.py", "db_store.py", "http_client.py",
         "coin_info.py", "exchange.py",
+        "templates/index.html", "templates/join.html", "templates/user_dash.html",
     ]
 
     branch = (request.json or {}).get("branch", "main") if request.is_json else "main"
