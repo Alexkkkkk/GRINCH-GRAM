@@ -122,3 +122,8 @@ scikit-learn
 sqlalchemy
 ta
 xgboost
+email_validator
+flask
+flask-sqlalchemy
+gunicorn
+psycopg2-binary
