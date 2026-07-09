@@ -16,7 +16,7 @@ class Config:
     # Советник сам крутит его в диапазоне [0.3..1.5] по уверенности сигнала
     # и текущей просадке портфеля. Итоговая ставка = TRADE_AMOUNT × conf_factor
     # × kelly_mult × power_mult × AI_SIZE_MULT (см. trader.py._open_trade).
-    AI_SIZE_MULT = float(os.getenv("AI_SIZE_MULT", "1.2"))  # повышено для более активной торговли
+    AI_SIZE_MULT = float(os.getenv("AI_SIZE_MULT", "1.5"))  # максимально агрессивный размер позиции
 
     # ── 1 сделка за раз: весь капитал в одну лучшую позицию ──
     MAX_OPEN_TRADES = int(os.getenv("MAX_OPEN_TRADES", "1"))
@@ -181,7 +181,7 @@ class Config:
     RSI_OVERBOUGHT = float(os.getenv("RSI_OVERBOUGHT", "78"))
     # AI уверенность мин — снижено для более активной торговли (было 60%)
     # Минимальная уверенность для BUY — AI торгует при 52%+
-    MIN_AI_CONFIDENCE = float(os.getenv("MIN_AI_CONFIDENCE", "50"))
+    MIN_AI_CONFIDENCE = float(os.getenv("MIN_AI_CONFIDENCE", "45"))  # макс. агрессия: входим раньше
     # AI-овверрайд только при 78%+ — очень сильный сигнал против тренда
     AI_OVERRIDE_CONFIDENCE = float(os.getenv("AI_OVERRIDE_CONFIDENCE", "78"))
     # AI жёсткий овверрайд: при ≥93% уверенности игнорируем RSI/аномалию (только DOWNTREND блокирует)
@@ -221,7 +221,7 @@ class Config:
 
     # Минимальная уверенность AI для самостоятельного входа в автономном режиме
     # Снижен порог входа: AI доверяем больше — 55% уже достаточно для сигнала
-    AI_AUTONOMOUS_MIN_CONF = float(os.getenv("AI_AUTONOMOUS_MIN_CONF", "52.0"))
+    AI_AUTONOMOUS_MIN_CONF = float(os.getenv("AI_AUTONOMOUS_MIN_CONF", "48.0"))  # макс. агрессия
 
     # ── ПОЛНЫЕ ПРАВА ТОРГОВЛИ ──────────────────────────────────────────
     # Когда True и уверенность AI >= AI_FULL_RIGHTS_MIN_CONF%, AI имеет полные
@@ -261,9 +261,9 @@ class Config:
     # Продать ВСЁ когда общая стоимость GRINCH выросла на N% относительно суммарных затрат
     DCA_TARGET_PROFIT_PCT = float(os.getenv("DCA_TARGET_PROFIT_PCT", "15"))
     # Докупать ещё когда цена упала N% от цены ПОСЛЕДНЕЙ покупки
-    DCA_DROP_TRIGGER_PCT  = float(os.getenv("DCA_DROP_TRIGGER_PCT", "9"))   # снижено с 12% — входим на меньшем откате для большего числа сделок
+    DCA_DROP_TRIGGER_PCT  = float(os.getenv("DCA_DROP_TRIGGER_PCT", "6"))   # макс. агрессия: докупаем на ещё меньшем откате
     # После продажи: ждать падения цены на N% от пика перед следующей покупкой
-    DCA_PULLBACK_WAIT_PCT = float(os.getenv("DCA_PULLBACK_WAIT_PCT", "25"))
+    DCA_PULLBACK_WAIT_PCT = float(os.getenv("DCA_PULLBACK_WAIT_PCT", "15"))  # макс. агрессия: реентри быстрее
     # Максимальное количество DCA-входов за один цикл (защита от бесконечного усреднения)
     DCA_MAX_ENTRIES     = int(os.getenv("DCA_MAX_ENTRIES", "10"))
 
@@ -298,7 +298,7 @@ class Config:
     # Пример: прибыль 20 TON → +30% = +6 TON к следующей ставке.
     # Накопленный бонус ограничен MAX_TON и сохраняется между циклами.
     DCA_COMPOUND_ENABLED   = bool(int(os.getenv("DCA_COMPOUND_ENABLED",   "1")))
-    DCA_COMPOUND_RATIO     = float(os.getenv("DCA_COMPOUND_RATIO",     "0.30")) # доля прибыли в реинвест
+    DCA_COMPOUND_RATIO     = float(os.getenv("DCA_COMPOUND_RATIO",     "0.45")) # макс. агрессия: реинвестируем больше прибыли
     DCA_COMPOUND_MAX_TON   = float(os.getenv("DCA_COMPOUND_MAX_TON",   "500"))  # макс. бонус (TON)
 
     # ── Адаптивный DCA-триггер: докупаем агрессивнее в ракетных движениях ───
