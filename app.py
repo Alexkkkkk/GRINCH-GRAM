@@ -114,6 +114,10 @@ def _apply_saved_config():
             ("PROFIT_PROTECT_AI_SELL",  _bool),
             # FEE_PCT — особый: синхронизирует FEE_ROUND_TRIP
             ("FEE_PCT", float),
+            # Параметры, которые хранятся в БД, но ранее не восстанавливались
+            ("DCA_REENTRY_COOLDOWN_SEC",    lambda v: int(float(v))),
+            ("FAST_REENTRY_PULLBACK_PCT",   float),
+            ("SCALP_TARGET_NET_PCT",        float),
         ]:
             if (v := saved.get(attr)) is not None:
                 _safe_set(attr, v, cast)
