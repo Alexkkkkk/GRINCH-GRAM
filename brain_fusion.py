@@ -288,21 +288,38 @@ class BrainFusion:
         )
         fs.regime = regime
 
+        # ── Читаем параметры из Config (единственный источник истины) ───────
+        try:
+            from config import Config as _Cfg
+            _scalp_min_conf  = float(_Cfg.SCALP_MIN_AI_CONF)
+            _scalp_max_atr   = float(_Cfg.SCALP_MAX_ATR_PCT)
+            _scalp_tp        = float(_Cfg.SCALP_TP_PCT)
+            _scalp_trail     = float(_Cfg.SCALP_TRAIL_PCT)
+            _pump_boost_max  = float(_Cfg.FUSION_PUMP_BOOST_MAX)
+            _skip_thresh     = float(_Cfg.FUSION_SKIP_CONFIRM_CONF)
+        except Exception:
+            _scalp_min_conf  = 55.0
+            _scalp_max_atr   = 5.5
+            _scalp_tp        = 6.0
+            _scalp_trail     = 3.0
+            _pump_boost_max  = 1.8
+            _skip_thresh     = FUSION_SKIP_CONFIRM_CONF
+
         # ── Детектор скальп-окна ──────────────────────────────────────────
-        # Скальп: RANGING/SQUEEZE режим И AI BUY И уверенность ≥52%
+        # Скальп: RANGING/SQUEEZE режим И AI BUY И уверенность ≥ Config.SCALP_MIN_AI_CONF
         is_scalp = (
             regime in SCALP_REGIMES
             and ai_fresh
             and self._ai.signal == "BUY"
-            and self._ai.confidence >= 52.0
-            and self._ai.atr_pct < 6.0      # тихий рынок (ATR < 6%)
+            and self._ai.confidence >= _scalp_min_conf
+            and self._ai.atr_pct < _scalp_max_atr   # тихий рынок
         )
         fs.is_scalp_window = is_scalp
         if is_scalp:
-            # В тихом рынке ATR мал → тугой трейл (2×ATR), маленький TP
+            # ATR-адаптивные TP/trail, но не ниже значений Config
             atr = max(1.5, self._ai.atr_pct)
-            fs.scalp_tp_pct    = max(5.5, atr * 2.2)    # TP = 2.2×ATR, мин 5.5%
-            fs.scalp_trail_pct = max(2.5, atr * 1.2)    # trail = 1.2×ATR, мин 2.5%
+            fs.scalp_tp_pct    = max(_scalp_tp,    atr * 2.2)  # мин = Config.SCALP_TP_PCT
+            fs.scalp_trail_pct = max(_scalp_trail, atr * 1.2)  # мин = Config.SCALP_TRAIL_PCT
 
         # ── Детектор памп-ускорителя ──────────────────────────────────────
         is_pump = (
@@ -313,21 +330,15 @@ class BrainFusion:
         )
         fs.is_pump_window = is_pump and ai_fresh and self._ai.signal == "BUY"
         if fs.is_pump_window:
-            # Ускоритель позиции при памп-сигнале
+            # Ускоритель позиции при памп-сигнале — ограничен Config.FUSION_PUMP_BOOST_MAX
             pump_mult = 1.0
             if self._ai.momentum == "EXPLOSIVE":  pump_mult = 1.6
             elif self._ai.momentum == "SURGE":    pump_mult = 1.35
             elif regime == "BREAKOUT":             pump_mult = 1.25
             elif regime == "UPTREND":              pump_mult = 1.15
-            fs.position_boost = min(2.0, pump_mult)
+            fs.position_boost = min(_pump_boost_max, pump_mult)
 
         # ── Пропуск подтверждения ─────────────────────────────────────────
-        # Читаем порог из Config (если доступен), иначе модульная константа
-        try:
-            from config import Config as _Cfg
-            _skip_thresh = float(getattr(_Cfg, "FUSION_SKIP_CONFIRM_CONF", FUSION_SKIP_CONFIRM_CONF))
-        except Exception:
-            _skip_thresh = FUSION_SKIP_CONFIRM_CONF
 
         # Требуем ПОЛНОГО консенсуса: AI+TA+LLM все согласны
         # (не только AI — чтобы не давать преждевременные BUY)
