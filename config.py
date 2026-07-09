@@ -125,8 +125,8 @@ class Config:
     # Если откат не пришёл за SMART_BUY_MAX_WAIT_TICKS → берём по рынку.
     # При AI >= SMART_BUY_SKIP_CONF% — покупаем сразу (слишком сильный сигнал).
     SMART_BUY_ENABLED       = bool(int(os.getenv("SMART_BUY_ENABLED", "1")))
-    SMART_BUY_PULLBACK_PCT  = float(os.getenv("SMART_BUY_PULLBACK_PCT", "0.4"))  # ждём откат -0.4% (было -0.8%, быстрее входим)
-    SMART_BUY_MAX_WAIT_TICKS = int(os.getenv("SMART_BUY_MAX_WAIT_TICKS", "3"))   # макс 3 тика (~90 сек)
+    SMART_BUY_PULLBACK_PCT  = float(os.getenv("SMART_BUY_PULLBACK_PCT", "0.2"))  # супер агрессия: почти сразу по рынку
+    SMART_BUY_MAX_WAIT_TICKS = int(os.getenv("SMART_BUY_MAX_WAIT_TICKS", "2"))   # супер агрессия: макс 2 тика (~60 сек)
     SMART_BUY_SKIP_CONF     = float(os.getenv("SMART_BUY_SKIP_CONF", "88.0"))    # ≥88% → сразу
 
     # ── Smart TP: умная продажа с ИИ ─────────────────────────────────────
@@ -201,7 +201,7 @@ class Config:
     # Нужен, чтобы авто-ликвидатор всегда мог продать свои «зафиксированные» GRINCH.
     GRINCH_RESERVE = float(os.getenv("GRINCH_RESERVE", "500"))
     # Минимальная уверенность AI для открытия шорта (чуть выше BUY — шорт рискованнее)
-    SHORT_MIN_AI_CONF = float(os.getenv("SHORT_MIN_AI_CONF", "65.0"))
+    SHORT_MIN_AI_CONF = float(os.getenv("SHORT_MIN_AI_CONF", "58.0"))  # супер агрессия
 
     @classmethod
     def required_drop_pct_for_short(cls, grinch_value_ton=None):
@@ -231,7 +231,7 @@ class Config:
     # даже если рынок сейчас «спокойный» по ATR.
     AI_FULL_RIGHTS = bool(int(os.getenv("AI_FULL_RIGHTS", "1")))
     # При 62%+ AI получает полные права — без ATR-фильтра (был 68%)
-    AI_FULL_RIGHTS_MIN_CONF = float(os.getenv("AI_FULL_RIGHTS_MIN_CONF", "58.0"))
+    AI_FULL_RIGHTS_MIN_CONF = float(os.getenv("AI_FULL_RIGHTS_MIN_CONF", "54.0"))  # супер агрессия
 
     # Коэффициент «реалистичности» входа: минимальный ATR в % от цены, при котором
     # рынок способен дать нужный gross-% (если ATR × mult < required_gross → не входим).
@@ -286,12 +286,12 @@ class Config:
     # ── Умный реentri: после ТП входим быстрее если AI бычий ────────────────
     # Вместо ожидания -25% отката: при AI-уверенности ≥ порога достаточно -8%.
     DCA_SMART_REENTRY_ENABLED    = bool(int(os.getenv("DCA_SMART_REENTRY_ENABLED",    "1")))
-    DCA_SMART_REENTRY_PULLBACK_PCT = float(os.getenv("DCA_SMART_REENTRY_PULLBACK_PCT", "6"))   # снижено с 8% — заходим раньше
-    DCA_SMART_REENTRY_MIN_AI_CONF  = float(os.getenv("DCA_SMART_REENTRY_MIN_AI_CONF",  "55")) # снижено с 60% — больше реентри
+    DCA_SMART_REENTRY_PULLBACK_PCT = float(os.getenv("DCA_SMART_REENTRY_PULLBACK_PCT", "4"))   # супер агрессия: заходим ещё раньше
+    DCA_SMART_REENTRY_MIN_AI_CONF  = float(os.getenv("DCA_SMART_REENTRY_MIN_AI_CONF",  "50")) # супер агрессия: больше реентри
     # Минимальная пауза между DCA-докупками (секунды) — защита от переторговли.
     # При низких порогах входа (drop 9%, conf 55%) без паузы бот может войти 3+ раз
     # за один тик волатильности. 300 сек = 5 минут — GRINCH свеча 15 мин, хватает.
-    DCA_REENTRY_COOLDOWN_SEC = int(os.getenv("DCA_REENTRY_COOLDOWN_SEC", "300"))
+    DCA_REENTRY_COOLDOWN_SEC = int(os.getenv("DCA_REENTRY_COOLDOWN_SEC", "180"))  # супер агрессия: чаще входы
 
     # ── Компаундирование: автоматический реинвест части прибыли ─────────────
     # После каждого прибыльного цикла ставка растёт на RATIO% от профита.
@@ -331,7 +331,7 @@ class Config:
     # выдерживается пауза LARGE_SELL_COOLDOWN_SEC секунд.
     LARGE_SELL_DCA_ENABLED  = bool(int(os.getenv("LARGE_SELL_DCA_ENABLED",  "1")))
     LARGE_SELL_DCA_TON      = float(os.getenv("LARGE_SELL_DCA_TON",         "100.0"))   # TON на покупку
-    LARGE_SELL_MIN_TON      = float(os.getenv("LARGE_SELL_MIN_TON",         "200.0"))   # снижено с 500 — micro-cap $47k пул: 200 TON продажа уже двигает рынок
+    LARGE_SELL_MIN_TON      = float(os.getenv("LARGE_SELL_MIN_TON",         "150.0"))   # супер агрессия: реагируем на меньшие продажи
     LARGE_SELL_COOLDOWN_SEC = int(os.getenv("LARGE_SELL_COOLDOWN_SEC",      "300"))     # пауза между сигналами
 
     DEMO_MODE  = os.getenv("DEMO_MODE",  "false").lower() == "true"
