@@ -117,6 +117,8 @@ class Trader:
         self._dca_price_history: list = []
         # Детектор крупных продаж: время последней безусловной покупки по этому триггеру
         self._last_large_sell_buy_ts = 0.0
+        # DCA кулдаун: время последней DCA-докупки (защита от переторговли)
+        self._last_dca_entry_ts = 0.0
         # Защита прибыли: пик стоимости портфеля (TON) для детектора разворота
         self.portfolio_high_water_ton = 0.0
         # Health-check: время и статус последнего успешного тика торгового цикла
@@ -143,6 +145,14 @@ class Trader:
                 if pb_data and pb_data.get("target"):
                     pb_data["restored"] = True   # флаг: ai/analysis отсутствуют
                     self._pending_buy = pb_data
+        except Exception:
+            pass
+        # Восстанавливаем timestamp последней DCA-докупки (кулдаун переживает рестарт)
+        try:
+            import db_store as _dbs3
+            _ts_raw = _dbs3.settings_get("trader_state", "last_dca_entry_ts")
+            if _ts_raw:
+                self._last_dca_entry_ts = float(_ts_raw)
         except Exception:
             pass
 
@@ -951,8 +961,9 @@ class Trader:
                     )
                     _trigger_tag = f"⚡ адаптивный {drop_trigger:.0f}%" if _fast_market \
                         else f"стандартный {drop_trigger:.0f}%"
+                    _dca_cooldown_left = Config.DCA_REENTRY_COOLDOWN_SEC - (time.time() - self._last_dca_entry_ts)
                     if drop_from_last_pct >= drop_trigger:
-                        if self.dca_entries_count < Config.DCA_MAX_ENTRIES:
+                        if self.dca_entries_count < Config.DCA_MAX_ENTRIES and _dca_cooldown_left <= 0:
                             self.log(
                                 f"📉 DCA ДОКУПКА: цена упала {drop_from_last_pct:.1f}% "
                                 f"(триггер: {_trigger_tag}) | "
@@ -963,6 +974,11 @@ class Trader:
                                 price_usd, grinch_ton,
                                 f"докупка #{self.dca_entries_count + 1} "
                                 f"(падение {drop_from_last_pct:.1f}%, {_trigger_tag})"
+                            )
+                        elif _dca_cooldown_left > 0:
+                            self.log(
+                                f"⏸️ DCA: кулдаун {_dca_cooldown_left:.0f}с до следующей докупки",
+                                "INFO"
                             )
                         else:
                             self.log(
@@ -1103,6 +1119,15 @@ class Trader:
             self.dca_last_buy_price  = price_usd
             self.dca_entries_count  += 1
             self.dca_total_stake    += stake_ton
+            self._last_dca_entry_ts  = time.time()   # кулдаун: фиксируем время входа
+            # Персистируем timestamp в DB чтобы выжить перезапуск
+            try:
+                import db_store as _dbs_dca, json as _json_dca
+                _dbs_dca.settings_update_section("trader_state", {
+                    "last_dca_entry_ts": str(self._last_dca_entry_ts)
+                })
+            except Exception:
+                pass
 
             self._emit_signal("BUY", price_usd, self.last_ai)
 
@@ -1607,7 +1632,9 @@ class Trader:
                     f"🔄 Smart BUY восстановлен после рестарта @ ${price:.8f} (цель была ${pb.get('target', 0):.8f})",
                     "INFO"
                 )
-                opened = self._open_trade("buy", price, result, ai)
+                # Передаём mode_params из сохранённого ордера — иначе скальп-вход
+                # откроется без скальп-TP/trail и с неправильным TP-флором.
+                opened = self._open_trade("buy", price, result, ai, mode_params=_pb_mode)
                 if opened:
                     self._buy_confirm_count = 0
                     self._last_entry_was_scalp = bool(_pb_mode.get("trail_pct"))
@@ -2040,10 +2067,12 @@ class Trader:
 
         return base_pct * mult
 
-    def _targets(self, price, ai, stake_ton=None, tp_override=None):
+    def _targets(self, price, ai, stake_ton=None, tp_override=None, is_scalp=False):
         """Рассчитывает SL/TP%.
         tp_override — если передан, используется вместо Config.TAKE_PROFIT_PCT
         (позволяет скальп-режиму задать меньший TP без мутации Config).
+        is_scalp    — True в скальп-режиме: пол TP считается от SCALP_TARGET_NET_PCT,
+                      а не от TARGET_NET_PCT, иначе скальп-выход всегда блокируется.
         """
         base_tp = tp_override if tp_override is not None else Config.TAKE_PROFIT_PCT
         atr_pct = (ai.get("regime", {}) or {}).get("atr_pct", 0) / 100.0 if ai else 0.0
@@ -2054,8 +2083,14 @@ class Trader:
             sl_pct, tp_pct = Config.STOP_LOSS_PCT, base_tp
 
         # Жёсткий минимум TP учитывает и DEX-комиссию, и газ обоих свопов.
-        # Чем меньше ставка — тем выше требуемый gross% для реального плюса.
-        min_gross_tp = Config.required_gross_pct_with_gas(stake_ton)
+        # В скальп-режиме минимум считается от SCALP_TARGET_NET_PCT (3%),
+        # а не от глобального TARGET_NET_PCT (13%), чтобы не блокировать быстрые выходы.
+        if is_scalp:
+            fee = Config.FEE_PCT / 100.0
+            scalp_gross_floor = (Config.SCALP_TARGET_NET_PCT + Config.FEE_PCT * 2) / max((1 - fee) ** 2, 0.9801)
+            min_gross_tp = max(scalp_gross_floor, Config.SCALP_TP_PCT)
+        else:
+            min_gross_tp = Config.required_gross_pct_with_gas(stake_ton)
         tp_pct = max(tp_pct, min_gross_tp)
         return sl_pct, tp_pct
 
@@ -2182,8 +2217,10 @@ class Trader:
 
         # Передаём stake в _targets: TP учтёт и DEX-комиссию, и газ обоих свопов
         # tp_override из mode_params позволяет скальп-режиму задать свой TP без мутации Config
+        # is_scalp=True: пол TP от SCALP_TARGET_NET_PCT, а не от TARGET_NET_PCT
         _tp_override = _mp.get("tp_pct")   # None → Config.TAKE_PROFIT_PCT (через _targets)
-        sl_pct, tp_pct = self._targets(price, ai, stake_ton=stake, tp_override=_tp_override)
+        _is_scalp    = _tp_override is not None   # скальп всегда передаёт tp_override
+        sl_pct, tp_pct = self._targets(price, ai, stake_ton=stake, tp_override=_tp_override, is_scalp=_is_scalp)
         sl = 0.0 if Config.ONLY_PROFIT_EXIT else self.exchange._round(price * (1 - sl_pct / 100))
         tp = self.exchange._round(price * (1 + tp_pct / 100))
 

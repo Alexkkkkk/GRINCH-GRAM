@@ -1,19 +1,50 @@
 ---
-name: AI Engine v4.2 upgrades
-description: Changes made when migrating to 2GB server — LOW_MEMORY_MODE off, regime as feature, adaptive thresholds, LightGBM enabled.
+name: AI engine v4.2 and trading parameter tuning
+description: QuantumBrain v4 engine upgrades (v4.2–v4.4) and active-trading parameter tuning
 ---
 
-## Changes made for 2GB server migration
+## Effective trading parameters (DB overrides config.py defaults)
 
-**LOW_MEMORY_MODE default**: changed from `"1"` to `"0"` in `ai_engine.py` (line ~62) and `Dockerfile`. Full 7-model ensemble now runs by default (RF+ET+GB+HGB+XGB+LGB+MLP, REPLAY_SIZE=800).
+DB settings take priority via `settings_store.get_section("config")` at startup.
+Key active-trading params currently in DB:
 
-**LightGBM**: added to `requirements.txt`; was blocked only by LOW_MEMORY_MODE import guard (no other issue). Activates automatically when LOW_MEMORY_MODE=0.
+| Param | DB value | Purpose |
+|-------|----------|---------|
+| DCA_TARGET_PROFIT_PCT | 5.0 | Take profit target (very aggressive) |
+| DCA_CASCADE_LEVEL1_PCT | 5.0 | Sell 50% at this % profit |
+| DCA_CASCADE_LEVEL2_PCT | 12.0 | Sell remaining at this % profit |
+| DCA_DROP_TRIGGER_PCT | 9.0 | Buy more after this % drop |
+| DCA_REENTRY_COOLDOWN_SEC | 300 | Min seconds between DCA entries |
+| AI_AUTONOMOUS_MIN_CONF | 36.0 | Min AI conf for autonomous trades |
+| AI_FULL_RIGHTS_MIN_CONF | 0.0 | AI always has full rights |
+| MIN_AI_CONFIDENCE | 50.0 | Entry gate |
+| DCA_SMART_REENTRY_MIN_AI_CONF | 55.0 | |
+| DCA_SMART_REENTRY_PULLBACK_PCT | 6.0 | |
+| FAST_REENTRY_MIN_CONF | 55.0 | |
+| FAST_REENTRY_PULLBACK_PCT | 4.0 | |
+| SCALP_MIN_AI_CONF | 52.0 | |
+| SCALP_TARGET_NET_PCT | 3.0 | |
+| SCALP_TP_PCT | 5.0 | |
 
-**regime_enc feature** (v4.2): vectorized market regime added to `_build_features()` and `_make_dataset()` feature list. Encoding: SQUEEZE=1, VOLATILE=-1, UPTREND=2, DOWNTREND=-2, RANGING=0. **Precedence order matches `_detect_regime()`**: SQUEEZE → VOLATILE → UPTREND → DOWNTREND → RANGING. If you ever change `_detect_regime()` priorities, update `regime_enc` np.where chain to match, or model features will diverge from runtime regime gating.
+**Why:** "активнее торговлю в плюс" request — more entries, faster profit-taking.
+**How to apply:** Always check DB values via `settings_store.load_settings()["config"]` before assuming config.py defaults are active.
 
-**Adaptive thresholds** (v4.2): after all boosts, `_eff_buy_thr` adjusts BUY_THRESHOLD by regime (UPTREND: -0.04, BREAKOUT: -0.03, RANGING: +0.07, VOLATILE: +0.09, DOWNTREND: +0.14). `_ev_blocked` flag ensures EV-filter HOLDs are never re-enabled by the adaptive threshold HOLD→BUY path. The re-enable branch only applies to `ai_signal == "HOLD"` (not SELL).
+## Scalp TP floor fix (trader.py)
 
-**Why EV-filter takes priority**: EV filter is a profitability guardrail that blocks BUY when expected value ≤ 0 over confirmed trade history. Adaptive thresholds are a market-context filter. EV must always win.
+`_targets(is_scalp=False)` — when `is_scalp=True`, uses `SCALP_TARGET_NET_PCT` as net floor
+instead of `TARGET_NET_PCT` (13%). Without this, scalp exits require 13%+ gross, defeating scalping.
+`is_scalp=True` is set when `_tp_override is not None` (scalp always passes tp_override).
+
+## DCA cascade vs target alignment invariant
+
+`DCA_CASCADE_LEVEL1_PCT` must be ≤ `DCA_TARGET_PROFIT_PCT` or cascade bypasses the target entirely
+(cascade runs in the `if DCA_CASCADE_ENABLED` branch, target in `else`).
+Current: both at 5%. If you change DCA_TARGET_PROFIT_PCT, update cascade levels too.
+
+## DCA reentry cooldown
+
+`DCA_REENTRY_COOLDOWN_SEC=300` + `_last_dca_entry_ts` in trader.__init__.
+Prevents stacking multiple DCA buys in a single volatile tick when drop/conf thresholds are low.
 
 ## v4.4 additions (5 improvements)
 
@@ -29,14 +60,15 @@ description: Changes made when migrating to 2GB server — LOW_MEMORY_MODE off, 
 
 ## v4.3 additions (AI engine improvements)
 
-**Adaptive horizon weights**: `self._horizon_weights` updated per `feedback()` call. UPTREND/BREAKOUT win → boost long horizons (8,13); RANGING/VOLATILE win → boost short (3,5). After each update: **normalize to preserve sum = sum(HORIZON_WEIGHTS_DEFAULT=7.0)** to prevent saturation. `_make_dataset()` uses `list(self._horizon_weights)` instead of constant.
+- **Online learning** — refit triggers on 1 confirmed trade (was 5), 60s cooldown
+- **Adaptive horizon weights** — `[1.0, 1.5, 2.0, 2.5]` update per-trade by regime, normalized
+- **3 volume features** — `vol_buy_sell_ratio`, `vwap_dev_10`, `vol_zscore` (~69 features total)
+- **BUY calibration** — `IsotonicRegression` maps `prob_up` to real win-rate when ≥20 trades
+- **Feature mismatch protection** — check at start of `_refit_all()`, clears buffer on size mismatch
 
-**Volume features** (3 new): `vol_buy_sell_ratio` (buy/sell vol ratio 10 bars), `vwap_dev_10` (10-bar rolling VWAP deviation), `vol_zscore` (z-score vs 50-bar mean). Added to `_build_features()` after CVD section; `bull_vol`/`bear_vol` are in scope there.
+## v4.2 additions (2GB server: LOW_MEMORY_MODE=0)
 
-**Online learning**: `_new_confirms >= 1` (was 5) triggers refit. Cooldown: `_last_online_refit_ts` — not more often than 60s to prevent refit-storm.
-
-**BUY calibration**: `_buy_calibrator` = `IsotonicRegression` fit on confirmed_X→win/loss. Applied in `_analyze_locked()` to prob_up *scalar only* after `_ensemble_proba()`. Binary (win=1/loss=0), not 3-class — matches confirmed_y={1,-1}. Activates at ≥20 confirmed trades.
-
-**Feature compat guard**: at the **very start** of `_refit_all()` (before any np.array construction), checks confirmed_X[0] shape vs replay_X[0] shape. Clears confirmed buffer + resets `_buy_calibrator` if mismatch.
-
-**try/except around `_refit_all()`** in `_analyze_locked()` — prevents retrain error from killing predictions.
+- `regime_enc` feature (numeric encoding of regime label) added to feature set
+- Adaptive BUY thresholds by regime: UPTREND -0.04, BREAKOUT -0.03, SQUEEZE +0.04, RANGING +0.07, TRANSITION +0.06, VOLATILE +0.09, DOWNTREND +0.14
+- EV-filter: blocks BUY when expected value ≤ 0, has priority over adaptive thresholds
+- BUY_THRESHOLD: 0.46 → 0.43 (active trading mode)

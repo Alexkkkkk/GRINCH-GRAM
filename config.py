@@ -181,7 +181,7 @@ class Config:
     RSI_OVERBOUGHT = float(os.getenv("RSI_OVERBOUGHT", "78"))
     # AI уверенность мин — снижено для более активной торговли (было 60%)
     # Минимальная уверенность для BUY — AI торгует при 52%+
-    MIN_AI_CONFIDENCE = float(os.getenv("MIN_AI_CONFIDENCE", "52"))
+    MIN_AI_CONFIDENCE = float(os.getenv("MIN_AI_CONFIDENCE", "50"))
     # AI-овверрайд только при 78%+ — очень сильный сигнал против тренда
     AI_OVERRIDE_CONFIDENCE = float(os.getenv("AI_OVERRIDE_CONFIDENCE", "78"))
     # AI жёсткий овверрайд: при ≥93% уверенности игнорируем RSI/аномалию (только DOWNTREND блокирует)
@@ -221,7 +221,7 @@ class Config:
 
     # Минимальная уверенность AI для самостоятельного входа в автономном режиме
     # Снижен порог входа: AI доверяем больше — 55% уже достаточно для сигнала
-    AI_AUTONOMOUS_MIN_CONF = float(os.getenv("AI_AUTONOMOUS_MIN_CONF", "55.0"))
+    AI_AUTONOMOUS_MIN_CONF = float(os.getenv("AI_AUTONOMOUS_MIN_CONF", "52.0"))
 
     # ── ПОЛНЫЕ ПРАВА ТОРГОВЛИ ──────────────────────────────────────────
     # Когда True и уверенность AI >= AI_FULL_RIGHTS_MIN_CONF%, AI имеет полные
@@ -231,7 +231,7 @@ class Config:
     # даже если рынок сейчас «спокойный» по ATR.
     AI_FULL_RIGHTS = bool(int(os.getenv("AI_FULL_RIGHTS", "1")))
     # При 62%+ AI получает полные права — без ATR-фильтра (был 68%)
-    AI_FULL_RIGHTS_MIN_CONF = float(os.getenv("AI_FULL_RIGHTS_MIN_CONF", "62.0"))
+    AI_FULL_RIGHTS_MIN_CONF = float(os.getenv("AI_FULL_RIGHTS_MIN_CONF", "58.0"))
 
     # Коэффициент «реалистичности» входа: минимальный ATR в % от цены, при котором
     # рынок способен дать нужный gross-% (если ATR × mult < required_gross → не входим).
@@ -259,9 +259,9 @@ class Config:
     # TON за каждый вход (первая покупка и каждая докупка)
     DCA_STAKE_TON       = float(os.getenv("DCA_STAKE_TON", "100"))
     # Продать ВСЁ когда общая стоимость GRINCH выросла на N% относительно суммарных затрат
-    DCA_TARGET_PROFIT_PCT = float(os.getenv("DCA_TARGET_PROFIT_PCT", "20"))
+    DCA_TARGET_PROFIT_PCT = float(os.getenv("DCA_TARGET_PROFIT_PCT", "15"))
     # Докупать ещё когда цена упала N% от цены ПОСЛЕДНЕЙ покупки
-    DCA_DROP_TRIGGER_PCT  = float(os.getenv("DCA_DROP_TRIGGER_PCT", "12"))  # снижено с 25% — GRINCH корректируется на 6-15%, 25% пропускает окно
+    DCA_DROP_TRIGGER_PCT  = float(os.getenv("DCA_DROP_TRIGGER_PCT", "9"))   # снижено с 12% — входим на меньшем откате для большего числа сделок
     # После продажи: ждать падения цены на N% от пика перед следующей покупкой
     DCA_PULLBACK_WAIT_PCT = float(os.getenv("DCA_PULLBACK_WAIT_PCT", "25"))
     # Максимальное количество DCA-входов за один цикл (защита от бесконечного усреднения)
@@ -280,14 +280,18 @@ class Config:
     # Уровень 2 (+40%): продаём оставшиеся 50%, ловим дополнительный памп.
     # При отключении — стандартная продажа всего на уровне 1.
     DCA_CASCADE_ENABLED    = bool(int(os.getenv("DCA_CASCADE_ENABLED",    "1")))
-    DCA_CASCADE_LEVEL1_PCT = float(os.getenv("DCA_CASCADE_LEVEL1_PCT", "20"))  # % прибыли → продать 50%
-    DCA_CASCADE_LEVEL2_PCT = float(os.getenv("DCA_CASCADE_LEVEL2_PCT", "40"))  # % прибыли → продать остаток
+    DCA_CASCADE_LEVEL1_PCT = float(os.getenv("DCA_CASCADE_LEVEL1_PCT", "15"))  # % прибыли → продать 50% (снижено с 20% = теперь совпадает с DCA_TARGET_PROFIT_PCT)
+    DCA_CASCADE_LEVEL2_PCT = float(os.getenv("DCA_CASCADE_LEVEL2_PCT", "28"))  # % прибыли → продать остаток (снижено с 40%)
 
     # ── Умный реentri: после ТП входим быстрее если AI бычий ────────────────
     # Вместо ожидания -25% отката: при AI-уверенности ≥ порога достаточно -8%.
     DCA_SMART_REENTRY_ENABLED    = bool(int(os.getenv("DCA_SMART_REENTRY_ENABLED",    "1")))
-    DCA_SMART_REENTRY_PULLBACK_PCT = float(os.getenv("DCA_SMART_REENTRY_PULLBACK_PCT", "8"))  # откат для быстрого реentri
-    DCA_SMART_REENTRY_MIN_AI_CONF  = float(os.getenv("DCA_SMART_REENTRY_MIN_AI_CONF",  "60")) # мин. AI-уверенность (%)
+    DCA_SMART_REENTRY_PULLBACK_PCT = float(os.getenv("DCA_SMART_REENTRY_PULLBACK_PCT", "6"))   # снижено с 8% — заходим раньше
+    DCA_SMART_REENTRY_MIN_AI_CONF  = float(os.getenv("DCA_SMART_REENTRY_MIN_AI_CONF",  "55")) # снижено с 60% — больше реентри
+    # Минимальная пауза между DCA-докупками (секунды) — защита от переторговли.
+    # При низких порогах входа (drop 9%, conf 55%) без паузы бот может войти 3+ раз
+    # за один тик волатильности. 300 сек = 5 минут — GRINCH свеча 15 мин, хватает.
+    DCA_REENTRY_COOLDOWN_SEC = int(os.getenv("DCA_REENTRY_COOLDOWN_SEC", "300"))
 
     # ── Компаундирование: автоматический реинвест части прибыли ─────────────
     # После каждого прибыльного цикла ставка растёт на RATIO% от профита.
@@ -364,10 +368,10 @@ class Config:
     # ТОЛЬКО В ПЛЮС: скальп TP ≥ 2×DEX_fees + газ (~5% gross → ~3% нетто).
     # Режимы где скальп работает: RANGING, SQUEEZE, TRANSITION
     SCALPING_ENABLED        = bool(int(os.getenv("SCALPING_ENABLED",       "1")))
-    SCALP_TARGET_NET_PCT    = float(os.getenv("SCALP_TARGET_NET_PCT",      "4.0"))   # 4% нетто (быстро)
-    SCALP_TP_PCT            = float(os.getenv("SCALP_TP_PCT",              "6.0"))   # gross (4% нетто + 2% DEX)
+    SCALP_TARGET_NET_PCT    = float(os.getenv("SCALP_TARGET_NET_PCT",      "3.0"))   # снижено с 4% — быстрее фиксируем прибыль
+    SCALP_TP_PCT            = float(os.getenv("SCALP_TP_PCT",              "5.0"))   # gross (3% нетто + 2% DEX)
     SCALP_TRAIL_PCT         = float(os.getenv("SCALP_TRAIL_PCT",           "3.0"))   # trail в боковике
-    SCALP_MIN_AI_CONF       = float(os.getenv("SCALP_MIN_AI_CONF",         "55.0"))  # мин. AI уверенность
+    SCALP_MIN_AI_CONF       = float(os.getenv("SCALP_MIN_AI_CONF",         "52.0"))  # снижено с 55% — больше скальп-входов
     SCALP_MAX_ATR_PCT       = float(os.getenv("SCALP_MAX_ATR_PCT",         "5.5"))   # ATR < X% → рынок спокойный
 
     # ── BrainFusion: единый мозг (AI + TA + советник) ───────────────────
@@ -381,8 +385,8 @@ class Config:
     # Fusion бычий + прибыль была → не ждём полного отката DCA_PULLBACK_WAIT
     # Используется только если AI BUY ≥ FAST_REENTRY_MIN_CONF
     FAST_REENTRY_ENABLED        = bool(int(os.getenv("FAST_REENTRY_ENABLED",    "1")))
-    FAST_REENTRY_PULLBACK_PCT   = float(os.getenv("FAST_REENTRY_PULLBACK_PCT",  "5.0"))  # 5% откат достаточно
-    FAST_REENTRY_MIN_CONF       = float(os.getenv("FAST_REENTRY_MIN_CONF",      "60.0")) # мин AI уверенность
+    FAST_REENTRY_PULLBACK_PCT   = float(os.getenv("FAST_REENTRY_PULLBACK_PCT",  "4.0"))  # снижено с 5% — заходим на меньшем откате
+    FAST_REENTRY_MIN_CONF       = float(os.getenv("FAST_REENTRY_MIN_CONF",      "55.0")) # снижено с 60% — быстрее реентри
 
     # ── Онлайн-инъекция ордер-флоу в AI: DEX buy/sell ratio ─────────────
     # Реальный поток заявок из DexScreener/GeckoTerminal обогащает AI-фичи
