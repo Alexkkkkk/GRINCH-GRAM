@@ -547,15 +547,41 @@ class GRINCHPumpDetector:
             score = rsi_score + bb_score + vol_score + macd_score + kalman_score + vr_score + flow_score
             score = min(100.0, score)
 
-            # Паттерн
+            # ── v4.5: Anti-pump: пост-памп дистрибуция (штраф к score) ──────
+            # Если объём коллапсировал И цена ниже недавнего ATH — это дистрибуция,
+            # а не накопление перед пампом. Инвертируем сигнал детектора.
+            _anti_score = 0.0
+            if "vol_collapse" in df.columns:
+                _vc = float(df["vol_collapse"].iloc[-1])
+                if _vc < -0.55:
+                    _anti_score = -25.0   # объём упал >55% от пика — серьёзный коллапс
+                elif _vc < -0.40:
+                    _anti_score = -15.0   # объём упал >40% — умеренный коллапс
+                elif _vc < -0.25:
+                    _anti_score = -7.0    # объём упал >25% — лёгкий коллапс
+            if "ath_dist_20" in df.columns and _anti_score < 0:
+                _ad = float(df["ath_dist_20"].iloc[-1])
+                if _ad < -0.25:
+                    _anti_score -= 10.0   # ещё и далеко от ATH — усиливаем штраф
+                elif _ad < -0.15:
+                    _anti_score -= 5.0
+            if "post_pump_dump" in df.columns and float(df["post_pump_dump"].iloc[-1]) >= 1.0:
+                _anti_score -= 10.0       # флаг чёткого пост-памп паттерна
+            score = max(-40.0, score + _anti_score)
+
+            # Паттерн (расширен для распознавания дистрибуции)
             if score >= 75:
                 pattern, conf_boost = "EXPLOSIVE_SETUP", 14.0
             elif score >= 50:
                 pattern, conf_boost = "STRONG_BUILDUP",  8.0
             elif score >= 25:
                 pattern, conf_boost = "MILD_SIGNAL",     3.0
-            else:
+            elif score >= 0:
                 pattern, conf_boost = "NEUTRAL",         0.0
+            elif score >= -20:
+                pattern, conf_boost = "DISTRIBUTION",   -8.0   # дистрибуция → штраф
+            else:
+                pattern, conf_boost = "DUMP_PATTERN",  -16.0   # активный дамп → сильный штраф
 
             return {
                 "score":       round(score, 1),
@@ -1281,6 +1307,38 @@ class AIEngine:
                 penalty = -14.0   # против тренда — финальный штраф
             elif regime_name == "VOLATILE":
                 penalty = -4.0
+            elif regime_name == "POST_PUMP":
+                penalty = -16.0   # зона дистрибуции — жёсткий штраф
+
+            # ── v4.5: Post-Pump Distribution штраф по фичам свечей ───────────
+            # Независимо от режима: если видим паттерн дампа по последней свече —
+            # штрафуем уверенность. Актуально для GRINCH (micro-cap, ATH вчера).
+            _ppd_penalty = 0.0
+            try:
+                if df is not None and len(df) > 0:
+                    _last_row   = df.iloc[-1]
+                    _ath_dist   = float(_last_row.get("ath_dist_20", 0) if hasattr(_last_row, "get") else 0)
+                    _vol_col    = float(_last_row.get("vol_collapse", 0) if hasattr(_last_row, "get") else 0)
+                    _pp_flag    = float(_last_row.get("post_pump_dump", 0) if hasattr(_last_row, "get") else 0)
+                    _dump_vel   = float(_last_row.get("dump_velocity", 0) if hasattr(_last_row, "get") else 0)
+                    if _pp_flag >= 1.0:
+                        _ppd_penalty = -12.0   # чёткий пост-памп дамп
+                    elif _ath_dist < -0.20 and _vol_col < -0.35:
+                        _ppd_penalty = -7.0    # частичный паттерн дистрибуции
+                    elif _vol_col < -0.50:
+                        _ppd_penalty = -4.0    # объём коллапсировал (>50% от пика)
+                    # Доп. штраф за активный дамп (скорость падения)
+                    if _dump_vel < -8.0:
+                        _ppd_penalty -= 4.0    # цена падает быстро за 5 баров
+                    if _ppd_penalty != 0.0:
+                        log.debug(
+                            f"[AI v4.5 PPD] ath_dist={_ath_dist*100:.1f}% "
+                            f"vol_col={_vol_col*100:.1f}% dump_vel={_dump_vel:.1f}% "
+                            f"flag={_pp_flag:.0f} → ppd_penalty={_ppd_penalty:.1f}%"
+                        )
+            except Exception:
+                pass
+            penalty += _ppd_penalty
 
             total_boost = combined_pos + penalty
 
@@ -1330,6 +1388,7 @@ class AIEngine:
             "TRANSITION": BUY_THRESHOLD + 0.06,   # 0.52 — переходная фаза
             "VOLATILE":   BUY_THRESHOLD + 0.09,   # 0.55 — высокая волатильность
             "DOWNTREND":  BUY_THRESHOLD + 0.14,   # 0.60 — против тренда, редко
+            "POST_PUMP":  BUY_THRESHOLD + 0.17,   # 0.63 — дистрибуция, ОЧЕНЬ осторожно
         }
         _eff_buy_thr = float(np.clip(
             _regime_buy_thr.get(regime_name, BUY_THRESHOLD),
@@ -2110,18 +2169,25 @@ class AIEngine:
 
         # ── Режим рынка (числовой признак для AI) ─────────────────────────
         # Векторизованная кодировка режима по всем строкам DataFrame.
-        # Кодировка: UPTREND=2, SQUEEZE=1, RANGING=0, VOLATILE=-1, DOWNTREND=-2
-        # Приоритет совпадает с _detect_regime(): SQUEEZE/VOLATILE → тренд → боковик.
+        # Кодировка: UPTREND=2, SQUEEZE=1, RANGING=0, VOLATILE=-1, DOWNTREND=-2, POST_PUMP=-3
+        # Приоритет: POST_PUMP → SQUEEZE/VOLATILE → тренд → боковик.
         # Используются уже вычисленные признаки (ema, adx, bb_w, bb_squeeze).
-        _sq     = df["bb_squeeze"].astype(bool)
-        _hv     = df["bb_w"] > df["bb_w"].rolling(20, min_periods=5).mean() * 1.4
-        _t_up   = (df["ema_9"] > df["ema_21"]) & (df["ema_21"] > df["ema_50"]) & (df["adx"] > 20)
-        _t_down = (df["ema_9"] < df["ema_21"]) & (df["ema_21"] < df["ema_50"]) & (df["adx"] > 20)
-        df["regime_enc"] = np.where(_sq,   1,          # SQUEEZE первый (как в _detect_regime)
-                           np.where(_hv,  -1,          # VOLATILE второй
-                           np.where(_t_up, 2,          # затем UPTREND
-                           np.where(_t_down, -2,       # затем DOWNTREND
-                           0)))).astype(float)         # иначе RANGING/TRANSITION
+        _sq      = df["bb_squeeze"].astype(bool)
+        _hv      = df["bb_w"] > df["bb_w"].rolling(20, min_periods=5).mean() * 1.4
+        _t_up    = (df["ema_9"] > df["ema_21"]) & (df["ema_21"] > df["ema_50"]) & (df["adx"] > 20)
+        _t_down  = (df["ema_9"] < df["ema_21"]) & (df["ema_21"] < df["ema_50"]) & (df["adx"] > 20)
+        # POST_PUMP: цена ниже 20-барного хая на >18% И объём <55% от MA20
+        # vol_r определяется ниже (line ~2211) — используем предварительный расчёт
+        _hi20_r    = h.rolling(20, min_periods=5).max()
+        _vol_ma_pp = v.rolling(20, min_periods=5).mean()
+        _vol_r_pp  = v / (_vol_ma_pp + 1e-10)
+        _pp      = ((c / (_hi20_r + 1e-10) - 1.0) < -0.18) & (_vol_r_pp < 0.55)
+        df["regime_enc"] = np.where(_pp,     -3,        # POST_PUMP (дистрибуция) — первый приоритет
+                           np.where(_sq,      1,        # SQUEEZE
+                           np.where(_hv,     -1,        # VOLATILE
+                           np.where(_t_up,    2,        # UPTREND
+                           np.where(_t_down, -2,        # DOWNTREND
+                           0))))).astype(float)         # иначе RANGING/TRANSITION
 
         # ── Ichimoku (упрощённый: tenkan / kijun) ─────────────────────────
         df["tenkan"] = (h.rolling(9).max() + l.rolling(9).min()) / 2
@@ -2267,6 +2333,25 @@ class AIEngine:
         vol_ok   = (df["vol_r"] > 1.1).astype(float)
         df["pump_score"] = (rsi_zone * 0.4 + bb_sq * 0.35 + vol_ok * 0.25)
 
+        # ── Post-Pump Distribution Detection (GRINCH micro-cap специфика) ─
+        # Паттерн: цена пампанула к ATH → теперь дампит на коллапсирующем объёме.
+        # Характерно для GRINCH: ATH вчера, сейчас -35%, объём -61%.
+        # Это зона ДИСТРИБУЦИИ (умные деньги продают), а не накопления.
+        hi20   = h.rolling(20, min_periods=5).max()
+        lo20   = l.rolling(20, min_periods=5).min()
+        # Расстояние от 20-барного хая (0 = на ATH, -0.35 = на -35% ниже ATH)
+        df["ath_dist_20"] = (c - hi20) / (hi20 + 1e-10)
+        # Скорость дампа за последние 5 баров (отрицательная = падаем)
+        df["dump_velocity"] = c.pct_change(5).clip(-0.50, 0.50) * 100
+        # Volume collapse: как далеко упал объём от 20-барного пика
+        vol_peak_20 = v.rolling(20, min_periods=5).max()
+        df["vol_collapse"] = (v - vol_peak_20) / (vol_peak_20 + 1e-10)
+        # Флаг пост-памп дампа: цена упала >18% от хая И объём рухнул >40%
+        df["post_pump_dump"] = (
+            (df["ath_dist_20"] < -0.18).astype(float) *
+            (df["vol_collapse"] < -0.40).astype(float)
+        )
+
         # ── Candle Strength Score ─────────────────────────────────────
         # Комбинированная сила свечи: тело / диапазон × бычий знак
         df["candle_strength"] = df["body_r"] * np.where(c > o, 1.0, -1.0)
@@ -2325,6 +2410,11 @@ class AIEngine:
             "vol_buy_sell_ratio",  # соотношение объёмов покупок/продаж (10 баров)
             "vwap_dev_10",         # краткосрочное VWAP-отклонение (10 баров)
             "vol_zscore",          # z-score объёма относительно 50-барного MA
+            # ── v4.5 NEW: Post-Pump Distribution ─────────────────────────────
+            "ath_dist_20",         # расстояние от 20-барного хая (0=ATH, -0.35=-35%)
+            "dump_velocity",       # скорость падения за 5 баров (%)
+            "vol_collapse",        # коллапс объёма от пикового значения за 20 баров
+            "post_pump_dump",      # флаг паттерна: цена -18% от хая + объём -40%
         ]
         # Оставляем только существующие столбцы
         feature_cols = [col for col in feature_cols if col in df.columns]

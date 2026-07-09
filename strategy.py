@@ -182,6 +182,20 @@ def _get_market_regime(df):
     trending = adx > 23
     volatile = atr_pct > 3.0
 
+    # ── POST_PUMP: цена упала >18% от 20-барного хая при коллапсе объёма ─────
+    # Паттерн дистрибуции мемкоинов: после ATH умные деньги продают на падающем
+    # объёме — это зона ПРОДАЖ, а не накопления. Приоритет перед остальными режимами.
+    if len(df) >= 20 and "vol_ratio" in df.columns:
+        try:
+            hi20_val  = float(df["high"].rolling(20).max().iloc[-1])
+            price_now = float(df["close"].iloc[-1])
+            ath_dist  = (price_now - hi20_val) / (hi20_val + 1e-10)
+            vol_now   = float(last.get("vol_ratio", 1.0))
+            if ath_dist < -0.18 and vol_now < 0.55:
+                return "POST_PUMP", "#ff6b35"
+        except Exception:
+            pass
+
     # Пробой: BB расширяется + объём
     if breakout and vol_ratio > 2.0:
         return "BREAKOUT", "#00d4ff"
@@ -684,7 +698,7 @@ def _analyze_impl(ohlcv):
 
     # ── AI Opportunity Score (0-100) ─────────────────────────────────
     score_entry  = min(eq_score / 10 * 38, 38)           # 0-38: качество входа
-    _rbmap = {"UPTREND": 22, "BREAKOUT": 22, "VOLATILE": 9, "RANGING": 4, "DOWNTREND": 0}
+    _rbmap = {"UPTREND": 22, "BREAKOUT": 22, "VOLATILE": 9, "RANGING": 4, "DOWNTREND": 0, "POST_PUMP": 0}
     score_regime = _rbmap.get(regime_name, 4)             # 0-22: режим
     score_vol    = min(float(last["vol_ratio"]) / 3 * 18, 18)  # 0-18: объём
     score_adx    = min(float(last["adx"]) / 50 * 12, 12)      # 0-12: тренд
