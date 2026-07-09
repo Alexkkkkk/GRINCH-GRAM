@@ -1673,6 +1673,11 @@ def api_config_set():
     if (v := num("dca_adaptive_fast_move_pct", 1, 30)) is not None: Config.DCA_ADAPTIVE_FAST_MOVE_PCT = v
     if (v := num("dca_adaptive_fast_drop_pct", 1, 30)) is not None: Config.DCA_ADAPTIVE_FAST_DROP_PCT = v
 
+    # Fast reentry / Scalp / DCA cooldown
+    if (v := num("fast_reentry_pullback_pct",  0.5, 20))  is not None: Config.FAST_REENTRY_PULLBACK_PCT  = v
+    if (v := num("scalp_target_net_pct",       0.5, 50))  is not None: Config.SCALP_TARGET_NET_PCT        = v
+    if (v := num("dca_reentry_cooldown_sec",   0,   3600)) is not None: Config.DCA_REENTRY_COOLDOWN_SEC   = int(v)
+
     # Детектор крупных продаж
     if "large_sell_dca_enabled" in data:
         Config.LARGE_SELL_DCA_ENABLED = bool(data["large_sell_dca_enabled"])
@@ -1749,6 +1754,10 @@ def api_config_set():
             "PROFIT_PROTECT_TON":      Config.PROFIT_PROTECT_TON,
             "PROFIT_PROTECT_DROP_PCT": Config.PROFIT_PROTECT_DROP_PCT,
             "PROFIT_PROTECT_AI_SELL":  Config.PROFIT_PROTECT_AI_SELL,
+            # Fast reentry / Scalp / DCA cooldown
+            "FAST_REENTRY_PULLBACK_PCT":  Config.FAST_REENTRY_PULLBACK_PCT,
+            "SCALP_TARGET_NET_PCT":        Config.SCALP_TARGET_NET_PCT,
+            "DCA_REENTRY_COOLDOWN_SEC":    Config.DCA_REENTRY_COOLDOWN_SEC,
         })
     except Exception as e:  # noqa: BLE001
         return jsonify({"ok": True, "message": f"Настройки применены, но не сохранены на диск: {e}"})
