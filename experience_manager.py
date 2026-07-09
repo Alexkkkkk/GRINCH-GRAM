@@ -228,6 +228,28 @@ class ExperienceManager:
             # при каждом рестарте бота.
             open_trades       = [t for t in all_open if t.get("trade_type") != "short"]
             open_short_trades = [t for t in all_open if t.get("trade_type") == "short"]
+            # ── Само-исцеление: исправляем сохранённый TP если он > 10× цены входа ──
+            # Это происходит когда позиция была открыта с очень маленькой ставкой
+            # и required_gross_pct_with_gas вернул тысячи процентов (газ > ставки).
+            # В режиме ONLY_PROFIT_EXIT поле take_profit не влияет на логику выхода,
+            # но неверное значение путает лог и dashboard.
+            try:
+                from config import Config as _Cfg
+                _healed = 0
+                for _t in open_trades + open_short_trades:
+                    _ep = float(_t.get("entry_price") or 0)
+                    _tp = float(_t.get("take_profit") or 0)
+                    _st = float(_t.get("stake_ton") or 0)
+                    if _ep > 0 and _tp / _ep > 10:
+                        _mg = _Cfg.required_gross_pct_with_gas(_st if _st > 0 else None)
+                        _tp_pct = max(_Cfg.TAKE_PROFIT_PCT, _mg)
+                        _t["take_profit"] = round(_ep * (1 + _tp_pct / 100), 8)
+                        _healed += 1
+                if _healed:
+                    logger.info(f"[Experience] 🔧 Исправлено {_healed} некорректных TP при загрузке")
+                    self._save_locked()
+            except Exception:
+                pass
             self._apply_control_to_config()
             ctrl = self.data["control"]
         if open_trades:
