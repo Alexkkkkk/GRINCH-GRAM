@@ -2019,6 +2019,7 @@ let _walletData    = null;       // последний ответ /api/wallet/fu
 let _walletHistory = [];         // последняя загруженная история
 let _eqTab         = 'equity';   // активная вкладка графика
 let _eqChart       = null;       // Chart.js instance
+let _eqChartTab    = null;       // текущая вкладка, для которой создан _eqChart
 let _walletTimer   = null;       // таймер автообновления
 
 // ── форматирование ──────────────────────────────────────────────────────────
@@ -2214,9 +2215,6 @@ function drawEqChart() {
   const vals = hist.map(h => h[cfg.field] != null ? Number(h[cfg.field]) : null);
   const labels = hist.map(h => fmtTs(h.ts));
 
-  // Destroy old chart
-  if (_eqChart) { try { _eqChart.destroy(); } catch(e){} _eqChart=null; }
-
   const ctx = canvas.getContext('2d');
   const hasNonNull = vals.some(v=>v!=null);
   if (!hasNonNull) { if (empty) empty.style.display = 'flex'; return; }
@@ -2225,6 +2223,21 @@ function drawEqChart() {
   const last = vals.filter(v=>v!=null).slice(-1)[0];
   let lineColor = cfg.color;
   if (_eqTab==='pnl' && last!=null && last<0) lineColor='#ff453a';
+
+  // Обновляем существующий график «на месте» (без destroy/recreate), чтобы
+  // не было мигания/рывка при каждом автообновлении (каждые 30с). Полное
+  // пересоздание нужно только при смене вкладки (_eqChartTab) или canvas.
+  if (_eqChart && _eqChartTab === _eqTab) {
+    _eqChart.data.labels = labels;
+    _eqChart.data.datasets[0].data = vals;
+    _eqChart.data.datasets[0].borderColor = lineColor;
+    _eqChart.data.datasets[0].backgroundColor = lineColor+'1a';
+    _eqChart.data.datasets[0].pointRadius = hist.length > 60 ? 0 : 2;
+    _eqChart.update();
+    return;
+  }
+  if (_eqChart) { try { _eqChart.destroy(); } catch(e){} _eqChart=null; }
+  _eqChartTab = _eqTab;
 
   _eqChart = new Chart(ctx, {
     type: 'line',
