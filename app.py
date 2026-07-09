@@ -808,6 +808,46 @@ def api_admin_self_update():
     })
 
 
+@app.route("/api/admin/hard_restart", methods=["POST"])
+def api_admin_hard_restart():
+    """Настоящий перезапуск процесса (не graceful SIGHUP воркеров, которое
+    при --preload не подхватывает новый код/шаблоны с диска). Отправляет
+    SIGTERM мастеру gunicorn: супервизор/Docker с restart-политикой поднимет
+    процесс заново, который импортирует все .py и шаблоны с чистого листа.
+    Требует авторизации (тот же before_request, что и остальной /api/admin).
+    """
+    import signal as _sig
+    try:
+        import psutil as _ps
+        me = _ps.Process(os.getpid())
+        master = me.parent()
+        target_pid = None
+        if master and "gunicorn" in (master.name() or "").lower():
+            target_pid = master.pid
+        else:
+            for proc in _ps.process_iter(["pid", "name", "cmdline"]):
+                cmd = " ".join(proc.info.get("cmdline") or [])
+                if "gunicorn" in cmd and ("main:app" in cmd or "app:app" in cmd):
+                    target_pid = proc.pid
+                    break
+        if not target_pid:
+            return jsonify({"ok": False, "message": "gunicorn master не найден"}), 500
+    except Exception as e:  # noqa: BLE001
+        return jsonify({"ok": False, "message": f"ошибка поиска процесса: {e}"}), 500
+
+    def _delayed_term():
+        import time as _t
+        _t.sleep(1.0)
+        try:
+            os.kill(target_pid, _sig.SIGTERM)
+        except Exception:
+            pass
+
+    threading.Thread(target=_delayed_term, daemon=True).start()
+    return jsonify({"ok": True, "pid": target_pid,
+                    "note": "SIGTERM отправлен мастеру через 1с. Если у процесса есть restart-политика (Docker/supervisor), он поднимется заново с полностью свежим кодом."})
+
+
 @app.route("/api/admin/fix_open_trades", methods=["POST"])
 def api_admin_fix_open_trades():
     """Исправляет некорректные поля открытых позиций в памяти и БД
