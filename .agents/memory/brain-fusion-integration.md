@@ -1,46 +1,62 @@
 ---
 name: BrainFusion integration
-description: Central consensus brain unifying AI+TA+LLM; key pitfalls when integrating into trader.py and ai_advisor.py
+description: Ключевые архитектурные решения при интеграции brain_fusion.py в торговый бот — потокобезопасность, источник истины для параметров, жизненный цикл флагов.
 ---
 
-## Rule
-`brain_fusion.py` is the global consensus brain singleton. Integrations in trader.py and ai_advisor.py must follow these patterns.
+# BrainFusion — дурабельные решения
 
-## Key pitfalls
+## Параметры скальп/памп-режима — НЕ мутируем Config глобально
 
-### 1. Use RLock, not Lock
-`get_state()` acquires the lock then calls `get_wallet_analysis()`, which also acquires the same lock.
-This deadlocks with a plain `threading.Lock()`.
-**Fix:** `self._lock = threading.RLock()` in BrainFusion.__init__.
+**Правило:** Скальп и памп переопределяют TP/trail/size через `mode_params` dict,
+передаваемый в `_open_trade(mode_params=None)` и `_targets(tp_override=None)`.
+Config не мутируется — это thread-safe и устраняет race condition с советником.
 
-### 2. Wrap the import in a try/except stub
-If brain_fusion fails to import (syntax error, missing dep), the entire trader.py and ai_advisor.py fail to start.
-**Fix:** Wrap `import brain_fusion as _bf` in try/except, provide a no-op stub class `_BFStub` with all methods returning safe defaults.
+**Why:** Config — разделяемое mutable состояние между потоками (торговый + API + советник).
+Временная мутация `Config.TAKE_PROFIT_PCT = SCALP_TP_PCT` может быть прочитана
+другим потоком в неправильный момент.
 
-### 3. Coerce ai_conf input in should_skip_confirmation
-Caller passes `conf` from ai_result which can be None, string, or non-numeric.
-**Fix:** `ai_conf = float(ai_conf or 0.0)` at the top of should_skip_confirmation().
+**How to apply:**
+- `mode_params = {"tp_pct": X, "trail_pct": Y, "size_mult": Z}` — собирается в `_tick()`
+- Передаётся в `_open_trade(mode_params=mode_params)` и `pending_buy["mode_params"]`
+- `_targets(tp_override=mode_params.get("tp_pct"))` — floor всегда min_gross_tp
+- `trade["trail_pct"] = mode_params.get("trail_pct", Config.TRAILING_STOP_PCT)` — в трейд-записи
+- Мониторинг читает `trade.get("trail_pct", Config.TRAILING_STOP_PCT)` — не из Config
 
-### 4. Always restore Config params in BOTH BUY paths
-When scalp mode temporarily modifies Config.TAKE_PROFIT_PCT/TRAILING_STOP_PCT/TARGET_NET_PCT,
-and pump mode modifies Config.AI_SIZE_MULT — restore them in BOTH:
-- The `if use_smart:` (pending-buy) path — restore immediately since _open_trade is deferred
-- The `else:` (immediate-open) path — restore after `_open_trade()`
+## brain_fusion — единственный источник истины для скальп-параметров
 
-Save all originals with `_save_tp`, `_save_trail`, `_save_net`, `_save_mult` flags at the start of the BUY block.
+**Правило:** `_compute_fusion()` читает все пороги из Config:
+`SCALP_MIN_AI_CONF, SCALP_MAX_ATR_PCT, SCALP_TP_PCT, SCALP_TRAIL_PCT, FUSION_PUMP_BOOST_MAX`.
+ATR-адаптивные значения: `scalp_tp_pct = max(Config.SCALP_TP_PCT, atr * 2.2)`.
+trader.py использует `_fusion_sig.scalp_tp_pct` — brain_fusion уже гарантирует floor.
 
-## How to apply
-Any future addition that temporarily modifies Config params for a single trade must follow the save/restore pattern with separate restoration in pending-buy and immediate-open paths.
+**Why:** Избегаем двойной логики — brain_fusion вычисляет, trader применяет.
 
-## Module API summary
-- `_bf.update_ai(ai_dict)` — call after ai_engine.analyze() each tick
-- `_bf.update_ta(result_dict)` — call after strategy.analyze() each tick  
-- `_bf.update_advisor(verdict, confidence, regime, advice)` — call after LLM response
-- `_bf.update_wallet(ton, grinch, price_ton, pnl_pct)` — call each tick
-- `_bf.get_fusion_signal()` → FusionSignal dataclass (is_scalp_window, is_pump_window, position_boost, scalp_tp_pct, scalp_trail_pct)
-- `_bf.should_skip_confirmation(conf)` → bool
-- `_bf.is_bullish_consensus(min_conf)` → bool
-- `_bf.on_trade_closed(pnl_ton, was_scalp)` — feedback after trade close
-- `_bf.get_state()` → dict for dashboard/LLM snapshot
+## RLock вместо Lock в BrainFusion
 
-**Why:** BrainFusion integrates three async data sources (AI tick, TA tick, LLM 10min interval) — the lock nesting and import resilience patterns are critical for stability.
+**Правило:** BrainFusion использует `threading.RLock()`, не `Lock()`.
+
+**Why:** `get_state()` вызывает `get_wallet_analysis()`, оба под локом → дедлок.
+
+## Fallback-заглушка при импорте brain_fusion
+
+**Правило:** `import brain_fusion as _bf` в try/except с классом-заглушкой `_BFStub`.
+Все методы заглушки возвращают нейтральные значения (False, None, 0).
+
+## _last_entry_was_scalp — жизненный цикл
+
+**Правило:** Флаг устанавливается в `True` ТОЛЬКО после `opened = self._open_trade(...)` 
+когда `opened` is True и `_scalp_mode` is True.
+Сбрасывается в `False` во ВСЕХ путях закрытия:
+- `_dca_sell_all` → `on_trade_closed(was_scalp=self._last_entry_was_scalp)`; затем `= False`
+- `_close_trade` → то же
+- `pending_buy` restoration paths → `_last_entry_was_scalp = bool(_pb_mode.get("trail_pct"))`
+
+## Инъекция ордер-флоу
+
+**Правило:** `Config.ORDER_FLOW_INJECT_ENABLED` проверяется перед каждой инъекцией.
+
+## coerce ai_conf в should_skip_confirmation
+
+**Правило:** `ai_conf = float(ai_conf or 0.0)` — защита от None/строк.
+`should_skip_confirmation()` вычисляет ПОЛНЫЙ fusion-консенсус (AI+TA+LLM),
+никогда не short-circuits по AI-alone.
