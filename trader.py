@@ -641,12 +641,12 @@ class Trader:
             "INFO"
         )
         import config as _cfg
-        orig = _cfg.Config.TRADE_AMOUNT_TON
-        _cfg.Config.TRADE_AMOUNT_TON = float(Config.LARGE_SELL_DCA_TON)
+        orig = _cfg.Config.TRADE_AMOUNT
+        _cfg.Config.TRADE_AMOUNT = float(Config.LARGE_SELL_DCA_TON)
         ai = self.last_ai or {}
         result = self._get_analysis_snapshot()
         opened = self._open_trade("buy", price_usd, result or {}, ai)
-        _cfg.Config.TRADE_AMOUNT_TON = orig
+        _cfg.Config.TRADE_AMOUNT = orig
         if opened:
             self._last_large_sell_buy_ts = now
             self._emit_signal("BUY", price_usd, ai)
@@ -668,13 +668,13 @@ class Trader:
             # Не блокируем — если уже есть лонги, новая покупка объединится с ними
             if amount_ton:
                 import config as _cfg
-                orig = _cfg.Config.TRADE_AMOUNT_TON
-                _cfg.Config.TRADE_AMOUNT_TON = float(amount_ton)
+                orig = _cfg.Config.TRADE_AMOUNT
+                _cfg.Config.TRADE_AMOUNT = float(amount_ton)
             ai = self.last_ai or {}
             result = self._get_analysis_snapshot()
             opened = self._open_trade("buy", price, result or {}, ai)
             if amount_ton:
-                _cfg.Config.TRADE_AMOUNT_TON = orig
+                _cfg.Config.TRADE_AMOUNT = orig
             if opened:
                 self._emit_signal("BUY", price, ai)
                 self.log(f"🖐️ Ручная покупка: ${price:.8f} | {amount_ton or 'auto'} TON", "INFO")

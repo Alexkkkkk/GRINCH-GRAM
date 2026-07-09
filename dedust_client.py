@@ -887,10 +887,19 @@ class DedustClient:
         # могли бы дать ложный результат. Лок гарантирует один своп за раз.
         with self._lock:
             try:
-                return _run(self._buy_async(ton_amount))
+                result = _run(self._buy_async(ton_amount))
             except Exception as e:
                 log.error(f"[DeDust] buy ошибка: {e}")
                 return {"ok": False, "error": str(e)}
+        if result.get("ok"):
+            # Баланс изменился on-chain — форсируем обновление общего кеша,
+            # иначе последующая сделка может сайзиться по устаревшим данным
+            # (до 150с TTL).
+            try:
+                get_shared_balance(force=True)
+            except Exception:
+                pass
+        return result
 
     # ─────────────────────────── swap: sell ────────────────────────────────
 
@@ -997,7 +1006,7 @@ class DedustClient:
             # ── Проверка реального исполнения on-chain ───────────────────────
             # Если своп отскочит, GRINCH вернётся на кошелёк и баланс НЕ
             # уменьшится. Ждём фактического списания (хотя бы половины объёма).
-            min_delta = int(grinch_amount * 0.5 * (10 ** 9))
+            min_delta = int(amount_nano * 0.5)
             confirmed = await self._wait_for_settlement(
                 provider, wallet.address, direction="decrease",
                 baseline_nano=baseline_nano, min_delta_nano=min_delta,
@@ -1036,10 +1045,16 @@ class DedustClient:
         # параллельные операции исказят проверку GRINCH-баланса.
         with self._lock:
             try:
-                return _run(self._sell_async(grinch_amount))
+                result = _run(self._sell_async(grinch_amount))
             except Exception as e:
                 log.error(f"[DeDust] sell ошибка: {e}")
                 return {"ok": False, "error": str(e)}
+        if result.get("ok"):
+            try:
+                get_shared_balance(force=True)
+            except Exception:
+                pass
+        return result
 
     # ─────────────────────────── transfer TON ──────────────────────────────
 
