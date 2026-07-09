@@ -733,6 +733,106 @@ def health():
     }), 200
 
 
+@app.route("/api/admin/self_update", methods=["POST"])
+def api_admin_self_update():
+    """Само-обновление: скачивает актуальные .py-файлы с GitHub и делает
+    graceful-reload gunicorn (SIGHUP мастеру). Требует авторизации.
+    Тело запроса (JSON, необязательно):
+      {"branch": "main"}  — ветка GitHub (по умолч. main)
+    """
+    import signal as _sig
+    import urllib.request as _ur
+
+    GITHUB_RAW = "https://raw.githubusercontent.com/Alexkkkkk/GRINCH-GRAM"
+    UPDATE_FILES = [
+        "ai_engine.py", "strategy.py", "experience_manager.py",
+        "trader.py", "app.py", "config.py", "alerts.py",
+        "analytics_buffer.py", "brain_fusion.py", "dedust_client.py",
+        "deposit_monitor.py", "liquidity_guard.py", "price_feed.py",
+        "settings_store.py", "user_trader.py", "wallet_manager.py",
+        "wallet_tracker.py", "db_store.py", "http_client.py",
+        "coin_info.py", "exchange.py",
+    ]
+
+    branch = (request.json or {}).get("branch", "main") if request.is_json else "main"
+    updated, skipped, errors = [], [], []
+
+    base_dir = os.path.dirname(os.path.abspath(__file__))
+
+    for fname in UPDATE_FILES:
+        url = f"{GITHUB_RAW}/{branch}/{fname}"
+        dest = os.path.join(base_dir, fname)
+        try:
+            with _ur.urlopen(url, timeout=10) as resp:
+                if resp.status != 200:
+                    skipped.append(fname)
+                    continue
+                content = resp.read()
+            with open(dest, "wb") as fh:
+                fh.write(content)
+            updated.append(fname)
+        except Exception as e:
+            errors.append(f"{fname}: {e}")
+
+    # Graceful reload gunicorn — SIGHUP мастеру перезапускает воркеры без downtime
+    reload_ok = False
+    try:
+        import psutil as _ps
+        me = _ps.Process(os.getpid())
+        # Ищем мастер-процесс gunicorn (родитель текущего воркера)
+        master = me.parent()
+        if master and "gunicorn" in (master.name() or "").lower():
+            os.kill(master.pid, _sig.SIGHUP)
+            reload_ok = True
+        else:
+            # Возможно, мы и есть единственный процесс (dev-режим)
+            for proc in _ps.process_iter(["pid", "name", "cmdline"]):
+                cmd = " ".join(proc.info.get("cmdline") or [])
+                if "gunicorn" in cmd and "main:app" in cmd:
+                    os.kill(proc.pid, _sig.SIGHUP)
+                    reload_ok = True
+                    break
+    except Exception as e:
+        errors.append(f"reload: {e}")
+
+    return jsonify({
+        "ok": True,
+        "branch": branch,
+        "updated": updated,
+        "skipped": skipped,
+        "errors": errors,
+        "reload": reload_ok,
+        "note": "Воркеры перезапустятся через ~5с. Страница обновится автоматически." if reload_ok
+                else "Файлы обновлены. Перезапустите контейнер вручную для применения.",
+    })
+
+
+@app.route("/api/admin/fix_open_trades", methods=["POST"])
+def api_admin_fix_open_trades():
+    """Исправляет некорректные поля открытых позиций в памяти и БД
+    (например, TP = 100× цены входа из-за старого бага с маленькой ставкой).
+    """
+    from config import Config as _Cfg
+    fixed = []
+    for t in (trader.open_trades or []):
+        ep = float(t.get("entry_price") or 0)
+        tp = float(t.get("take_profit") or 0)
+        st = float(t.get("stake_ton") or 0)
+        if ep > 0 and tp / ep > 10:
+            mg = _Cfg.required_gross_pct_with_gas(st if st > 0 else None)
+            tp_pct = max(_Cfg.TAKE_PROFIT_PCT, mg)
+            new_tp = round(ep * (1 + tp_pct / 100), 8)
+            t["take_profit"] = new_tp
+            fixed.append({"id": str(t.get("id", ""))[:12],
+                           "old_tp": tp, "new_tp": new_tp})
+    if fixed:
+        try:
+            trader.exp.save_open_trades(trader._combined_open_trades())
+        except Exception:
+            pass
+    return jsonify({"ok": True, "fixed": fixed, "count": len(fixed)})
+
+
 @app.route("/api/memory")
 def api_memory():
     """

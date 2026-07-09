@@ -46,3 +46,4 @@ python-telegram-bot==21.1.1
 openai
 email-validator
 apscheduler==3.11.3
+psutil
