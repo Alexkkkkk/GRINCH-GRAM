@@ -1384,11 +1384,11 @@ class AIEngine:
             "UPTREND":    BUY_THRESHOLD - 0.04,   # 0.42 — тренд в нашу сторону
             "BREAKOUT":   BUY_THRESHOLD - 0.03,   # 0.43 — выход из сжатия
             "SQUEEZE":    BUY_THRESHOLD + 0.04,   # 0.50 — ещё не определился
-            "RANGING":    BUY_THRESHOLD + 0.07,   # 0.53 — боковик, осторожно
-            "TRANSITION": BUY_THRESHOLD + 0.06,   # 0.52 — переходная фаза
-            "VOLATILE":   BUY_THRESHOLD + 0.09,   # 0.55 — высокая волатильность
-            "DOWNTREND":  BUY_THRESHOLD + 0.14,   # 0.60 — против тренда, редко
-            "POST_PUMP":  BUY_THRESHOLD + 0.17,   # 0.63 — дистрибуция, ОЧЕНЬ осторожно
+            "RANGING":    BUY_THRESHOLD + 0.05,   # 0.51 — боковик, осторожно
+            "TRANSITION": BUY_THRESHOLD + 0.04,   # 0.50 — переходная фаза
+            "VOLATILE":   BUY_THRESHOLD + 0.06,   # 0.52 — высокая волатильность
+            "DOWNTREND":  BUY_THRESHOLD + 0.10,   # 0.56 — против тренда, агрессивно
+            "POST_PUMP":  BUY_THRESHOLD + 0.12,   # 0.58 — дистрибуция, осторожно
         }
         _eff_buy_thr = float(np.clip(
             _regime_buy_thr.get(regime_name, BUY_THRESHOLD),

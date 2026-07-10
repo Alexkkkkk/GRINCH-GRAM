@@ -263,7 +263,7 @@ class Config:
     # Докупать ещё когда цена упала N% от цены ПОСЛЕДНЕЙ покупки
     DCA_DROP_TRIGGER_PCT  = float(os.getenv("DCA_DROP_TRIGGER_PCT", "3"))   # макс. агрессия: докупаем на ещё меньшем откате
     # После продажи: ждать падения цены на N% от пика перед следующей покупкой
-    DCA_PULLBACK_WAIT_PCT = float(os.getenv("DCA_PULLBACK_WAIT_PCT", "7"))  # макс. агрессия: реентри быстрее
+    DCA_PULLBACK_WAIT_PCT = float(os.getenv("DCA_PULLBACK_WAIT_PCT", "4"))  # макс. агрессия: реентри быстрее
     # Максимальное количество DCA-входов за один цикл (защита от бесконечного усреднения)
     DCA_MAX_ENTRIES     = int(os.getenv("DCA_MAX_ENTRIES", "10"))
 
@@ -291,7 +291,7 @@ class Config:
     # Минимальная пауза между DCA-докупками (секунды) — защита от переторговли.
     # При низких порогах входа (drop 9%, conf 55%) без паузы бот может войти 3+ раз
     # за один тик волатильности. 300 сек = 5 минут — GRINCH свеча 15 мин, хватает.
-    DCA_REENTRY_COOLDOWN_SEC = int(os.getenv("DCA_REENTRY_COOLDOWN_SEC", "60"))  # супер агрессия: чаще входы
+    DCA_REENTRY_COOLDOWN_SEC = int(os.getenv("DCA_REENTRY_COOLDOWN_SEC", "30"))  # супер агрессия: чаще входы
 
     # ── Компаундирование: автоматический реинвест части прибыли ─────────────
     # После каждого прибыльного цикла ставка растёт на RATIO% от профита.
@@ -337,12 +337,12 @@ class Config:
     # ── Кулдаун после убыточного закрытия ────────────────────────────────────
     # После SL-выхода бот выжидает N секунд прежде чем входить снова.
     # Защищает от повторного входа в нисходящий тренд сразу после выбивания стопа.
-    LOSS_COOLDOWN_SEC = int(os.getenv("LOSS_COOLDOWN_SEC", "600"))   # 10 минут пауза после убытка
+    LOSS_COOLDOWN_SEC = int(os.getenv("LOSS_COOLDOWN_SEC", "120"))   # 2 минуты пауза после убытка (агрессия)
 
     # ── DCA AI-guard: не докупать в "падающий нож" ───────────────────────────
     # Если AI уверен в продолжении падения (≥ порога) — блокируем DCA-докупку.
     # Обычная DCA логика включается вновь как только AI сигнал меняется.
-    DCA_AI_SELL_BLOCK_CONF = float(os.getenv("DCA_AI_SELL_BLOCK_CONF", "75.0"))  # SELL ≥ N% → блок докупки
+    DCA_AI_SELL_BLOCK_CONF = float(os.getenv("DCA_AI_SELL_BLOCK_CONF", "85.0"))  # SELL ≥ N% → блок докупки (агрессия)
 
     # ── Confluence фильтр входа: RSI + объём ─────────────────────────────────
     # BUY только если RSI не перегрет И объём подтверждает движение.
@@ -399,7 +399,7 @@ class Config:
     # ── BrainFusion: единый мозг (AI + TA + советник) ───────────────────
     # Когда все три источника согласны с ≥78% → входим без ожидания тика
     FUSION_ENABLED              = bool(int(os.getenv("FUSION_ENABLED",          "1")))
-    FUSION_SKIP_CONFIRM_CONF    = float(os.getenv("FUSION_SKIP_CONFIRM_CONF",   "78.0"))
+    FUSION_SKIP_CONFIRM_CONF    = float(os.getenv("FUSION_SKIP_CONFIRM_CONF",   "68.0"))
     # Мультипликатор позиции при памп-сигнале от fusion (ограничен 2×)
     FUSION_PUMP_BOOST_MAX       = float(os.getenv("FUSION_PUMP_BOOST_MAX",      "1.8"))
 
