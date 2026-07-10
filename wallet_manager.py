@@ -108,6 +108,8 @@ class WalletManager:
         pnl_usd         = None
         tracked_amount  = None   # сколько GRINCH реально относится к открытым trader-позициям
         tracked_entries = None
+        tracked_stake   = None   # полная стоимость входа (total_stake) — единая база для cost
+                                  # в _poll_body() и get_full_status(), независимо от tracked_amount
 
         trader = self._trader
         if trader is not None:
@@ -146,10 +148,11 @@ class WalletManager:
 
                             tracked_amount  = min(total_amount, grinch_bal)
                             tracked_entries = n_entries
+                            tracked_stake   = total_stake
                             tracked_value_ton = tracked_amount * grinch_ton
 
                             proceeds = tracked_value_ton * (1.0 - fee) - sell_gas
-                            cost     = total_stake + buy_gas * n_entries
+                            cost     = tracked_stake + buy_gas * n_entries
                             pnl_ton  = round(proceeds - cost, 6)
                             pnl_pct  = round(pnl_ton / cost * 100, 2) if cost > 0 else 0.0
                             pnl_usd  = round(pnl_ton * ton_usd, 4) if ton_usd > 0 else None
@@ -176,6 +179,7 @@ class WalletManager:
             "pnl_usd":          pnl_usd,
             "tracked_amount":   round(tracked_amount, 6) if tracked_amount else None,
             "tracked_entries":  tracked_entries,
+            "tracked_stake":    round(tracked_stake, 6) if tracked_stake else None,
         }
 
         with self._lock:
@@ -224,9 +228,12 @@ class WalletManager:
         in_position = grinch_bal > 0
         # Только реально отслеживаемое trader'ом количество (см. _poll_body) —
         # избегаем расчёта потенциала от всего баланса кошелька, если часть GRINCH
-        # не относится к текущей открытой DCA-позиции.
-        tracked_amount  = snap.get("tracked_amount") or grinch_bal
+        # не относится к текущей открытой DCA-позиции. Никакого fallback на grinch_bal:
+        # если снимок ещё не содержит tracked_amount (нет открытой позиции / старый снимок),
+        # потенциал просто не считаем, а не считаем его от чужого объёма токенов.
+        tracked_amount  = snap.get("tracked_amount")
         tracked_entries = snap.get("tracked_entries") or 1
+        tracked_stake   = snap.get("tracked_stake")
 
         # Ценовой диапазон за историю
         prices_ton = [h.get("grinch_price_ton") for h in history if h.get("grinch_price_ton")]
@@ -242,16 +249,17 @@ class WalletManager:
         # Используем те же параметры стоимости, что и в _poll_body() для консистентности:
         # cost = total_stake + buy_gas * n_entries  (из снимка: grinch_bal*entry_ton ≈ total_stake)
         potential  = {}
-        if entry_ton and tracked_amount > 0 and in_position:
+        if entry_ton and tracked_amount and tracked_amount > 0 and tracked_stake and in_position:
             try:
                 from config import Config
                 fee      = Config.FEE_PCT / 100.0
                 sell_gas = Config.SELL_GAS_TON
                 buy_gas  = getattr(Config, "BUY_GAS_TON", 0.25)
-                # Синхронизируем с _poll_body(): cost = total_stake + buy_gas * n_entries,
-                # считаем только по отслеживаемому объёму позиции (tracked_amount),
-                # а не по всему балансу кошелька.
-                cost  = tracked_amount * entry_ton + buy_gas * tracked_entries
+                # Единая база стоимости с _poll_body(): cost = tracked_stake + buy_gas * n_entries.
+                # tracked_stake — это полная сумма вложений trader'а (total_stake), а не
+                # пропорция от tracked_amount*entry_ton — иначе cost-модель разойдётся между
+                # live P&L (_poll_body) и проекцией потенциала здесь при tracked_amount < total_amount.
+                cost  = tracked_stake + buy_gas * tracked_entries
                 for pct in (5, 10, 15, 20, 30):
                     tgt_ton = entry_ton * (1 + pct / 100)
                     proceeds = tracked_amount * tgt_ton * (1 - fee) - sell_gas
