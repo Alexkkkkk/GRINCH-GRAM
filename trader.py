@@ -188,6 +188,35 @@ class Trader:
         except Exception as _dca_restore_err:
             self.log(f"⚠️ DCA restore error: {_dca_restore_err}", "WARN")
 
+        # ── Сверка с реальным балансом кошелька ────────────────────────
+        # Сохранённая в БД/памяти позиция может отстать от реальности
+        # (устаревшая запись, гонка при рестарте). Если расхождение с
+        # реальным балансом GRINCH на кошельке больше 1% — считаем БД
+        # устаревшей и подгоняем amount открытой позиции под факт,
+        # чтобы дальнейшая торговля и дашборд не работали по неверным цифрам.
+        try:
+            real_bal = self.exchange.get_balance()
+            real_grinch = float(real_bal.get("GRINCH", 0) or 0)
+            book_grinch = sum(float(t.get("amount") or 0) for t in self.open_trades)
+            if real_grinch > 0 and book_grinch > 0:
+                diff_pct = abs(real_grinch - book_grinch) / real_grinch * 100
+                if diff_pct > 1.0:
+                    scale = real_grinch / book_grinch
+                    for t in self.open_trades:
+                        t["amount"] = round((t.get("amount") or 0) * scale, 6)
+                    self.log(
+                        f"🔧 Сверка баланса: БД показывала {book_grinch:.2f} GRINCH, "
+                        f"на кошельке {real_grinch:.2f} (расхождение {diff_pct:.1f}%) — "
+                        f"позиция скорректирована под реальный баланс",
+                        "WARN",
+                    )
+                    try:
+                        self.exp.save_open_trades(self._combined_open_trades())
+                    except Exception:
+                        pass
+        except Exception as _bal_check_err:
+            self.log(f"⚠️ Сверка баланса при старте не удалась: {_bal_check_err}", "WARN")
+
     def log(self, msg, level="INFO"):
         entry = {"time": datetime.utcnow().strftime("%H:%M:%S"), "level": level, "msg": msg}
         self.logs.append(entry)
@@ -1256,6 +1285,10 @@ class Trader:
         self.dca_total_stake   = sum(t.get("stake_ton", 0) for t in self.open_trades)
         self.dca_cascade_half_sold = True
         self.stats["total_pnl"] = round(self.stats["total_pnl"] + partial_pnl, 6)
+        # Каскадная частичная продажа закрывает часть позиции как отдельную
+        # сделку статистически — считаем total_trades вместе с winning_trades,
+        # иначе winning_trades может превысить total_trades (некорректный winrate).
+        self.stats["total_trades"] += 1
         if partial_pnl > 0:
             self.stats["winning_trades"] += 1
 
