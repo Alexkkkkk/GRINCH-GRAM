@@ -1055,16 +1055,27 @@ def wallets_save(wallets: dict, events: list, seen: list, last_poll: float):
     try:
         with _conn() as conn:
             with conn.cursor() as cur:
-                for addr, data in wallets.items():
-                    cur.execute("""
+                # Снимаем глобальный statement_timeout=7s для этой функции —
+                # 390 кошельков + большой JSON meta могут занять больше 7 сек на pghost.ru
+                cur.execute("SET LOCAL statement_timeout = 30000")
+
+                # Batch upsert всех кошельков одним execute_values
+                if wallets:
+                    psycopg2.extras.execute_values(
+                        cur,
+                        """
                         INSERT INTO bot_wallets (address, data, updated_at)
-                        VALUES (%s, %s, NOW())
+                        VALUES %s
                         ON CONFLICT (address) DO UPDATE
                           SET data = EXCLUDED.data, updated_at = NOW()
-                    """, (addr, _jdumps(data, ensure_ascii=False)))
+                        """,
+                        [(addr, _jdumps(data, ensure_ascii=False)) for addr, data in wallets.items()],
+                        template="(%s, %s, NOW())",
+                        page_size=100,
+                    )
                 for key, val in [
                     ("events",    _jdumps(events[-5000:], ensure_ascii=False)),
-                    ("seen",      _jdumps(list(seen)[-50000:], ensure_ascii=False)),
+                    ("seen",      _jdumps(list(seen)[-10000:], ensure_ascii=False)),
                     ("last_poll", str(last_poll)),
                 ]:
                     cur.execute("""
