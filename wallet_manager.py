@@ -106,6 +106,8 @@ class WalletManager:
         pnl_ton         = None
         pnl_pct         = None
         pnl_usd         = None
+        tracked_amount  = None   # сколько GRINCH реально относится к открытым trader-позициям
+        tracked_entries = None
 
         trader = self._trader
         if trader is not None:
@@ -129,7 +131,12 @@ class WalletManager:
                         )
                         entry_price_usd = entry_usd_weighted / total_amount
 
-                        # P&L с учётом комиссий и газа
+                        # P&L с учётом комиссий и газа.
+                        # ВАЖНО: считаем P&L только по реально отслеживаемому trader'ом объёму
+                        # (total_amount), а НЕ по всему балансу кошелька (grinch_bal) — на кошельке
+                        # может лежать доп. GRINCH, не связанный с текущей открытой DCA-позицией
+                        # (старые/ручные поступления), иначе P&L считается против чужого количества
+                        # токенов и получается бессмысленно завышенным.
                         try:
                             from config import Config
                             fee      = Config.FEE_PCT / 100.0
@@ -137,7 +144,11 @@ class WalletManager:
                             buy_gas  = getattr(Config, "BUY_GAS_TON", 0.25)
                             n_entries = len(open_trades)
 
-                            proceeds = grinch_value_ton * (1.0 - fee) - sell_gas
+                            tracked_amount  = min(total_amount, grinch_bal)
+                            tracked_entries = n_entries
+                            tracked_value_ton = tracked_amount * grinch_ton
+
+                            proceeds = tracked_value_ton * (1.0 - fee) - sell_gas
                             cost     = total_stake + buy_gas * n_entries
                             pnl_ton  = round(proceeds - cost, 6)
                             pnl_pct  = round(pnl_ton / cost * 100, 2) if cost > 0 else 0.0
@@ -163,6 +174,8 @@ class WalletManager:
             "pnl_ton":          pnl_ton,
             "pnl_pct":          pnl_pct,
             "pnl_usd":          pnl_usd,
+            "tracked_amount":   round(tracked_amount, 6) if tracked_amount else None,
+            "tracked_entries":  tracked_entries,
         }
 
         with self._lock:
@@ -209,6 +222,11 @@ class WalletManager:
         pnl_ton     = snap.get("pnl_ton")
         pnl_pct     = snap.get("pnl_pct")
         in_position = grinch_bal > 0
+        # Только реально отслеживаемое trader'ом количество (см. _poll_body) —
+        # избегаем расчёта потенциала от всего баланса кошелька, если часть GRINCH
+        # не относится к текущей открытой DCA-позиции.
+        tracked_amount  = snap.get("tracked_amount") or grinch_bal
+        tracked_entries = snap.get("tracked_entries") or 1
 
         # Ценовой диапазон за историю
         prices_ton = [h.get("grinch_price_ton") for h in history if h.get("grinch_price_ton")]
@@ -224,19 +242,19 @@ class WalletManager:
         # Используем те же параметры стоимости, что и в _poll_body() для консистентности:
         # cost = total_stake + buy_gas * n_entries  (из снимка: grinch_bal*entry_ton ≈ total_stake)
         potential  = {}
-        if entry_ton and grinch_bal > 0 and in_position:
+        if entry_ton and tracked_amount > 0 and in_position:
             try:
                 from config import Config
                 fee      = Config.FEE_PCT / 100.0
                 sell_gas = Config.SELL_GAS_TON
                 buy_gas  = getattr(Config, "BUY_GAS_TON", 0.25)
-                # Синхронизируем с _poll_body(): cost = total_stake + buy_gas * n_entries
-                # total_stake ≈ grinch_bal * entry_ton; n_entries = неизвестно из снимка, считаем 1
-                n_est = max(1, round(grinch_bal * entry_ton / getattr(Config, "DCA_STAKE_TON", getattr(Config, "TRADE_AMOUNT", 100))))
-                cost  = grinch_bal * entry_ton + buy_gas * n_est
+                # Синхронизируем с _poll_body(): cost = total_stake + buy_gas * n_entries,
+                # считаем только по отслеживаемому объёму позиции (tracked_amount),
+                # а не по всему балансу кошелька.
+                cost  = tracked_amount * entry_ton + buy_gas * tracked_entries
                 for pct in (5, 10, 15, 20, 30):
                     tgt_ton = entry_ton * (1 + pct / 100)
-                    proceeds = grinch_bal * tgt_ton * (1 - fee) - sell_gas
+                    proceeds = tracked_amount * tgt_ton * (1 - fee) - sell_gas
                     p_pnl    = round(proceeds - cost, 6)
                     potential[f"+{pct}%"] = {
                         "target_price_ton": round(tgt_ton, 10),
