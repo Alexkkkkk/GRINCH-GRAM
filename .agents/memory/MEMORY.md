@@ -46,3 +46,5 @@
 - [RAM floor и оптимизации скорости](ram-floor-speed.md) — numpy+pandas+sklearn+flask=173MB пол; 180MB недостижимо без замены sklearn; LOW_MEMORY_MODE=1 по умолч.
 - [AI Engine v4.2 upgrades](ai-engine-v4-2.md) — 2GB сервер: LOW_MEMORY_MODE=0, regime_enc фича, адаптивные пороги, EV-блок имеет приоритет над адаптивными порогами.
 - [Post-Pump Distribution v4.5](post-pump-distribution.md) — новый режим POST_PUMP (-3 в regime_enc); 4 новые фичи (ath_dist_20/dump_velocity/vol_collapse/post_pump_dump); штраф BUY до -28%; GRINCHPumpDetector возвращает DISTRIBUTION/DUMP_PATTERN с отриц. conf_boost; vol_r НЕ существует до line~2211 в _build_features — использовать _vol_r_pp временный расчёт.
+
+- [Gunicorn preload reload gotcha](gunicorn-preload-reload.md) — SIGHUP to --preload gunicorn never picks up new code; needs real process restart; re-verify /api/config settings survived after any VPS restart.
