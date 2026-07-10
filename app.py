@@ -118,6 +118,9 @@ def _apply_saved_config():
             ("DCA_REENTRY_COOLDOWN_SEC",    lambda v: int(float(v))),
             ("FAST_REENTRY_PULLBACK_PCT",   float),
             ("SCALP_TARGET_NET_PCT",        float),
+            # ATR-множители динамических целей
+            ("ATR_TP_MULT",                 float),
+            ("ATR_SL_MULT",                 float),
         ]:
             if (v := saved.get(attr)) is not None:
                 _safe_set(attr, v, cast)
@@ -1659,6 +1662,7 @@ def api_config_get():
         "take_profit_pct": Config.TAKE_PROFIT_PCT,
         "trailing_stop_pct": Config.TRAILING_STOP_PCT, "fee_pct": Config.FEE_PCT,
         "use_dynamic_targets": Config.USE_DYNAMIC_TARGETS, "trend_filter": Config.TREND_FILTER,
+        "atr_tp_mult": Config.ATR_TP_MULT, "atr_sl_mult": Config.ATR_SL_MULT,
         "min_ai_confidence": Config.MIN_AI_CONFIDENCE, "demo_mode": Config.DEMO_MODE,
         "exchange": Config.EXCHANGE, "ton_wallet": Config.TON_WALLET,
         # Smart BUY
@@ -1818,6 +1822,9 @@ def api_config_set():
     if (v := num("fast_reentry_pullback_pct",  0.5, 20))  is not None: Config.FAST_REENTRY_PULLBACK_PCT  = v
     if (v := num("scalp_target_net_pct",       0.5, 50))  is not None: Config.SCALP_TARGET_NET_PCT        = v
     if (v := num("dca_reentry_cooldown_sec",   0,   3600)) is not None: Config.DCA_REENTRY_COOLDOWN_SEC   = int(v)
+    # ATR-множители динамических целей
+    if (v := num("atr_tp_mult", 0.5, 10.0)) is not None: Config.ATR_TP_MULT = v
+    if (v := num("atr_sl_mult", 0.5, 10.0)) is not None: Config.ATR_SL_MULT = v
 
     # Детектор крупных продаж
     if "large_sell_dca_enabled" in data:
@@ -1899,6 +1906,9 @@ def api_config_set():
             "FAST_REENTRY_PULLBACK_PCT":  Config.FAST_REENTRY_PULLBACK_PCT,
             "SCALP_TARGET_NET_PCT":        Config.SCALP_TARGET_NET_PCT,
             "DCA_REENTRY_COOLDOWN_SEC":    Config.DCA_REENTRY_COOLDOWN_SEC,
+            # ATR-множители динамических целей
+            "ATR_TP_MULT": Config.ATR_TP_MULT,
+            "ATR_SL_MULT": Config.ATR_SL_MULT,
         })
     except Exception as e:  # noqa: BLE001
         return jsonify({"ok": True, "message": f"Настройки применены, но не сохранены на диск: {e}"})
