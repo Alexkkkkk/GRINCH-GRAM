@@ -1305,6 +1305,65 @@
     <div class="tab-pane tab-hidden" id="tab-ai">
       <div style="padding:10px 0 4px;display:flex;flex-direction:column;gap:12px">
 
+        <!-- ══ ПАНЕЛЬ ЗАЩИТНЫХ ФИЛЬТРОВ ══ -->
+        <div class="card card-c" id="filters-panel" style="padding:16px">
+          <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:6px;margin-bottom:14px">
+            <div class="card-title ctit" style="margin:0">🛡️ Защитные фильтры — реальное время</div>
+            <span id="filters-last-upd" style="font-size:10px;color:#4a5d7f">—</span>
+          </div>
+
+          <!-- Три блока фильтров -->
+          <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:14px">
+
+            <!-- Loss Cooldown -->
+            <div id="fc-cooldown" style="padding:12px;border-radius:10px;border:1px solid rgba(255,255,255,.08);background:rgba(255,255,255,.03)">
+              <div style="font-size:10px;color:#6a7d9f;font-weight:700;letter-spacing:.5px;margin-bottom:8px">⏸️ ПАУЗА ПОСЛЕ УБЫТКА</div>
+              <div id="fc-cd-status" style="font-size:13px;font-weight:700;color:#00ff88;margin-bottom:6px">— ожидание</div>
+              <div style="height:4px;border-radius:4px;background:rgba(255,255,255,.06);overflow:hidden;margin-bottom:5px">
+                <div id="fc-cd-bar" style="height:100%;border-radius:4px;background:#00ff88;transition:width .5s;width:100%"></div>
+              </div>
+              <div id="fc-cd-time" style="font-size:10px;color:#4a5d7f">10 мин кулдаун</div>
+            </div>
+
+            <!-- Confluence RSI -->
+            <div id="fc-rsi" style="padding:12px;border-radius:10px;border:1px solid rgba(255,255,255,.08);background:rgba(255,255,255,.03)">
+              <div style="font-size:10px;color:#6a7d9f;font-weight:700;letter-spacing:.5px;margin-bottom:8px">📊 RSI ФИЛЬТР</div>
+              <div id="fc-rsi-val" style="font-size:20px;font-weight:800;color:#00ff88;font-family:monospace;margin-bottom:4px">—</div>
+              <div style="height:4px;border-radius:4px;background:rgba(255,255,255,.06);overflow:hidden;margin-bottom:5px">
+                <div id="fc-rsi-bar" style="height:100%;border-radius:4px;background:#00ff88;transition:width .5s;width:50%"></div>
+              </div>
+              <div id="fc-rsi-label" style="font-size:10px;color:#4a5d7f">порог &lt; 72</div>
+            </div>
+
+            <!-- Confluence Volume -->
+            <div id="fc-vol" style="padding:12px;border-radius:10px;border:1px solid rgba(255,255,255,.08);background:rgba(255,255,255,.03)">
+              <div style="font-size:10px;color:#6a7d9f;font-weight:700;letter-spacing:.5px;margin-bottom:8px">📈 ОБЪЁМ (×MA20)</div>
+              <div id="fc-vol-val" style="font-size:20px;font-weight:800;color:#00ff88;font-family:monospace;margin-bottom:4px">—</div>
+              <div style="height:4px;border-radius:4px;background:rgba(255,255,255,.06);overflow:hidden;margin-bottom:5px">
+                <div id="fc-vol-bar" style="height:100%;border-radius:4px;background:#00ff88;transition:width .5s;width:50%"></div>
+              </div>
+              <div id="fc-vol-label" style="font-size:10px;color:#4a5d7f">порог ≥ 0.8×MA20</div>
+            </div>
+          </div>
+
+          <!-- DCA AI Guard -->
+          <div id="fc-dca-guard" style="padding:10px 14px;border-radius:8px;border:1px solid rgba(255,255,255,.08);background:rgba(255,255,255,.03);margin-bottom:14px;display:flex;align-items:center;gap:12px">
+            <div id="fc-dca-dot" style="width:10px;height:10px;border-radius:50%;background:#00ff88;flex-shrink:0"></div>
+            <div>
+              <div style="font-size:11px;font-weight:700;color:#ccd6f6">🛡️ DCA AI-guard (защита от падающего ножа)</div>
+              <div id="fc-dca-txt" style="font-size:11px;color:#4a5d7f;margin-top:2px">Ожидание данных…</div>
+            </div>
+          </div>
+
+          <!-- Последние заблокированные сигналы -->
+          <div>
+            <div style="font-size:10px;color:#4a5d7f;font-weight:700;letter-spacing:.5px;margin-bottom:8px">🚫 ПОСЛЕДНИЕ БЛОКИРОВКИ BUY</div>
+            <div id="fc-blocked-list" style="display:flex;flex-direction:column;gap:4px;max-height:160px;overflow-y:auto">
+              <div style="font-size:11px;color:#2a3a5a;text-align:center;padding:8px">Блокировок нет — все BUY-сигналы прошли</div>
+            </div>
+          </div>
+        </div>
+
         <!-- Статистика в карточках -->
         <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px">
           <div class="card card-c" style="padding:14px;text-align:center">

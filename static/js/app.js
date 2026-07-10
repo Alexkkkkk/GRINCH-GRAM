@@ -2539,6 +2539,131 @@ function renderDecisionLog(log) {
 })();
 
 // ═══════════════════════════════════════════════════════════════════
+//  🛡️ FILTERS STATUS PANEL
+// ═══════════════════════════════════════════════════════════════════
+function updateFiltersPanel(d) {
+  if (!d) return;
+  const now = new Date().toLocaleTimeString("ru-RU", {hour:"2-digit", minute:"2-digit", second:"2-digit"});
+  const lupd = document.getElementById("filters-last-upd");
+  if (lupd) lupd.textContent = "обновлено " + now;
+
+  // ── Loss Cooldown ──────────────────────────────────────────────
+  const cd   = d.cooldown || {};
+  const cdEl = document.getElementById("fc-cd-status");
+  const cdBar = document.getElementById("fc-cd-bar");
+  const cdTime = document.getElementById("fc-cd-time");
+  const cdWrap = document.getElementById("fc-cooldown");
+  if (cdEl) {
+    if (cd.active) {
+      const mins = Math.floor(cd.seconds_left / 60);
+      const secs = cd.seconds_left % 60;
+      cdEl.textContent   = `⏸️ АКТИВЕН — ${mins}м ${secs}с`;
+      cdEl.style.color   = "#ff4d6d";
+      if (cdBar) { cdBar.style.width = (100 - cd.pct) + "%"; cdBar.style.background = "#ff4d6d"; }
+      if (cdWrap) cdWrap.style.borderColor = "rgba(255,77,109,.4)";
+      if (cdTime) cdTime.textContent = `осталось ${cd.seconds_left}с из ${cd.total_sec}с`;
+    } else {
+      cdEl.textContent   = "✅ Готов к входу";
+      cdEl.style.color   = "#00ff88";
+      if (cdBar) { cdBar.style.width = "100%"; cdBar.style.background = "#00ff88"; }
+      if (cdWrap) cdWrap.style.borderColor = "rgba(255,255,255,.08)";
+      if (cdTime) cdTime.textContent = `${(cd.total_sec / 60) | 0} мин пауза после убытка`;
+    }
+  }
+
+  // ── Confluence RSI ─────────────────────────────────────────────
+  const cf  = d.confluence || {};
+  const rsiEl  = document.getElementById("fc-rsi-val");
+  const rsiBar = document.getElementById("fc-rsi-bar");
+  const rsiLbl = document.getElementById("fc-rsi-label");
+  const rsiWrap = document.getElementById("fc-rsi");
+  if (rsiEl) {
+    const rsiNow = cf.rsi_now;
+    const rsiMax = cf.rsi_max || 72;
+    const rsiOk  = cf.rsi_ok;
+    rsiEl.textContent = rsiNow != null ? rsiNow.toFixed(1) : "—";
+    const rsiPct = rsiNow != null ? Math.min(100, (rsiNow / 100) * 100) : 50;
+    if (rsiBar) {
+      rsiBar.style.width = rsiPct + "%";
+      rsiBar.style.background = rsiOk === false ? "#ff4d6d" : (rsiOk === true ? "#00ff88" : "#ffd166");
+    }
+    rsiEl.style.color = rsiOk === false ? "#ff4d6d" : (rsiOk === true ? "#00ff88" : "#8892b0");
+    if (rsiLbl) rsiLbl.textContent = rsiOk === false ? `❌ перегрет (порог < ${rsiMax})` : `✅ порог < ${rsiMax}`;
+    if (rsiWrap) rsiWrap.style.borderColor = rsiOk === false ? "rgba(255,77,109,.4)" : "rgba(255,255,255,.08)";
+  }
+
+  // ── Confluence Volume ──────────────────────────────────────────
+  const volEl  = document.getElementById("fc-vol-val");
+  const volBar = document.getElementById("fc-vol-bar");
+  const volLbl = document.getElementById("fc-vol-label");
+  const volWrap = document.getElementById("fc-vol");
+  if (volEl) {
+    const volNow = cf.vol_ratio_now;
+    const volMin = cf.vol_min || 0.8;
+    const volOk  = cf.vol_ok;
+    volEl.textContent = volNow != null ? volNow.toFixed(2) + "×" : "—";
+    const volPct = volNow != null ? Math.min(100, (volNow / 3) * 100) : 50;
+    if (volBar) {
+      volBar.style.width = volPct + "%";
+      volBar.style.background = volOk === false ? "#ff4d6d" : (volOk === true ? "#00ff88" : "#ffd166");
+    }
+    volEl.style.color = volOk === false ? "#ff4d6d" : (volOk === true ? "#00ff88" : "#8892b0");
+    if (volLbl) volLbl.textContent = volOk === false ? `❌ слабый объём (≥ ${volMin}×)` : `✅ порог ≥ ${volMin}×MA20`;
+    if (volWrap) volWrap.style.borderColor = volOk === false ? "rgba(255,77,109,.4)" : "rgba(255,255,255,.08)";
+  }
+
+  // ── DCA AI Guard ───────────────────────────────────────────────
+  const dg   = d.dca_guard || {};
+  const dgDot = document.getElementById("fc-dca-dot");
+  const dgTxt = document.getElementById("fc-dca-txt");
+  const dgWrap = document.getElementById("fc-dca-guard");
+  if (dgTxt) {
+    if (dg.active) {
+      dgTxt.textContent = `🔴 ЗАБЛОКИРОВАНО — AI SELL ${dg.ai_conf}% ≥ ${dg.threshold}% (не докупаем)`;
+      dgTxt.style.color = "#ff4d6d";
+      if (dgDot) { dgDot.style.background = "#ff4d6d"; dgDot.style.boxShadow = "0 0 8px #ff4d6d"; }
+      if (dgWrap) dgWrap.style.borderColor = "rgba(255,77,109,.4)";
+    } else {
+      const sig = dg.ai_signal || "—";
+      dgTxt.textContent = `✅ Докупки разрешены — AI ${sig} ${dg.ai_conf}% (порог блока: SELL ≥ ${dg.threshold}%)`;
+      dgTxt.style.color = "#4a5d7f";
+      if (dgDot) { dgDot.style.background = "#00ff88"; dgDot.style.boxShadow = "none"; }
+      if (dgWrap) dgWrap.style.borderColor = "rgba(255,255,255,.08)";
+    }
+  }
+
+  // ── Последние блокировки ───────────────────────────────────────
+  const blEl = document.getElementById("fc-blocked-list");
+  if (blEl) {
+    const items = d.blocked_recent || [];
+    if (!items.length) {
+      blEl.innerHTML = '<div style="font-size:11px;color:#2a3a5a;text-align:center;padding:8px">Блокировок нет — все BUY-сигналы прошли ✅</div>';
+    } else {
+      blEl.innerHTML = items.map(b => {
+        const regime = (b.regime || "").replace("RANGING","RANG").replace("DOWNTREND","DOWN")
+          .replace("UPTREND","UP").replace("TRANSITION","TRANS").replace("VOLATILE","VOLT");
+        return `<div style="display:flex;align-items:flex-start;gap:8px;padding:6px 10px;
+          border-radius:8px;background:rgba(255,77,109,.06);border:1px solid rgba(255,77,109,.15)">
+          <span style="font-size:10px;color:#4a5d7f;white-space:nowrap;padding-top:1px">${b.t}</span>
+          <div style="flex:1;min-width:0">
+            <div style="font-size:11px;color:#ff8585;word-break:break-word">${b.reason || "—"}</div>
+            <div style="font-size:10px;color:#4a5d7f;margin-top:2px">AI ${b.conf || 0}% | ${regime}</div>
+          </div>
+        </div>`;
+      }).join("");
+    }
+  }
+}
+
+(function pollFilters() {
+  function fetchFilters() {
+    fetch("/api/filters/status").then(r => r.json()).then(updateFiltersPanel).catch(() => {});
+  }
+  fetchFilters();
+  setInterval(fetchFilters, 10000);
+})();
+
+// ═══════════════════════════════════════════════════════════════════
 //  🗄️ DB SYNC STATUS
 // ═══════════════════════════════════════════════════════════════════
 

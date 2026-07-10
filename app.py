@@ -1078,6 +1078,75 @@ def api_ai_decisions():
     log = getattr(trader, "decision_log", [])
     return jsonify(list(reversed(log))[:15])
 
+
+@app.route("/api/filters/status")
+def api_filters_status():
+    """Статус защитных фильтров: loss cooldown, Confluence, DCA AI-guard."""
+    import time as _t
+    from config import Config
+
+    # ── Loss cooldown ─────────────────────────────────────────────────────────
+    last_loss_ts = getattr(trader, "_last_loss_ts", 0.0) or 0.0
+    cd_total     = Config.LOSS_COOLDOWN_SEC
+    cd_left      = max(0.0, cd_total - (_t.time() - last_loss_ts)) if last_loss_ts > 0 else 0.0
+    cooldown_active = cd_left > 0
+
+    # ── Последний тик: Confluence + текущий RSI / vol_ratio ──────────────────
+    last_dec = (getattr(trader, "decision_log", []) or [{}])[-1] if getattr(trader, "decision_log", []) else {}
+    rsi_now     = last_dec.get("rsi", None)
+    # vol_ratio не сохраняется в decision_log — берём из last_ai
+    last_ai  = getattr(trader, "last_ai", {}) or {}
+    vol_ratio   = last_ai.get("vol_ratio", None)
+
+    # ── Последние заблокированные сигналы ───────────────────────────────────
+    log = list(reversed(getattr(trader, "decision_log", [])))
+    blocked_recent = []
+    for d in log[:25]:
+        if d.get("blocked") and d.get("result") == "HOLD":
+            blocked_recent.append({
+                "t":      d.get("t", "—"),
+                "reason": d.get("reason", ""),
+                "conf":   d.get("conf", 0),
+                "rsi":    d.get("rsi"),
+                "regime": d.get("regime", ""),
+            })
+        if len(blocked_recent) >= 8:
+            break
+
+    # ── DCA AI-guard: проверяем текущее состояние ────────────────────────────
+    ai_signal   = last_ai.get("ai_signal", "HOLD")
+    ai_conf     = float(last_ai.get("confidence", 0) or 0)
+    dca_guard_active = (
+        ai_signal == "SELL"
+        and ai_conf >= Config.DCA_AI_SELL_BLOCK_CONF
+    )
+
+    return jsonify({
+        "cooldown": {
+            "active":    cooldown_active,
+            "seconds_left": int(cd_left),
+            "total_sec": cd_total,
+            "pct":       round((1 - cd_left / cd_total) * 100, 1) if cd_total > 0 else 100,
+        },
+        "confluence": {
+            "enabled":       Config.CONFLUENCE_ENABLED,
+            "rsi_now":       round(rsi_now, 1) if rsi_now is not None else None,
+            "rsi_max":       Config.CONFLUENCE_RSI_MAX,
+            "rsi_ok":        (rsi_now < Config.CONFLUENCE_RSI_MAX) if rsi_now is not None else None,
+            "vol_ratio_now": round(vol_ratio, 2) if vol_ratio is not None else None,
+            "vol_min":       Config.CONFLUENCE_VOL_MIN_RATIO,
+            "vol_ok":        (vol_ratio >= Config.CONFLUENCE_VOL_MIN_RATIO) if vol_ratio is not None else None,
+        },
+        "dca_guard": {
+            "active":    dca_guard_active,
+            "ai_signal": ai_signal,
+            "ai_conf":   round(ai_conf, 1),
+            "threshold": Config.DCA_AI_SELL_BLOCK_CONF,
+        },
+        "blocked_recent": blocked_recent,
+    })
+
+
 @app.route("/api/ai/history")
 def api_ai_history():
     """История обучения ИИ: накопление примеров в БД + статус тяжёлых моделей."""
