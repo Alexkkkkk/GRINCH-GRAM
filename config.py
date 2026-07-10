@@ -221,7 +221,7 @@ class Config:
 
     # Минимальная уверенность AI для самостоятельного входа в автономном режиме
     # Снижен порог входа: AI доверяем больше — 55% уже достаточно для сигнала
-    AI_AUTONOMOUS_MIN_CONF = float(os.getenv("AI_AUTONOMOUS_MIN_CONF", "48.0"))  # макс. агрессия
+    AI_AUTONOMOUS_MIN_CONF = float(os.getenv("AI_AUTONOMOUS_MIN_CONF", "44.0"))  # макс. агрессия
 
     # ── ПОЛНЫЕ ПРАВА ТОРГОВЛИ ──────────────────────────────────────────
     # Когда True и уверенность AI >= AI_FULL_RIGHTS_MIN_CONF%, AI имеет полные
@@ -231,7 +231,7 @@ class Config:
     # даже если рынок сейчас «спокойный» по ATR.
     AI_FULL_RIGHTS = bool(int(os.getenv("AI_FULL_RIGHTS", "1")))
     # При 62%+ AI получает полные права — без ATR-фильтра (был 68%)
-    AI_FULL_RIGHTS_MIN_CONF = float(os.getenv("AI_FULL_RIGHTS_MIN_CONF", "54.0"))  # супер агрессия
+    AI_FULL_RIGHTS_MIN_CONF = float(os.getenv("AI_FULL_RIGHTS_MIN_CONF", "48.0"))  # супер агрессия
 
     # Коэффициент «реалистичности» входа: минимальный ATR в % от цены, при котором
     # рынок способен дать нужный gross-% (если ATR × mult < required_gross → не входим).
@@ -261,9 +261,9 @@ class Config:
     # Продать ВСЁ когда общая стоимость GRINCH выросла на N% относительно суммарных затрат
     DCA_TARGET_PROFIT_PCT = float(os.getenv("DCA_TARGET_PROFIT_PCT", "15"))
     # Докупать ещё когда цена упала N% от цены ПОСЛЕДНЕЙ покупки
-    DCA_DROP_TRIGGER_PCT  = float(os.getenv("DCA_DROP_TRIGGER_PCT", "6"))   # макс. агрессия: докупаем на ещё меньшем откате
+    DCA_DROP_TRIGGER_PCT  = float(os.getenv("DCA_DROP_TRIGGER_PCT", "3"))   # макс. агрессия: докупаем на ещё меньшем откате
     # После продажи: ждать падения цены на N% от пика перед следующей покупкой
-    DCA_PULLBACK_WAIT_PCT = float(os.getenv("DCA_PULLBACK_WAIT_PCT", "15"))  # макс. агрессия: реентри быстрее
+    DCA_PULLBACK_WAIT_PCT = float(os.getenv("DCA_PULLBACK_WAIT_PCT", "7"))  # макс. агрессия: реентри быстрее
     # Максимальное количество DCA-входов за один цикл (защита от бесконечного усреднения)
     DCA_MAX_ENTRIES     = int(os.getenv("DCA_MAX_ENTRIES", "10"))
 
@@ -291,7 +291,7 @@ class Config:
     # Минимальная пауза между DCA-докупками (секунды) — защита от переторговли.
     # При низких порогах входа (drop 9%, conf 55%) без паузы бот может войти 3+ раз
     # за один тик волатильности. 300 сек = 5 минут — GRINCH свеча 15 мин, хватает.
-    DCA_REENTRY_COOLDOWN_SEC = int(os.getenv("DCA_REENTRY_COOLDOWN_SEC", "180"))  # супер агрессия: чаще входы
+    DCA_REENTRY_COOLDOWN_SEC = int(os.getenv("DCA_REENTRY_COOLDOWN_SEC", "60"))  # супер агрессия: чаще входы
 
     # ── Компаундирование: автоматический реинвест части прибыли ─────────────
     # После каждого прибыльного цикла ставка растёт на RATIO% от профита.
