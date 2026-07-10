@@ -1059,8 +1059,11 @@ def wallets_save(wallets: dict, events: list, seen: list, last_poll: float):
                 # 390 кошельков + большой JSON meta могут занять больше 7 сек на pghost.ru
                 cur.execute("SET LOCAL statement_timeout = 30000")
 
-                # Batch upsert всех кошельков одним execute_values
+                # Batch upsert всех кошельков одним execute_values.
+                # Сортируем по адресу — два потока всегда блокируют строки
+                # в одном порядке, это исключает deadlock.
                 if wallets:
+                    sorted_items = sorted(wallets.items(), key=lambda x: x[0])
                     psycopg2.extras.execute_values(
                         cur,
                         """
@@ -1069,7 +1072,7 @@ def wallets_save(wallets: dict, events: list, seen: list, last_poll: float):
                         ON CONFLICT (address) DO UPDATE
                           SET data = EXCLUDED.data, updated_at = NOW()
                         """,
-                        [(addr, _jdumps(data, ensure_ascii=False)) for addr, data in wallets.items()],
+                        [(addr, _jdumps(data, ensure_ascii=False)) for addr, data in sorted_items],
                         template="(%s, %s, NOW())",
                         page_size=100,
                     )
