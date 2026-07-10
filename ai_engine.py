@@ -1304,7 +1304,7 @@ class AIEngine:
             # ── Штраф за неблагоприятный режим (применяется ПОСЛЕДНИМ) ───
             penalty = 0.0
             if regime_name == "DOWNTREND":
-                penalty = -14.0   # против тренда — финальный штраф
+                penalty = -8.0    # против тренда — финальный штраф (агрессия)
             elif regime_name == "VOLATILE":
                 penalty = -4.0
             elif regime_name == "POST_PUMP":

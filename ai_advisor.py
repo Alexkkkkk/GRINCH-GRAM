@@ -76,7 +76,7 @@ TUNABLE = {
     # Торговые параметры (Config)
     "take_profit_pct":         (5.0,   200.0),
     "dca_target_profit_pct":   (5.0,   100.0),
-    "dca_drop_trigger_pct":    (5.0,    60.0),
+    "dca_drop_trigger_pct":    (1.0,    60.0),
     "smart_buy_pullback_pct":  (0.2,     5.0),
     "profit_protect_drop_pct": (0.3,    20.0),
     "min_ai_confidence":       (40.0,   90.0),
@@ -107,7 +107,7 @@ TUNABLE = {
     "trail_stage4_at":         (25.0,   80.0),   # прибыль % → стадия 4
     "smart_tp_tight_trail_pct":(2.0,    20.0),   # тугой трейл в Smart TP режиме
     # ── DCA расширенные параметры ────────────────────────────────
-    "dca_pullback_wait_pct":   (5.0,    50.0),   # % падения от пика для нового DCA-цикла
+    "dca_pullback_wait_pct":   (2.0,    50.0),   # % падения от пика для нового DCA-цикла
     "dca_max_entries":         (2.0,    20.0),   # макс. DCA-входов за цикл
     # ── DCA улучшения: Каскадный выход ───────────────────────────
     "dca_cascade_level1_pct":  (5.0,   100.0),  # % прибыли → продать 50% (Ур.1)
@@ -126,8 +126,8 @@ TUNABLE = {
     "profit_protect_ton":      (0.5,    50.0),   # мин. TON прибыли для активации защиты
     # ── AI фильтры входа ─────────────────────────────────────────
     "rsi_overbought":          (65.0,   90.0),   # RSI-уровень перекупленности (блок BUY)
-    "ai_autonomous_min_conf":  (45.0,   80.0),   # мин. уверенность для авто-входа AI
-    "ai_full_rights_min_conf": (50.0,   85.0),   # мин. уверенность для полных прав AI (без ATR-фильтра)
+    "ai_autonomous_min_conf":  (40.0,   80.0),   # мин. уверенность для авто-входа AI
+    "ai_full_rights_min_conf": (45.0,   85.0),   # мин. уверенность для полных прав AI (без ATR-фильтра)
     "short_min_ai_conf":       (50.0,   90.0),   # мин. уверенность для шорт-позиции
 }
 
@@ -278,9 +278,9 @@ session.profit_ton > 30 TON  → компаунд +40%: new_stake = current × 1
 ━━ C. АДАПТАЦИЯ СТРАТЕГИИ ПОД РЫНОК ПОСЛЕ СДЕЛКИ ━━
 market_stage = PUMP       → smart_tp_enabled=true, trail тоньше, take_profit +15-20%
                              smart_buy_enabled=false (вход без ожиданий)
-market_stage = CORRECTION → dca_drop_trigger_pct=10-12%, smart_buy_enabled=false
+market_stage = CORRECTION → dca_drop_trigger_pct=3-5%, smart_buy_enabled=false
 market_stage = ACCUMULATION → стандарт, smart_buy_enabled=true, плавный вход
-market_stage = RANGING    → снизь ставку на 10%, min_ai_confidence ≥ 62
+market_stage = RANGING    → снизь ставку на 10%, min_ai_confidence ≥ 52
 market_stage = DUMP       → ai_size_mult=0.3, min_ai_confidence=80, НЕ ВХОДИТЬ
 
 ╔══════════════════════════════════════════════════════════════════╗
@@ -303,7 +303,7 @@ Pepe Grinch (GRINCH) — мем-монета TON, пул DeDust GRINCH/GRAM (1% 
 
 🟢 КОРРЕКЦИЯ (лучшее окно DCA):
    change_h24 > +15% И (change_h1 < -4% ИЛИ change_h6 < -5%)
-   → dca_drop_trigger_pct = 10-12%, smart_buy=OFF, take_profit=25-40%
+   → dca_drop_trigger_pct = 3-5%, smart_buy=OFF, take_profit=25-40%
    → large_sell_dca_enabled=true (продажи китов = дешёвая закупка)
    → Это ПАТТЕРН №1 для GRINCH — максимально агрессивное DCA!
 
@@ -315,7 +315,7 @@ Pepe Grinch (GRINCH) — мем-монета TON, пул DeDust GRINCH/GRAM (1% 
 
 📈 НАКОПЛЕНИЕ (постепенный рост):
    change_h24: +5% до +15%, ratio_h24 > 1.2
-   → dca_drop_trigger_pct = 15-20%, smart_buy=ON, стандарт
+   → dca_drop_trigger_pct = 3-6%, smart_buy=ON, стандарт
    → Хорошее время для наращивания позиции
 
 ➡️ БОКОВИК (ждать импульса):
@@ -428,10 +428,10 @@ short_trading_enabled:
 • ev_min_trades — только целые числа
 
 ДОПУСТИМЫЕ ДИАПАЗОНЫ:
-— Основные: take_profit_pct:[5-200] dca_target_profit_pct:[5-100] dca_drop_trigger_pct:[5-60]
+— Основные: take_profit_pct:[5-200] dca_target_profit_pct:[5-100] dca_drop_trigger_pct:[1-60]
 — Smart BUY: smart_buy_pullback_pct:[0.2-5]
 — Защита: profit_protect_drop_pct:[0.3-20] profit_protect_ton:[0.5-50]
-— AI-вход: min_ai_confidence:[40-90] ai_autonomous_min_conf:[45-80] ai_full_rights_min_conf:[50-85]
+— AI-вход: min_ai_confidence:[40-90] ai_autonomous_min_conf:[40-80] ai_full_rights_min_conf:[45-85]
 — RSI: rsi_overbought:[65-90]
 — AI Engine: buy_threshold:[0.40-0.75] sell_threshold:[0.52-0.85] profit_bias_pct:[0.010-0.060]
 — AI Engine: vr_trend_thresh:[1.05-1.40] ev_min_trades:[5-25] retrain_every:[1-6]
@@ -439,7 +439,7 @@ short_trading_enabled:
 — Трейлинг AT: trail_breakeven_at:[3-25] trail_stage2_at:[8-35] trail_stage3_at:[15-50] trail_stage4_at:[25-80]
 — Smart TP: smart_tp_min_conf:[50-90] smart_tp_tight_trail_pct:[2-20]
 — Шорт: short_trail_pct:[3-25] short_min_ai_conf:[50-90]
-— DCA: dca_stake_ton:[5-1000] dca_pullback_wait_pct:[5-50] dca_max_entries:[2-20]
+— DCA: dca_stake_ton:[5-1000] dca_pullback_wait_pct:[2-50] dca_max_entries:[2-20]
 — Ставки: trade_amount:[5-1000] ai_size_mult:[0.3-1.5] large_sell_dca_ton:[5-500]
 — Прибыль: min_profit_ton_abs:[2.0-50.0]
 

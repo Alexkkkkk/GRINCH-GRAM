@@ -188,7 +188,7 @@ class Config:
     AI_HARD_OVERRIDE_CONFIDENCE = float(os.getenv("AI_HARD_OVERRIDE_CONFIDENCE", "93"))
     # Mean Reversion Override: RSI < 25 + AI > 85% → входим даже в DOWNTREND (отскок от дна)
     RSI_OVERSOLD_REVERSAL = float(os.getenv("RSI_OVERSOLD_REVERSAL", "25"))
-    REVERSAL_AI_MIN       = float(os.getenv("REVERSAL_AI_MIN", "85"))
+    REVERSAL_AI_MIN       = float(os.getenv("REVERSAL_AI_MIN", "70"))  # агрессия: mean-reversion входы чаще
 
     # ── Двусторонняя торговля (BUY + SHORT) ──────────────────────────
     # SHORT: когда AI ожидает падение — продаём GRINCH→TON, откупаем дешевле.
