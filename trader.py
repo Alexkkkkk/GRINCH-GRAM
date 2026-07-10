@@ -157,6 +157,36 @@ class Trader:
                 self._last_dca_entry_ts = float(_ts_raw)
         except Exception:
             pass
+        # Восстанавливаем DCA-состояние из открытых позиций:
+        # dca_last_buy_price и dca_entries_count обнуляются при рестарте,
+        # из-за чего блок докупки (строка 954) полностью пропускался —
+        # условие `dca_last_buy_price > 0` никогда не выполнялось.
+        try:
+            _dca_trades = [t for t in self.open_trades if t.get("dca_entry")]
+            if _dca_trades:
+                # Берём цену последней по времени DCA-покупки
+                _dca_sorted = sorted(
+                    _dca_trades,
+                    key=lambda t: (t.get("dca_index") or 0, t.get("opened_at") or ""),
+                )
+                self.dca_last_buy_price = float(
+                    _dca_sorted[-1].get("entry_price") or 0
+                )
+                # Количество входов = максимальный dca_index среди открытых
+                self.dca_entries_count = max(
+                    int(t.get("dca_index") or 1) for t in _dca_trades
+                )
+                # Суммарные затраты
+                self.dca_total_stake = sum(
+                    float(t.get("stake_ton") or 0) for t in _dca_trades
+                )
+                self.log(
+                    f"🔄 DCA-состояние восстановлено: last_buy=${self.dca_last_buy_price:.8f} "
+                    f"entries={self.dca_entries_count} stake={self.dca_total_stake:.2f} TON",
+                    "INFO",
+                )
+        except Exception as _dca_restore_err:
+            self.log(f"⚠️ DCA restore error: {_dca_restore_err}", "WARN")
 
     def log(self, msg, level="INFO"):
         entry = {"time": datetime.utcnow().strftime("%H:%M:%S"), "level": level, "msg": msg}
