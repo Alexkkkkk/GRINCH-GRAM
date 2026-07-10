@@ -1357,7 +1357,7 @@ class AIEngine:
             # Цель: убедиться что ожидаемая прибыль покрывает DEX fees + газ.
             ev_trades = kelly.get("trades", 0)
             ev_val    = kelly.get("ev", 0.0)
-            if ev_trades >= EV_MIN_TRADES and ev_val <= 0.0:
+            if ev_trades >= EV_MIN_TRADES and ev_val <= Config.EV_THRESHOLD:
                 log.info(
                     f"[AI v4 EV-Filter] BUY заблокирован: EV={ev_val:.4f}≤0 "
                     f"(win_rate={kelly.get('win_rate',0):.1f}% trades={ev_trades})"

@@ -280,8 +280,8 @@ class Config:
     # Уровень 2 (+40%): продаём оставшиеся 50%, ловим дополнительный памп.
     # При отключении — стандартная продажа всего на уровне 1.
     DCA_CASCADE_ENABLED    = bool(int(os.getenv("DCA_CASCADE_ENABLED",    "1")))
-    DCA_CASCADE_LEVEL1_PCT = float(os.getenv("DCA_CASCADE_LEVEL1_PCT", "15"))  # % прибыли → продать 50% (снижено с 20% = теперь совпадает с DCA_TARGET_PROFIT_PCT)
-    DCA_CASCADE_LEVEL2_PCT = float(os.getenv("DCA_CASCADE_LEVEL2_PCT", "28"))  # % прибыли → продать остаток (снижено с 40%)
+    DCA_CASCADE_LEVEL1_PCT = float(os.getenv("DCA_CASCADE_LEVEL1_PCT", "20"))  # +20% → продать 50%; выше DCA_TARGET (~7%) чтобы не конкурировали
+    DCA_CASCADE_LEVEL2_PCT = float(os.getenv("DCA_CASCADE_LEVEL2_PCT", "35"))  # +35% → продать остаток (ловим памп)
 
     # ── Умный реentri: после ТП входим быстрее если AI бычий ────────────────
     # Вместо ожидания -25% отката: при AI-уверенности ≥ порога достаточно -8%.
@@ -317,7 +317,7 @@ class Config:
     # Защита «только в плюс»: выход по рынку, но никогда в убыток (ONLY_PROFIT_EXIT).
     PROFIT_PROTECT_ENABLED  = bool(int(os.getenv("PROFIT_PROTECT_ENABLED",  "1")))
     PROFIT_PROTECT_TON      = float(os.getenv("PROFIT_PROTECT_TON",         "3.0"))   # мин. 3 TON прибыли для активации
-    PROFIT_PROTECT_DROP_PCT = float(os.getenv("PROFIT_PROTECT_DROP_PCT",    "3.0"))   # повышено с 1.5% — GRINCH ATR=5%/свеча, 1.5% = шум, не сигнал
+    PROFIT_PROTECT_DROP_PCT = float(os.getenv("PROFIT_PROTECT_DROP_PCT",    "6.0"))   # GRINCH ATR=4.32%/свеча → 3% = шум; 6% = настоящий разворот
     PROFIT_PROTECT_AI_SELL  = bool(int(os.getenv("PROFIT_PROTECT_AI_SELL",  "1")))    # также при AI SELL
 
     # ── Минимальная АБСОЛЮТНАЯ прибыль в TON — ниже этого не закрываем сделку ──
@@ -333,6 +333,28 @@ class Config:
     LARGE_SELL_DCA_TON      = float(os.getenv("LARGE_SELL_DCA_TON",         "100.0"))   # TON на покупку
     LARGE_SELL_MIN_TON      = float(os.getenv("LARGE_SELL_MIN_TON",         "150.0"))   # супер агрессия: реагируем на меньшие продажи
     LARGE_SELL_COOLDOWN_SEC = int(os.getenv("LARGE_SELL_COOLDOWN_SEC",      "300"))     # пауза между сигналами
+
+    # ── Кулдаун после убыточного закрытия ────────────────────────────────────
+    # После SL-выхода бот выжидает N секунд прежде чем входить снова.
+    # Защищает от повторного входа в нисходящий тренд сразу после выбивания стопа.
+    LOSS_COOLDOWN_SEC = int(os.getenv("LOSS_COOLDOWN_SEC", "600"))   # 10 минут пауза после убытка
+
+    # ── DCA AI-guard: не докупать в "падающий нож" ───────────────────────────
+    # Если AI уверен в продолжении падения (≥ порога) — блокируем DCA-докупку.
+    # Обычная DCA логика включается вновь как только AI сигнал меняется.
+    DCA_AI_SELL_BLOCK_CONF = float(os.getenv("DCA_AI_SELL_BLOCK_CONF", "60.0"))  # SELL ≥ N% → блок докупки
+
+    # ── Confluence фильтр входа: RSI + объём ─────────────────────────────────
+    # BUY только если RSI не перегрет И объём подтверждает движение.
+    # Отключается при hard_override (AI ≥ 85%) и ai_full_rights_active.
+    CONFLUENCE_ENABLED      = bool(int(os.getenv("CONFLUENCE_ENABLED",      "1")))
+    CONFLUENCE_RSI_MAX      = float(os.getenv("CONFLUENCE_RSI_MAX",      "72.0"))  # RSI < 72 для входа
+    CONFLUENCE_VOL_MIN_RATIO = float(os.getenv("CONFLUENCE_VOL_MIN_RATIO", "0.8")) # объём ≥ 0.8×MA20
+
+    # ── EV-порог (вынесен из hardcode для тюнинга) ───────────────────────────
+    # EV > EV_THRESHOLD → ожидаемая прибыль положительна → BUY не блокируется.
+    # Уменьшить до -0.05 для агрессивного режима, увеличить до 0.02 для консервативного.
+    EV_THRESHOLD = float(os.getenv("EV_THRESHOLD", "0.0"))
 
     DEMO_MODE  = os.getenv("DEMO_MODE",  "false").lower() == "true"
     SECRET_KEY = os.getenv("SECRET_KEY", "grinch-gram-secret-2024")

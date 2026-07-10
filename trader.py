@@ -119,6 +119,8 @@ class Trader:
         self._last_large_sell_buy_ts = 0.0
         # DCA кулдаун: время последней DCA-докупки (защита от переторговли)
         self._last_dca_entry_ts = 0.0
+        # Кулдаун после убыточного закрытия: не входить сразу в нисходящий тренд
+        self._last_loss_ts = 0.0
         # Защита прибыли: пик стоимости портфеля (TON) для детектора разворота
         self.portfolio_high_water_ton = 0.0
         # Health-check: время и статус последнего успешного тика торгового цикла
@@ -964,17 +966,32 @@ class Trader:
                     _dca_cooldown_left = Config.DCA_REENTRY_COOLDOWN_SEC - (time.time() - self._last_dca_entry_ts)
                     if drop_from_last_pct >= drop_trigger:
                         if self.dca_entries_count < Config.DCA_MAX_ENTRIES and _dca_cooldown_left <= 0:
-                            self.log(
-                                f"📉 DCA ДОКУПКА: цена упала {drop_from_last_pct:.1f}% "
-                                f"(триггер: {_trigger_tag}) | "
-                                f"вход #{self.dca_entries_count + 1}",
-                                "INFO"
+                            # Guard: не докупаем в "падающий нож" если AI уверен в SELL
+                            _ai_sell_conf = float((self.last_ai or {}).get("confidence", 0) or 0)
+                            _ai_sell_sig  = (self.last_ai or {}).get("ai_signal", "HOLD")
+                            _dca_ai_blocked = (
+                                Config.DCA_AI_SELL_BLOCK_CONF > 0
+                                and _ai_sell_sig == "SELL"
+                                and _ai_sell_conf >= Config.DCA_AI_SELL_BLOCK_CONF
                             )
-                            self._dca_buy(
-                                price_usd, grinch_ton,
-                                f"докупка #{self.dca_entries_count + 1} "
-                                f"(падение {drop_from_last_pct:.1f}%, {_trigger_tag})"
-                            )
+                            if _dca_ai_blocked:
+                                self.log(
+                                    f"🛡️ DCA: блокировка докупки — AI SELL {_ai_sell_conf:.0f}% "
+                                    f"≥ {Config.DCA_AI_SELL_BLOCK_CONF:.0f}% (падающий нож)",
+                                    "WARN"
+                                )
+                            else:
+                                self.log(
+                                    f"📉 DCA ДОКУПКА: цена упала {drop_from_last_pct:.1f}% "
+                                    f"(триггер: {_trigger_tag}) | "
+                                    f"вход #{self.dca_entries_count + 1}",
+                                    "INFO"
+                                )
+                                self._dca_buy(
+                                    price_usd, grinch_ton,
+                                    f"докупка #{self.dca_entries_count + 1} "
+                                    f"(падение {drop_from_last_pct:.1f}%, {_trigger_tag})"
+                                )
                         elif _dca_cooldown_left > 0:
                             self.log(
                                 f"⏸️ DCA: кулдаун {_dca_cooldown_left:.0f}с до следующей докупки",
@@ -1585,6 +1602,7 @@ class Trader:
         price       = result["price"]
         conf        = ai.get("confidence", 0)
         rsi         = result.get("rsi", 50)
+        vol_ratio   = result.get("vol_ratio", 1.0)
         regime      = ai.get("regime", {}) or {}
         regime_name = regime.get("name", "?")
         anomaly     = ai.get("anomaly", {}).get("detected", False)
@@ -1748,6 +1766,11 @@ class Trader:
                 conf >= Config.AI_FULL_RIGHTS_MIN_CONF
             )
 
+            # ── Кулдаун после убытка ──────────────────────────────────────
+            _loss_cd_left = Config.LOSS_COOLDOWN_SEC - (time.time() - self._last_loss_ts)
+            if _loss_cd_left > 0 and not hard_override:
+                blocked = f"кулдаун после убытка: {int(_loss_cd_left)}с (защита от «падающего ножа»)"
+
             # ── Расчёт комиссионной реалистичности ─────────────────────
             # Минимальный % движения цены нужен, чтобы покрыть:
             #   • DEX-комиссия покупки: 1% от суммы
@@ -1801,6 +1824,15 @@ class Trader:
                 )
             elif rsi >= Config.RSI_OVERBOUGHT and not hard_override:
                 blocked = f"перекупленность RSI={rsi:.1f}"
+            elif (Config.CONFLUENCE_ENABLED
+                  and rsi >= Config.CONFLUENCE_RSI_MAX
+                  and not hard_override and not ai_full_rights_active
+                  and not mean_rev_override):
+                blocked = f"Confluence: RSI={rsi:.1f}≥{Config.CONFLUENCE_RSI_MAX:.0f} (перегрет для входа)"
+            elif (Config.CONFLUENCE_ENABLED
+                  and vol_ratio < Config.CONFLUENCE_VOL_MIN_RATIO
+                  and not hard_override and not ai_full_rights_active):
+                blocked = f"Confluence: объём {vol_ratio:.2f}x < {Config.CONFLUENCE_VOL_MIN_RATIO:.1f}x MA20 (нет подтверждения)"
             elif anomaly and not hard_override:
                 blocked = f"рыночная аномалия Z={ai['anomaly']['z_price']:.2f}"
             elif Config.AI_AUTONOMOUS_MODE:
@@ -2889,6 +2921,13 @@ class Trader:
             self.ai.feedback(outcome=outcome, pnl=float(pnl),
                              regime=reg_name, conf=ai_conf)
             self.log(f"🧠 AI feedback: {outcome}({reg_name}) PNL={pnl:+.6f} TON conf={ai_conf:.0f}%", "INFO")
+            # Кулдаун после убытка: фиксируем время для защиты от повторного входа
+            if outcome == "loss":
+                self._last_loss_ts = time.time()
+                self.log(
+                    f"⏸️ Loss cooldown активирован: пауза {Config.LOSS_COOLDOWN_SEC//60} мин перед следующим входом",
+                    "WARN"
+                )
         except Exception as e:
             self.log(f"AI feedback ошибка: {e}", "WARN")
 
