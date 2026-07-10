@@ -181,7 +181,7 @@ class Config:
     RSI_OVERBOUGHT = float(os.getenv("RSI_OVERBOUGHT", "78"))
     # AI уверенность мин — снижено для более активной торговли (было 60%)
     # Минимальная уверенность для BUY — AI торгует при 52%+
-    MIN_AI_CONFIDENCE = float(os.getenv("MIN_AI_CONFIDENCE", "45"))  # макс. агрессия: входим раньше
+    MIN_AI_CONFIDENCE = float(os.getenv("MIN_AI_CONFIDENCE", "50"))  # макс. агрессия: входим раньше
     # AI-овверрайд только при 78%+ — очень сильный сигнал против тренда
     AI_OVERRIDE_CONFIDENCE = float(os.getenv("AI_OVERRIDE_CONFIDENCE", "78"))
     # AI жёсткий овверрайд: при ≥93% уверенности игнорируем RSI/аномалию (только DOWNTREND блокирует)
@@ -342,19 +342,19 @@ class Config:
     # ── DCA AI-guard: не докупать в "падающий нож" ───────────────────────────
     # Если AI уверен в продолжении падения (≥ порога) — блокируем DCA-докупку.
     # Обычная DCA логика включается вновь как только AI сигнал меняется.
-    DCA_AI_SELL_BLOCK_CONF = float(os.getenv("DCA_AI_SELL_BLOCK_CONF", "60.0"))  # SELL ≥ N% → блок докупки
+    DCA_AI_SELL_BLOCK_CONF = float(os.getenv("DCA_AI_SELL_BLOCK_CONF", "75.0"))  # SELL ≥ N% → блок докупки
 
     # ── Confluence фильтр входа: RSI + объём ─────────────────────────────────
     # BUY только если RSI не перегрет И объём подтверждает движение.
     # Отключается при hard_override (AI ≥ 85%) и ai_full_rights_active.
     CONFLUENCE_ENABLED      = bool(int(os.getenv("CONFLUENCE_ENABLED",      "1")))
-    CONFLUENCE_RSI_MAX      = float(os.getenv("CONFLUENCE_RSI_MAX",      "72.0"))  # RSI < 72 для входа
-    CONFLUENCE_VOL_MIN_RATIO = float(os.getenv("CONFLUENCE_VOL_MIN_RATIO", "0.8")) # объём ≥ 0.8×MA20
+    CONFLUENCE_RSI_MAX      = float(os.getenv("CONFLUENCE_RSI_MAX",      "78.0"))  # RSI < 78 для входа
+    CONFLUENCE_VOL_MIN_RATIO = float(os.getenv("CONFLUENCE_VOL_MIN_RATIO", "0.6")) # объём ≥ 0.6×MA20
 
     # ── EV-порог (вынесен из hardcode для тюнинга) ───────────────────────────
     # EV > EV_THRESHOLD → ожидаемая прибыль положительна → BUY не блокируется.
     # Уменьшить до -0.05 для агрессивного режима, увеличить до 0.02 для консервативного.
-    EV_THRESHOLD = float(os.getenv("EV_THRESHOLD", "0.0"))
+    EV_THRESHOLD = float(os.getenv("EV_THRESHOLD", "-1.0"))
 
     DEMO_MODE  = os.getenv("DEMO_MODE",  "false").lower() == "true"
     SECRET_KEY = os.getenv("SECRET_KEY", "grinch-gram-secret-2024")
