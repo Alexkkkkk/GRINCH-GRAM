@@ -1787,6 +1787,13 @@ def api_config_get():
         "profit_protect_ton":      Config.PROFIT_PROTECT_TON,
         "profit_protect_drop_pct": Config.PROFIT_PROTECT_DROP_PCT,
         "profit_protect_ai_sell":  Config.PROFIT_PROTECT_AI_SELL,
+        # Новые защитные параметры
+        "loss_cooldown_sec":        Config.LOSS_COOLDOWN_SEC,
+        "dca_ai_sell_block_conf":   Config.DCA_AI_SELL_BLOCK_CONF,
+        "confluence_enabled":       Config.CONFLUENCE_ENABLED,
+        "confluence_rsi_max":       Config.CONFLUENCE_RSI_MAX,
+        "confluence_vol_min_ratio": Config.CONFLUENCE_VOL_MIN_RATIO,
+        "ev_threshold":             Config.EV_THRESHOLD,
     })
 
 @app.route("/api/config", methods=["POST"])
@@ -1910,6 +1917,15 @@ def api_config_set():
     if (v := num("profit_protect_ton",      0.1, 10000)) is not None: Config.PROFIT_PROTECT_TON      = v
     if (v := num("profit_protect_drop_pct", 0.3, 20))    is not None: Config.PROFIT_PROTECT_DROP_PCT = v
 
+    # Новые защитные параметры
+    if (v := num("loss_cooldown_sec",        0,  86400)) is not None: Config.LOSS_COOLDOWN_SEC        = int(v)
+    if (v := num("dca_ai_sell_block_conf",   0,  100))   is not None: Config.DCA_AI_SELL_BLOCK_CONF   = v
+    if "confluence_enabled" in data:
+        Config.CONFLUENCE_ENABLED = bool(data["confluence_enabled"])
+    if (v := num("confluence_rsi_max",       50, 100))   is not None: Config.CONFLUENCE_RSI_MAX       = v
+    if (v := num("confluence_vol_min_ratio", 0,  10))    is not None: Config.CONFLUENCE_VOL_MIN_RATIO = v
+    if (v := num("ev_threshold",            -100, 100))  is not None: Config.EV_THRESHOLD             = v
+
     if "symbol" in data and data["symbol"] != Config.SYMBOL:
         if trader.open_trades:
             return jsonify({"ok": False, "message": "Нельзя сменить пару при открытых сделках."}), 409
@@ -1978,6 +1994,13 @@ def api_config_set():
             # ATR-множители динамических целей
             "ATR_TP_MULT": Config.ATR_TP_MULT,
             "ATR_SL_MULT": Config.ATR_SL_MULT,
+            # Новые защитные параметры
+            "LOSS_COOLDOWN_SEC":        Config.LOSS_COOLDOWN_SEC,
+            "DCA_AI_SELL_BLOCK_CONF":   Config.DCA_AI_SELL_BLOCK_CONF,
+            "CONFLUENCE_ENABLED":       Config.CONFLUENCE_ENABLED,
+            "CONFLUENCE_RSI_MAX":       Config.CONFLUENCE_RSI_MAX,
+            "CONFLUENCE_VOL_MIN_RATIO": Config.CONFLUENCE_VOL_MIN_RATIO,
+            "EV_THRESHOLD":             Config.EV_THRESHOLD,
         })
     except Exception as e:  # noqa: BLE001
         return jsonify({"ok": True, "message": f"Настройки применены, но не сохранены на диск: {e}"})
