@@ -9,28 +9,6 @@ channel = "stable-25_05"
 packages = ["cargo", "glibcLocales", "iana-etc", "libiconv", "libxcrypt", "ocl-icd", "opencl-headers", "openssl", "pkg-config", "postgresql", "rustc"]
 
 [workflows]
-runButton = "Project"
-
-[[workflows.workflow]]
-name = "Project"
-mode = "parallel"
-author = "agent"
-
-[[workflows.workflow.tasks]]
-task = "workflow.run"
-args = "Start application"
-
-[[workflows.workflow]]
-name = "Start application"
-author = "agent"
-
-[workflows.workflow.metadata]
-outputType = "webview"
-
-[[workflows.workflow.tasks]]
-task = "shell.exec"
-args = "python3 main.py"
-waitForPort = 5000
 
 [[ports]]
 localPort = 5000
