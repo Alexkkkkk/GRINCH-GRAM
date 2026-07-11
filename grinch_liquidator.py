@@ -79,7 +79,10 @@ class GrinchLiquidator:
             from settings_store import get_section
             saved = get_section("liquidator").get("sell_rise_pct")
             if saved is not None:
-                self.sell_rise_pct = max(0.5, min(float(saved), 200.0))
+                # Минимальный порог — никогда ниже точки безубыточности с учётом
+                # комиссий DEX обеих сторон (иначе продаём заведомо в убыток).
+                _min_floor = Config.required_gross_pct()
+                self.sell_rise_pct = max(_min_floor, min(float(saved), 200.0))
         except Exception:  # noqa: BLE001 — настройки не должны ломать запуск
             pass
 
@@ -328,6 +331,17 @@ class GrinchLiquidator:
         target   = ref * (1 + self.sell_rise_pct / 100)
 
         if current >= target:
+            # Дополнительная защита: даже если порог выставлен вручную ниже
+            # безубыточности — не продаём, пока цена не покрывает все комиссии.
+            min_break_even = ref * (1 + Config.required_gross_pct() / 100)
+            if current < min_break_even:
+                self._log(
+                    f"🔒 ONLY_PROFIT: цена ${current:.8f} < безубыток "
+                    f"${min_break_even:.8f} (нужен рост ещё "
+                    f"+{((min_break_even - current) / current * 100):.2f}%) — пропуск",
+                    "WARN"
+                )
+                return
             self._log(
                 f"🚀 Цена выросла на {rise_pct:+.2f}%! "
                 f"${ref:.8f} → ${current:.8f} (цель: ${target:.8f}) | "
@@ -372,6 +386,12 @@ class GrinchLiquidator:
                     self._ref_time      = None
                 # Обновим баланс через 60 сек
                 self._last_bal_check = time.time() - BAL_CHECK_INTERVAL + 60
+                # Закрываем ghost-позицию в трейдере (если GRINCH был в открытой позиции)
+                try:
+                    from trader import trader as _trader
+                    _trader.acknowledge_liquidator_sell(current_price)
+                except Exception as _te:
+                    self._log(f"⚠️ Не удалось оповестить трейдер о продаже ликвидатором: {_te}", "WARN")
                 return {"ok": True, "grinch_sold": grinch_amount, "price": current_price}
             else:
                 err = (result.get("error") if result else None) or "нет ответа"

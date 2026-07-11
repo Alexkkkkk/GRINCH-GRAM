@@ -2889,6 +2889,71 @@ class Trader:
             pass
         return {"ok": True}
 
+    def acknowledge_liquidator_sell(self, price_usd: float):
+        """Вызывается ликвидатором после успешной on-chain продажи GRINCH.
+
+        Закрывает все открытые лонг-позиции в памяти и DB без повторного
+        on-chain свопа — ликвидатор уже продал, нам нужно только почистить
+        ghost-запись, чтобы дашборд не показывал несуществующую позицию.
+        """
+        with self._close_lock:
+            if not self.open_trades:
+                return
+            long_trades = [t for t in self.open_trades if t.get("side") != "short"]
+            if not long_trades:
+                return
+            now_iso = datetime.utcnow().isoformat()
+            for trade in long_trades:
+                trade["exit_price"]   = price_usd
+                trade["closed_at"]    = now_iso
+                trade["close_reason"] = "liquidator_auto_sell"
+                trade["status"]       = "closed"
+                # PnL посчитаем честно с учётом комиссии
+                fee = Config.FEE_PCT / 100.0
+                buy_gas  = Config.BUY_GAS_TON
+                sell_gas = Config.SELL_GAS_TON
+                grinch_ton = price_usd / (self._get_grinch_price_ton() or 1) if price_usd else 0
+                try:
+                    from price_feed import price_feed as _pf
+                    _gtpy = _pf.get("TON") or 1.0
+                    grinch_ton = price_usd / _gtpy if _gtpy else 0
+                except Exception:
+                    pass
+                amount    = trade.get("amount", 0) or 0
+                stake_ton = trade.get("stake_ton", 0) or 0
+                # TON получено ≈ amount × price_usd / TON_price × (1 - fee)
+                try:
+                    from price_feed import price_feed as _pf2
+                    _ton_usd = _pf2.get("TON") or 1.64
+                    proceeds  = amount * (price_usd / _ton_usd) * (1 - fee) - sell_gas
+                except Exception:
+                    proceeds = 0.0
+                pnl_ton = round(proceeds - stake_ton - buy_gas, 6)
+                trade["pnl"]     = pnl_ton
+                trade["outcome"] = "win" if pnl_ton > 0 else "loss"
+                self.stats["total_pnl"] = round(self.stats.get("total_pnl", 0) + pnl_ton, 6)
+                if pnl_ton > 0:
+                    self.stats["winning_trades"] = self.stats.get("winning_trades", 0) + 1
+                self.stats["total_trades"] = self.stats.get("total_trades", 0) + 1
+            # Удаляем лонги из открытых
+            self.open_trades = [t for t in self.open_trades if t.get("side") == "short"]
+            self.dca_entries_count = 0
+            self.dca_total_stake   = 0.0
+        self.log(
+            f"🔧 Ликвидатор продал GRINCH — ghost-позиция закрыта "
+            f"({len(long_trades)} запись/ей) @ ${price_usd:.8f}",
+            "WARN",
+        )
+        try:
+            self.exp.save_open_trades(self._combined_open_trades())
+        except Exception:
+            pass
+        try:
+            import db_store
+            db_store.open_trades_save(self._combined_open_trades())
+        except Exception:
+            pass
+
     def _close_trade(self, trade, price, reason):
         """Сериализует закрытие (лок) и защищает от двойной продажи позиции."""
         with self._close_lock:
