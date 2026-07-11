@@ -37,7 +37,7 @@ python3 main.py
 
 ## Статус на Replit
 
-Проект импортирован и запущен через workflow **Start application** (`python3 main.py`, порт 5000, демо-режим — `TON_MNEMONIC` не задан). Зависимости установлены через `uv sync` (были не установлены после импорта). Для реальной торговли нужно добавить секрет `TON_MNEMONIC` через Replit Secrets.
+Проект переимпортирован — зависимости снова не были установлены (`uv sync` их восстановил). Workflow **Start application** (`python3 main.py`, порт 5000) запущен и работает, дашборд открывается, БД (внешний PostgreSQL pghost.ru) подключена, демо-режим — `TON_MNEMONIC` не задан. Для реальной торговли нужно добавить секрет `TON_MNEMONIC` через Replit Secrets.
 
 ## Структура
 
