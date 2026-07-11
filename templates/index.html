@@ -1287,6 +1287,11 @@
           <div style="padding:10px 12px;background:rgba(0,255,136,.06);border:1px solid rgba(0,255,136,.2);border-radius:8px">
             <div style="font-size:11px;font-weight:700;color:#00ff88;margin-bottom:6px">🛡️ Стандартный</div>
             <div style="font-size:9px;color:#8892b0;margin-bottom:8px">грейд входа B+, полная цель по прибыли</div>
+            <div style="display:flex;gap:5px;align-items:center;margin-bottom:8px">
+              <input type="number" id="paper-standard-capital" placeholder="сумма TON" min="0.01" step="1"
+                style="width:100%;box-sizing:border-box;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.12);border-radius:6px;padding:5px 8px;font-size:11px;color:#ccd6f6;outline:none;font-family:monospace">
+              <button class="btn-tiny" onclick="paperSetCapital('standard')" style="padding:5px 8px;font-size:9px;white-space:nowrap">💾</button>
+            </div>
             <div style="font-size:16px;font-weight:700;color:#ccd6f6;font-family:monospace" id="paper-standard-return">—</div>
             <div style="font-size:9px;color:#8892b0;margin-bottom:8px" id="paper-standard-meta">— сделок</div>
             <div style="display:flex;gap:5px">
@@ -1299,6 +1304,11 @@
           <div style="padding:10px 12px;background:rgba(255,107,107,.06);border:1px solid rgba(255,107,107,.2);border-radius:8px">
             <div style="font-size:11px;font-weight:700;color:#ff6b6b;margin-bottom:6px">🔥 Агрессивный</div>
             <div style="font-size:9px;color:#8892b0;margin-bottom:8px">грейд входа C+, цель по прибыли в 2× меньше (быстрее фиксирует)</div>
+            <div style="display:flex;gap:5px;align-items:center;margin-bottom:8px">
+              <input type="number" id="paper-aggressive-capital" placeholder="сумма TON" min="0.01" step="1"
+                style="width:100%;box-sizing:border-box;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.12);border-radius:6px;padding:5px 8px;font-size:11px;color:#ccd6f6;outline:none;font-family:monospace">
+              <button class="btn-tiny" onclick="paperSetCapital('aggressive')" style="padding:5px 8px;font-size:9px;white-space:nowrap">💾</button>
+            </div>
             <div style="font-size:16px;font-weight:700;color:#ccd6f6;font-family:monospace" id="paper-aggressive-return">—</div>
             <div style="font-size:9px;color:#8892b0;margin-bottom:8px" id="paper-aggressive-meta">— сделок</div>
             <div style="display:flex;gap:5px">
@@ -1308,7 +1318,8 @@
           </div>
 
         </div>
-        <div style="font-size:9px;color:#555;margin-top:8px">«Тик» получает свежую свечу и решает вход/выход по её профилю. Для непрерывной работы без дашборда используйте <code>python3 paper_trading.py --loop --profile standard</code> на сервере.</div>
+        <button class="btn-tiny" onclick="paperTickAll()" style="width:100%;margin-top:10px;padding:7px 8px;font-size:10px;background:rgba(0,180,255,.15);border-color:rgba(0,180,255,.4);color:#5ec9ff">⏩ Тикнуть оба одновременно (один и тот же момент рынка)</button>
+        <div style="font-size:9px;color:#555;margin-top:8px">Задайте сумму (TON), которой каждый профиль торгует — 💾 сохраняет и запускает портфель заново с этой суммой. Для непрерывной работы без дашборда: <code>python3 paper_trading.py --loop --all</code> на сервере.</div>
       </div>
 
       <!-- Telegram Alerts -->
@@ -2110,12 +2121,15 @@ setInterval(advLoadStatus, 15000);
 function paperFmt(res) {
   const retEl  = document.getElementById(`paper-${res.profile}-return`);
   const metaEl = document.getElementById(`paper-${res.profile}-meta`);
+  const capEl  = document.getElementById(`paper-${res.profile}-capital`);
   if (!retEl || !metaEl) return;
   const ret = res.total_return_pct || 0;
-  retEl.textContent = (ret >= 0 ? '+' : '') + ret.toFixed(2) + '%';
+  const pnlTxt = (res.pnl_ton >= 0 ? '+' : '') + res.pnl_ton.toFixed(3) + ' TON';
+  retEl.textContent = `${res.equity_ton.toFixed(2)} TON (${pnlTxt})`;
   retEl.style.color = ret > 0 ? '#00ff88' : (ret < 0 ? '#ff6b6b' : '#ccd6f6');
   const posTxt = res.open_position ? ' · позиция открыта' : '';
-  metaEl.textContent = `${res.n_trades} сделок · winrate ${res.win_rate_pct}%${posTxt}`;
+  metaEl.textContent = `${res.n_trades} сделок · ${ret>=0?'+':''}${ret}% · winrate ${res.win_rate_pct}%${posTxt}`;
+  if (capEl && document.activeElement !== capEl) capEl.placeholder = res.capital_ton + ' TON';
 }
 
 function paperLoadStatus(profile) {
@@ -2131,17 +2145,31 @@ function paperTick(profile) {
   }).then(r => r.json()).then(res => {
     if (!res.ok) { showToast('⚠️ ' + (res.error || 'Ошибка пейпер-трейдинга'), 'error'); return; }
     paperFmt(res);
-    showToast(`📝 ${res.label}: тик обработан (${res.n_trades} сделок, ${res.total_return_pct>=0?'+':''}${res.total_return_pct}%)`, 'info');
+    showToast(`📝 ${res.label}: тик обработан (${res.n_trades} сделок, ${res.equity_ton.toFixed(2)} TON)`, 'info');
   }).catch(() => showToast('⚠️ Не удалось выполнить тик', 'error'));
 }
 
-function paperReset(profile) {
-  if (!confirm('Сбросить виртуальный портфель "' + profile + '"? История сделок будет удалена.')) return;
-  fetch('/api/paper/reset', {
+function paperTickAll() {
+  fetch('/api/paper/tick_all', {method: 'POST'}).then(r => r.json()).then(res => {
+    if (!res.ok) { showToast('⚠️ ' + (res.error || 'Ошибка'), 'error'); return; }
+    Object.values(res.profiles).forEach(paperFmt);
+    showToast('⏩ Оба профиля тикнули на одном и том же моменте рынка', 'info');
+  }).catch(() => showToast('⚠️ Не удалось выполнить общий тик', 'error'));
+}
+
+function paperSetCapital(profile) {
+  const inp = document.getElementById(`paper-${profile}-capital`);
+  const val = parseFloat(inp && inp.value);
+  if (!val || val <= 0) { showToast('⚠️ Укажите сумму больше 0', 'error'); return; }
+  if (!confirm(`Запустить портфель "${profile}" заново с суммой ${val} TON? Текущая история сделок будет сброшена.`)) return;
+  fetch('/api/paper/set_capital', {
     method: 'POST', headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify({profile})
+    body: JSON.stringify({profile, capital_ton: val})
   }).then(r => r.json()).then(res => {
-    if (res.ok) { paperLoadStatus(profile); showToast('↺ Портфель сброшен', 'info'); }
+    if (!res.ok) { showToast('⚠️ ' + (res.error || 'Ошибка'), 'error'); return; }
+    paperFmt(res);
+    if (inp) inp.value = '';
+    showToast(`💾 Профиль теперь торгует суммой ${val} TON`, 'success');
   });
 }
 

@@ -1447,6 +1447,31 @@ def api_paper_reset():
     reset_profile(profile)
     return jsonify({"ok": True})
 
+@app.route("/api/paper/tick_all", methods=["POST"])
+def api_paper_tick_all():
+    from paper_trading import tick_all
+    try:
+        result = tick_all()
+        return jsonify({"ok": True, "profiles": result})
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)})
+
+@app.route("/api/paper/set_capital", methods=["POST"])
+def api_paper_set_capital():
+    from paper_trading import set_capital, PROFILES
+    data = request.json or {}
+    profile = data.get("profile", "standard")
+    if profile not in PROFILES:
+        return jsonify({"ok": False, "error": "неизвестный профиль"}), 400
+    try:
+        capital = float(data.get("capital_ton"))
+        if capital <= 0:
+            raise ValueError
+    except (TypeError, ValueError):
+        return jsonify({"ok": False, "error": "сумма должна быть положительным числом"}), 400
+    summary = set_capital(profile, capital)
+    return jsonify({"ok": True, **summary})
+
 @app.route("/api/alerts/config", methods=["POST"])
 def api_alerts_config():
     import settings_store

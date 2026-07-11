@@ -18,15 +18,15 @@ paper_trading.py — Движок пейпер-трейдинга (виртуа�
 
 Использование
 -------------
-    python3 paper_trading.py --tick            # один шаг: получить свежую свечу и решить
-    python3 paper_trading.py --status           # показать текущее виртуальное состояние
-    python3 paper_trading.py --loop --interval 60   # непрерывный цикл (Ctrl+C для остановки)
-    python3 paper_trading.py --reset            # сбросить виртуальный портфель к 1.0
+    python3 paper_trading.py --tick --profile standard        # один шаг для одного профиля
+    python3 paper_trading.py --tick --all                      # шаг СРАЗУ для всех профилей (общий момент рынка)
+    python3 paper_trading.py --status --all                     # статус всех профилей
+    python3 paper_trading.py --loop --all --interval 60          # непрерывный цикл для всех сразу
+    python3 paper_trading.py --capital 50 --profile standard    # задать сумму 50 TON для профиля (сброс портфеля)
+    python3 paper_trading.py --reset --profile aggressive       # сбросить конкретный портфель
 
-ВАЖНО: этот скрипт НЕ запускается автоматически как workflow — по решению
-пользователя, Replit-инстанс сейчас не должен иметь постоянно работающих
-процессов, чтобы не путать с боевым ботом на VPS. Запускайте вручную по
-необходимости, либо превратите в workflow осознанно, когда будет нужно.
+Дашборд (app.py) даёт то же самое кнопками: у каждого профиля есть поле
+суммы (TON) и кнопка «Тик», плюс общая кнопка «Тикнуть оба одновременно».
 """
 
 from __future__ import annotations
@@ -62,14 +62,17 @@ def _state_path(profile: str) -> str:
 
 STATE_PATH = _state_path("standard")  # обратная совместимость для прямых импортов
 
+DEFAULT_CAPITAL_TON = 100.0
+
 _DEFAULT_STATE = {
-    "equity": 1.0,
+    "equity": 1.0,             # множитель к capital_ton (1.0 = без изменений)
     "peak_equity": 1.0,
     "max_drawdown_pct": 0.0,
     "position": None,   # {"entry_ts","entry_price","peak_gain_pct"}
     "trades": [],        # история закрытых виртуальных сделок
     "last_bar_ts": None,  # защита от повторной обработки одного и того же бара
     "started_at": None,
+    "capital_ton": DEFAULT_CAPITAL_TON,   # виртуальная сумма, которой профиль "торгует"
 }
 
 
@@ -171,9 +174,14 @@ def step(state: dict, ohlcv: list, min_quality: str = "B", target_mult: float = 
 def status_summary(state: dict, profile: str = "standard") -> dict:
     trades = state.get("trades", [])
     wins = [t["net_pct"] for t in trades if t["net_pct"] > 0]
+    capital = float(state.get("capital_ton", DEFAULT_CAPITAL_TON))
+    equity_ton = capital * state.get("equity", 1.0)
     return {
         "profile": profile,
         "label": PROFILES.get(profile, {}).get("label", profile),
+        "capital_ton": round(capital, 4),
+        "equity_ton": round(equity_ton, 4),
+        "pnl_ton": round(equity_ton - capital, 4),
         "equity_multiplier": round(state.get("equity", 1.0), 4),
         "total_return_pct": round((state.get("equity", 1.0) - 1.0) * 100, 3),
         "max_drawdown_pct": round(state.get("max_drawdown_pct", 0.0), 3),
@@ -184,13 +192,16 @@ def status_summary(state: dict, profile: str = "standard") -> dict:
     }
 
 
-def run_tick(profile: str = "standard") -> dict:
+def run_tick(profile: str = "standard", ohlcv: list = None) -> dict:
     """Один тик для указанного профиля — используется и CLI, и Flask API
-    (app.py: /api/paper/tick). Возвращает summary через status_summary()."""
+    (app.py: /api/paper/tick). `ohlcv` можно передать заранее (для
+    tick_all, чтобы не дёргать API дважды за один and тот же момент).
+    Возвращает summary через status_summary()."""
     cfg = PROFILES.get(profile, PROFILES["standard"])
-    exchange = ExchangeClient()
-    ohlcv = exchange.get_real_ohlcv(limit=150, tf="hour", aggregate=1)
     state = _load_state(profile)
+    if ohlcv is None:
+        exchange = ExchangeClient()
+        ohlcv = exchange.get_real_ohlcv(limit=150, tf="hour", aggregate=1)
     if not ohlcv:
         return status_summary(state, profile)
     state = step(state, ohlcv, min_quality=cfg["min_quality"], target_mult=cfg["target_mult"])
@@ -198,10 +209,30 @@ def run_tick(profile: str = "standard") -> dict:
     return status_summary(state, profile)
 
 
+def tick_all() -> dict:
+    """Тикает ВСЕ профили одновременно на одних и тех же свежих свечах —
+    честное сравнение, оба видят один и тот же рыночный момент."""
+    exchange = ExchangeClient()
+    ohlcv = exchange.get_real_ohlcv(limit=150, tf="hour", aggregate=1)
+    return {profile: run_tick(profile, ohlcv=ohlcv) for profile in PROFILES}
+
+
 def reset_profile(profile: str = "standard") -> None:
     path = _state_path(profile)
     if os.path.exists(path):
         os.remove(path)
+
+
+def set_capital(profile: str, capital_ton: float) -> dict:
+    """Задать сумму, которой торгует профиль. Начинает портфель заново с
+    этой суммой (свежий старт — иначе смена суммы задним числом искажала
+    бы историю доходности в %)."""
+    capital_ton = max(0.01, float(capital_ton))
+    reset_profile(profile)
+    state = _load_state(profile)
+    state["capital_ton"] = capital_ton
+    _save_state(state, profile)
+    return status_summary(state, profile)
 
 
 def main():
@@ -212,7 +243,15 @@ def main():
     parser.add_argument("--interval", type=int, default=60, help="Интервал между тиками в секундах (для --loop)")
     parser.add_argument("--profile", type=str, default="standard", choices=list(PROFILES.keys()))
     parser.add_argument("--reset", action="store_true", help="Сбросить виртуальный портфель")
+    parser.add_argument("--capital", type=float, default=None, help="Задать сумму (TON), которой торгует профиль (сбрасывает портфель)")
+    parser.add_argument("--all", action="store_true", help="Применить --tick/--loop сразу ко ВСЕМ профилям одновременно")
     args = parser.parse_args()
+
+    if args.capital is not None:
+        summary = set_capital(args.profile, args.capital)
+        print(f"[Paper] Профиль '{args.profile}' теперь торгует суммой {args.capital} TON")
+        print(json.dumps(summary, ensure_ascii=False, indent=2))
+        return
 
     if args.reset:
         reset_profile(args.profile)
@@ -220,22 +259,31 @@ def main():
         return
 
     if args.status:
-        state = _load_state(args.profile)
-        print(json.dumps(status_summary(state, args.profile), ensure_ascii=False, indent=2))
+        if args.all:
+            for p in PROFILES:
+                print(json.dumps(status_summary(_load_state(p), p), ensure_ascii=False))
+        else:
+            state = _load_state(args.profile)
+            print(json.dumps(status_summary(state, args.profile), ensure_ascii=False, indent=2))
         return
 
     if args.loop:
-        print(f"[Paper] Запуск цикла профиля '{args.profile}', интервал={args.interval}с. Ctrl+C для остановки.")
+        target = "ВСЕ профили одновременно" if args.all else f"профиль '{args.profile}'"
+        print(f"[Paper] Запуск цикла ({target}), интервал={args.interval}с. Ctrl+C для остановки.")
         try:
             while True:
-                summary = run_tick(args.profile)
-                print(json.dumps(summary, ensure_ascii=False))
+                if args.all:
+                    print(json.dumps(tick_all(), ensure_ascii=False))
+                else:
+                    print(json.dumps(run_tick(args.profile), ensure_ascii=False))
                 time.sleep(args.interval)
         except KeyboardInterrupt:
             print("[Paper] Остановлено пользователем")
     elif args.tick:
-        summary = run_tick(args.profile)
-        print(json.dumps(summary, ensure_ascii=False, indent=2))
+        if args.all:
+            print(json.dumps(tick_all(), ensure_ascii=False, indent=2))
+        else:
+            print(json.dumps(run_tick(args.profile), ensure_ascii=False, indent=2))
     else:
         parser.print_help()
 

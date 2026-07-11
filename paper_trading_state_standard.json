@@ -5,5 +5,6 @@
   "position": null,
   "trades": [],
   "last_bar_ts": 1783796400000,
-  "started_at": 1783799196.1712208
+  "started_at": 1783799586.3415284,
+  "capital_ton": 50.0
 }

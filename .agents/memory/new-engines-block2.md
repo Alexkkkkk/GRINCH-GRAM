@@ -30,3 +30,10 @@ risk of real orders. Paper trading itself uses two isolated per-profile state fi
 and "aggressive" (grade C+, half TP target = faster/smaller exits), driven by dashboard
 buttons calling `/api/paper/tick|status|reset?profile=`.
 
+Each profile also has an independently settable virtual "capital_ton" (dashboard input +
+`/api/paper/set_capital`), and `/api/paper/tick_all` (`paper_trading.tick_all()`) ticks every
+profile against the SAME fetched candle so side-by-side comparisons see the same market
+moment. Setting capital resets that profile's portfolio (avoids retroactively distorting
+% history) — this is a deliberate tradeoff, not a bug, if a "top up without reset" mode
+is wanted later it needs a separate deposit/withdraw concept.
+
