@@ -1,3 +1,4 @@
+- [Open-trades startup self-heal](open-trades-self-heal.md) — 3 checks at init: auto-clear if GRINCH=0, scale amount+stake_ton if mismatch >1%, clamp winning_trades≤total_trades.
 - [BrainFusion integration](brain-fusion-integration.md) — central consensus brain; use RLock not Lock (get_state calls get_wallet_analysis recursively); wrap import in try/except stub; coerce ai_conf to float in should_skip_confirmation; restore Config params in BOTH pending-buy and immediate-open paths.
 - [Gunicorn background threads](gunicorn-background-threads.md) — start pollers at module import (not __main__), or they silently never run in the deployed app.
 - [Git last-update display](git-last-update-display.md) — training banner shows last git commit date via `git log`; cache success only, not failure, so it self-heals.

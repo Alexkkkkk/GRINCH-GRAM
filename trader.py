@@ -198,12 +198,28 @@ class Trader:
             real_bal = self.exchange.get_balance()
             real_grinch = float(real_bal.get("GRINCH", 0) or 0)
             book_grinch = sum(float(t.get("amount") or 0) for t in self.open_trades)
-            if real_grinch > 0 and book_grinch > 0:
+            if book_grinch > 0 and real_grinch < 1.0:
+                # Кошелёк пустой, а в БД висит открытая позиция —
+                # значит продажа прошла, но запись не была очищена.
+                self.open_trades = []
+                self.log(
+                    f"🔧 Сверка баланса: кошелёк пуст ({real_grinch:.6f} GRINCH), "
+                    f"но в БД открытая позиция {book_grinch:.2f} — позиция автоматически закрыта",
+                    "WARN",
+                )
+                try:
+                    self.exp.save_open_trades([])
+                except Exception:
+                    pass
+            elif real_grinch > 0 and book_grinch > 0:
                 diff_pct = abs(real_grinch - book_grinch) / real_grinch * 100
                 if diff_pct > 1.0:
                     scale = real_grinch / book_grinch
                     for t in self.open_trades:
                         t["amount"] = round((t.get("amount") or 0) * scale, 6)
+                        # stake_ton масштабируем так же, иначе прибыль будет
+                        # завышена (ставка заниженная относительно реального количества).
+                        t["stake_ton"] = round((t.get("stake_ton") or 0) * scale, 4)
                     self.log(
                         f"🔧 Сверка баланса: БД показывала {book_grinch:.2f} GRINCH, "
                         f"на кошельке {real_grinch:.2f} (расхождение {diff_pct:.1f}%) — "
@@ -216,6 +232,26 @@ class Trader:
                         pass
         except Exception as _bal_check_err:
             self.log(f"⚠️ Сверка баланса при старте не удалась: {_bal_check_err}", "WARN")
+
+        # ── Санитайз статистики ────────────────────────────────────────
+        # winning_trades не может быть больше total_trades (иначе winrate
+        # >100%, как показывал дашборд после старого бага в каскадном выходе).
+        try:
+            tt = int(self.stats.get("total_trades", 0) or 0)
+            wt = int(self.stats.get("winning_trades", 0) or 0)
+            if wt > tt:
+                self.stats["winning_trades"] = tt
+                try:
+                    self.exp.data["stats"] = dict(self.stats)
+                    self.exp._save_locked()
+                except Exception:
+                    pass
+                self.log(
+                    f"🔧 Санитайз статистики: winning_trades ({wt}) > total_trades ({tt}) — исправлено",
+                    "WARN",
+                )
+        except Exception:
+            pass
 
     def log(self, msg, level="INFO"):
         entry = {"time": datetime.utcnow().strftime("%H:%M:%S"), "level": level, "msg": msg}
