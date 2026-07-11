@@ -62,7 +62,7 @@ warnings.filterwarnings("ignore")
 LOW_MEMORY_MODE = os.getenv("LOW_MEMORY_MODE", "0") == "1"  # по умолч. выкл. — 7 моделей, 2GB сервер
 
 if LOW_MEMORY_MODE:
-    _HAS_HGB = _HAS_XGB = _HAS_LGB = False
+    _HAS_HGB = _HAS_XGB = _HAS_LGB = _HAS_CATBOOST = False
 else:
     try:
         from sklearn.ensemble import HistGradientBoostingClassifier
@@ -81,6 +81,16 @@ else:
         _HAS_LGB = True
     except Exception:
         _HAS_LGB = False
+
+    # v4.6: 7-я модель ансамбля. CatBoost — современный градиентный бустинг
+    # с встроенной обработкой категориальных фич и ordered boosting (меньше
+    # переобучения на малых выборках, чем у XGB/LGB). Требует libgomp (есть
+    # на проде — Debian; на NixOS-деве может отсутствовать, поэтому опционален).
+    try:
+        from catboost import CatBoostClassifier
+        _HAS_CATBOOST = True
+    except Exception:
+        _HAS_CATBOOST = False
 
 log = logging.getLogger(__name__)
 
@@ -905,6 +915,17 @@ class AIEngine:
                     num_leaves=31, subsample=0.75, colsample_bytree=0.75,
                     min_child_samples=5, reg_alpha=0.1, reg_lambda=0.8,
                     class_weight="balanced", verbosity=-1, random_state=42))
+            ])))
+        # CatBoost v4.6: 7-я модель — ordered boosting, устойчивее к переобучению
+        # на малых/шумных выборках (GRINCH — низкая ликвидность, много шума).
+        if _HAS_CATBOOST:
+            self._slots.append(_ModelSlot("CatBoost", Pipeline([
+                ("clf", CatBoostClassifier(
+                    iterations=150, depth=5, learning_rate=0.05,
+                    l2_leaf_reg=3.0, loss_function="MultiClass",
+                    auto_class_weights="Balanced",
+                    verbose=False, random_state=42, thread_count=1,
+                    allow_writing_files=False))
             ])))
         # MLP v2: облегчённая сеть — было (256,128,64,32), теперь (64,32)
         self._slots.append(_ModelSlot("MLP", Pipeline([
