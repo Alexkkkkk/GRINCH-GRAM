@@ -16,7 +16,16 @@ db_backup.py — ежедневный бэкап всех таблиц PostgreSQ
       bot_ai_state.json
       bot_wallets.json
       bot_wallet_meta.json
+      bot_ai_deep_models_meta.json   ← метаданные (без bytea-блобов веса модели)
+      bot_ai_examples.json
+      bot_ticks.json
+      bot_wallet_snapshots.json
+      bot_user_trades.json
       _meta.json          ← время, количество строк
+
+ВАЖНО: список TABLES ниже должен покрывать ВСЕ таблицы из db_store._DDL.
+Каждая новая таблица там обязана быть добавлена и сюда — иначе бэкап
+в DATA_DIR/backups/ тихо перестаёт быть полным снимком БД.
 """
 
 import json
@@ -46,7 +55,16 @@ TABLES = [
     "bot_ai_state",
     "bot_wallets",
     "bot_wallet_meta",
+    "bot_ai_examples",       # обучающие примеры AI (features/label/weight)
+    "bot_ticks",             # тики для AI-советника/аналитики
+    "bot_wallet_snapshots",  # история снимков кошелька (TON/GRINCH/P&L)
+    "bot_user_trades",       # история виртуальных сделок мультипользовательской платформы
 ]
+
+# bot_ai_deep_models хранит бинарные веса моделей (bytea) — дампим отдельно,
+# без самого blob'а (иначе JSON-файл раздувается и плохо читается), только
+# метаданные для проверки "что там есть и когда обучено".
+DEEP_MODELS_TABLE = "bot_ai_deep_models"
 
 
 # ── Утилиты ──────────────────────────────────────────────────────────────────
@@ -119,6 +137,25 @@ def run_backup() -> bool:
                     except Exception as e:
                         log.warning(f"[Backup] {table}: ошибка дампа — {e}")
                         meta["tables"][table] = f"ERROR: {e}"
+
+                # bot_ai_deep_models — без blob (веса моделей), только метаданные
+                try:
+                    cur.execute(
+                        f"SELECT model_name, accuracy, n_examples, trained_at, "
+                        f"length(blob) AS blob_bytes FROM {DEEP_MODELS_TABLE}"
+                    )
+                    cols = [d[0] for d in cur.description]
+                    rows = [dict(zip(cols, row)) for row in cur.fetchall()]
+                    out = dest / f"{DEEP_MODELS_TABLE}_meta.json"
+                    out.write_text(
+                        json.dumps(rows, ensure_ascii=False, indent=2, default=_jdefault),
+                        encoding="utf-8",
+                    )
+                    meta["tables"][DEEP_MODELS_TABLE] = f"{len(rows)} (meta only, blob excluded)"
+                    log.info(f"[Backup] {DEEP_MODELS_TABLE}: {len(rows)} моделей (метаданные) → {out.name}")
+                except Exception as e:
+                    log.warning(f"[Backup] {DEEP_MODELS_TABLE}: ошибка дампа — {e}")
+                    meta["tables"][DEEP_MODELS_TABLE] = f"ERROR: {e}"
 
         (dest / "_meta.json").write_text(
             json.dumps(meta, ensure_ascii=False, indent=2),
