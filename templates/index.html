@@ -1271,6 +1271,46 @@
         </div>
       </div>
 
+      <!-- Пейпер-трейдинг -->
+      <div class="card card-c" id="paper-card">
+        <div class="card-title ctit" style="display:flex;align-items:center;flex-wrap:wrap;gap:6px">
+          📝 Пейпер-трейдинг
+          <span style="font-size:10px;font-weight:600;color:#5ec9ff;background:rgba(0,180,255,.13);padding:2px 8px;border-radius:10px">виртуально, без денег</span>
+        </div>
+        <div style="font-size:11px;color:#8892b0;margin-bottom:10px">
+          Два независимых виртуальных портфеля торгуют на реальных живых свечах по одной и той же технической стратегии, но с разным риск-профилем. Реальные деньги не участвуют.
+        </div>
+
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+
+          <!-- Стандартный -->
+          <div style="padding:10px 12px;background:rgba(0,255,136,.06);border:1px solid rgba(0,255,136,.2);border-radius:8px">
+            <div style="font-size:11px;font-weight:700;color:#00ff88;margin-bottom:6px">🛡️ Стандартный</div>
+            <div style="font-size:9px;color:#8892b0;margin-bottom:8px">грейд входа B+, полная цель по прибыли</div>
+            <div style="font-size:16px;font-weight:700;color:#ccd6f6;font-family:monospace" id="paper-standard-return">—</div>
+            <div style="font-size:9px;color:#8892b0;margin-bottom:8px" id="paper-standard-meta">— сделок</div>
+            <div style="display:flex;gap:5px">
+              <button class="btn-tiny" onclick="paperTick('standard')" style="flex:1;padding:5px 8px;font-size:9px">▶ Тик</button>
+              <button class="btn-tiny" onclick="paperReset('standard')" style="padding:5px 8px;font-size:9px;color:#ff6b6b">↺</button>
+            </div>
+          </div>
+
+          <!-- Агрессивный -->
+          <div style="padding:10px 12px;background:rgba(255,107,107,.06);border:1px solid rgba(255,107,107,.2);border-radius:8px">
+            <div style="font-size:11px;font-weight:700;color:#ff6b6b;margin-bottom:6px">🔥 Агрессивный</div>
+            <div style="font-size:9px;color:#8892b0;margin-bottom:8px">грейд входа C+, цель по прибыли в 2× меньше (быстрее фиксирует)</div>
+            <div style="font-size:16px;font-weight:700;color:#ccd6f6;font-family:monospace" id="paper-aggressive-return">—</div>
+            <div style="font-size:9px;color:#8892b0;margin-bottom:8px" id="paper-aggressive-meta">— сделок</div>
+            <div style="display:flex;gap:5px">
+              <button class="btn-tiny" onclick="paperTick('aggressive')" style="flex:1;padding:5px 8px;font-size:9px">▶ Тик</button>
+              <button class="btn-tiny" onclick="paperReset('aggressive')" style="padding:5px 8px;font-size:9px;color:#ff6b6b">↺</button>
+            </div>
+          </div>
+
+        </div>
+        <div style="font-size:9px;color:#555;margin-top:8px">«Тик» получает свежую свечу и решает вход/выход по её профилю. Для непрерывной работы без дашборда используйте <code>python3 paper_trading.py --loop --profile standard</code> на сервере.</div>
+      </div>
+
       <!-- Telegram Alerts -->
       <div class="card card-c">
         <div class="card-title ctit">🔔 Оповещения в Telegram</div>
@@ -1569,6 +1609,8 @@ document.addEventListener('DOMContentLoaded', () => {
   advLoadStatus();
   advLoadKey();
   alLoadConfig();
+  paperLoadStatus('standard');
+  paperLoadStatus('aggressive');
 });
 
 // ─── Вкладка ИИ: история обучения ────────────────────────────────────────────
@@ -2064,6 +2106,46 @@ function showToast(msg, type) {
 
 // Авто-обновление статуса советника каждые 15 секунд
 setInterval(advLoadStatus, 15000);
+
+function paperFmt(res) {
+  const retEl  = document.getElementById(`paper-${res.profile}-return`);
+  const metaEl = document.getElementById(`paper-${res.profile}-meta`);
+  if (!retEl || !metaEl) return;
+  const ret = res.total_return_pct || 0;
+  retEl.textContent = (ret >= 0 ? '+' : '') + ret.toFixed(2) + '%';
+  retEl.style.color = ret > 0 ? '#00ff88' : (ret < 0 ? '#ff6b6b' : '#ccd6f6');
+  const posTxt = res.open_position ? ' · позиция открыта' : '';
+  metaEl.textContent = `${res.n_trades} сделок · winrate ${res.win_rate_pct}%${posTxt}`;
+}
+
+function paperLoadStatus(profile) {
+  fetch('/api/paper/status?profile=' + profile).then(r => r.json()).then(res => {
+    if (res.ok) paperFmt(res);
+  }).catch(() => {});
+}
+
+function paperTick(profile) {
+  fetch('/api/paper/tick', {
+    method: 'POST', headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({profile})
+  }).then(r => r.json()).then(res => {
+    if (!res.ok) { showToast('⚠️ ' + (res.error || 'Ошибка пейпер-трейдинга'), 'error'); return; }
+    paperFmt(res);
+    showToast(`📝 ${res.label}: тик обработан (${res.n_trades} сделок, ${res.total_return_pct>=0?'+':''}${res.total_return_pct}%)`, 'info');
+  }).catch(() => showToast('⚠️ Не удалось выполнить тик', 'error'));
+}
+
+function paperReset(profile) {
+  if (!confirm('Сбросить виртуальный портфель "' + profile + '"? История сделок будет удалена.')) return;
+  fetch('/api/paper/reset', {
+    method: 'POST', headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({profile})
+  }).then(r => r.json()).then(res => {
+    if (res.ok) { paperLoadStatus(profile); showToast('↺ Портфель сброшен', 'info'); }
+  });
+}
+
+setInterval(() => { paperLoadStatus('standard'); paperLoadStatus('aggressive'); }, 30000);
 </script>
 
 <!-- ═══════════════════════════════════════════════════════════════════════════

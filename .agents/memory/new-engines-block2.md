@@ -18,3 +18,15 @@ for walk-forward experiments.
 **How to apply:** Any future addition to this family (e.g. wiring AI predictions into
 backtest/paper-trading) needs its own separate model instance trained only on data before
 the simulated point in time, never the live singleton.
+
+## Paper trading dashboard buttons (11.07.2026)
+
+Added a "web" workflow (`python3 main.py`, port 5000) to run the dashboard on Replit —
+previously deliberately not run, back when `EXTERNAL_DATABASE_URL` still pointed at the
+VPS prod DB. Now safe: DB is separated (see db separation note) and the manual trading
+toggle defaults OFF + no `TON_MNEMONIC` on Replit, so the live trade loop can run without
+risk of real orders. Paper trading itself uses two isolated per-profile state files
+(`paper_trading_state_<profile>.json`, gitignored) — "standard" (grade B+, full TP target)
+and "aggressive" (grade C+, half TP target = faster/smaller exits), driven by dashboard
+buttons calling `/api/paper/tick|status|reset?profile=`.
+

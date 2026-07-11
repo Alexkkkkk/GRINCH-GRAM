@@ -41,7 +41,26 @@ import strategy
 from exchange import ExchangeClient
 from backtest import _trail_pct_for_gain
 
-STATE_PATH = os.path.join(os.path.dirname(__file__), "paper_trading_state.json")
+_STATE_DIR = os.path.dirname(__file__)
+
+# ── Профили торговли ──────────────────────────────────────────────────────
+# "standard"   — как боевая стратегия: грейд входа B+, полный тейк-профит
+#                 (Config.required_gross_pct()), штатный трейлинг.
+# "aggressive" — заходит на более слабых сигналах (грейд C+) и фиксирует
+#                 прибыль в 2 раза быстрее (половина обычной цели) — больше
+#                 сделок, каждая мельче. Это НЕ влияет на боевые настройки —
+#                 отдельный виртуальный портфель с собственным состоянием.
+PROFILES = {
+    "standard":   {"min_quality": "B", "target_mult": 1.0, "label": "Стандартный"},
+    "aggressive": {"min_quality": "C", "target_mult": 0.5, "label": "Агрессивный"},
+}
+
+
+def _state_path(profile: str) -> str:
+    return os.path.join(_STATE_DIR, f"paper_trading_state_{profile}.json")
+
+
+STATE_PATH = _state_path("standard")  # обратная совместимость для прямых импортов
 
 _DEFAULT_STATE = {
     "equity": 1.0,
@@ -54,10 +73,11 @@ _DEFAULT_STATE = {
 }
 
 
-def _load_state() -> dict:
-    if os.path.exists(STATE_PATH):
+def _load_state(profile: str = "standard") -> dict:
+    path = _state_path(profile)
+    if os.path.exists(path):
         try:
-            with open(STATE_PATH) as f:
+            with open(path) as f:
                 return {**_DEFAULT_STATE, **json.load(f)}
         except Exception:
             pass
@@ -66,14 +86,15 @@ def _load_state() -> dict:
     return state
 
 
-def _save_state(state: dict) -> None:
-    tmp = f"{STATE_PATH}.{os.getpid()}.tmp"
+def _save_state(state: dict, profile: str = "standard") -> None:
+    path = _state_path(profile)
+    tmp = f"{path}.{os.getpid()}.tmp"
     with open(tmp, "w") as f:
         json.dump(state, f, ensure_ascii=False, indent=2)
-    os.replace(tmp, STATE_PATH)   # атомарная замена — без частичных записей
+    os.replace(tmp, path)   # атомарная замена — без частичных записей
 
 
-def step(state: dict, ohlcv: list, min_quality: str = "B") -> dict:
+def step(state: dict, ohlcv: list, min_quality: str = "B", target_mult: float = 1.0) -> dict:
     """Один шаг симуляции на самой свежей свече из `ohlcv`.
     Идемпотентно: если last_bar_ts не изменился с прошлого вызова — не
     делает ничего (защита от повторного тика на той же свече)."""
@@ -89,7 +110,7 @@ def step(state: dict, ohlcv: list, min_quality: str = "B") -> dict:
 
     quality_rank = {"A": 3, "B": 2, "C": 1, "": 0}
     min_rank = quality_rank.get(min_quality, 2)
-    required_gross = Config.required_gross_pct() / 100.0
+    required_gross = Config.required_gross_pct() / 100.0 * target_mult
 
     position = state.get("position")
 
@@ -147,10 +168,12 @@ def step(state: dict, ohlcv: list, min_quality: str = "B") -> dict:
     return state
 
 
-def status_summary(state: dict) -> dict:
+def status_summary(state: dict, profile: str = "standard") -> dict:
     trades = state.get("trades", [])
     wins = [t["net_pct"] for t in trades if t["net_pct"] > 0]
     return {
+        "profile": profile,
+        "label": PROFILES.get(profile, {}).get("label", profile),
         "equity_multiplier": round(state.get("equity", 1.0), 4),
         "total_return_pct": round((state.get("equity", 1.0) - 1.0) * 100, 3),
         "max_drawdown_pct": round(state.get("max_drawdown_pct", 0.0), 3),
@@ -161,50 +184,58 @@ def status_summary(state: dict) -> dict:
     }
 
 
+def run_tick(profile: str = "standard") -> dict:
+    """Один тик для указанного профиля — используется и CLI, и Flask API
+    (app.py: /api/paper/tick). Возвращает summary через status_summary()."""
+    cfg = PROFILES.get(profile, PROFILES["standard"])
+    exchange = ExchangeClient()
+    ohlcv = exchange.get_real_ohlcv(limit=150, tf="hour", aggregate=1)
+    state = _load_state(profile)
+    if not ohlcv:
+        return status_summary(state, profile)
+    state = step(state, ohlcv, min_quality=cfg["min_quality"], target_mult=cfg["target_mult"])
+    _save_state(state, profile)
+    return status_summary(state, profile)
+
+
+def reset_profile(profile: str = "standard") -> None:
+    path = _state_path(profile)
+    if os.path.exists(path):
+        os.remove(path)
+
+
 def main():
     parser = argparse.ArgumentParser(description="Пейпер-трейдинг GRINCH/TON (виртуальный, без реальных денег)")
     parser.add_argument("--tick", action="store_true", help="Один шаг: получить свежую свечу и решить")
     parser.add_argument("--status", action="store_true", help="Показать текущее виртуальное состояние")
     parser.add_argument("--loop", action="store_true", help="Непрерывный цикл")
     parser.add_argument("--interval", type=int, default=60, help="Интервал между тиками в секундах (для --loop)")
-    parser.add_argument("--min-quality", type=str, default="B", choices=["A", "B", "C"])
+    parser.add_argument("--profile", type=str, default="standard", choices=list(PROFILES.keys()))
     parser.add_argument("--reset", action="store_true", help="Сбросить виртуальный портфель")
     args = parser.parse_args()
 
     if args.reset:
-        if os.path.exists(STATE_PATH):
-            os.remove(STATE_PATH)
-        print("[Paper] Состояние сброшено")
+        reset_profile(args.profile)
+        print(f"[Paper] Состояние профиля '{args.profile}' сброшено")
         return
 
     if args.status:
-        state = _load_state()
-        print(json.dumps(status_summary(state), ensure_ascii=False, indent=2))
+        state = _load_state(args.profile)
+        print(json.dumps(status_summary(state, args.profile), ensure_ascii=False, indent=2))
         return
 
-    exchange = ExchangeClient()
-
-    def _run_once(state):
-        ohlcv = exchange.get_real_ohlcv(limit=150, tf="hour", aggregate=1)
-        if not ohlcv:
-            print("[Paper] Не удалось получить свечи, пропуск тика")
-            return state
-        return step(state, ohlcv, min_quality=args.min_quality)
-
-    state = _load_state()
     if args.loop:
-        print(f"[Paper] Запуск цикла, интервал={args.interval}с. Ctrl+C для остановки.")
+        print(f"[Paper] Запуск цикла профиля '{args.profile}', интервал={args.interval}с. Ctrl+C для остановки.")
         try:
             while True:
-                state = _run_once(state)
-                _save_state(state)
+                summary = run_tick(args.profile)
+                print(json.dumps(summary, ensure_ascii=False))
                 time.sleep(args.interval)
         except KeyboardInterrupt:
             print("[Paper] Остановлено пользователем")
     elif args.tick:
-        state = _run_once(state)
-        _save_state(state)
-        print(json.dumps(status_summary(state), ensure_ascii=False, indent=2))
+        summary = run_tick(args.profile)
+        print(json.dumps(summary, ensure_ascii=False, indent=2))
     else:
         parser.print_help()
 

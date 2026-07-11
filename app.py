@@ -1416,6 +1416,37 @@ def api_advisor_apikey_get():
     masked = ("gsk_" + "•" * 20 + stored[-4:]) if len(stored) > 8 else ("•" * len(stored) if stored else "")
     return jsonify({"ok": True, "has_key": bool(stored), "masked": masked})
 
+@app.route("/api/paper/status")
+def api_paper_status():
+    from paper_trading import _load_state, status_summary, PROFILES
+    profile = request.args.get("profile", "standard")
+    if profile not in PROFILES:
+        return jsonify({"ok": False, "error": "неизвестный профиль"}), 400
+    return jsonify({"ok": True, **status_summary(_load_state(profile), profile)})
+
+@app.route("/api/paper/tick", methods=["POST"])
+def api_paper_tick():
+    from paper_trading import run_tick, PROFILES
+    data = request.json or {}
+    profile = data.get("profile", "standard")
+    if profile not in PROFILES:
+        return jsonify({"ok": False, "error": "неизвестный профиль"}), 400
+    try:
+        summary = run_tick(profile)
+        return jsonify({"ok": True, **summary})
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)})
+
+@app.route("/api/paper/reset", methods=["POST"])
+def api_paper_reset():
+    from paper_trading import reset_profile, PROFILES
+    data = request.json or {}
+    profile = data.get("profile", "standard")
+    if profile not in PROFILES:
+        return jsonify({"ok": False, "error": "неизвестный профиль"}), 400
+    reset_profile(profile)
+    return jsonify({"ok": True})
+
 @app.route("/api/alerts/config", methods=["POST"])
 def api_alerts_config():
     import settings_store
