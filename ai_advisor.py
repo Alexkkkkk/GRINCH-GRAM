@@ -196,6 +196,38 @@ TUNABLE_DESCRIPTIONS = {
 _lock         = threading.RLock()
 _history:     deque     = deque(maxlen=20)
 _last_advice: Optional[dict] = None
+
+
+def _persist_history():
+    """Best-effort сохранение истории анализов советника в БД (bot_ai_state).
+    Раньше _history жил только в памяти (deque) и полностью терялся при
+    каждом рестарте процесса — советник каждый раз "забывал" свои прошлые
+    рекомендации. Вызывается уже под _lock."""
+    try:
+        import db_store
+        if db_store.is_available():
+            db_store.ai_state_set("advisor_history", list(_history))
+    except Exception as e:
+        logger.warning(f"[Advisor] _persist_history ошибка: {e}")
+
+
+def _load_history():
+    """Восстанавливает историю анализов советника из БД при старте."""
+    global _history
+    try:
+        import db_store
+        if not db_store.is_available():
+            return
+        data = db_store.ai_state_get("advisor_history")
+        if isinstance(data, list) and data:
+            with _lock:
+                _history = deque(data[-20:], maxlen=20)
+            logger.info(f"[Advisor] История анализов восстановлена из БД: {len(data)} записей")
+    except Exception as e:
+        logger.warning(f"[Advisor] _load_history ошибка: {e}")
+
+
+_load_history()
 _auto_apply:  bool = True          # полная автономия по умолчанию
 _running:     bool = False
 _trades_since_last_run: int = 0
@@ -1202,6 +1234,7 @@ def run_advisor(auto_apply: bool = None, user_message: str = "",
                 "conf":    result["confidence"],
                 "analysis": result["analysis"][:120],
             })
+            _persist_history()
 
         if applied:
             logger.info(f"[Advisor] Применено {len(applied)} изм.: {'; '.join(applied[:3])}")

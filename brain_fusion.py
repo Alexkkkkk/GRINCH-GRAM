@@ -154,6 +154,52 @@ class BrainFusion:
         self._scalp_streak:  int = 0
         self._scalp_profit:  float = 0.0  # накопленная прибыль скальп-серии (TON)
 
+        # Восстанавливаем самообучение (fusion_wins/total, скальп-серия, журнал
+        # решений) из БД — раньше эта статистика полностью терялась при каждом
+        # рестарте процесса и "мозг" каждый раз заново набирал точность с нуля.
+        self._load_state()
+
+    # ── Персистентность самообучения (bot_ai_state) ─────────────────────────
+    def _load_state(self):
+        try:
+            import db_store
+            if not db_store.is_available():
+                return
+            state = db_store.ai_state_get("brain_fusion") or {}
+            if not isinstance(state, dict) or not state:
+                return
+            self._fusion_wins  = int(state.get("fusion_wins", 0) or 0)
+            self._fusion_total = int(state.get("fusion_total", 0) or 0)
+            self._scalp_streak = int(state.get("scalp_streak", 0) or 0)
+            self._scalp_profit = float(state.get("scalp_profit", 0.0) or 0.0)
+            log_data = state.get("decision_log")
+            if isinstance(log_data, list):
+                self._decision_log = log_data[-50:]
+            log.info(
+                f"[BrainFusion] Самообучение восстановлено из БД: "
+                f"точность={self._fusion_wins}/{self._fusion_total}, "
+                f"серия скальпов={self._scalp_streak}"
+            )
+        except Exception as e:
+            log.warning(f"[BrainFusion] _load_state ошибка: {e}")
+
+    def _save_state(self):
+        """Best-effort сохранение самообучения. Никогда не должно бросать —
+        вызывается из горячего пути on_trade_closed/log_decision."""
+        try:
+            import db_store
+            if not db_store.is_available():
+                return
+            db_store.ai_state_set("brain_fusion", {
+                "fusion_wins":   self._fusion_wins,
+                "fusion_total":  self._fusion_total,
+                "scalp_streak":  self._scalp_streak,
+                "scalp_profit":  self._scalp_profit,
+                "decision_log":  self._decision_log[-50:],
+            })
+        except Exception as e:
+            log.warning(f"[BrainFusion] _save_state ошибка: {e}")
+
     # ── Обновление состояний ─────────────────────────────────────────────────
 
     def update_ai(self, ai_result: dict):
@@ -520,6 +566,7 @@ class BrainFusion:
                 f"скальп={was_scalp} | серия скальпов={self._scalp_streak} | "
                 f"точность fusion={self._fusion_wins}/{self._fusion_total}"
             )
+            self._save_state()
 
     def log_decision(self, decision: dict):
         """Сохраняет решение в кольцевой буфер."""
@@ -527,6 +574,7 @@ class BrainFusion:
             self._decision_log.append({**decision, "t": time.time()})
             if len(self._decision_log) > 50:
                 self._decision_log.pop(0)
+        self._save_state()
 
     def get_decision_log(self) -> list:
         with self._lock:
