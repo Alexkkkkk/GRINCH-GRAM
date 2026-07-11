@@ -191,34 +191,12 @@ class WalletManager:
             "tracked_stake":    round(tracked_stake, 6) if tracked_stake else None,
         }
 
-        # ── Защита от «рваных» снимков ──────────────────────────────────────
-        # Изредка (природа до конца не установлена — подозрение на повторную
-        # инициализацию Trader/воркераgunicorn в короткий промежуток времени)
-        # в снимок попадает старая (до сверки баланса) стоимость входа
-        # tracked_stake/tracked_amount при НЕИЗМЕННОЙ цене входа и балансе
-        # кошелька — из-за этого P&L на дашборде резко скачет туда-обратно
-        # каждые ~15-30с, хотя реальная позиция не менялась. Раз причину не
-        # удалось поймать детерминированно — глушим симптом на границе записи:
-        # если entry_price_ton и grinch_balance практически не изменились
-        # (значит НЕ было реальной покупки/продажи), а tracked_stake скачнул
-        # более чем в 1.3 раза — это тот самый рваный снимок, отбрасываем его
-        # и сохраняем предыдущее (корректное) состояние.
-        with self._lock:
-            prev = self._snap
-        if prev and prev.get("entry_price_ton") and entry_price_ton and prev.get("tracked_stake"):
-            _price_diff = abs(entry_price_ton - prev["entry_price_ton"]) / prev["entry_price_ton"]
-            _bal_diff   = abs(grinch_bal - (prev.get("grinch_balance") or 0)) / max(prev.get("grinch_balance") or 1, 1)
-            _stake_ratio = (tracked_stake or 0) / prev["tracked_stake"] if prev["tracked_stake"] else 1.0
-            if _price_diff < 0.01 and _bal_diff < 0.01 and (_stake_ratio > 1.3 or _stake_ratio < 0.77):
-                log.warning(
-                    "[WalletManager] ⚠️ Отброшен подозрительный снимок: entry_price_ton "
-                    "не изменился (%.10f≈%.10f), баланс не изменился, но tracked_stake "
-                    "%.4f→%.4f (x%.2f) — пропускаю запись, сохраняю предыдущее состояние",
-                    prev["entry_price_ton"], entry_price_ton,
-                    prev["tracked_stake"], tracked_stake or 0, _stake_ratio,
-                )
-                return
-
+        # Рваные чтения open_trades предотвращены через _ot_lock (trader.py).
+        # Фильтр аномалий здесь намеренно убран: он также срабатывал при
+        # легитимных изменениях tracked_stake после self-heal (масштабирование
+        # amount+stake_ton при расхождении баланса >1%), из-за чего скорректи-
+        # рованный снимок отбрасывался и дашборд продолжал показывать старые
+        # (неверные) данные.
         with self._lock:
             self._snap = snap
             self._history.append(snap)
