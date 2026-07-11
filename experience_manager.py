@@ -214,6 +214,16 @@ class ExperienceManager:
             try:
                 ctrl  = self.data.get("control") or {}
                 stats = self.data.get("stats") or {}
+                # Инвариант: winning_trades ≤ total_trades (иначе winrate >100%)
+                # Проверяем здесь потому что _save_locked вызывается из analyze_and_adapt
+                # ДО того как санитайзер в trader.__init__ успевает исправить значение.
+                if stats:
+                    _tt = int(stats.get("total_trades", 0) or 0)
+                    _wt = int(stats.get("winning_trades", 0) or 0)
+                    if _wt > _tt:
+                        stats = dict(stats)
+                        stats["winning_trades"] = _tt
+                        self.data["stats"] = stats
                 if ctrl:  db.ai_state_set("control", ctrl)
                 if stats: db.ai_state_set("stats", stats)
             except Exception as e:
