@@ -142,7 +142,18 @@ class UserTradingManager:
     # ── Вывод ────────────────────────────────────────────────────────────────
 
     def withdraw(self, token: str, amount_ton: float, app=None) -> dict:
-        """Вывести TON с виртуального баланса пользователя на его кошелёк."""
+        """Вывести TON с виртуального баланса пользователя на его кошелёк.
+
+        ВАЖНО (защита от двойного вывода): баланс СНАЧАЛА уменьшается и
+        КОММИТИТСЯ в БД, и только ПОТОМ отправляются реальные TON. Если
+        процесс упадёт после реального перевода, но до записи в БД — при
+        старом порядке пользователь мог запросить тот же вывод повторно
+        (реальные монеты уже получены, а баланс в БД не уменьшён). Теперь,
+        если после успешного удержания баланса реальная отправка не удастся,
+        мы явно возвращаем (refund) сумму обратно и тоже коммитим это в БД —
+        так что при любом сбое посередине в БД остаётся консистентное
+        состояние, а не окно для повторного списания одних и тех же денег.
+        """
         with self._lock:
             u = self._users.get(token)
             if not u:
@@ -152,33 +163,59 @@ class UserTradingManager:
             if u.get("grinch_held", 0) > 0:
                 return {"ok": False, "error": "Нельзя вывести во время открытой позиции — дождитесь SELL"}
 
-        # Отправить TON с платформенного кошелька на кошелёк пользователя
+            # 1) Удерживаем сумму сразу (in-memory), чтобы конкурентный withdraw
+            #    не мог списать те же деньги ещё раз, пока идёт реальный перевод.
+            u["balance_ton"] = round(u["balance_ton"] - amount_ton, 6)
+            ton_address = u["ton_address"]
+
+        # 2) Персистим удержание в БД ДО реальной отправки TON.
+        if not self._persist_balance(token, u, delta_withdrawn=amount_ton, app=app):
+            # Не удалось надёжно записать удержание — не рискуем отправлять
+            # реальные деньги без гарантии, что баланс уменьшён в БД.
+            with self._lock:
+                u["balance_ton"] = round(u["balance_ton"] + amount_ton, 6)
+            return {"ok": False, "error": "Не удалось сохранить операцию в БД — вывод отменён"}
+
+        # 3) Отправить TON с платформенного кошелька на кошелёк пользователя
         try:
             from dedust_client import dedust_client
-            res = dedust_client.send_ton(u["ton_address"], amount_ton)
+            res = dedust_client.send_ton(ton_address, amount_ton)
             if not res.get("ok"):
-                return {"ok": False, "error": f"Ошибка отправки: {res.get('error')}"}
+                raise RuntimeError(res.get("error") or "неизвестная ошибка отправки")
         except Exception as e:
-            return {"ok": False, "error": str(e)}
+            # 4) Реальная отправка не удалась — возвращаем средства и коммитим refund.
+            with self._lock:
+                u["balance_ton"] = round(u["balance_ton"] + amount_ton, 6)
+            self._persist_balance(token, u, delta_withdrawn=-amount_ton, app=app)
+            log.error(f"[UserTrader] withdraw send_ton ошибка, средства возвращены: {e}")
+            return {"ok": False, "error": f"Ошибка отправки: {e}"}
 
         with self._lock:
-            u["balance_ton"] = round(u["balance_ton"] - amount_ton, 6)
-            self._log(u, f"📤 Вывод {amount_ton:.4f} TON → {u['ton_address'][:16]}...", "INFO")
-
-        if app:
-            try:
-                from models import UserWallet
-                from database import db
-                with app.app_context():
-                    uw = UserWallet.query.filter_by(token=token).first()
-                    if uw:
-                        uw.virtual_ton_balance  = u["balance_ton"]
-                        uw.total_withdrawn = (uw.total_withdrawn or 0) + amount_ton
-                        db.session.commit()
-            except Exception as e:
-                log.error(f"[UserTrader] withdraw DB ошибка: {e}")
+            self._log(u, f"📤 Вывод {amount_ton:.4f} TON → {ton_address[:16]}...", "INFO")
 
         return {"ok": True, "amount": amount_ton}
+
+    def _persist_balance(self, token: str, user: dict, delta_withdrawn: float = 0.0, app=None) -> bool:
+        """Синхронно коммитит текущий balance_ton (и total_withdrawn) в БД.
+        Возвращает True только при подтверждённом commit — вызывающий код
+        должен трактовать False как «состояние в БД не гарантировано»."""
+        if not app:
+            return True  # нет app-контекста (например, тесты) — не блокируем
+        try:
+            from models import UserWallet
+            from database import db
+            with app.app_context():
+                uw = UserWallet.query.filter_by(token=token).first()
+                if not uw:
+                    return True
+                uw.virtual_ton_balance = user["balance_ton"]
+                if delta_withdrawn:
+                    uw.total_withdrawn = (uw.total_withdrawn or 0) + delta_withdrawn
+                db.session.commit()
+            return True
+        except Exception as e:
+            log.error(f"[UserTrader] _persist_balance DB ошибка: {e}")
+            return False
 
     # ── Сигнал от главного Trader ─────────────────────────────────────────────
 
