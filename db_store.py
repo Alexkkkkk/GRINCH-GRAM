@@ -166,6 +166,16 @@ CREATE TABLE IF NOT EXISTS bot_wallet_snapshots (
     pnl_usd           DOUBLE PRECISION
 );
 CREATE INDEX IF NOT EXISTS bot_wallet_snapshots_ts ON bot_wallet_snapshots (ts);
+
+-- Персистентная история виртуальных сделок мультипользовательской платформы
+-- (ранее хранилась только в памяти UserTradingManager и терялась при рестарте).
+CREATE TABLE IF NOT EXISTS bot_user_trades (
+    id         BIGSERIAL    PRIMARY KEY,
+    token      VARCHAR(64)  NOT NULL,
+    ts         TIMESTAMP    NOT NULL DEFAULT NOW(),
+    data       JSONB        NOT NULL
+);
+CREATE INDEX IF NOT EXISTS bot_user_trades_token_ts ON bot_user_trades (token, id DESC);
 """
 
 TICKS_KEEP = 3000
@@ -974,6 +984,49 @@ def wallet_snapshot_get_latest() -> dict:
     except Exception as e:
         logger.warning(f"[DB] wallet_snapshot_get_latest error: {e}")
         return {}
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+#  USER TRADES — персистентная история виртуальных сделок мультипользовательской
+#  платформы (UserTradingManager). Раньше хранилась только в памяти и терялась
+#  при рестарте процесса.
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def user_trade_insert(token: str, trade: dict) -> bool:
+    """Сохраняет одну виртуальную сделку пользователя. Возвращает True при
+    подтверждённом commit — вызывающий код может проверить это, чтобы не
+    считать сделку надёжно сохранённой при сбое БД."""
+    if not _check_available():
+        return False
+    try:
+        with _conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "INSERT INTO bot_user_trades (token, ts, data) VALUES (%s, NOW(), %s)",
+                    (token, psycopg2.extras.Json(trade)),
+                )
+        return True
+    except Exception as e:
+        logger.warning(f"[DB] user_trade_insert error: {e}")
+        return False
+
+
+def user_trades_get_recent(token: str, limit: int = 50) -> list:
+    """Последние N сделок пользователя в хронологическом порядке (старые → новые)."""
+    if not _check_available():
+        return []
+    try:
+        with _conn() as conn:
+            with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+                cur.execute(
+                    "SELECT data FROM bot_user_trades WHERE token = %s ORDER BY id DESC LIMIT %s",
+                    (token, limit),
+                )
+                rows = cur.fetchall()
+                return [row["data"] for row in reversed(rows)]
+    except Exception as e:
+        logger.warning(f"[DB] user_trades_get_recent error: {e}")
+        return []
 
 
 # ═══════════════════════════════════════════════════════════════════════════════

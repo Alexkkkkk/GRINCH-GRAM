@@ -67,7 +67,15 @@ class UserTradingManager:
                          f"({u.virtual_ton_balance:.3f} TON)")
 
     def _restore(self, u):
-        """Восстановить состояние из БД-записи."""
+        """Восстановить состояние из БД-записи (включая историю сделок —
+        раньше \"trades\" всегда стартовал пустым и вся история виртуальных
+        сделок терялась при каждом рестарте процесса)."""
+        try:
+            import db_store
+            trades = db_store.user_trades_get_recent(u.token, limit=50) if db_store.is_available() else []
+        except Exception as e:
+            log.warning(f"[UserTrader] не удалось загрузить историю сделок {u.token[:8]}: {e}")
+            trades = []
         with self._lock:
             self._users[u.token] = {
                 "name":          u.name or "Трейдер",
@@ -76,7 +84,7 @@ class UserTradingManager:
                 "balance_ton":   u.virtual_ton_balance,
                 "grinch_held":   u.virtual_grinch_held,
                 "entry_price":   u.entry_price_ton,
-                "trades":        [],
+                "trades":        trades,
                 "logs":          [],
                 "stats": {
                     "total_trades":   u.total_trades,
@@ -271,7 +279,7 @@ class UserTradingManager:
 
         self._log(user, f"🟢 BUY {net_ton:.4f} TON → ~{est_grinch:.0f} GRINCH @ {price} | Комиссия: {fee_ton:.4f} TON", "BUY")
 
-        user["trades"].append({
+        trade_rec = {
             "type":        "buy",
             "price":       price,
             "ton_spent":   net_ton,
@@ -279,10 +287,12 @@ class UserTradingManager:
             "grinch":      est_grinch,
             "ai_conf":     ai.get("confidence", 0),
             "time":        datetime.utcnow().isoformat(),
-        })
+        }
+        user["trades"].append(trade_rec)
         if len(user["trades"]) > 50:
             user["trades"] = user["trades"][-50:]
 
+        self._persist_trade(token, trade_rec)
         self._sync_db(token, user)
 
     # ── Виртуальная продажа ───────────────────────────────────────────────────
@@ -325,17 +335,19 @@ class UserTradingManager:
         sign = "+" if pnl >= 0 else ""
         self._log(user, f"🔴 SELL ~{grinch:.0f} GRINCH @ {price} | PNL: {sign}{pnl:.4f} TON", "SELL")
 
-        user["trades"].append({
+        trade_rec = {
             "type":     "sell",
             "price":    price,
             "grinch":   grinch,
             "received": received_ton,
             "pnl_ton":  pnl,
             "time":     datetime.utcnow().isoformat(),
-        })
+        }
+        user["trades"].append(trade_rec)
         if len(user["trades"]) > 50:
             user["trades"] = user["trades"][-50:]
 
+        self._persist_trade(token, trade_rec)
         self._sync_db(token, user)
 
     # ── API ───────────────────────────────────────────────────────────────────
@@ -393,4 +405,21 @@ class UserTradingManager:
                     uw.last_signal_at      = datetime.utcnow()
                     db.session.commit()
         except Exception as e:
-            log.debug(f"[UserTrader] _sync_db: {e}")
+            # Раньше это было log.debug — сбой синхронизации виртуального
+            # баланса/статистики в БД проходил практически незамеченным.
+            # Поднимаем уровень до error, т.к. это реальный риск потери
+            # состояния при следующем рестарте (см. _restore).
+            log.error(f"[UserTrader] _sync_db не удалось сохранить {token[:8]}: {e}")
+
+    def _persist_trade(self, token: str, trade: dict):
+        """Сохраняет отдельную виртуальную сделку в bot_user_trades — раньше
+        история сделок жила только в памяти (self._users[token]['trades']) и
+        полностью терялась при каждом рестарте процесса."""
+        try:
+            import db_store
+            if db_store.is_available():
+                ok = db_store.user_trade_insert(token, trade)
+                if not ok:
+                    log.error(f"[UserTrader] не удалось сохранить сделку {token[:8]} в БД: {trade}")
+        except Exception as e:
+            log.error(f"[UserTrader] _persist_trade ошибка {token[:8]}: {e}")
