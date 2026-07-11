@@ -653,13 +653,21 @@ class Trader:
             return False
 
         # ── Детектор разворота ── 1: откат от пика портфеля ───────────
+        # Порог отката адаптивный (та же логика, что и trailing по сделкам):
+        # в сильном тренде/пампе даём портфелю больше пространства для роста
+        # (не срезаем прибыль слишком рано), в боковике/слабости — режем туже,
+        # чтобы не отдать назад уже заработанное. Пределы 4–12% защищают от
+        # экстремальных значений на волатильных режимах.
+        adaptive_drop_pct = self._adaptive_trail_pct(Config.PROFIT_PROTECT_DROP_PCT)
+        adaptive_drop_pct = max(4.0, min(adaptive_drop_pct, 12.0))
+
         drop_from_peak = 0.0
         if self.portfolio_high_water_ton > total_value_ton:
             drop_from_peak = (
                 (self.portfolio_high_water_ton - total_value_ton)
                 / self.portfolio_high_water_ton * 100
             )
-        price_fell = drop_from_peak >= Config.PROFIT_PROTECT_DROP_PCT
+        price_fell = drop_from_peak >= adaptive_drop_pct
 
         # ── Детектор разворота ── 2: AI говорит SELL ────────────────
         ai_sell = False
@@ -674,7 +682,9 @@ class Trader:
         # ── Продаём ВСЁ ────────────────────────────────────────────
         reason_parts = []
         if price_fell:
-            reason_parts.append(f"откат -{drop_from_peak:.1f}% от пика портфеля")
+            reason_parts.append(
+                f"откат -{drop_from_peak:.1f}% от пика портфеля (порог {adaptive_drop_pct:.1f}%)"
+            )
         if ai_sell:
             ai_conf2 = float((self.last_ai or {}).get("confidence", 0) or 0)
             reason_parts.append(f"AI SELL {ai_conf2:.0f}%")
