@@ -54,10 +54,51 @@ def _apply_saved_config():
             _startup_log.warning(f"[Config] ⚠️ Пропущено {attr}={v!r}: {exc}")
 
     try:
-        from settings_store import get_section
+        from settings_store import get_section, update_section
         saved = get_section("config")
         if not saved:
-            _startup_log.info("[Config] Сохранённых настроек нет, используем дефолты")
+            _startup_log.info("[Config] Сохранённых настроек нет — сидируем дефолты в DB")
+            try:
+                _attrs = [
+                    "SYMBOL", "TRADE_AMOUNT", "MAX_OPEN_TRADES", "TAKE_PROFIT_PCT",
+                    "TRAILING_STOP_PCT", "MIN_AI_CONFIDENCE", "USE_DYNAMIC_TARGETS",
+                    "TREND_FILTER", "SMART_BUY_ENABLED", "SMART_BUY_PULLBACK_PCT",
+                    "SMART_BUY_MAX_WAIT_TICKS", "SMART_BUY_SKIP_CONF",
+                    "SMART_TP_ENABLED", "SMART_TP_MIN_CONF", "SMART_TP_TIGHT_TRAIL_PCT",
+                    "MIN_PROFIT_TON", "AI_TP_ADAPT_MIN_TRADES", "AI_TP_CAP_PCT",
+                    "DCA_MODE", "DCA_STAKE_TON", "DCA_TARGET_PROFIT_PCT",
+                    "DCA_DROP_TRIGGER_PCT", "DCA_PULLBACK_WAIT_PCT", "DCA_MAX_ENTRIES",
+                    "DCA_CASCADE_ENABLED", "DCA_CASCADE_LEVEL1_PCT", "DCA_CASCADE_LEVEL2_PCT",
+                    "DCA_SMART_REENTRY_ENABLED", "DCA_SMART_REENTRY_PULLBACK_PCT",
+                    "DCA_SMART_REENTRY_MIN_AI_CONF", "DCA_COMPOUND_ENABLED",
+                    "DCA_COMPOUND_RATIO", "DCA_COMPOUND_MAX_TON",
+                    "DCA_ADAPTIVE_TRIGGER_ENABLED", "DCA_ADAPTIVE_FAST_MOVE_PCT",
+                    "DCA_ADAPTIVE_FAST_DROP_PCT", "LARGE_SELL_DCA_ENABLED",
+                    "LARGE_SELL_DCA_TON", "LARGE_SELL_MIN_TON", "LARGE_SELL_COOLDOWN_SEC",
+                    "PROFIT_PROTECT_ENABLED", "PROFIT_PROTECT_TON",
+                    "PROFIT_PROTECT_DROP_PCT", "PROFIT_PROTECT_AI_SELL",
+                    "FEE_PCT", "DCA_REENTRY_COOLDOWN_SEC", "FAST_REENTRY_PULLBACK_PCT",
+                    "SCALP_TARGET_NET_PCT", "ATR_TP_MULT", "ATR_SL_MULT",
+                    "STOP_LOSS_PCT", "EV_THRESHOLD", "MIN_AI_CONFIDENCE",
+                    "AI_OVERRIDE_CONFIDENCE", "AI_HARD_OVERRIDE_CONFIDENCE",
+                    "AI_AUTONOMOUS_MIN_CONF", "AI_FULL_RIGHTS_MIN_CONF",
+                    "PROFIT_PROTECT_ENABLED", "LOSS_COOLDOWN_SEC",
+                    "DCA_AI_SELL_BLOCK_CONF", "CONFLUENCE_ENABLED",
+                    "CONFLUENCE_RSI_MAX", "CONFLUENCE_VOL_MIN_RATIO",
+                    "REVERSAL_AI_MIN", "SCALP_MIN_AI_CONF", "SCALP_TP_PCT",
+                    "SHORT_MIN_AI_CONF", "SMART_MONEY_BLOCK",
+                    "FAST_REENTRY_MIN_CONF", "DCA_REENTRY_COOLDOWN_SEC",
+                ]
+                defaults = {}
+                for _a in _attrs:
+                    _v = getattr(Config, _a, None)
+                    if _v is not None:
+                        defaults[_a] = _v
+                if defaults:
+                    update_section("config", defaults)
+                    _startup_log.info(f"[Config] ✅ Сохранено {len(defaults)} дефолтных настроек в DB")
+            except Exception as _seed_err:
+                _startup_log.warning(f"[Config] ⚠️ Не удалось сидировать дефолты: {_seed_err}")
             return
 
         applied = 0

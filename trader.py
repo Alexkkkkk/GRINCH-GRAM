@@ -1630,9 +1630,39 @@ class Trader:
     # ──────────────────────────────────────────
     # Торговый тик
     # ──────────────────────────────────────────
+    def _run_market_analysis_only(self) -> None:
+        """Запускает ТОЛЬКО анализ рынка (свечи → TA → AI) без каких-либо сделок.
+        Используется когда торговля выключена вручную, чтобы:
+        - last_ai / last_analysis оставались актуальными для дашборда
+        - тики в bot_ticks имели реальные regime/signal/conf данные
+        Все ошибки подавляются — не должен влиять на основной цикл."""
+        try:
+            ohlcv = self.exchange.get_ohlcv(limit=100)
+            if not ohlcv:
+                return
+            result = analyze(ohlcv)
+            self.last_analysis = result
+            ai = self.ai.analyze(ohlcv)
+            self.last_ai = ai
+            # Обновляем BrainFusion без торговых решений
+            try:
+                _bf.update_ai(ai)
+                _bf.update_ta(result)
+            except Exception:
+                pass
+        except Exception:
+            pass  # никогда не ломаем цикл
+
     def _tick(self):
         # ── Ручной выключатель торговли: блокирует ОБА режима (DCA и AI) ──
         if self._trading_disabled_guard():
+            # Анализируем рынок и пишем тики в bot_ticks даже при выключенной торговле —
+            # цены, RSI, режим нужны для советника и дашборда.
+            self._run_market_analysis_only()
+            try:
+                self._push_tick_analytics()
+            except Exception:
+                pass
             return
 
         # ── DCA режим: полностью заменяет AI-логику ─────────────────
