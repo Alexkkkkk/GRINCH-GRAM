@@ -6,7 +6,7 @@ db_backup.py — ежедневный бэкап всех таблиц PostgreSQ
 • Хранит последние KEEP_DAYS бэкапов, старые удаляет автоматически.
 • Если БД недоступна — молча пропускает, не ломает запуск.
 
-Структура файлов:
+Структура файлов (на VPS: DATA_DIR/backups/, локально: backups/):
   backups/
     2026-07-01_100000/
       bot_settings.json
@@ -30,7 +30,11 @@ from pathlib import Path
 
 log = logging.getLogger(__name__)
 
-BACKUP_DIR  = Path("backups")
+# На VPS DATA_DIR=/app/data (persistent volume). Храним бэкапы там,
+# чтобы они не терялись при перезапуске Docker-контейнера.
+# Fallback — папка backups/ рядом с кодом (Replit, локальный запуск).
+_DATA_DIR  = os.environ.get("DATA_DIR", "")
+BACKUP_DIR = Path(_DATA_DIR) / "backups" if _DATA_DIR else Path("backups")
 KEEP_DAYS   = 7          # сколько бэкапов хранить
 INTERVAL_S  = 24 * 3600  # раз в сутки
 

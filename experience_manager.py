@@ -177,7 +177,21 @@ class ExperienceManager:
             ai      = self.data.get("ai") or {}
             if trades:  db.trades_bulk_insert(trades)
             if equity:  db.equity_bulk_insert(equity)
-            if open_ts: db.open_trades_save(open_ts)
+            # ЗАЩИТА: не перезаписывать open_trades в БД данными из JSON,
+            # если в БД уже есть позиции. Это предотвращает ситуацию, когда
+            # кратковременный сбой соединения на старте приводит к тому, что
+            # _migrate_to_db стирает актуальные позиции из БД и заменяет
+            # их устаревшим содержимым experience.json.
+            if open_ts:
+                existing_db_ots = db.open_trades_get()
+                if not existing_db_ots:
+                    db.open_trades_save(open_ts)
+                    logger.info(f"[Experience] Мигрировано open_trades из JSON: {len(open_ts)} позиций")
+                else:
+                    logger.info(
+                        f"[Experience] open_trades пропущены при миграции — "
+                        f"в БД уже {len(existing_db_ots)} позиций (JSON не перезаписывает БД)"
+                    )
             if ctrl:    db.ai_state_set("control", ctrl)
             if stats:   db.ai_state_set("stats", stats)
             if ai:      db.ai_state_set("ai_export", ai)
