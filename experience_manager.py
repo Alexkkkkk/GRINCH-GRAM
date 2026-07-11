@@ -220,6 +220,38 @@ class ExperienceManager:
                 for k in ("total_trades", "winning_trades", "total_pnl"):
                     if k in stats:
                         trader.stats[k] = stats[k]
+            # ── Само-исцеление: stats должны быть согласованы с реальным
+            # журналом сделок (self.data["trades"] — источник истины).
+            # Каскадные частичные продажи (_dca_sell_partial) увеличивают
+            # total_trades/winning_trades/total_pnl напрямую, минуя
+            # record_trade(), поэтому счётчик может «уехать» от журнала
+            # (например показывать 3 сделки при 0 записей в журнале).
+            # Пересчитываем счётчики из журнала, если есть явное расхождение.
+            try:
+                real_trades = self.data.get("trades") or []
+                real_total  = len(real_trades)
+                real_wins   = sum(1 for t in real_trades if float(t.get("pnl", 0) or 0) > 0)
+                real_pnl    = round(sum(float(t.get("pnl", 0) or 0) for t in real_trades), 6)
+                cached_total = int(trader.stats.get("total_trades", 0) or 0)
+                # Расхождение возможно только В БОЛЬШУЮ сторону от журнала
+                # (кэш "опережает" из-за каскадных частичных продаж) —
+                # если кэш меньше журнала, это не баг, просто журнал новее.
+                if cached_total > real_total:
+                    _note = (
+                        f"🔧 Само-исцеление stats: кэш показывал total_trades="
+                        f"{cached_total}, winning_trades={trader.stats.get('winning_trades')}, "
+                        f"total_pnl={trader.stats.get('total_pnl')}, но в журнале сделок "
+                        f"{real_total} записей — сброшено до журнала "
+                        f"({real_total}/{real_wins}/{real_pnl})"
+                    )
+                    logger.warning(f"[Experience] {_note}")
+                    trader.stats["total_trades"]   = real_total
+                    trader.stats["winning_trades"] = real_wins
+                    trader.stats["total_pnl"]      = real_pnl
+                    self.data["stats"] = dict(trader.stats)
+                    self._save_locked()
+            except Exception as _stats_heal_err:
+                logger.warning(f"[Experience] stats self-heal error: {_stats_heal_err}")
             # ВОССТАНАВЛИВАЕМ открытые позиции: цена покупки + цель продажи —
             # чтобы после перезапуска бот знал почём купил и НЕ продал дешевле.
             all_open = [dict(t) for t in (self.data.get("open_trades") or [])]
