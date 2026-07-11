@@ -58,6 +58,32 @@ python3 main.py
 - `templates/` — HTML-шаблоны дашборда
 - `static/` — JS/CSS ресурсы
 
+## Новые инженерные движки (11.07.2026)
+
+По решению пользователя Replit-инстанс теперь использует ОТДЕЛЬНУЮ БД
+(встроенный `DATABASE_URL`, не `EXTERNAL_DATABASE_URL` — секрет с боевой
+БД VPS удалён из окружения Replit). Это безопасно развязывает разработку
+здесь от продакшена на VPS.
+
+Добавлены 7 независимых read-only/консультативных движков (не встроены
+в боевой `trader.py`, не исполняют реальные сделки, не мутируют
+production-таблицы/боевой AI):
+
+| Файл | Что делает | Запуск |
+|---|---|---|
+| `backtest.py` | Walk-forward бэктест technical-стратегии на истории GeckoTerminal | `python3 backtest.py --days 30 --min-quality B` |
+| `paper_trading.py` | Виртуальная торговля на живых свечах (без денег), состояние в `paper_trading_state.json` | `python3 paper_trading.py --tick` / `--status` / `--loop` |
+| `llm_agent.py` | LLM-агент (Groq, function-calling) поверх цены/бэктеста/пейпер-трейдинга/умных денег/RAG | `python3 llm_agent.py --ask "..."` |
+| `rag_context.py` | Векторный поиск похожих исторических рыночных ситуаций (numpy, без внешней vector DB) | `python3 rag_context.py --days 20` |
+| `explainability.py` | Переводит вывод `strategy.analyze()` в понятное объяснение решения | `python3 explainability.py --days 3` |
+| `alert_rules.py` | Доп. правила алертов (крупная победа/убыток, просадка, итог бэктеста) поверх `alerts.send_alert` | вызывается из кода: `notify_trade_closed(...)` и т.д. |
+| `multi_agent.py` | Экспериментальный консенсус нескольких агентов (technical/smart-money/backtest-context) — НЕ замена боевого `brain_fusion.py` | `python3 multi_agent.py --days 5` |
+
+Важно: `ai_engine.py` (QuantumBrain) — синглтон с мутируемым состоянием
+моделей; ни один из новых движков не прогоняет через него исторические
+данные (это испортило бы боевые модели). Бэктест/RAG/мультиагент
+используют только `strategy.py` (чистые функции без побочных эффектов).
+
 ## Пользовательские настройки
 
 - Язык интерфейса: **русский**

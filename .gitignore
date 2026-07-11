@@ -23,6 +23,7 @@ data/
 experience.json
 settings.json
 wallets.json
+paper_trading_state.json
 uv.lock
 
 # Артефакты Replit (не нужны на Bothost — содержат package.json который сбивает автодетект)
