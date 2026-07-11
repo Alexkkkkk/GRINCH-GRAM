@@ -1,17 +1,1 @@
-{
-  "liquidator": {
-    "sell_rise_pct": 25
-  },
-  "config": {
-    "SYMBOL": "GRINCH/USDT",
-    "TRADE_AMOUNT": 1,
-    "MAX_OPEN_TRADES": 50,
-    "STOP_LOSS_PCT": 5.0,
-    "TAKE_PROFIT_PCT": 25,
-    "TRAILING_STOP_PCT": 7.0,
-    "FEE_PCT": 1.0,
-    "MIN_AI_CONFIDENCE": 62.0,
-    "USE_DYNAMIC_TARGETS": true,
-    "TREND_FILTER": true
-  }
-}
+{}
