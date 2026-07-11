@@ -78,6 +78,13 @@ class Trader:
         # Сериализация закрытия позиций: не даём торговому циклу и ручному
         # закрытию продать одну и ту же позицию дважды.
         self._close_lock = threading.Lock()
+        # Синхронизация чтения/записи open_trades между торговым циклом и
+        # фоновыми читателями (wallet_manager.poll, API-запросы дашборда).
+        # Без этого лока wallet_manager иногда читал позицию в момент,
+        # когда amount/stake_ton уже обновлены, а остальные поля — ещё старые
+        # (или наоборот), что давало скачущий P&L на дашборде при неизменной
+        # цене входа. См. replit.md / memory: "wallet snapshot pnl flapping".
+        self._ot_lock = threading.RLock()
         # Счётчик подтверждений BUY-сигнала (требуем 2 последовательных)
         self._buy_confirm_count = 0
         # Smart BUY: ожидаем откат к лучшей цене перед входом
@@ -215,11 +222,16 @@ class Trader:
                 diff_pct = abs(real_grinch - book_grinch) / real_grinch * 100
                 if diff_pct > 1.0:
                     scale = real_grinch / book_grinch
-                    for t in self.open_trades:
-                        t["amount"] = round((t.get("amount") or 0) * scale, 6)
-                        # stake_ton масштабируем так же, иначе прибыль будет
-                        # завышена (ставка заниженная относительно реального количества).
-                        t["stake_ton"] = round((t.get("stake_ton") or 0) * scale, 4)
+                    # Лочим на время правки amount+stake_ton — иначе wallet_manager
+                    # (фоновый поток) может прочитать позицию МЕЖДУ этими двумя
+                    # присвоениями и увидеть newamount+oldstake (или наоборот),
+                    # что даёт скачущий P&L на дашборде при неизменной цене входа.
+                    with self._ot_lock:
+                        for t in self.open_trades:
+                            t["amount"] = round((t.get("amount") or 0) * scale, 6)
+                            # stake_ton масштабируем так же, иначе прибыль будет
+                            # завышена (ставка заниженная относительно реального количества).
+                            t["stake_ton"] = round((t.get("stake_ton") or 0) * scale, 4)
                     self.log(
                         f"🔧 Сверка баланса: БД показывала {book_grinch:.2f} GRINCH, "
                         f"на кошельке {real_grinch:.2f} (расхождение {diff_pct:.1f}%) — "
@@ -1313,22 +1325,25 @@ class Trader:
         sell_gas = Config.SELL_GAS_TON
 
         # Уменьшаем amount/stake_ton во всех открытых позициях пропорционально
+        # (под общим локом — см. _ot_lock: без него wallet_manager мог прочитать
+        # позицию между обновлением amount и stake_ton и получить рваные данные).
         partial_pnl = 0.0
-        for trade in self.open_trades:
-            old_amount = trade.get("amount", 0) or 0
-            old_stake  = trade.get("stake_ton", 0) or 0
-            new_amount = round(old_amount * (1 - sell_fraction), 6)
-            new_stake  = round(old_stake  * (1 - sell_fraction), 4)
-            # PNL от проданной части
-            sold_part = old_amount * sell_fraction
-            if grinch_ton > 0 and sold_part > 0:
-                proceeds = sold_part * grinch_ton * (1 - fee) - sell_gas * sell_fraction
-                cost     = old_stake * sell_fraction + buy_gas * sell_fraction
-                partial_pnl += round(proceeds - cost, 6)
-            trade["amount"]    = new_amount
-            trade["stake_ton"] = new_stake
+        with self._ot_lock:
+            for trade in self.open_trades:
+                old_amount = trade.get("amount", 0) or 0
+                old_stake  = trade.get("stake_ton", 0) or 0
+                new_amount = round(old_amount * (1 - sell_fraction), 6)
+                new_stake  = round(old_stake  * (1 - sell_fraction), 4)
+                # PNL от проданной части
+                sold_part = old_amount * sell_fraction
+                if grinch_ton > 0 and sold_part > 0:
+                    proceeds = sold_part * grinch_ton * (1 - fee) - sell_gas * sell_fraction
+                    cost     = old_stake * sell_fraction + buy_gas * sell_fraction
+                    partial_pnl += round(proceeds - cost, 6)
+                trade["amount"]    = new_amount
+                trade["stake_ton"] = new_stake
 
-        self.dca_total_stake   = sum(t.get("stake_ton", 0) for t in self.open_trades)
+            self.dca_total_stake   = sum(t.get("stake_ton", 0) for t in self.open_trades)
         self.dca_cascade_half_sold = True
         self.stats["total_pnl"] = round(self.stats["total_pnl"] + partial_pnl, 6)
         # Каскадная частичная продажа закрывает часть позиции как отдельную
