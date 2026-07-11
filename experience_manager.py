@@ -250,7 +250,13 @@ class ExperienceManager:
                 # Расхождение возможно только В БОЛЬШУЮ сторону от журнала
                 # (кэш "опережает" из-за каскадных частичных продаж) —
                 # если кэш меньше журнала, это не баг, просто журнал новее.
-                if cached_total > real_total:
+                #
+                # ВАЖНО: не трогаем stats если журнал пустой (real_total == 0).
+                # Пустой журнал = потеря данных (DCA-продажи инкрементируют
+                # счётчик через notify_trade_closed, но не вызывают record_trade,
+                # поэтому trades-список всегда 0 при non-zero stats). Занулять
+                # накопленную статистику из-за пустого журнала — неверно.
+                if cached_total > real_total > 0:
                     _note = (
                         f"🔧 Само-исцеление stats: кэш показывал total_trades="
                         f"{cached_total}, winning_trades={trader.stats.get('winning_trades')}, "
