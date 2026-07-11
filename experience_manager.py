@@ -118,6 +118,12 @@ class ExperienceManager:
         db = _db()
         loaded_from_db = False
 
+        # ── Флаг принудительного сброса статистики ───────────────────────────
+        # Если в DATA_DIR существует файл .reset_stats — обнуляем счётчики сессии
+        # сразу после загрузки и удаляем флаг (срабатывает ровно один раз).
+        _reset_flag = os.path.join(_DATA_DIR, ".reset_stats")
+        _force_reset = os.path.exists(_reset_flag)
+
         # ── Попытка загрузить из PostgreSQL ──────────────────────────────────
         if db:
             try:
@@ -144,6 +150,52 @@ class ExperienceManager:
                     loaded_from_db = True
             except Exception as e:
                 logger.warning(f"[Experience] DB load error: {e}")
+
+        # ── Принудительный сброс статистики (флаг .reset_stats) ─────────────
+        if _force_reset:
+            zero_stats = {"total_trades": 0, "winning_trades": 0, "total_pnl": 0.0,
+                          "start_balance": 10000.0}
+            self.data["stats"]  = zero_stats
+            self.data["trades"] = []
+            self.data["open_trades"] = []
+            # Сбрасываем счётчики в control, но сохраняем конфиг-поля
+            ctrl = self.data.get("control") or {}
+            ctrl.update({"loss_streak": 0, "drawdown_pct": 0.0, "last_note": "",
+                         "peak_equity": 0.0, "ai_tp_adapted": False,
+                         "ai_tp_trades_used": 0, "ai_avg_win_pct": 0.0,
+                         "dca_ai_adapted": False, "dca_adapt_report": {}})
+            self.data["control"] = ctrl
+            # Персистим нули немедленно в DB и JSON
+            if db:
+                try:
+                    db.ai_state_set("stats", zero_stats)
+                    db.ai_state_set("control", ctrl)
+                    with db._conn() as conn:
+                        with conn.cursor() as cur:
+                            for tbl in ["bot_trades", "bot_open_trades",
+                                        "bot_equity", "bot_ticks"]:
+                                cur.execute("DELETE FROM " + tbl)
+                except Exception as _re:
+                    logger.warning(f"[Experience] reset_stats DB error: {_re}")
+            # Обновляем JSON на диске
+            try:
+                if os.path.exists(self.path):
+                    with open(self.path, "r", encoding="utf-8") as _f:
+                        _exp = json.load(_f)
+                    _exp["stats"] = zero_stats
+                    _exp.setdefault("control", {}).update(ctrl)
+                    _exp["trades"] = []
+                    _exp["open_trades"] = []
+                    with open(self.path, "w", encoding="utf-8") as _f:
+                        json.dump(_exp, _f)
+            except Exception:
+                pass
+            # Удаляем флаг — срабатывает ровно один раз
+            try:
+                os.remove(_reset_flag)
+            except Exception:
+                pass
+            print("[Experience] ✅ Статистика сброшена к нулю (.reset_stats флаг применён)")
 
         # ── Fallback / миграция: читаем JSON ─────────────────────────────────
         if not loaded_from_db:
