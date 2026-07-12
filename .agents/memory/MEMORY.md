@@ -53,3 +53,4 @@
 - [VPS data folder ↔ DB sync](vps-data-sync.md) — db_backup.py already dumps DB→/app/data/backups on the VPS; check freshness there before building a new export path. VPS root password has leaked into chat more than once — always insist on the secure secrets form.
 - [VPS GitOps deploy pipeline](vps-gitops-deploy.md) — cron deploy.sh git-resets /opt/bot to origin/main + rebuilds; docker cp hotfixes are lost on next recreate unless also committed+pushed to origin/main.
 - [Corrupted balance snapshots](balance-cache-corruption.md) — TON=0 read while GRINCH>0 is almost always an API glitch, not real state; reject it at both get_shared_balance() and record_balance(), or it corrupts the equity chart and trading balance.
+- [Settings JSON/DB drift](settings-json-db-drift.md) — always write settings via settings_store.update_section() (DB+JSON), never db_store.settings_update_section() directly, or the section only exists in DB and is lost if DB is unreachable.
