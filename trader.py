@@ -145,8 +145,8 @@ class Trader:
         # восстановленный ордер помечаем флагом restored=True — в _tick()
         # он будет исполнен по текущей рыночной цене без ожидания откатa.
         try:
-            import db_store as _dbs2
-            pb_raw = _dbs2.settings_get("trader_state", "pending_buy")
+            from settings_store import get_section
+            pb_raw = get_section("trader_state").get("pending_buy")
             if pb_raw:
                 import json as _json2
                 pb_data = _json2.loads(pb_raw)
@@ -157,8 +157,8 @@ class Trader:
             pass
         # Восстанавливаем timestamp последней DCA-докупки (кулдаун переживает рестарт)
         try:
-            import db_store as _dbs3
-            _ts_raw = _dbs3.settings_get("trader_state", "last_dca_entry_ts")
+            from settings_store import get_section
+            _ts_raw = get_section("trader_state").get("last_dca_entry_ts")
             if _ts_raw:
                 self._last_dca_entry_ts = float(_ts_raw)
         except Exception:
@@ -403,20 +403,21 @@ class Trader:
     # ──────────────────────────────────────────
     @staticmethod
     def _load_trading_enabled() -> bool:
-        """Загружает последнее состояние кнопки торговли из DB/settings.
+        """Загружает последнее состояние кнопки торговли из DB/settings (с JSON fallback).
         Возвращает False если сохранённого состояния нет (первый запуск / деплой)."""
         try:
-            import db_store as _dbs
-            val = _dbs.settings_get("trader_state", "trading_enabled")
+            from settings_store import get_section
+            val = get_section("trader_state").get("trading_enabled")
             return str(val).lower() == "true" if val is not None else False
         except Exception:
             return False
 
     def _save_trading_enabled(self, state: bool) -> None:
-        """Сохраняет состояние кнопки торговли в DB для пережития рестартов."""
+        """Сохраняет состояние кнопки торговли в DB + JSON (settings_store) для пережития
+        перезапуска и отказа БД."""
         try:
-            import db_store as _dbs
-            _dbs.settings_update_section("trader_state", {"trading_enabled": str(state)})
+            from settings_store import update_section
+            update_section("trader_state", {"trading_enabled": str(state)})
         except Exception:
             pass
 
@@ -536,11 +537,11 @@ class Trader:
             pass
 
     def _clear_pending_buy(self):
-        """Сбрасывает Smart BUY и удаляет его из DB."""
+        """Сбрасывает Smart BUY и удаляет его из DB + JSON."""
         self._pending_buy = None
         try:
-            import db_store as _dbs
-            _dbs.settings_update_section("trader_state", {"pending_buy": ""})
+            from settings_store import update_section
+            update_section("trader_state", {"pending_buy": ""})
         except Exception:
             pass
 
@@ -1256,10 +1257,10 @@ class Trader:
             self.dca_entries_count  += 1
             self.dca_total_stake    += stake_ton
             self._last_dca_entry_ts  = time.time()   # кулдаун: фиксируем время входа
-            # Персистируем timestamp в DB чтобы выжить перезапуск
+            # Персистируем timestamp в DB + JSON чтобы выжить перезапуск (и отказ БД)
             try:
-                import db_store as _dbs_dca, json as _json_dca
-                _dbs_dca.settings_update_section("trader_state", {
+                from settings_store import update_section
+                update_section("trader_state", {
                     "last_dca_entry_ts": str(self._last_dca_entry_ts)
                 })
             except Exception:
@@ -2157,11 +2158,12 @@ class Trader:
                     "pullback_pct":  pullback_pct,
                     "mode_params":   _mode_params,   # скальп/памп параметры для будущего входа
                 }
-                # Персистируем в DB — переживёт перезапуск
+                # Персистируем в DB + JSON — переживёт перезапуск и отказ БД
                 try:
-                    import db_store as _dbs, json as _json
+                    from settings_store import update_section
+                    import json as _json
                     _pb_save = {k: v for k, v in self._pending_buy.items() if k not in ("ai", "analysis")}
-                    _dbs.settings_update_section("trader_state", {"pending_buy": _json.dumps(_pb_save)})
+                    update_section("trader_state", {"pending_buy": _json.dumps(_pb_save)})
                 except Exception:
                     pass
                 self.log(
