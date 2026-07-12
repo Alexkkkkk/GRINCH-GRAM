@@ -134,7 +134,20 @@ class ExperienceManager:
                     if equity:      self.data["equity"]      = equity
                     if open_trades: self.data["open_trades"] = open_trades
                     if control_raw: self.data["control"]     = control_raw if isinstance(control_raw, dict) else json.loads(control_raw)
-                    if stats_raw:   self.data["stats"]       = stats_raw if isinstance(stats_raw, dict) else json.loads(stats_raw)
+                    if stats_raw:
+                        _s = stats_raw if isinstance(stats_raw, dict) else json.loads(stats_raw)
+                        # Санитайз при загрузке: winning_trades ≤ total_trades (атомарно,
+                        # до того как любой фоновый поток успеет прочитать self.data["stats"])
+                        _wt = int(_s.get("winning_trades", 0) or 0)
+                        _tt = int(_s.get("total_trades", 0) or 0)
+                        if _wt > _tt:
+                            _s = dict(_s)
+                            _s["winning_trades"] = _tt
+                            logger.warning(
+                                f"[Experience] 🔧 _load: winning_trades ({_wt}) > total_trades ({_tt})"
+                                f" — исправлено до {_tt} при загрузке из DB"
+                            )
+                        self.data["stats"] = _s
                     if ai_raw:      self.data["ai"]          = ai_raw if isinstance(ai_raw, dict) else json.loads(ai_raw)
                     ctrl = self._default_control()
                     ctrl.update(self.data.get("control") or {})
