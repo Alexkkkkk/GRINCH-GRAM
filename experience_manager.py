@@ -560,6 +560,13 @@ class ExperienceManager:
         # → ошибочную паузу торговли.
         if grinch > 0 and (ton_usd <= 0 or gp <= 0):
             return
+        # Защита от «битого» снимка баланса: TON=0 при ненулевом GRINCH почти
+        # всегда означает временный сбой чтения on-chain баланса (реальный
+        # кошелёк с открытой позицией всегда держит газовый резерв, TON
+        # никогда не бывает ровно 0). Не пишем такую точку — иначе капитал на
+        # графике «проваливается» до нуля и сразу же возвращается обратно.
+        if ton == 0 and grinch > 0:
+            return
         equity_ton = ton + (grinch * gp / ton_usd if ton_usd else 0.0)
         point = {
             "t":          datetime.utcnow().isoformat(),

@@ -142,6 +142,21 @@ def get_shared_balance(force: bool = False) -> dict:
             log.warning("[Balance] 429 от TonCenter/TonAPI — пауза 90с, возвращаем кеш")
             return dict(_BAL_CACHE) if _BAL_CACHE else {"TON": 0.0, "GRINCH": 0.0}
 
+    # Защита от «битого» ответа API: TON=0 при том, что раньше баланс был
+    # заметно положительным почти всегда означает сбой чтения TonCenter/TonAPI
+    # (кошелёк с открытой GRINCH-позицией всегда держит газовый резерв и
+    # никогда не бывает ровно 0 TON), а не реальное состояние кошелька.
+    # Раньше такие битые снимки попадали в кеш и в историю equity — график
+    # капитала «проваливался» до нуля и сразу же возвращался обратно.
+    with _BAL_CACHE_LOCK:
+        _prev_ton = _BAL_CACHE.get("TON")
+    if ton_val == 0.0 and _prev_ton and _prev_ton > 0.05:
+        log.warning(
+            f"[Balance] Подозрительный ответ TON=0 (был {_prev_ton}) — "
+            "игнорируем, используем предыдущее значение"
+        )
+        ton_val = None
+
     # Обновляем кеш только если получили хотя бы одно реальное значение
     if ton_val is not None or grn_val > 0:
         new_cache: dict = {
