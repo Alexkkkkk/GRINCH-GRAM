@@ -513,7 +513,18 @@ class ExperienceManager:
             if len(self.data["trades"]) > MAX_TRADES_KEPT:
                 self.data["trades"] = self.data["trades"][-MAX_TRADES_KEPT:]
             if stats:
-                self.data["stats"] = dict(stats)
+                _s = dict(stats)
+                # Инвариант: winning_trades ≤ total_trades (защита от race condition
+                # когда запись_trade вызывается с устаревшими/некорректными stats)
+                _wt2 = int(_s.get("winning_trades", 0) or 0)
+                _tt2 = int(_s.get("total_trades", 0) or 0)
+                if _wt2 > _tt2:
+                    _s["winning_trades"] = _tt2
+                    logger.warning(
+                        f"[Experience] record_trade sanitize: winning({_wt2})>total({_tt2})"
+                        f" — winning исправлено до {_tt2}"
+                    )
+                self.data["stats"] = _s
             if ai is not None:
                 try:
                     self.data["ai"] = ai.export_experience()

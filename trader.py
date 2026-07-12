@@ -1245,6 +1245,10 @@ class Trader:
             self.open_trades.append(trade)
             self.trades.append(trade)
             self.stats["total_trades"] += 1
+            # Синхронизируем stats в experience_manager немедленно — иначе при
+            # рестарте до закрытия позиции этот инкремент теряется, и при закрытии
+            # winning_trades оказывается > total_trades (накопительный баг).
+            self.exp.data["stats"] = dict(self.stats)
             # Объединяем с уже открытыми LONG-позициями в одну
             self._merge_long_trades()
 
@@ -2504,6 +2508,9 @@ class Trader:
         self.open_trades.append(trade)
         self.trades.append(dict(trade))
         self.stats["total_trades"] += 1
+        # Синхронизируем stats немедленно — без этого рестарт между открытием
+        # и закрытием позиции обнуляет total_trades, создавая winning > total.
+        self.exp.data["stats"] = dict(self.stats)
         # Если уже есть другие LONG-позиции — объединяем всё в одну
         self._merge_long_trades()
         # АВТО-СОХРАНЕНИЕ: цена покупки + цель продажи на диск, чтобы после
@@ -2682,6 +2689,8 @@ class Trader:
         }
         self.open_short_trades.append(trade)
         self.stats["total_trades"] += 1
+        # Синхронизируем stats немедленно — без этого total_trades теряется при рестарте.
+        self.exp.data["stats"] = dict(self.stats)
         try:
             self.exp.save_open_trades(self._combined_open_trades())
         except Exception as e:  # noqa: BLE001
