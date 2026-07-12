@@ -3037,6 +3037,19 @@ class Trader:
             db_store.open_trades_save(self._combined_open_trades())
         except Exception:
             pass
+        # ── Записываем каждую закрытую сделку в журнал (bot_trades) ──────────
+        # Без этого закрытые позиции не попадают в историю сделок и не
+        # учитываются в analyze_and_adapt (AI learning loop).
+        for trade in long_trades:
+            try:
+                self.exp.record_trade(dict(trade), dict(self.stats), None)
+                self.trades.append(dict(trade))
+            except Exception as _rt_err:
+                self.log(f"⚠️ record_trade (liquidator): {_rt_err}", "WARN")
+        try:
+            self.exp.save()
+        except Exception:
+            pass
 
     def _close_trade(self, trade, price, reason):
         """Сериализует закрытие (лок) и защищает от двойной продажи позиции."""
