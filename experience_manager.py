@@ -324,6 +324,28 @@ class ExperienceManager:
                     trader.trades.append(dict(t))
         if open_short_trades:
             trader.open_short_trades = open_short_trades
+        # ── Восстанавливаем ЗАКРЫТЫЕ сделки в trader.trades ──────────────────
+        # trader.trades — чисто оперативный список (обнуляется в self.trades = []
+        # при каждом запуске Trader()), а дашборд ("История сделок") берёт
+        # recent_trades именно из него, а не из журнала на диске/в БД.
+        # Раньше сюда попадали только открытые позиции → после КАЖДОГО
+        # рестарта уже закрытые (и прибыльные) сделки пропадали из истории на
+        # дашборде, хотя счётчики (Сделок/Win Rate/P&L) их учитывали.
+        try:
+            with self._lock:
+                journal_closed = [dict(t) for t in (self.data.get("trades") or [])
+                                   if t.get("status") == "closed" or t.get("closed_at")]
+            existing_ids2 = {t.get("id") for t in trader.trades}
+            restored_closed = 0
+            for t in journal_closed[-50:]:
+                if t.get("id") not in existing_ids2:
+                    trader.trades.append(t)
+                    existing_ids2.add(t.get("id"))
+                    restored_closed += 1
+            if restored_closed:
+                trader.log(f"🗂️ История сделок восстановлена: {restored_closed} закрытых сделок", "INFO")
+        except Exception as _hist_err:
+            logger.warning(f"[Experience] restore closed trades error: {_hist_err}")
         try:
             note = (
                 f"🧠 Память загружена: {len(self.data['trades'])} сделок"
