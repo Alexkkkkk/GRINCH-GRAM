@@ -7,7 +7,7 @@ class Config:
     EXCHANGE = os.getenv("EXCHANGE", "binance")
     API_KEY = os.getenv("API_KEY", "")
     API_SECRET = os.getenv("API_SECRET", "")
-    SYMBOL = os.getenv("SYMBOL", "GRINCH/USDT")
+    SYMBOL = os.getenv("SYMBOL", "GRINCH/TON")
     TIMEFRAME = os.getenv("TIMEFRAME", "1h")
     # Начальная ставка 100 TON — полный боевой режим
     TRADE_AMOUNT = float(os.getenv("TRADE_AMOUNT", "100"))
