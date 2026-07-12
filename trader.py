@@ -64,7 +64,6 @@ class Trader:
             "total_trades":   0,
             "winning_trades": 0,
             "total_pnl":      0.0,
-            "start_balance":  10000.0,
         }
         self._thread = None
         # ── Ручной выключатель торговли ──────────────────────────────────
@@ -1358,6 +1357,26 @@ class Trader:
         except Exception:
             pass
 
+        # ── Постоянная история сделок (bot_trades) — иначе счётчик total_pnl
+        # растёт, а аудиторского следа "откуда взялась прибыль" не остаётся.
+        try:
+            now_iso = datetime.utcnow().isoformat()
+            self.exp.record_trade({
+                "id":           f"cascade1_{int(time.time())}",
+                "side":         "sell_partial",
+                "amount":       sell_amount,
+                "entry_price":  None,
+                "exit_price":   price_usd,
+                "pnl":          partial_pnl,
+                "opened_at":    None,
+                "closed_at":    now_iso,
+                "close_reason": f"dca_cascade_level1_{portfolio_pct:.1f}pct",
+                "status":       "closed",
+                "outcome":      "win" if partial_pnl > 0 else "loss",
+            }, self.stats, self.ai)
+        except Exception as e:
+            self.log(f"Запись сделки в историю (каскад Ур.1): {e}", "WARN")
+
         self.log(
             f"✅ Каскад Ур.1 зафиксирован: PNL ≈ {partial_pnl:+.4f} TON | "
             f"остаток {total_grinch*(1-sell_fraction):.4f} GRINCH ждёт +{Config.DCA_CASCADE_LEVEL2_PCT:.0f}%",
@@ -1440,6 +1459,10 @@ class Trader:
             trade["outcome"]      = "win" if pnl_ton > 0 else "loss"
             total_pnl            += pnl_ton
             self.stats["total_pnl"] = round(self.stats["total_pnl"] + pnl_ton, 6)
+            # total_trades раньше не увеличивался в этой функции — winning_trades
+            # рос сам по себе, что могло дать winrate>100% или расхождение со
+            # счётчиком сделок. Считаем total_trades вместе с winning_trades.
+            self.stats["total_trades"] = self.stats.get("total_trades", 0) + 1
             if pnl_ton > 0:
                 self.stats["winning_trades"] += 1
             # AI feedback
@@ -1456,6 +1479,12 @@ class Trader:
                 if t["id"] == trade["id"]:
                     t.update(trade)
                     break
+            # ── Постоянная история сделок (bot_trades) — единственный источник
+            # аудиторского следа "откуда взялась прибыль" на дашборде.
+            try:
+                self.exp.record_trade(dict(trade), self.stats, self.ai)
+            except Exception as e:
+                self.log(f"Запись сделки в историю (DCA sell-all): {e}", "WARN")
 
         # ── Компаундирование: накапливаем бонус к следующей ставке ──────
         if Config.DCA_COMPOUND_ENABLED and total_pnl > 0:
