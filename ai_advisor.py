@@ -59,13 +59,13 @@ GROQ_BASE_URL = "https://api.groq.com/openai/v1"
 GROQ_MODEL    = "llama-3.3-70b-versatile"
 
 # ── Параметры автономии ────────────────────────────────────────────────────
-AUTO_INTERVAL_MIN    = 5    # авто-запуск каждые N минут
+AUTO_INTERVAL_MIN    = 60   # авто-запуск каждые N минут
 AUTO_TRADES_TRIGGER  = 2    # авто-запуск после закрытых сделок (было 1 — слишком часто жгло токены)
 
 # Восстанавливаем сохранённые настройки интервала (переживают перезапуск)
 try:
     if _adv_sec.get("interval_min"):
-        AUTO_INTERVAL_MIN = max(5, min(120, int(_adv_sec["interval_min"])))
+        AUTO_INTERVAL_MIN = max(30, min(360, int(_adv_sec["interval_min"])))
     if _adv_sec.get("trades_trigger"):
         AUTO_TRADES_TRIGGER = max(1, min(20, int(_adv_sec["trades_trigger"])))
 except Exception:
@@ -1471,7 +1471,7 @@ def toggle_auto_apply() -> bool:
 def set_config(interval_min: int = None, trades_trigger: int = None):
     global AUTO_INTERVAL_MIN, AUTO_TRADES_TRIGGER
     if interval_min is not None:
-        AUTO_INTERVAL_MIN = max(5, min(120, int(interval_min)))
+        AUTO_INTERVAL_MIN = max(30, min(360, int(interval_min)))
     if trades_trigger is not None:
         AUTO_TRADES_TRIGGER = max(1, min(20, int(trades_trigger)))
     try:
