@@ -1244,10 +1244,9 @@ class Trader:
             }
             self.open_trades.append(trade)
             self.trades.append(trade)
-            self.stats["total_trades"] += 1
-            # Синхронизируем stats в experience_manager немедленно — иначе при
-            # рестарте до закрытия позиции этот инкремент теряется, и при закрытии
-            # winning_trades оказывается > total_trades (накопительный баг).
+            # total_trades теперь считается только в момент закрытия (там же,
+            # где вызывается record_trade) — единая точка учёта, чтобы счётчик
+            # никогда не расходился с журналом сделок bot_trades.
             self.exp.data["stats"] = dict(self.stats)
             # Объединяем с уже открытыми LONG-позициями в одну
             self._merge_long_trades()
@@ -2507,9 +2506,9 @@ class Trader:
         }
         self.open_trades.append(trade)
         self.trades.append(dict(trade))
-        self.stats["total_trades"] += 1
-        # Синхронизируем stats немедленно — без этого рестарт между открытием
-        # и закрытием позиции обнуляет total_trades, создавая winning > total.
+        # total_trades теперь считается только в момент закрытия (там же,
+        # где вызывается record_trade) — единая точка учёта, чтобы счётчик
+        # никогда не расходился с журналом сделок bot_trades.
         self.exp.data["stats"] = dict(self.stats)
         # Если уже есть другие LONG-позиции — объединяем всё в одну
         self._merge_long_trades()
@@ -2688,8 +2687,8 @@ class Trader:
             "entry_regime":     (ai.get("regime") or {}).get("name") if ai else None,
         }
         self.open_short_trades.append(trade)
-        self.stats["total_trades"] += 1
-        # Синхронизируем stats немедленно — без этого total_trades теряется при рестарте.
+        # total_trades теперь считается только в момент закрытия (см. _close_short_trade),
+        # единая точка учёта, чтобы счётчик не расходился с журналом bot_trades.
         self.exp.data["stats"] = dict(self.stats)
         try:
             self.exp.save_open_trades(self._combined_open_trades())
@@ -2761,6 +2760,9 @@ class Trader:
 
         self.open_short_trades = [t for t in self.open_short_trades if t["id"] != trade_id]
         self.stats["total_pnl"] = round(self.stats["total_pnl"] + pnl_ton, 6)
+        # Единая точка учёта: total_trades считается только здесь, в момент
+        # закрытия — синхронно с вызовом record_trade() ниже.
+        self.stats["total_trades"] = self.stats.get("total_trades", 0) + 1
         if pnl_ton > 0:
             self.stats["winning_trades"] += 1
         try:
@@ -3173,6 +3175,9 @@ class Trader:
         trade["status"]       = "closed"
 
         self.stats["total_pnl"] = round(self.stats["total_pnl"] + pnl, 6)
+        # Единая точка учёта: total_trades считается только здесь, в момент
+        # закрытия — синхронно с вызовом record_trade() ниже (в блоке 4).
+        self.stats["total_trades"] = self.stats.get("total_trades", 0) + 1
         if pnl > 0:
             self.stats["winning_trades"] += 1
 
