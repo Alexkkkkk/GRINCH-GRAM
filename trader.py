@@ -231,6 +231,13 @@ class Trader:
                             # stake_ton масштабируем так же, иначе прибыль будет
                             # завышена (ставка заниженная относительно реального количества).
                             t["stake_ton"] = round((t.get("stake_ton") or 0) * scale, 4)
+                        # Обновляем dca_total_stake под тем же локом, иначе wallet_manager
+                        # может прочитать открытые позиции (уже с новым stake_ton) и
+                        # одновременно trader.dca_total_stake (ещё со старым значением),
+                        # получив несогласованные данные и неверный P&L.
+                        self.dca_total_stake = sum(
+                            float(t.get("stake_ton") or 0) for t in self.open_trades
+                        )
                     self.log(
                         f"🔧 Сверка баланса: БД показывала {book_grinch:.2f} GRINCH, "
                         f"на кошельке {real_grinch:.2f} (расхождение {diff_pct:.1f}%) — "

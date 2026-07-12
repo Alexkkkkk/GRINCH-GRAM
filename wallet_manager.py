@@ -127,11 +127,25 @@ class WalletManager:
                 else:
                     _raw_trades = list(getattr(trader, "open_trades", []))
                 open_trades = [t for t in _raw_trades if t.get("side") == "buy"]
-                if open_trades and grinch_bal > 0 and grinch_ton > 0:
+                if open_trades and grinch_bal > 0:
                     total_stake  = sum(t.get("stake_ton", 0) or 0 for t in open_trades)
                     total_amount = sum(t.get("amount",    0) or 0 for t in open_trades)
 
                     if total_amount > 0 and total_stake > 0:
+                        # Cost basis всегда известен, даже когда price feed временно = 0.
+                        # tracked_stake устанавливаем здесь, до проверки grinch_ton > 0,
+                        # иначе при нулевой цене в момент poll он оставался None и дашборд
+                        # терял информацию о вложениях.
+                        try:
+                            from config import Config
+                            buy_gas   = getattr(Config, "BUY_GAS_TON", 0.25)
+                            n_entries = len(open_trades)
+                            tracked_amount  = min(total_amount, grinch_bal)
+                            tracked_entries = n_entries
+                            tracked_stake   = total_stake
+                        except Exception as exc2:
+                            log.debug("[WalletManager] tracked_stake config: %s", exc2)
+
                         # Средневзвешенная цена входа в TON
                         entry_price_ton = total_stake / total_amount
 
@@ -142,31 +156,26 @@ class WalletManager:
                         )
                         entry_price_usd = entry_usd_weighted / total_amount
 
-                        # P&L с учётом комиссий и газа.
+                        # P&L считаем только при наличии актуальной цены.
                         # ВАЖНО: считаем P&L только по реально отслеживаемому trader'ом объёму
                         # (total_amount), а НЕ по всему балансу кошелька (grinch_bal) — на кошельке
                         # может лежать доп. GRINCH, не связанный с текущей открытой DCA-позицией
                         # (старые/ручные поступления), иначе P&L считается против чужого количества
                         # токенов и получается бессмысленно завышенным.
-                        try:
-                            from config import Config
-                            fee      = Config.FEE_PCT / 100.0
-                            sell_gas = Config.SELL_GAS_TON
-                            buy_gas  = getattr(Config, "BUY_GAS_TON", 0.25)
-                            n_entries = len(open_trades)
+                        if grinch_ton > 0 and tracked_stake is not None:
+                            try:
+                                fee      = Config.FEE_PCT / 100.0
+                                sell_gas = Config.SELL_GAS_TON
 
-                            tracked_amount  = min(total_amount, grinch_bal)
-                            tracked_entries = n_entries
-                            tracked_stake   = total_stake
-                            tracked_value_ton = tracked_amount * grinch_ton
+                                tracked_value_ton = tracked_amount * grinch_ton
 
-                            proceeds = tracked_value_ton * (1.0 - fee) - sell_gas
-                            cost     = tracked_stake + buy_gas * n_entries
-                            pnl_ton  = round(proceeds - cost, 6)
-                            pnl_pct  = round(pnl_ton / cost * 100, 2) if cost > 0 else 0.0
-                            pnl_usd  = round(pnl_ton * ton_usd, 4) if ton_usd > 0 else None
-                        except Exception as exc2:
-                            log.debug("[WalletManager] P&L config: %s", exc2)
+                                proceeds = tracked_value_ton * (1.0 - fee) - sell_gas
+                                cost     = tracked_stake + buy_gas * n_entries
+                                pnl_ton  = round(proceeds - cost, 6)
+                                pnl_pct  = round(pnl_ton / cost * 100, 2) if cost > 0 else 0.0
+                                pnl_usd  = round(pnl_ton * ton_usd, 4) if ton_usd > 0 else None
+                            except Exception as exc2:
+                                log.debug("[WalletManager] P&L config: %s", exc2)
             except Exception as exc:
                 log.debug("[WalletManager] P&L calc: %s", exc)
 
