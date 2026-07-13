@@ -1243,10 +1243,9 @@ class Trader:
             )
             stake_ton = spendable
 
-        # Изменяем TRADE_AMOUNT_TON временно для _open_trade
-        orig_amount = Config.TRADE_AMOUNT
+        # ton_stake передаётся напрямую в place_order (DeDust-путь) —
+        # мутировать Config.TRADE_AMOUNT небезопасно (race condition с дашбордом).
         try:
-            Config.TRADE_AMOUNT = stake_ton
             # Используем price_usd как entry price; amount считается через stake/price
             amount = stake_ton / price_usd if price_usd > 0 else 0
 
@@ -1343,7 +1342,7 @@ class Trader:
                 pass
             return True
         finally:
-            Config.TRADE_AMOUNT = orig_amount
+            pass  # Config.TRADE_AMOUNT не изменялся — восстанавливать нечего
 
     def _dca_sell_partial(self, price_usd, grinch_ton, portfolio_pct, sell_fraction=0.5):
         """Каскадный выход: продаёт sell_fraction (0.5 = 50%) от всей позиции.
@@ -1369,8 +1368,13 @@ class Trader:
         if self.exchange.mode == "dedust":
             sell_result = self.exchange.place_order("sell", sell_amount)
             if not sell_result or sell_result.get("error"):
+                # Одна повторная попытка через 5 с (сетевой сбой / RPC таймаут)
+                self.log("⚠️ Каскад: продажа Ур.1 не прошла — retry через 5с…", "WARN")
+                time.sleep(5)
+                sell_result = self.exchange.place_order("sell", sell_amount)
+            if not sell_result or sell_result.get("error"):
                 err = (sell_result or {}).get("error", "нет ответа")
-                self.log(f"⚠️ Каскад: продажа Ур.1 не исполнена — {err}", "WARN")
+                self.log(f"⚠️ Каскад: продажа Ур.1 не исполнена после retry — {err}", "WARN")
                 return False
             self.log(
                 f"✅ Каскад Ур.1: продажа исполнена | id={sell_result.get('id', '—')}",
@@ -1485,8 +1489,13 @@ class Trader:
         if self.exchange.mode == "dedust":
             sell_result = self.exchange.place_order("sell", sell_amount)
             if not sell_result or sell_result.get("error"):
+                # Одна повторная попытка через 5 с (сетевой сбой / RPC таймаут)
+                self.log("⚠️ DCA: продажа не прошла — retry через 5с…", "WARN")
+                time.sleep(5)
+                sell_result = self.exchange.place_order("sell", sell_amount)
+            if not sell_result or sell_result.get("error"):
                 err = (sell_result or {}).get("error", "нет ответа")
-                self.log(f"⚠️ DCA: продажа не исполнена — {err}. Позиции остаются.", "WARN")
+                self.log(f"⚠️ DCA: продажа не исполнена после retry — {err}. Позиции остаются.", "WARN")
                 return False
             self.log(
                 f"✅ DCA: продажа GRINCH → TON исполнена | "

@@ -1255,9 +1255,51 @@ def run_advisor(auto_apply: bool = None, user_message: str = "",
         return result
 
     except Exception as ex:
-        logger.error(f"[Advisor] ошибка: {ex}")
-        _record_rate_limit(str(ex))
-        return {"ok": False, "error": str(ex)}
+        ex_str = str(ex)
+        logger.error(f"[Advisor] ошибка: {ex_str}")
+        _record_rate_limit(ex_str)
+        # 413 = промпт слишком большой → одна повторная попытка с компактным снапшотом
+        if "413" in ex_str or "request entity too large" in ex_str.lower():
+            try:
+                logger.warning("[Advisor] 413 detected — повтор с урезанным снапшотом…")
+                lite = _build_snapshot(user_message)
+                # Убираем самые тяжёлые поля
+                ab = lite.get("analytics_buffer")
+                if isinstance(ab, dict):
+                    ab.pop("recent_ticks", None)
+                    ab.pop("trade_history", None)
+                    ab.pop("tick_details", None)
+                lite.pop("dex", None)
+                lite_str = json.dumps(lite, ensure_ascii=False, separators=(",", ":"))
+                lite_resp = client.chat.completions.create(
+                    model=GROQ_MODEL,
+                    messages=[
+                        {"role": "system", "content": SYSTEM_PROMPT},
+                        {"role": "user",   "content": f"Состояние:\n```json\n{lite_str}\n```"},
+                    ],
+                    temperature=0.25,
+                    max_tokens=1200,
+                )
+                raw_lite   = lite_resp.choices[0].message.content or ""
+                parsed_lite = _parse_response(raw_lite)
+                logger.info("[Advisor] 413 retry OK")
+                return {
+                    "ok":             True,
+                    "timestamp":      datetime.utcnow().strftime("%H:%M:%S"),
+                    "elapsed_s":      0,
+                    "trigger":        trigger,
+                    "analysis":       parsed_lite.get("analysis", ""),
+                    "recommendations": parsed_lite.get("recommendations", []),
+                    "market_verdict": parsed_lite.get("market_verdict", "ОСТОРОЖНО"),
+                    "confidence":     parsed_lite.get("confidence", 0.5),
+                    "next_check_min": AUTO_INTERVAL_MIN,
+                    "applied":        [],
+                    "auto_applied":   apply,
+                    "snapshot":       lite,
+                }
+            except Exception as ex2:
+                logger.error(f"[Advisor] 413 retry failed: {ex2}")
+        return {"ok": False, "error": ex_str}
     finally:
         with _lock:
             _running = False
