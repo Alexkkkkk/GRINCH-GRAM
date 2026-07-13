@@ -140,7 +140,10 @@ def get_shared_balance(force: bool = False) -> dict:
         with _BAL_CACHE_LOCK:
             _BAL_BACKOFF_UNTIL = now + 90.0
             log.warning("[Balance] 429 от TonCenter/TonAPI — пауза 90с, возвращаем кеш")
-            return dict(_BAL_CACHE) if _BAL_CACHE else {"TON": 0.0, "GRINCH": 0.0}
+            # Холодный старт: кеша ещё нет — возвращаем {} (не {TON:0,GRINCH:0}),
+            # чтобы вызывающий код не спутал "нет данных" с "баланс реально нулевой"
+            # (иначе торговая логика может принять решение на фиктивном нуле).
+            return dict(_BAL_CACHE) if _BAL_CACHE else {}
 
     # Защита от «битого» ответа API: TON=0 при том, что раньше баланс был
     # заметно положительным почти всегда означает сбой чтения TonCenter/TonAPI
@@ -168,9 +171,12 @@ def get_shared_balance(force: bool = False) -> dict:
             _BAL_CACHE_TS = now
         return dict(new_cache)
 
-    # Ничего не получили, но и 429 не было — возвращаем старый кеш
+    # Ничего не получили, но и 429 не было — возвращаем старый кеш.
+    # Холодный старт (кеша ещё нет): возвращаем {}, а НЕ {TON:0, GRINCH:0} —
+    # фиктивный нулевой баланс на старте процесса мог быть принят вызывающим
+    # кодом за реальное состояние кошелька и повлиять на торговое решение.
     with _BAL_CACHE_LOCK:
-        return dict(_BAL_CACHE) if _BAL_CACHE else {"TON": 0.0, "GRINCH": 0.0}
+        return dict(_BAL_CACHE) if _BAL_CACHE else {}
 
 
 def _run(coro):
