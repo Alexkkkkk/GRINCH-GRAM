@@ -30,6 +30,10 @@ class WalletManager:
         self._running   = False
         self._stop_event = threading.Event()   # мгновенная остановка
         self._trader    = None         # ссылка на Trader для чтения open_trades
+        # Защита от аномального сброса tracked_stake: храним последнее
+        # достоверное значение. Если новое чтение < 20% от предыдущего,
+        # используем кеш и логируем предупреждение (диагностика Bug #2).
+        self._last_stable_stake: float | None = None
 
     # ─── запуск ────────────────────────────────────────────────────────────────
 
@@ -142,7 +146,26 @@ class WalletManager:
                             n_entries = len(open_trades)
                             tracked_amount  = min(total_amount, grinch_bal)
                             tracked_entries = n_entries
-                            tracked_stake   = total_stake
+                            raw_stake = total_stake
+                            # ── Защита от аномального сброса tracked_stake ──────
+                            # При гонке потоков или stale snapshot в open_trades
+                            # можно прочитать stake_ton=50 вместо 504.25 → P&L скачет.
+                            # Если новое значение < 20% от последнего стабильного —
+                            # это ложное падение: используем кеш и логируем.
+                            if (self._last_stable_stake is not None
+                                    and raw_stake < self._last_stable_stake * 0.20):
+                                log.warning(
+                                    "[WalletManager] ⚠️ tracked_stake аномально мал "
+                                    "%.4f (ожидалось ≈%.4f), total_amount=%.2f "
+                                    "n_trades=%d — используем кеш",
+                                    raw_stake, self._last_stable_stake,
+                                    total_amount, len(open_trades),
+                                )
+                                tracked_stake = self._last_stable_stake
+                            else:
+                                tracked_stake = raw_stake
+                                if raw_stake > 0:
+                                    self._last_stable_stake = raw_stake
                         except Exception as exc2:
                             log.debug("[WalletManager] tracked_stake config: %s", exc2)
 

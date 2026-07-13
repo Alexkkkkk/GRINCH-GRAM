@@ -248,6 +248,26 @@ class Trader:
                         self.exp.save_open_trades(self._combined_open_trades())
                     except Exception:
                         pass
+                    # Прямая запись в DB с повтором — exp.save_open_trades может
+                    # тихо провалить DB-часть (пул ещё не прогрет), а молчаливый
+                    # провал оставляет в DB устаревшие 85050/50 навсегда. Пишем
+                    # напрямую через db_store и повторяем дважды для надёжности.
+                    _corrected = self._combined_open_trades()
+                    for _attempt in range(3):
+                        try:
+                            import db_store as _ds
+                            if _ds.is_available():
+                                _ds.open_trades_save(_corrected)
+                                self.log(
+                                    f"✅ Прямая DB-запись self-heal (попытка {_attempt+1}): "
+                                    f"amount={sum(t.get('amount',0) for t in _corrected):.2f} "
+                                    f"stake={sum(t.get('stake_ton',0) for t in _corrected):.4f}",
+                                    "INFO",
+                                )
+                                break
+                        except Exception as _dbe:
+                            self.log(f"⚠️ Прямая DB-запись self-heal попытка {_attempt+1}: {_dbe}", "WARN")
+                            time.sleep(1)
         except Exception as _bal_check_err:
             self.log(f"⚠️ Сверка баланса при старте не удалась: {_bal_check_err}", "WARN")
 
@@ -566,10 +586,37 @@ class Trader:
                 return
             grinch_ton = price_feed.get_grinch_ton_price() or 0.0
             enriched   = self._enriched_open_trades(grinch_ton) + self._enriched_short_trades(grinch_ton)
+
+            # Санитайз перед записью: если amount в памяти меньше 10% от того,
+            # что уже лежит в DB — это признак чтения устаревших данных (race /
+            # stale snapshot). Пропускаем запись, чтобы не откатить DB назад.
+            try:
+                cur_db = db_store.open_trades_get()
+                if cur_db:
+                    db_total  = sum(float(t.get("amount", 0) or 0) for t in cur_db)
+                    new_total = sum(float(t.get("amount", 0) or 0) for t in enriched)
+                    if db_total > 0 and new_total > 0 and new_total < db_total * 0.1:
+                        self.log(
+                            f"⚠️ _sync_open_trades_to_db: пропуск записи — "
+                            f"in-memory amount {new_total:.2f} << DB {db_total:.2f} "
+                            f"(возможен stale snapshot)",
+                            "WARN",
+                        )
+                        return
+            except Exception as _chk_e:
+                self.log(f"⚠️ _sync_open_trades_to_db sanity-check: {_chk_e}", "WARN")
+
+            mem_amount = sum(float(t.get("amount", 0) or 0) for t in enriched)
+            mem_stake  = sum(float(t.get("stake_ton", 0) or 0) for t in enriched)
+            self.log(
+                f"[DB-sync] open_trades → amount={mem_amount:.2f} stake={mem_stake:.4f} "
+                f"n={len(enriched)}",
+                "INFO",
+            )
             db_store.open_trades_save(enriched)
             self._last_db_sync_ts = time.time()
-        except Exception:
-            pass  # молча: live-синк не критичен
+        except Exception as _sync_e:
+            self.log(f"⚠️ _sync_open_trades_to_db ошибка: {_sync_e}", "WARN")
 
     def _merge_long_trades(self):
         """Объединяет все открытые LONG-позиции в одну с взвешенной средней ценой.
