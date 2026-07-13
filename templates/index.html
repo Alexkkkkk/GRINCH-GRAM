@@ -2531,11 +2531,21 @@ window.switchMainTab = function(tab) {
 };
 
 // ── Chart.js ensure loaded ───────────────────────────────────────────────────
+// Локальная копия, а не CDN: скрипт с внешнего CDN может тихо не загрузиться
+// (сеть/CSP на клиенте, блокировщики) — тогда график молча падает в fallback
+// без ошибки в консоли (см. память chart-and-api-latency.md).
 function _waitChartJs(cb) {
   if (typeof Chart !== 'undefined') { cb(); return; }
   const script = document.createElement('script');
-  script.src = 'https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js';
+  script.src = '/static/js/chart.umd.min.js';
   script.onload = cb;
+  script.onerror = () => {
+    // Локальный файл не найден/не отдался — последний шанс: CDN.
+    const cdn = document.createElement('script');
+    cdn.src = 'https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js';
+    cdn.onload = cb;
+    document.head.appendChild(cdn);
+  };
   document.head.appendChild(script);
 }
 
