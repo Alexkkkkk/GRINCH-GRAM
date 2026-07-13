@@ -2291,7 +2291,7 @@ function drawEqChart() {
     _eqChart.data.datasets[0].data = vals;
     _eqChart.data.datasets[0].borderColor = lineColor;
     _eqChart.data.datasets[0].backgroundColor = lineColor+'1a';
-    _eqChart.data.datasets[0].pointRadius = hist.length > 60 ? 0 : 2;
+    _eqChart.data.datasets[0].pointRadius = 0;
     _eqChart.update();
     return;
   }
@@ -2307,9 +2307,10 @@ function drawEqChart() {
         borderColor: lineColor,
         backgroundColor: lineColor+'1a',
         borderWidth: 2,
-        pointRadius: hist.length > 60 ? 0 : 2,
+        pointRadius: 0,
         pointHoverRadius: 4,
-        tension: 0.35,
+        tension: 0.4,
+        cubicInterpolationMode: 'monotone',
         fill: true,
         spanGaps: true,
       }]
