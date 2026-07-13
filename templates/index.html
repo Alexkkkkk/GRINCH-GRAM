@@ -1536,7 +1536,7 @@
     } catch(e) { console.warn("[Chart]",e); }
   }
   refresh();
-  setInterval(refresh, 10000);
+  setInterval(refresh, 5000);
   window.addEventListener("resize", ()=>chart.timeScale().fitContent());
 })();
 </script>
@@ -2075,8 +2075,8 @@ function showToast(msg, type) {
   setTimeout(() => t.remove(), 4000);
 }
 
-// Авто-обновление статуса советника каждые 15 секунд
-setInterval(advLoadStatus, 15000);
+// Авто-обновление статуса советника каждые 8 секунд
+setInterval(advLoadStatus, 8000);
 </script>
 
 <!-- ═══════════════════════════════════════════════════════════════════════════
@@ -2516,7 +2516,7 @@ function _startWalletAutoRefresh() {
     if (tab && !tab.classList.contains('tab-hidden')) {
       refreshWalletFull();
     }
-  }, 12000);
+  }, 6000);
 }
 
 // ── hook into tab switch ──────────────────────────────────────────────────────

@@ -1792,13 +1792,13 @@ loadConfig();
 loadCoin();
 loadDexTrades();
 loadExchanges();
-setInterval(() => loadTonPrice().then(() => loadTon()), 60000);
-setInterval(loadTon, 15000);
-setInterval(loadCoin, 10000);
-setInterval(loadDexTrades, 8000);
-setInterval(loadExchanges, 15000);
+setInterval(() => loadTonPrice().then(() => loadTon()), 30000);
+setInterval(loadTon, 8000);
+setInterval(loadCoin, 5000);
+setInterval(loadDexTrades, 4000);
+setInterval(loadExchanges, 8000);
 loadWallets();
-setInterval(loadWallets, 20000);
+setInterval(loadWallets, 10000);
 
 // ═══════════════════════════════════════════════════════════════════════════
 //  ШКАЛА ОБУЧЕНИЯ AI
@@ -2031,7 +2031,7 @@ function pollLiquidityGuard() {
     .catch(() => {});
 }
 pollLiquidityGuard();
-setInterval(pollLiquidityGuard, 15000);
+setInterval(pollLiquidityGuard, 8000);
 
 // ── График истории баланса кошелька (equity curve) ───────────────────────────
 (function initEquityChart() {
@@ -2127,7 +2127,7 @@ setInterval(pollLiquidityGuard, 15000);
   }
 
   fetchAndDraw();
-  setInterval(fetchAndDraw, 30000);
+  setInterval(fetchAndDraw, 15000);
   window.addEventListener("resize", fetchAndDraw);
 })();
 
@@ -2535,7 +2535,7 @@ function renderDecisionLog(log) {
     }).catch(() => {});
   }
   fetchLog();
-  setInterval(fetchLog, 15000);
+  setInterval(fetchLog, 8000);
 })();
 
 // ═══════════════════════════════════════════════════════════════════
@@ -2660,7 +2660,7 @@ function updateFiltersPanel(d) {
     fetch("/api/filters/status").then(r => r.json()).then(updateFiltersPanel).catch(() => {});
   }
   fetchFilters();
-  setInterval(fetchFilters, 10000);
+  setInterval(fetchFilters, 6000);
 })();
 
 // ═══════════════════════════════════════════════════════════════════
@@ -2810,7 +2810,7 @@ function updateDBSync(data) {
     }).catch(() => updateDBSync(null));
   }
   fetchDB();
-  setInterval(fetchDB, 30000);
+  setInterval(fetchDB, 20000);
 })();
 
 // ═══════════════════════════════════════════════════════════════════
