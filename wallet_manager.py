@@ -77,6 +77,12 @@ class WalletManager:
             self._poll_lock.release()
 
     def _poll_body(self):
+        import threading
+        _tid  = threading.current_thread().name
+        _call = getattr(self, "_poll_call_count", 0) + 1
+        self._poll_call_count = _call
+        log.info("[WalletManager] _poll_body #%d thread=%s", _call, _tid)
+
         from price_feed import price_feed
         import db_store
 
@@ -148,20 +154,24 @@ class WalletManager:
                             tracked_entries = n_entries
                             raw_stake = total_stake
                             # ── Защита от аномального сброса tracked_stake ──────
-                            # При гонке потоков или stale snapshot в open_trades
-                            # можно прочитать stake_ton=50 вместо 504.25 → P&L скачет.
-                            # Если новое значение < 20% от последнего стабильного —
-                            # это ложное падение: используем кеш и логируем.
-                            if (self._last_stable_stake is not None
-                                    and raw_stake < self._last_stable_stake * 0.20):
+                            # trader.dca_total_stake обновляется под _ot_lock в
+                            # том же self-heal что и stake_ton в open_trades.
+                            # Если они расходятся >5× — читаем raced/stale данные.
+                            # Приоритет: dca_total_stake > _last_stable_stake > raw.
+                            _dca_stake = getattr(trader, "dca_total_stake", None)
+                            _expected  = (_dca_stake
+                                          if (_dca_stake and _dca_stake > raw_stake * 2)
+                                          else self._last_stable_stake)
+                            if (_expected is not None
+                                    and raw_stake < _expected * 0.20):
                                 log.warning(
                                     "[WalletManager] ⚠️ tracked_stake аномально мал "
-                                    "%.4f (ожидалось ≈%.4f), total_amount=%.2f "
-                                    "n_trades=%d — используем кеш",
-                                    raw_stake, self._last_stable_stake,
-                                    total_amount, len(open_trades),
+                                    "%.4f (ожидалось ≈%.4f dca_stake=%.4f), "
+                                    "total_amount=%.2f n_trades=%d — используем эталон",
+                                    raw_stake, _expected,
+                                    _dca_stake or 0, total_amount, len(open_trades),
                                 )
-                                tracked_stake = self._last_stable_stake
+                                tracked_stake = _expected
                             else:
                                 tracked_stake = raw_stake
                                 if raw_stake > 0:
