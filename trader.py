@@ -1406,13 +1406,16 @@ class Trader:
 
             self.dca_total_stake   = sum(t.get("stake_ton", 0) for t in self.open_trades)
         self.dca_cascade_half_sold = True
-        self.stats["total_pnl"] = round(self.stats["total_pnl"] + partial_pnl, 6)
-        # Каскадная частичная продажа закрывает часть позиции как отдельную
-        # сделку статистически — считаем total_trades вместе с winning_trades,
-        # иначе winning_trades может превысить total_trades (некорректный winrate).
-        self.stats["total_trades"] += 1
-        if partial_pnl > 0:
-            self.stats["winning_trades"] += 1
+        # Лок: self.stats мутируется из нескольких потоков — без него возможна
+        # гонка при одновременном закрытии позиций (потерянный инкремент).
+        with self._close_lock:
+            self.stats["total_pnl"] = round(self.stats["total_pnl"] + partial_pnl, 6)
+            # Каскадная частичная продажа закрывает часть позиции как отдельную
+            # сделку статистически — считаем total_trades вместе с winning_trades,
+            # иначе winning_trades может превысить total_trades (некорректный winrate).
+            self.stats["total_trades"] += 1
+            if partial_pnl > 0:
+                self.stats["winning_trades"] += 1
 
         try:
             self.exp.save_open_trades(self._combined_open_trades())
@@ -1525,13 +1528,16 @@ class Trader:
             trade["status"]       = "closed"
             trade["outcome"]      = "win" if pnl_ton > 0 else "loss"
             total_pnl            += pnl_ton
-            self.stats["total_pnl"] = round(self.stats["total_pnl"] + pnl_ton, 6)
-            # total_trades раньше не увеличивался в этой функции — winning_trades
-            # рос сам по себе, что могло дать winrate>100% или расхождение со
-            # счётчиком сделок. Считаем total_trades вместе с winning_trades.
-            self.stats["total_trades"] = self.stats.get("total_trades", 0) + 1
-            if pnl_ton > 0:
-                self.stats["winning_trades"] += 1
+            # Лок: self.stats мутируется из нескольких потоков — без него
+            # возможна гонка при одновременном закрытии позиций.
+            with self._close_lock:
+                self.stats["total_pnl"] = round(self.stats["total_pnl"] + pnl_ton, 6)
+                # total_trades раньше не увеличивался в этой функции — winning_trades
+                # рос сам по себе, что могло дать winrate>100% или расхождение со
+                # счётчиком сделок. Считаем total_trades вместе с winning_trades.
+                self.stats["total_trades"] = self.stats.get("total_trades", 0) + 1
+                if pnl_ton > 0:
+                    self.stats["winning_trades"] += 1
             # AI feedback
             try:
                 ai_snap  = self.last_ai or {}
@@ -1539,8 +1545,8 @@ class Trader:
                 ai_conf  = float(ai_snap.get("confidence", 0) or 0)
                 self.ai.feedback(outcome=trade["outcome"], pnl=float(pnl_ton),
                                  regime=reg_name, conf=ai_conf)
-            except Exception:
-                pass
+            except Exception as e:
+                self.log(f"⚠️ AI feedback (DCA sell-all): {e}", "WARN")
             # Сохраняем в историю
             for t in self.trades:
                 if t["id"] == trade["id"]:
@@ -2823,13 +2829,17 @@ class Trader:
         trade["drop_pct"]        = round(drop_pct, 2)
         trade["pnl_pct"]         = round(profit_grinch / grinch_sold * 100, 2) if grinch_sold else 0
 
-        self.open_short_trades = [t for t in self.open_short_trades if t["id"] != trade_id]
-        self.stats["total_pnl"] = round(self.stats["total_pnl"] + pnl_ton, 6)
-        # Единая точка учёта: total_trades считается только здесь, в момент
-        # закрытия — синхронно с вызовом record_trade() ниже.
-        self.stats["total_trades"] = self.stats.get("total_trades", 0) + 1
-        if pnl_ton > 0:
-            self.stats["winning_trades"] += 1
+        # Лок: self.stats мутируется из нескольких потоков (тик трейдера,
+        # ликвидатор, ручное закрытие) — без него возможна гонка при
+        # одновременном закрытии позиций (потерянный инкремент total_trades).
+        with self._close_lock:
+            self.open_short_trades = [t for t in self.open_short_trades if t["id"] != trade_id]
+            self.stats["total_pnl"] = round(self.stats["total_pnl"] + pnl_ton, 6)
+            # Единая точка учёта: total_trades считается только здесь, в момент
+            # закрытия — синхронно с вызовом record_trade() ниже.
+            self.stats["total_trades"] = self.stats.get("total_trades", 0) + 1
+            if pnl_ton > 0:
+                self.stats["winning_trades"] += 1
         try:
             self.exp.save_open_trades(self._combined_open_trades())
             self.exp.record_trade(dict(trade), self.stats, self.ai)
@@ -2851,8 +2861,8 @@ class Trader:
             ai_conf  = float(ai_snap.get("confidence", 0) or 0)
             self.ai.feedback(outcome=outcome, pnl=float(pnl_ton),
                              regime=reg_name, conf=ai_conf)
-        except Exception:
-            pass
+        except Exception as e:
+            self.log(f"⚠️ AI feedback (шорт-закрытие): {e}", "WARN")
         return True
 
     def _check_stop_loss_take_profit(self, price):
