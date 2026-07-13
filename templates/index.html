@@ -1571,6 +1571,19 @@ document.addEventListener('DOMContentLoaded', () => {
   alLoadConfig();
 });
 
+// Плавная замена innerHTML: короткий fade-out → подмена контента → fade-in.
+// Используется для списков, перерисовываемых целиком при каждом автообновлении
+// (иначе контент "дёргается" мгновенной подменой каждые несколько секунд).
+function _smoothHTML(el, html) {
+  if (!el) return;
+  if (el.innerHTML === html) return; // без изменений — не дёргаем opacity
+  el.classList.add('fade-refresh', 'fade-out');
+  setTimeout(() => {
+    el.innerHTML = html;
+    el.classList.remove('fade-out');
+  }, 140);
+}
+
 // ─── Вкладка ИИ: история обучения ────────────────────────────────────────────
 function loadAiHistory() {
   fetch('/api/ai/history').then(r=>r.json()).then(d=>{
@@ -1582,7 +1595,7 @@ function loadAiHistory() {
     // Живые слоты
     const slotWrap = document.getElementById('ai-live-slots');
     if (d.live_slots && d.live_slots.length) {
-      slotWrap.innerHTML = d.live_slots.map(s => {
+      _smoothHTML(slotWrap, d.live_slots.map(s => {
         const isDeep = s.name.includes('(db)');
         const bg  = isDeep ? 'rgba(0,212,255,.12)' : 'rgba(0,255,136,.10)';
         const bc  = isDeep ? 'rgba(0,212,255,.35)' : 'rgba(0,255,136,.30)';
@@ -1594,15 +1607,15 @@ function loadAiHistory() {
           <span style="color:#6a7d9f;font-size:11px">точн: <b style="color:#fff">${s.accuracy}%</b></span>
           <span style="color:#6a7d9f;font-size:11px">вес: <b style="color:#ffd166">${s.weight}</b></span>
         </div>`;
-      }).join('');
+      }).join(''));
     } else {
-      slotWrap.innerHTML = '<span style="color:#4a5d7f;font-size:12px">Модели загружаются…</span>';
+      _smoothHTML(slotWrap, '<span style="color:#4a5d7f;font-size:12px">Модели загружаются…</span>');
     }
 
     // Тяжёлые модели
     const tbody = document.getElementById('ai-deep-tbody');
     if (d.deep_models && d.deep_models.length) {
-      tbody.innerHTML = d.deep_models.map(m => {
+      _smoothHTML(tbody, d.deep_models.map(m => {
         const acc     = m.accuracy != null ? (m.accuracy*100).toFixed(1)+'%' : '—';
         const accClr  = m.accuracy > 0.6 ? '#00ff88' : m.accuracy > 0.5 ? '#ffd166' : '#ff6b6b';
         const nEx     = m.n_examples ?? '—';
@@ -1617,11 +1630,11 @@ function loadAiHistory() {
               background:rgba(0,255,136,.15);color:#00ff88">✓ В БД</span>
           </td>
         </tr>`;
-      }).join('');
+      }).join(''));
     } else {
-      tbody.innerHTML = `<tr><td colspan="5" style="padding:20px;text-align:center;color:#4a5d7f;font-size:12px">
+      _smoothHTML(tbody, `<tr><td colspan="5" style="padding:20px;text-align:center;color:#4a5d7f;font-size:12px">
         Тяжёлые модели появятся после накопления ≥30 сделок и срабатывания deep-retrain (раз в 2 дня)
-      </td></tr>`;
+      </td></tr>`);
     }
 
     // Мини-график SVG накопления
@@ -1888,7 +1901,7 @@ function advRenderResult(res) {
 
   const recs = res.recommendations || [];
   if (recsW) recsW.style.display = recs.length ? 'block' : 'none';
-  if (recsL) recsL.innerHTML = recs.map(r => {
+  if (recsL) _smoothHTML(recsL, recs.map(r => {
     const up = parseFloat(r.suggested) > parseFloat(r.current);
     return `<div style="background:rgba(255,255,255,.04);border-radius:7px;padding:6px 10px">
       <div style="display:flex;align-items:center;gap:6px;margin-bottom:2px">
@@ -1898,11 +1911,11 @@ function advRenderResult(res) {
       </div>
       <div style="font-size:10px;color:#8892b0;line-height:1.45">${r.reason||''}</div>
     </div>`;
-  }).join('');
+  }).join(''));
 
   const applied = res.applied || [];
   if (appW) appW.style.display = applied.length ? 'block' : 'none';
-  if (appL) appL.innerHTML = applied.map(a => `<div style="padding:1px 0">✅ ${a}</div>`).join('');
+  if (appL) _smoothHTML(appL, applied.map(a => `<div style="padding:1px 0">✅ ${a}</div>`).join(''));
 }
 
 function advRenderHistory(history) {
@@ -1910,11 +1923,11 @@ function advRenderHistory(history) {
   const list = document.getElementById('adv-history-list');
   if (!wrap||!list) return;
   wrap.style.display = 'block';
-  list.innerHTML = [...history].reverse().map(h => {
+  _smoothHTML(list, [...history].reverse().map(h => {
     const col = ADV_COLORS[h.verdict] || '#ffd166';
     const app = h.applied&&h.applied.length ? ` <span style="color:#00ff88">✅${h.applied.length}</span>` : '';
     return `<div style="font-size:10px;color:#666;padding:1px 0">${h.ts} <span style="color:${col};font-weight:700">${h.verdict||''}</span> ·${h.trigger||'manual'}${app}</div>`;
-  }).join('');
+  }).join(''));
 }
 
 function advRenderAdaptLog(log) {
@@ -1922,15 +1935,15 @@ function advRenderAdaptLog(log) {
   const list = document.getElementById('adv-adapt-log-list');
   if (!wrap||!list||!log.length) return;
   wrap.style.display = 'block';
-  list.innerHTML = [...log].reverse().map(l =>
+  _smoothHTML(list, [...log].reverse().map(l =>
     `<div style="font-size:10px;color:#8892b0;padding:1px 0">${l.ts} <span style="color:#00ff88">✅</span> ${l.change}</div>`
-  ).join('');
+  ).join(''));
 }
 
 function advRenderStrategyToggles(toggles, labels) {
   const wrap = document.getElementById('adv-strategy-toggles');
   if (!wrap) return;
-  wrap.innerHTML = Object.keys(toggles).map(key => {
+  _smoothHTML(wrap, Object.keys(toggles).map(key => {
     const on = !!toggles[key];
     const label = labels[key] || key;
     const col = on ? '#00ff88' : '#666';
@@ -1941,7 +1954,7 @@ function advRenderStrategyToggles(toggles, labels) {
       <span style="font-size:10px;color:#ccd6f6;line-height:1.3">${label}</span>
       <span style="margin-left:auto;font-size:9px;font-weight:700;color:${col};white-space:nowrap">${on?'ВКЛ':'ВЫКЛ'}</span>
     </div>`;
-  }).join('');
+  }).join(''));
 }
 
 function advRenderSizeMult(mult) {
@@ -2189,7 +2202,7 @@ function renderWalletFull(d) {
   const potBlock  = document.getElementById('wf-potential-block');
   if (potBlock) potBlock.style.display = inPos && Object.keys(potential).length ? 'block' : 'none';
   if (potGrid && inPos) {
-    potGrid.innerHTML = Object.entries(potential).map(([k,v]) => {
+    _smoothHTML(potGrid, Object.entries(potential).map(([k,v]) => {
       const p   = v?.pnl_ton;
       const col = p!=null ? (p>0?'#00ff88':p<0?'#ff453a':'#ffd700') : '#6a7d9f';
       return `<div style="background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.08);border-radius:6px;padding:6px 4px;text-align:center">
@@ -2197,7 +2210,7 @@ function renderWalletFull(d) {
         <div style="font-size:12px;font-weight:800;font-family:monospace;color:${col}">${p!=null?(p>=0?'+':'')+Number(p).toFixed(3):'—'}</div>
         <div style="font-size:9px;color:#3d4f6a">TON</div>
       </div>`;
-    }).join('');
+    }).join(''));
   }
 
   // ROI ring / goal (P&L % towards 20% target)
@@ -2368,10 +2381,10 @@ function renderWalletAnalytics(d) {
   if (list) {
     const trades = d.recent_trades || [];
     if (!trades.length) {
-      list.innerHTML = '<div style="text-align:center;color:#4a5568;font-size:11px;padding:20px">Нет торговых данных</div>';
+      _smoothHTML(list, '<div style="text-align:center;color:#4a5568;font-size:11px;padding:20px">Нет торговых данных</div>');
       return;
     }
-    list.innerHTML = trades.map(t => {
+    _smoothHTML(list, trades.map(t => {
       const isBuy  = (t.side||t.type||'').toString().includes('buy');
       const col    = isBuy ? '#00ff88' : '#ff453a';
       const icon   = isBuy ? '🟢 BUY' : '🔴 SELL';
@@ -2388,7 +2401,7 @@ function renderWalletAnalytics(d) {
         ${profit!=null ? `<div style="text-align:right"><div style="font-weight:700;color:${pnlColor(profit)}">${profit>=0?'+':''}${Number(profit).toFixed(4)} TON</div></div>` : ''}
         <div style="color:#3d4f6a;font-size:10px;min-width:40px;text-align:right">${fmtTs(ts)}</div>
       </div>`;
-    }).join('');
+    }).join(''));
   }
 }
 
@@ -2443,9 +2456,9 @@ function loadWalletAI() {
       lines.push('<div style="color:#4a5568;font-size:11px">AI советник ещё не запускался. Откройте вкладку Настройки → AI Советник и нажмите «Анализ».</div>');
     }
 
-    body.innerHTML = lines.join('');
+    _smoothHTML(body, lines.join(''));
   }).catch(e => {
-    body.innerHTML = '<span style="color:#ff6b6b">Ошибка: '+e+'</span>';
+    _smoothHTML(body, '<span style="color:#ff6b6b">Ошибка: '+e+'</span>');
   });
 }
 
@@ -2468,13 +2481,13 @@ window.refreshTon = function() {
     if (err)  err.style.display = 'none';
     if (deps) {
       const txs = data.transactions || [];
-      if (!txs.length) { deps.innerHTML='<div class="ton-empty">Нет поступлений</div>'; return; }
-      deps.innerHTML = txs.map(tx => {
+      if (!txs.length) { _smoothHTML(deps, '<div class="ton-empty">Нет поступлений</div>'); return; }
+      _smoothHTML(deps, txs.map(tx => {
         const amt = tx.value_ton ? parseFloat(tx.value_ton).toFixed(2) : '?';
         const msg = tx.message_text || tx.comment || '';
         const ts  = fmtTs(tx.timestamp || tx.ts || '');
         return `<div class="ton-tx"><span class="ton-tx-amt">+${amt} TON</span><span class="ton-tx-msg">${msg}</span><span class="ton-tx-ts">${ts}</span></div>`;
-      }).join('');
+      }).join(''));
     }
   }).catch(e => {
     const err = document.getElementById('ton-error');

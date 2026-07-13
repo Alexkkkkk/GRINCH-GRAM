@@ -70,6 +70,31 @@
 
 /* ──── Базовые стили ─────────────────────────────────────── */
 html { scroll-behavior: smooth; }
+
+/* Плавность по умолчанию для всех интерактивных/динамических элементов,
+   даже тех, где конкретный класс забыл прописать transition. Явные
+   transition/animation на отдельных элементах всё равно их переопределяют
+   (специфичность/порядок), так что ничего не ломает — только достраивает. */
+* {
+  transition: background-color .2s ease, border-color .2s ease,
+              box-shadow .2s ease, color .2s ease, opacity .2s ease,
+              transform .2s ease;
+}
+
+/* Плавное появление контента, который переставляется через innerHTML
+   при каждом автообновлении (списки сделок, история, рекомендации AI и т.п.) —
+   см. _smoothHTML() в index.html. Без этого содержимое "дёргалось" целиком. */
+.fade-refresh { transition: opacity .18s ease; }
+.fade-refresh.fade-out { opacity: 0; }
+
+@media (prefers-reduced-motion: reduce) {
+  *, ::before, ::after {
+    animation-duration: .01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: .01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
 body {
   background: var(--bg);
   color: var(--text);
