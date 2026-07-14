@@ -2271,6 +2271,19 @@ function switchEqTab(tab) {
   drawEqChart();
 }
 
+// Экспоненциальное сглаживание ряда только для отображения на графике.
+// null (нет данных в эту точку) пропускается без сброса сглаживания.
+function _emaSmooth(arr, alpha) {
+  let ema = null;
+  const out = [];
+  for (const v of arr) {
+    if (v == null) { out.push(ema); continue; }
+    ema = (ema == null) ? v : (alpha * v + (1 - alpha) * ema);
+    out.push(ema);
+  }
+  return out;
+}
+
 function drawEqChart() {
   const canvas = document.getElementById('eq-chart');
   const empty  = document.getElementById('eq-empty');
@@ -2284,7 +2297,13 @@ function drawEqChart() {
   if (empty) empty.style.display = 'none';
 
   const cfg  = EQ_TABS[_eqTab] || EQ_TABS.equity;
-  const vals = hist.map(h => h[cfg.field] != null ? Number(h[cfg.field]) : null);
+  const rawVals = hist.map(h => h[cfg.field] != null ? Number(h[cfg.field]) : null);
+  // Визуальное сглаживание ТОЛЬКО для отображения (EMA по нескольким соседним
+  // точкам). Раз в 30с курс GRINCH/TON берётся свежим из пула (низкая
+  // ликвидность мем-коина) — сырые данные реально "дёргаются" каждый снимок,
+  // хотя портфель по факту не меняется. Сглаживаем именно ряд на графике,
+  // сырые данные в БД и торговая логика (price_feed) не трогаются.
+  const vals = _emaSmooth(rawVals, 0.35);
   const labels = hist.map(h => fmtTs(h.ts));
 
   const ctx = canvas.getContext('2d');
