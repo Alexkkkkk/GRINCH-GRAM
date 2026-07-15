@@ -22,7 +22,7 @@ run = ["gunicorn", "--bind", "0.0.0.0:5000", "main:app"]
 
 [userenv.shared]
 TRADE_MODE = "dedust"
-DEMO_MODE = "false"
+DEMO_MODE = "true"
 MIN_STAKE_TON = "5"
 SMART_TP_ENABLED = "1"
 SMART_TP_MIN_CONF = "68"
