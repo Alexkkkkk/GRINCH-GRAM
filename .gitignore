@@ -37,3 +37,6 @@ attached_assets/
 backups/
 
 deploy_secrets_local/
+ai_advisor.py.bak
+.env.bak_*
+fix_stats_test.py
