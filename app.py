@@ -1043,7 +1043,7 @@ def api_status():
     return jsonify(_status_for_response())
 
 _CANDLES_CACHE = {"ts": 0.0, "payload": None}
-_CANDLES_CACHE_TTL = 4  # сек — свечи обновляются раз в 15м, считать индикаторы на каждый опрос незачем
+_CANDLES_CACHE_TTL = 2  # сек — свечи обновляются раз в 15м, считать индикаторы на каждый опрос незачем
 
 @app.route("/api/candles")
 def api_candles():

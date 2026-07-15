@@ -552,7 +552,7 @@ class Trader:
                 except Exception:
                     pass
             # Прерываемый сон: stop() немедленно разбудит через _loop_stop_event
-            self._loop_stop_event.wait(timeout=15)
+            self._loop_stop_event.wait(timeout=8)
 
     def _record_equity(self):
         """Снимок капитала кошелька в память (троттлинг внутри менеджера)."""

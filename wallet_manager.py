@@ -15,7 +15,7 @@ from datetime import datetime
 
 log = logging.getLogger(__name__)
 
-POLL_SEC = 30   # опрос баланса каждые 30 секунд
+POLL_SEC = 10   # опрос баланса каждые 10 секунд
 
 
 class WalletManager:

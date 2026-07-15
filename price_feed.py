@@ -28,7 +28,7 @@ COINGECKO_IDS = {
 class PriceFeed:
     """Реальные цены через бесплатные API (CoinGecko + DexScreener). С кэшем по TTL."""
 
-    def __init__(self, ttl=6):
+    def __init__(self, ttl=4):
         self.ttl = ttl
         self._cache = {}   # base -> (price, ts)
         self._lock = threading.Lock()
@@ -245,7 +245,7 @@ def _start_price_prefetch():
     def _loop():
         while True:
             _warm()
-            threading.Event().wait(timeout=5)
+            threading.Event().wait(timeout=3)
 
     t = threading.Thread(target=_loop, name="price-prefetch", daemon=True)
     t.start()

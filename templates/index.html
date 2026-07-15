@@ -1536,7 +1536,7 @@
     } catch(e) { console.warn("[Chart]",e); }
   }
   refresh();
-  setInterval(refresh, 5000);
+  setInterval(refresh, 3000);
   window.addEventListener("resize", ()=>chart.timeScale().fitContent());
 })();
 </script>
@@ -2075,8 +2075,8 @@ function showToast(msg, type) {
   setTimeout(() => t.remove(), 4000);
 }
 
-// Авто-обновление статуса советника каждые 8 секунд
-setInterval(advLoadStatus, 8000);
+// Авто-обновление статуса советника каждые 5 секунд
+setInterval(advLoadStatus, 5000);
 </script>
 
 <!-- ═══════════════════════════════════════════════════════════════════════════
