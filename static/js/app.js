@@ -46,11 +46,11 @@ function fmtPrice(p) {
   return "$" + p.toLocaleString("en-US", { minimumFractionDigits: digits, maximumFractionDigits: digits });
 }
 
-// Курс GRINCH в GRAM (бывш. Toncoin)
+// Курс GRINCH в TON
 function fmtGram(p) {
   p = Number(p) || 0;
   const digits = p >= 100 ? 2 : (p >= 1 ? 4 : (p >= 0.01 ? 6 : 8));
-  return p.toLocaleString("en-US", { minimumFractionDigits: digits, maximumFractionDigits: digits }) + " GRAM";
+  return p.toLocaleString("en-US", { minimumFractionDigits: digits, maximumFractionDigits: digits }) + " TON";
 }
 
 let _lastLivePrice = null;
@@ -59,7 +59,7 @@ function updatePrice(d) {
   if (!el) return;
   const gram = Number(d.gram) || 0;
   const usd  = Number(d.price) || 0;
-  // Hero ВСЕГДА в GRAM: при сбое котировки не подменяем доллар, держим прежнее значение
+  // Hero ВСЕГДА в TON: при сбое котировки не подменяем доллар, держим прежнее значение
   if (gram > 0) {
     el.textContent = fmtGram(gram);
     if (_lastLivePrice !== null && gram !== _lastLivePrice) {
@@ -95,16 +95,16 @@ function updateUI(data) {
   const stats    = data.stats    || {};
   const ai       = data.ai       || {};
 
-  // Курс GRINCH в GRAM (бывш. Toncoin) — основное число; USD — справочно
+  // Курс GRINCH в TON — основное число; USD — справочно
   const priceFromAnalysis = Number(analysis.price);
   const gram = Number(data.grinch_ton) || 0;
   const priceEl = document.getElementById("price");
-  // Hero ВСЕГДА в GRAM: при отсутствии курса не подменяем доллар
+  // Hero ВСЕГДА в TON: при отсутствии курса не подменяем доллар
   if (priceEl && gram > 0) priceEl.textContent = fmtGram(gram);
   const pitEl = document.getElementById("price-in-ton");
   if (pitEl && priceFromAnalysis > 0) pitEl.textContent = "≈ " + fmtPrice(priceFromAnalysis);
   const symLabel = document.getElementById("symbol-label");
-  if (symLabel) symLabel.textContent = "GRINCH/GRAM";
+  if (symLabel) symLabel.textContent = "GRINCH/TON";
 
   // Технический сигнал
   const sig = analysis.signal || "HOLD";

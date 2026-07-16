@@ -63,7 +63,7 @@
 
   <div class="hdr-price-area">
     <span class="live-dot"></span>
-    <span class="price hdr-price" id="price">{% if init_gram and init_gram > 0 %}{{ "{:,.8f}".format(init_gram).rstrip('0').rstrip('.') }}{% else %}—{% endif %} GRAM</span>
+    <span class="price hdr-price" id="price">{% if init_gram and init_gram > 0 %}{{ "{:,.8f}".format(init_gram).rstrip('0').rstrip('.') }}{% else %}—{% endif %} TON</span>
     <span class="hdr-price-usd" id="price-in-ton">{% if init_price and init_price > 0 %}≈ ${{ "{:,.8f}".format(init_price).rstrip('0').rstrip('.') }}{% else %}≈ $0.00{% endif %}</span>
     <span class="price-change" id="price-change">0.00%</span>
     <div class="signal-block signal-HOLD hdr-sig" id="signal-block">
@@ -74,7 +74,7 @@
       <div class="signal-label" id="ai-signal-text">HOLD</div>
       <div class="signal-strength" id="ai-confidence">AI 0%</div>
     </div>
-    <span id="symbol-label" style="display:none">GRINCH/GRAM</span>
+    <span id="symbol-label" style="display:none">GRINCH/TON</span>
   </div>
 
   <div class="hdr-bal-area">
@@ -375,8 +375,8 @@
       <!-- Price + coin inline -->
       <div class="mkt-hero-row">
         <div class="mkt-price-col">
-          <div class="mkt-price-label"><span class="live-dot"></span> GRINCH/GRAM · DeDust</div>
-          <div class="mkt-price-big" id="price-echo">{% if init_gram and init_gram > 0 %}{{ "{:,.8f}".format(init_gram).rstrip('0').rstrip('.') }} GRAM{% else %}— GRAM{% endif %}</div>
+          <div class="mkt-price-label"><span class="live-dot"></span> GRINCH/TON · DeDust</div>
+          <div class="mkt-price-big" id="price-echo">{% if init_gram and init_gram > 0 %}{{ "{:,.8f}".format(init_gram).rstrip('0').rstrip('.') }} TON{% else %}— TON{% endif %}</div>
           <div class="mkt-price-usd-echo">{% if init_price and init_price > 0 %}≈ ${{ "{:,.8f}".format(init_price).rstrip('0').rstrip('.') }}{% else %}≈ $—{% endif %}</div>
         </div>
         <div class="mkt-coin-row">
@@ -417,7 +417,7 @@
       <!-- Chart -->
       <div class="card card-c">
         <div class="card-title ctit">
-          📈 GRINCH/GRAM <span class="chart-tf">15м</span>
+          📈 GRINCH/TON <span class="chart-tf">15м</span>
           <span class="chart-last" id="chart-last-price">—</span>
           <span id="trades-note" class="coin-source" style="margin-left:auto"></span>
         </div>
@@ -697,12 +697,12 @@
           <div style="display:grid;grid-template-columns:1fr auto 1fr;gap:8px;align-items:center">
             <div>
               <div style="font-size:9px;color:#6a7d9f">Куплено по</div>
-              <div id="wf-entry-price-display" style="font-size:14px;font-weight:800;font-family:monospace;color:#0098ea">— GRAM</div>
+              <div id="wf-entry-price-display" style="font-size:14px;font-weight:800;font-family:monospace;color:#0098ea">— TON</div>
             </div>
             <div style="text-align:center;color:#3d4f6a">→</div>
             <div>
               <div style="font-size:9px;color:#6a7d9f">Текущая цена</div>
-              <div id="wf-cur-price-display" style="font-size:14px;font-weight:800;font-family:monospace;color:#00ff88">— GRAM</div>
+              <div id="wf-cur-price-display" style="font-size:14px;font-weight:800;font-family:monospace;color:#00ff88">— TON</div>
             </div>
           </div>
           <!-- Движение цены прогресс-бар -->
@@ -1519,7 +1519,7 @@
   const vs = chart.addHistogramSeries({ priceFormat:{type:"volume"}, priceScaleId:"vol" });
   chart.priceScale("vol").applyOptions({ scaleMargins:{ top:0.8, bottom:0 } });
   const lastEl = document.getElementById("chart-last-price");
-  function fmtP(p) { return p==null?"—":Number(p).toFixed(8).replace(/0+$/,"").replace(/\.$/,"")+" GRAM"; }
+  function fmtP(p) { return p==null?"—":Number(p).toFixed(8).replace(/0+$/,"").replace(/\.$/,"")+" TON"; }
   function toEpoch(ts) { const ms=Date.parse(String(ts).replace(" ","T")+"Z"); return isNaN(ms)?null:Math.floor(ms/1000); }
   async function refresh() {
     try {
@@ -2169,10 +2169,10 @@ function renderWalletFull(d) {
   const curTon   = d.current_price_ton;
   const curUsd   = d.current_price_usd;
 
-  _setTxt('wf-entry-ton', entryTon ? fmtPrice(entryTon)+' GRAM' : '\u043D\u0435\u0442 \u043F\u043E\u0437\u0438\u0446\u0438\u0438');
+  _setTxt('wf-entry-ton', entryTon ? fmtPrice(entryTon)+' TON' : '\u043D\u0435\u0442 \u043F\u043E\u0437\u0438\u0446\u0438\u0438');
   _setTxt('wf-entry-usd', entryUsd ? '\u2248 '+usdStr8(entryUsd) : '');
-  _setTxt('wf-entry-price-display', entryTon ? fmtPrice(entryTon)+' GRAM' : '—');
-  _setTxt('wf-cur-price-display',   curTon   ? fmtPrice(curTon)+'  GRAM' : '—');
+  _setTxt('wf-entry-price-display', entryTon ? fmtPrice(entryTon)+' TON' : '—');
+  _setTxt('wf-cur-price-display',   curTon   ? fmtPrice(curTon)+'  TON' : '—');
 
   // P&L card
   const pnlCard = document.getElementById('wf-pnl-card');
@@ -2450,8 +2450,8 @@ function loadWalletAI() {
         <div style="color:#00ff88;font-weight:700;margin-bottom:4px">🐸 Открытая позиция GRINCH</div>
         <div style="color:#8892b0;font-size:10px;line-height:1.6">
           Количество: <b style="color:#ccd6f6">${fmtGrn(snap.grinch_balance)} GRINCH</b><br>
-          Куплено по: <b style="color:#0098ea">${entry?fmtPrice(entry)+' GRAM':'—'}</b><br>
-          Текущая: <b style="color:#00ff88">${cur?fmtPrice(cur)+' GRAM':'—'}</b><br>
+          Куплено по: <b style="color:#0098ea">${entry?fmtPrice(entry)+' TON':'—'}</b><br>
+          Текущая: <b style="color:#00ff88">${cur?fmtPrice(cur)+' TON':'—'}</b><br>
           P&amp;L: <b style="color:${pnlColor(pnl)}">${pnl!=null?(pnl>=0?'+':'')+Number(pnl).toFixed(4)+' TON':'—'} (${pnlPct!=null?fmtPct(pnlPct):'—'})</b>
         </div>
       </div>`);
