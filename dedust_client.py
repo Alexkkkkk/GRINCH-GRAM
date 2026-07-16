@@ -272,9 +272,19 @@ class DedustClient:
             log.warning(f"[DeDust] Не удалось вывести адрес из мнемоники: {e}")
 
     async def _make_provider(self) -> LiteBalancer:
-        provider = LiteBalancer.from_mainnet_config(trust_level=1, timeout=15)
-        await provider.start_up()
-        return provider
+        """Создаёт LiteBalancer с retry — pytoniq иногда падает с KeyError в listener."""
+        last_exc = None
+        for attempt in range(3):
+            try:
+                provider = LiteBalancer.from_mainnet_config(trust_level=1, timeout=15)
+                await provider.start_up()
+                return provider
+            except Exception as e:
+                last_exc = e
+                log.warning(f"[DeDust] _make_provider попытка {attempt+1}/3 провалилась: {e}")
+                import asyncio as _aio
+                await _aio.sleep(1)
+        raise last_exc
 
     async def _wallet_and_provider(self):
         provider = await self._make_provider()

@@ -59,7 +59,7 @@ GROQ_BASE_URL = "https://api.groq.com/openai/v1"
 GROQ_MODEL    = "llama-3.3-70b-versatile"
 
 # ── Параметры автономии ────────────────────────────────────────────────────
-AUTO_INTERVAL_MIN    = 60   # авто-запуск каждые N минут
+AUTO_INTERVAL_MIN    = 120  # авто-запуск каждые N минут (было 60 — слишком часто жгло TPD)
 AUTO_TRADES_TRIGGER  = 2    # авто-запуск после закрытых сделок (было 1 — слишком часто жгло токены)
 
 # Восстанавливаем сохранённые настройки интервала (переживают перезапуск)
@@ -1203,7 +1203,7 @@ def run_advisor(auto_apply: bool = None, user_message: str = "",
 
         # Следующий запуск через столько минут, сколько советник сам рекомендовал
         suggested_next = int(parsed.get("next_check_min", AUTO_INTERVAL_MIN))
-        suggested_next = max(2, min(60, suggested_next))
+        suggested_next = max(30, min(120, suggested_next))
 
         now = time.time()
         result = {
