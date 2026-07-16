@@ -3528,8 +3528,14 @@ class Trader:
         ai       = self.last_ai if self.last_ai else self.ai.analyze(ohlcv)
         balance  = self._get_balance_cached()
         winrate  = 0
-        if self.stats["total_trades"] > 0:
-            winrate = round(self.stats["winning_trades"] / self.stats["total_trades"] * 100, 1)
+        _tt = int(self.stats.get("total_trades") or 0)
+        _wt = int(self.stats.get("winning_trades") or 0)
+        if _tt > 0:
+            winrate = round(_wt / _tt * 100, 1)
+        # Гарантируем что stats не содержит None (защита от устаревших БД-записей)
+        self.stats["total_trades"]   = _tt
+        self.stats["winning_trades"] = _wt
+        self.stats["total_pnl"]      = float(self.stats.get("total_pnl") or 0)
         pb = self._pending_buy
         # AI-управление: текущие адаптированные параметры (просадка, пауза, порог)
         ai_mgmt = {}

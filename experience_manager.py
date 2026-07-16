@@ -168,6 +168,15 @@ class ExperienceManager:
                 for k in ("trades", "open_trades", "equity", "stats", "ai", "control", "created"):
                     if k in disk and disk[k] is not None:
                         self.data[k] = disk[k]
+                # Санитайз stats из JSON — поля могут быть null если файл был записан
+                # в момент сбоя или устаревшей версией без защиты
+                if isinstance(self.data.get("stats"), dict):
+                    _sj = self.data["stats"]
+                    _sj["total_trades"]   = int(_sj.get("total_trades")   or 0)
+                    _sj["winning_trades"] = int(_sj.get("winning_trades") or 0)
+                    _sj["total_pnl"]      = float(_sj.get("total_pnl")    or 0.0)
+                    if _sj["winning_trades"] > _sj["total_trades"]:
+                        _sj["winning_trades"] = _sj["total_trades"]
                 ctrl = self._default_control()
                 ctrl.update(self.data.get("control") or {})
                 self.data["control"] = ctrl
@@ -260,6 +269,13 @@ class ExperienceManager:
                 for _k in ("total_trades", "winning_trades", "total_pnl"):
                     if _k in saved_stats and saved_stats[_k] is not None:
                         trader.stats[_k] = saved_stats[_k]
+            # Гарантируем что trader.stats не содержит None — защита от
+            # устаревших БД-записей где поля были сохранены как null
+            trader.stats["total_trades"]   = int(trader.stats.get("total_trades")   or 0)
+            trader.stats["winning_trades"] = int(trader.stats.get("winning_trades") or 0)
+            trader.stats["total_pnl"]      = float(trader.stats.get("total_pnl")    or 0.0)
+            if trader.stats["winning_trades"] > trader.stats["total_trades"]:
+                trader.stats["winning_trades"] = trader.stats["total_trades"]
             # ВОССТАНАВЛИВАЕМ открытые позиции: цена покупки + цель продажи —
             # чтобы после перезапуска бот знал почём купил и НЕ продал дешевле.
             all_open = [dict(t) for t in (self.data.get("open_trades") or [])]
