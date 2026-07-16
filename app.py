@@ -621,6 +621,7 @@ def start_background():
         try:
             import alerts
             alerts.start_monitor()
+            alerts.start_hourly_report(data_dir=os.getenv("DATA_DIR", "/app/data"))
         except Exception as _al_ex:
             print(f"[Alerts] монитор не запущен: {_al_ex}")
         # ── Кошелёк: полное отслеживание TON + GRINCH через БД ──────────
