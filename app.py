@@ -1509,22 +1509,23 @@ def api_wallet_analytics():
         trades = db_store.trades_get_recent(50)
         grinch_trades = [t for t in trades if "GRINCH" in str(t.get("symbol", "GRINCH"))]
 
-        # Статистика: сколько куплено/продано GRINCH суммарно
-        total_bought_grinch = sum(
-            t.get("amount", 0) or 0 for t in grinch_trades
-            if t.get("side") == "buy" or t.get("type") == "buy"
+        # Статистика: сколько куплено/продано GRINCH суммарно.
+        # Все наши сделки — LONG (side="buy"): покупаем GRINCH за TON, затем продаём.
+        # Закрытые LONG-сделки означают, что GRINCH был продан обратно за TON.
+        buy_trades    = [t for t in grinch_trades
+                         if t.get("side") == "buy" or t.get("type") == "buy"]
+        closed_buy    = [t for t in buy_trades
+                         if t.get("status") == "closed" or t.get("closed_at")]
+
+        total_bought_grinch = sum(t.get("amount", 0) or 0 for t in buy_trades)
+        # GRINCH продано = GRINCH из закрытых LONG-позиций (купили → продали обратно за TON)
+        total_sold_grinch   = sum(t.get("amount", 0) or 0 for t in closed_buy)
+        total_ton_spent     = sum(
+            (t.get("stake_ton", 0) or t.get("ton_spent", 0) or 0) for t in buy_trades
         )
-        total_sold_grinch   = sum(
-            t.get("amount", 0) or 0 for t in grinch_trades
-            if t.get("side") == "sell" or t.get("type") == "sell"
-        )
-        total_ton_spent = sum(
-            (t.get("stake_ton", 0) or t.get("ton_spent", 0) or 0)
-            for t in grinch_trades if t.get("side") == "buy" or t.get("type") == "buy"
-        )
-        total_ton_received = sum(
-            (t.get("proceeds_ton", 0) or 0)
-            for t in grinch_trades if t.get("side") == "sell" or t.get("type") == "sell"
+        # TON получено = ставка + прибыль по каждой закрытой LONG-сделке
+        total_ton_received  = sum(
+            (t.get("stake_ton", 0) or 0) + (t.get("pnl", 0) or 0) for t in closed_buy
         )
 
         # Цена безубытка по открытым позициям

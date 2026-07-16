@@ -196,6 +196,25 @@ class Trader:
         except Exception as _dca_restore_err:
             self.log(f"⚠️ DCA restore error: {_dca_restore_err}", "WARN")
 
+        # Восстанавливаем dca_wait_pullback и dca_peak_price из открытых позиций.
+        # Если позиция открыта — бот был в активном DCA-цикле и ждёт отката цены
+        # для следующей докупки. high_water из сделки содержит реальный пик сессии.
+        try:
+            if self.open_trades:
+                self.dca_wait_pullback = True
+                _hw_prices = [float(t.get("high_water") or 0) for t in self.open_trades if t.get("high_water")]
+                _peak = max(_hw_prices) if _hw_prices else 0.0
+                if _peak <= 0 and self.dca_last_buy_price > 0:
+                    _peak = self.dca_last_buy_price  # fallback: пик = цена входа
+                if _peak > 0:
+                    self.dca_peak_price = _peak
+                self.log(
+                    f"🔄 DCA wait_pullback восстановлен: пик=${self.dca_peak_price:.8f}",
+                    "INFO",
+                )
+        except Exception as _dca_pull_err:
+            self.log(f"⚠️ DCA pullback restore error: {_dca_pull_err}", "WARN")
+
         # ── Сверка с реальным балансом кошелька ────────────────────────
         # Сохранённая в БД/памяти позиция может отстать от реальности
         # (устаревшая запись, гонка при рестарте). Если расхождение с

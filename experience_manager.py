@@ -252,10 +252,14 @@ class ExperienceManager:
         """Возвращает статистику в трейдер и применяет сохранённые параметры
         управления к Config (тёплый старт)."""
         with self._lock:
-            # Сессионные счётчики (total_trades / winning_trades / total_pnl)
-            # НАМЕРЕННО не восстанавливаются из DB — они обнуляются при каждом
-            # перезапуске бота, чтобы дашборд показывал только текущую сессию.
-            # Исторические данные остаются в bot_trades / bot_ai_state для аналитики.
+            # Восстанавливаем накопленные счётчики (total_trades / winning_trades / total_pnl)
+            # из DB при каждом рестарте, чтобы дашборд показывал ВСЕ исторические сделки,
+            # а не только текущую сессию. Исторические данные хранятся в bot_ai_state["stats"].
+            saved_stats = self.data.get("stats") or {}
+            if saved_stats and isinstance(saved_stats, dict):
+                for _k in ("total_trades", "winning_trades", "total_pnl"):
+                    if _k in saved_stats and saved_stats[_k] is not None:
+                        trader.stats[_k] = saved_stats[_k]
             # ВОССТАНАВЛИВАЕМ открытые позиции: цена покупки + цель продажи —
             # чтобы после перезапуска бот знал почём купил и НЕ продал дешевле.
             all_open = [dict(t) for t in (self.data.get("open_trades") or [])]
