@@ -171,6 +171,22 @@ class Trader:
         # условие `dca_last_buy_price > 0` никогда не выполнялось.
         try:
             _dca_trades = [t for t in self.open_trades if t.get("dca_entry")]
+            # Fallback: если open_trades есть, но ни у одной нет dca_entry=True,
+            # значит позиция была открыта до добавления поля или через старый путь.
+            # В DCA-режиме любая открытая LONG-позиция — это DCA-вход.
+            if not _dca_trades and self.open_trades and Config.DCA_MODE:
+                _long_trades = [t for t in self.open_trades if t.get("trade_type") != "short"]
+                if _long_trades:
+                    _dca_trades = _long_trades
+                    # Помечаем на лету, чтобы save_open_trades сохранил флаг в БД
+                    for _idx, _t in enumerate(_long_trades, start=1):
+                        _t.setdefault("dca_entry", True)
+                        _t.setdefault("dca_index", _idx)
+                    self.log(
+                        f"🔧 DCA fallback: {len(_dca_trades)} позиций без dca_entry — "
+                        f"помечены как DCA-входы автоматически",
+                        "WARN",
+                    )
             if _dca_trades:
                 # Берём цену последней по времени DCA-покупки
                 _dca_sorted = sorted(
