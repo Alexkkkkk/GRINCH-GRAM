@@ -571,7 +571,7 @@ class Trader:
                 self._record_equity()
                 # Обновляем live-поля открытых сделок в DB раз в 60 секунд
                 now = time.time()
-                if self.open_trades and (now - _last_db_sync) >= 60:
+                if self.open_trades and (now - _last_db_sync) >= 15:
                     self._sync_open_trades_to_db()
                     _last_db_sync = now
                 self.last_tick_ts = time.time()
