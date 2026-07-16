@@ -129,6 +129,8 @@ class Trader:
         self._last_loss_ts = 0.0
         # Защита прибыли: пик стоимости портфеля (TON) для детектора разворота
         self.portfolio_high_water_ton = 0.0
+        # Флаг: прибыль хотя бы раз достигла порога PROFIT_PROTECT_TON (не сбрасывается при откате)
+        self.profit_protect_activated = False
         # Health-check: время и статус последнего успешного тика торгового цикла
         self.last_tick_ts = 0.0
         self.last_tick_ok = None
@@ -689,16 +691,23 @@ class Trader:
 
     def _check_profit_protection(self, price_usd: float, grinch_ton: float) -> bool:
         """
-        Защита прибыли: если портфель в плюсе >= PROFIT_PROTECT_TON TON
-        И рынок начал падать (откат от пика портфеля >= PROFIT_PROTECT_DROP_PCT%
-        ИЛИ AI-сигнал SELL с уверенностью >= 55%) — продаём ВСЁ немедленно.
+        Защита прибыли: как только прибыль портфеля хотя бы раз достигла
+        PROFIT_PROTECT_TON TON — ставим тесный трейл 2% от пика стоимости.
+        При откате >= 2% или AI SELL >= 55% — продаём ВСЁ немедленно.
+
+        Ключевое отличие от старой логики: флаг активации (profit_protect_activated)
+        НЕ сбрасывается при временном откате ниже порога. Это гарантирует, что
+        защита сработает даже если прибыль к моменту отката уже частично убралась
+        (старая логика возвращала False при profit_ton < порог, из-за чего
+        при малом пороге 3 TON откат в 4%+ уже съедал всю прибыль).
 
         Работает в DCA-режиме и AI-режиме. Уважает ONLY_PROFIT_EXIT.
-        Сбрасывает portfolio_high_water_ton после продажи.
+        Сбрасывает portfolio_high_water_ton и флаг после продажи.
         """
         if not Config.PROFIT_PROTECT_ENABLED:
             return False
         if not self.open_trades:
+            self.profit_protect_activated = False   # сброс при закрытии всех позиций
             return False
         if grinch_ton <= 0 or price_usd <= 0:
             return False
@@ -710,22 +719,22 @@ class Trader:
 
         profit_ton = total_value_ton - total_cost_ton
 
-        # Обновляем пик стоимости портфеля
+        # Обновляем пик стоимости портфеля (всегда, не только в профите)
         if total_value_ton > self.portfolio_high_water_ton:
             self.portfolio_high_water_ton = total_value_ton
 
-        # Активируем только когда прибыль достигла порога
-        if profit_ton < Config.PROFIT_PROTECT_TON:
+        # Активируем защиту как только прибыль достигла порога — флаг остаётся
+        # активным даже если цена временно откатилась ниже порога
+        if profit_ton >= Config.PROFIT_PROTECT_TON:
+            self.profit_protect_activated = True
+
+        if not self.profit_protect_activated:
             return False
 
-        # ── Детектор разворота ── 1: откат от пика портфеля ───────────
-        # Порог отката адаптивный (та же логика, что и trailing по сделкам):
-        # в сильном тренде/пампе даём портфелю больше пространства для роста
-        # (не срезаем прибыль слишком рано), в боковике/слабости — режем туже,
-        # чтобы не отдать назад уже заработанное. Пределы 4–12% защищают от
-        # экстремальных значений на волатильных режимах.
-        adaptive_drop_pct = self._adaptive_trail_pct(Config.PROFIT_PROTECT_DROP_PCT)
-        adaptive_drop_pct = max(4.0, min(adaptive_drop_pct, 12.0))
+        # ── Детектор разворота ── 1: тесный трейл 2% от пика портфеля ──
+        # Используем фиксированные 2% (вместо адаптивных 4–12%), чтобы успеть
+        # зафиксировать прибыль до того, как откат съест весь заработок.
+        TIGHT_TRAIL_PCT = 2.0
 
         drop_from_peak = 0.0
         if self.portfolio_high_water_ton > total_value_ton:
@@ -733,7 +742,7 @@ class Trader:
                 (self.portfolio_high_water_ton - total_value_ton)
                 / self.portfolio_high_water_ton * 100
             )
-        price_fell = drop_from_peak >= adaptive_drop_pct
+        price_fell = drop_from_peak >= TIGHT_TRAIL_PCT
 
         # ── Детектор разворота ── 2: AI говорит SELL ────────────────
         ai_sell = False
@@ -749,7 +758,7 @@ class Trader:
         reason_parts = []
         if price_fell:
             reason_parts.append(
-                f"откат -{drop_from_peak:.1f}% от пика портфеля (порог {adaptive_drop_pct:.1f}%)"
+                f"откат -{drop_from_peak:.1f}% от пика портфеля (трейл {TIGHT_TRAIL_PCT:.1f}%)"
             )
         if ai_sell:
             ai_conf2 = float((self.last_ai or {}).get("confidence", 0) or 0)
@@ -760,17 +769,19 @@ class Trader:
         total_grinch  = sum(t.get("amount", 0) for t in self.open_trades)
 
         self.log(
-            f"🛡️ ЗАЩИТА ПРИБЫЛИ: +{profit_ton:.4f} TON (+{portfolio_pct:.1f}%) | "
+            f"🛡️ ЗАЩИТА ПРИБЫЛИ: {profit_ton:+.4f} TON ({portfolio_pct:+.1f}%) | "
+            f"пик {self.portfolio_high_water_ton:.4f} TON | "
             f"{reason} | продаём {total_grinch:.2f} GRINCH @ ${price_usd:.8f}",
             "INFO"
         )
 
         closed = self._dca_sell_all(price_usd, grinch_ton, portfolio_pct)
         if closed:
-            self.portfolio_high_water_ton = 0.0   # сброс после продажи
+            self.portfolio_high_water_ton = 0.0    # сброс пика после продажи
+            self.profit_protect_activated = False   # сброс флага активации
             self._emit_signal("SELL", price_usd, self.last_ai)
             self.log(
-                f"✅ Защита прибыли ИСПОЛНЕНА: +{profit_ton:.4f} TON зафиксировано | {reason}",
+                f"✅ Защита прибыли ИСПОЛНЕНА: {profit_ton:+.4f} TON зафиксировано | {reason}",
                 "INFO"
             )
             # В DCA-режиме — ждём откат перед следующим входом
