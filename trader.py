@@ -589,7 +589,8 @@ class Trader:
                 except Exception:
                     pass
             # Прерываемый сон: stop() немедленно разбудит через _loop_stop_event
-            self._loop_stop_event.wait(timeout=8)
+            # 4 сек = оптимум: price_feed prefetch каждые 5с, реакция на откат быстрее
+            self._loop_stop_event.wait(timeout=4)
 
     def _record_equity(self):
         """Снимок капитала кошелька в память (троттлинг внутри менеджера)."""
