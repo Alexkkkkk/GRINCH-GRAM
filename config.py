@@ -259,11 +259,11 @@ class Config:
     # TON за каждый вход (первая покупка и каждая докупка)
     DCA_STAKE_TON       = float(os.getenv("DCA_STAKE_TON", "100"))
     # Продать ВСЁ когда общая стоимость GRINCH выросла на N% относительно суммарных затрат
-    DCA_TARGET_PROFIT_PCT = float(os.getenv("DCA_TARGET_PROFIT_PCT", "25"))   # дневной диапазон GRINCH 20-50%
+    DCA_TARGET_PROFIT_PCT = float(os.getenv("DCA_TARGET_PROFIT_PCT", "30"))   # средний дневной диапазон GRINCH = 35.9%
     # Докупать ещё когда цена упала N% от цены ПОСЛЕДНЕЙ покупки
-    DCA_DROP_TRIGGER_PCT  = float(os.getenv("DCA_DROP_TRIGGER_PCT", "5"))   # выше шума 15min (~2.9%), меньше ложных входов
+    DCA_DROP_TRIGGER_PCT  = float(os.getenv("DCA_DROP_TRIGGER_PCT", "5"))   # p75 15min-range = 3.5% → 5% фильтрует шум
     # После продажи: ждать падения цены на N% от пика перед следующей покупкой
-    DCA_PULLBACK_WAIT_PCT = float(os.getenv("DCA_PULLBACK_WAIT_PCT", "4"))  # макс. агрессия: реентри быстрее
+    DCA_PULLBACK_WAIT_PCT = float(os.getenv("DCA_PULLBACK_WAIT_PCT", "6"))  # p75=3.5% p90=6.5% → 6% = настоящий откат
     # Максимальное количество DCA-входов за один цикл (защита от бесконечного усреднения)
     DCA_MAX_ENTRIES     = int(os.getenv("DCA_MAX_ENTRIES", "10"))
 
@@ -280,24 +280,24 @@ class Config:
     # Уровень 2 (+40%): продаём оставшиеся 50%, ловим дополнительный памп.
     # При отключении — стандартная продажа всего на уровне 1.
     DCA_CASCADE_ENABLED    = bool(int(os.getenv("DCA_CASCADE_ENABLED",    "1")))
-    DCA_CASCADE_LEVEL1_PCT = float(os.getenv("DCA_CASCADE_LEVEL1_PCT", "30"))  # выше DCA_TARGET (25%) — нет конкуренции уровней
-    DCA_CASCADE_LEVEL2_PCT = float(os.getenv("DCA_CASCADE_LEVEL2_PCT", "35"))  # +35% → продать остаток (ловим памп)
+    DCA_CASCADE_LEVEL1_PCT = float(os.getenv("DCA_CASCADE_LEVEL1_PCT", "40"))  # выше DCA_TARGET (30%) — нет конкуренции уровней
+    DCA_CASCADE_LEVEL2_PCT = float(os.getenv("DCA_CASCADE_LEVEL2_PCT", "65"))  # макс дневной диапазон = 92.6% — ловим ракеты
 
     # ── Временной фильтр: мёртвые UTC-часы (низкий объём, не открываем новые позиции) ──
     # По умолчанию: 0, 22, 23 UTC — самый низкий объём и диапазон по статистике GRINCH.
     # В мёртвые часы первый вход и ре-вход блокируются; докупка к существующим позициям
     # допускается только при расширенном триггере (x DEAD_HOURS_DROP_MULT).
     DEAD_HOURS_UTC = [
-        int(h) for h in os.getenv("DEAD_HOURS_UTC", "0,22,23").split(",")
+        int(h) for h in os.getenv("DEAD_HOURS_UTC", "0,22").split(",")
         if h.strip().lstrip("-").isdigit()
-    ]
+    ]  # данные 7 дней: 00:xx=$44/ч, 22:xx=$189/ч — мёртвые; 23:xx=$678/ч — НЕ мёртвый
     # Множитель для DCA_DROP_TRIGGER в мёртвые часы (1.0 = не менять)
     DEAD_HOURS_DROP_MULT = float(os.getenv("DEAD_HOURS_DROP_MULT", "1.5"))
 
     # ── Умный реentri: после ТП входим быстрее если AI бычий ────────────────
     # Вместо ожидания -25% отката: при AI-уверенности ≥ порога достаточно -8%.
     DCA_SMART_REENTRY_ENABLED    = bool(int(os.getenv("DCA_SMART_REENTRY_ENABLED",    "1")))
-    DCA_SMART_REENTRY_PULLBACK_PCT = float(os.getenv("DCA_SMART_REENTRY_PULLBACK_PCT", "4"))   # супер агрессия: заходим ещё раньше
+    DCA_SMART_REENTRY_PULLBACK_PCT = float(os.getenv("DCA_SMART_REENTRY_PULLBACK_PCT", "5"))   # p75 15min = 3.5% → 5% безопаснее
     DCA_SMART_REENTRY_MIN_AI_CONF  = float(os.getenv("DCA_SMART_REENTRY_MIN_AI_CONF",  "50")) # супер агрессия: больше реентри
     # Минимальная пауза между DCA-докупками (секунды) — защита от переторговли.
     # При низких порогах входа (drop 9%, conf 55%) без паузы бот может войти 3+ раз
@@ -328,7 +328,7 @@ class Config:
     # Защита «только в плюс»: выход по рынку, но никогда в убыток (ONLY_PROFIT_EXIT).
     PROFIT_PROTECT_ENABLED  = bool(int(os.getenv("PROFIT_PROTECT_ENABLED",  "1")))
     PROFIT_PROTECT_TON      = float(os.getenv("PROFIT_PROTECT_TON",         "3.0"))   # мин. 3 TON прибыли для активации
-    PROFIT_PROTECT_DROP_PCT = float(os.getenv("PROFIT_PROTECT_DROP_PCT",    "6.0"))   # GRINCH ATR=4.32%/свеча → 3% = шум; 6% = настоящий разворот
+    PROFIT_PROTECT_DROP_PCT = float(os.getenv("PROFIT_PROTECT_DROP_PCT",    "8.0"))   # p90 15min-range=6.5% → 8% = настоящий разворот, не шум
     PROFIT_PROTECT_AI_SELL  = bool(int(os.getenv("PROFIT_PROTECT_AI_SELL",  "1")))    # также при AI SELL
 
     # ── Минимальная АБСОЛЮТНАЯ прибыль в TON — ниже этого не закрываем сделку ──
