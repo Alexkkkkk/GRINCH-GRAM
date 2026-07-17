@@ -2932,11 +2932,27 @@ class Trader:
             "INFO"
         )
 
+        # AMM preflight для шорта: блокируем если пул вернёт меньше ожидаемого
+        # (grinch_value_ton * (1 - SLIPPAGE)) — защита от чрезмерного проскальзывания.
+        # min_net_ton — нетто после газа продажи; CPMM в dedust_client учитывает price impact.
+        _short_min_net = max(0.0, grinch_value_ton * (1 - Config.SLIPPAGE_PCT / 100) - Config.SELL_GAS_TON)
+        self.log(
+            f"🔍 Шорт AMM preflight: продаём {target_grinch:.2f} GRINCH "
+            f"(≈{grinch_value_ton:.3f} TON), нетто ≥ {_short_min_net:.3f} TON",
+            "INFO"
+        )
+
         # Исполняем продажу GRINCH → TON
-        order = self.exchange.place_order("sell", target_grinch)
+        order = self.exchange.place_order("sell", target_grinch, min_net_ton=_short_min_net)
         if not order or order.get("error"):
             err = (order or {}).get("error", "нет ответа")
-            self.log(f"⚠️ Шорт: продажа GRINCH не исполнена — {err}", "WARN")
+            if (order or {}).get("amm_blocked"):
+                self.log(
+                    f"🛡️ Шорт заблокирован AMM preflight: {err} "
+                    f"(пул вернёт меньше {_short_min_net:.3f} TON нетто)", "WARN"
+                )
+            else:
+                self.log(f"⚠️ Шорт: продажа GRINCH не исполнена — {err}", "WARN")
             return False
 
         # Реально полученный TON из ордера (если DEX вернул)
