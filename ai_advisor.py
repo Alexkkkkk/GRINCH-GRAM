@@ -779,6 +779,45 @@ def _build_snapshot(user_message: str = "") -> dict:
     except Exception:
         snap["liquidity"] = {}
 
+    # ── DataHub: внешние рыночные данные из 6 бесплатных источников ─────────
+    try:
+        from data_hub import get_snapshot as _hub_snap, get_source_status as _hub_st
+        _hub = _hub_snap()
+        if _hub:
+            snap["market_hub"] = {
+                # Fear & Greed
+                "fear_greed_value": _hub.get("fg_value"),
+                "fear_greed_label": _hub.get("fg_label"),
+                "fear_greed_delta": _hub.get("fg_delta"),
+                # BTC
+                "btc_price":        round(_hub.get("btc_price", 0), 0),
+                "btc_change24h":    _hub.get("btc_change24h"),
+                "btc_volume24h_b":  round((_hub.get("btc_volume24h", 0) or 0) / 1e9, 2),
+                # TON на Binance
+                "ton_cex_price":    _hub.get("ton_cex_price"),
+                "ton_cex_change24h": _hub.get("ton_cex_change24h"),
+                "ton_cex_volume24h_m": round((_hub.get("ton_cex_volume24h", 0) or 0) / 1e6, 2),
+                # Bybit фьючерсы
+                "bybit_funding_rate_pct": _hub.get("bybit_funding_rate_pct"),
+                "bybit_oi_m":        round((_hub.get("bybit_oi", 0) or 0) / 1e6, 2),
+                # DeFiLlama
+                "ton_tvl_m":         round((_hub.get("ton_tvl", 0) or 0) / 1e6, 2),
+                "ton_tvl_change_pct": _hub.get("ton_tvl_change"),
+                "stonfi_tvl_m":      round((_hub.get("stonfi_tvl", 0) or 0) / 1e6, 2),
+                # GeckoTerminal тренды
+                "grinch_trend_rank":  _hub.get("grinch_trend_rank", 0),
+                "grinch_trend_vol24h_k": round((_hub.get("grinch_trend_vol24h", 0) or 0) / 1e3, 1),
+                "ton_trending_pools": _hub.get("ton_trending_pools"),
+                # TON сеть
+                "ton_tx24h_k":  round((_hub.get("ton_tx24h", 0) or 0) / 1e3, 1),
+                "ton_accounts_m": round((_hub.get("ton_accounts", 0) or 0) / 1e6, 3),
+                # Статус источников
+                "sources": [{s["source"]: ("✅" if s["fresh"] else "⚠️" if not s["stale"] else "❌")}
+                            for s in _hub_st()],
+            }
+    except Exception:
+        snap["market_hub"] = {}
+
     # ── Глубокие данные прямо с DeDust/DexScreener (не из analytics_buffer) ─
     try:
         from coin_info import coin_info

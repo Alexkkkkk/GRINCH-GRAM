@@ -1206,6 +1206,17 @@ def api_amm_preview():
         return jsonify({"error": str(e), "ok": None, "cached": False}), 500
 
 # ─────────────────────────── Living Organism ────────────────────────────────
+@app.route("/api/market_hub")
+def api_market_hub():
+    """Агрегированные рыночные данные из 6 бесплатных источников."""
+    try:
+        from data_hub import get_snapshot, get_source_status
+        snap   = get_snapshot()
+        status = get_source_status()
+        return jsonify({"ok": True, "data": snap, "sources": status})
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)}), 500
+
 @app.route("/api/organism")
 def api_organism():
     """Состояние живого организма QuantumBrain (7 биосистем)."""

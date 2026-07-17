@@ -776,6 +776,59 @@
         </div>
       </div>
 
+      <!-- ══ MARKET HUB — 6 внешних источников ══ -->
+      <div id="hub-card" style="margin-top:10px;border-radius:10px;overflow:hidden;border:1px solid rgba(255,255,255,.07);background:rgba(10,18,30,.6)">
+        <div style="padding:7px 12px;background:rgba(56,189,248,.05);display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid rgba(255,255,255,.05)">
+          <span style="font-size:11px;font-weight:700;color:#38bdf8;letter-spacing:.5px">🌐 РЫНОК — 6 ИСТОЧНИКОВ</span>
+          <span id="hub-updated" style="font-size:9px;color:#4a5568">обновление…</span>
+        </div>
+        <div style="padding:9px 12px;display:grid;grid-template-columns:1fr 1fr;gap:7px">
+          <!-- Fear & Greed -->
+          <div style="background:rgba(255,255,255,.03);border-radius:8px;padding:8px">
+            <div style="font-size:9px;color:#6a7d9f;margin-bottom:3px">😨 FEAR &amp; GREED</div>
+            <div style="display:flex;align-items:baseline;gap:6px">
+              <span id="hub-fg-val" style="font-size:18px;font-weight:900;font-family:monospace;color:#ffd166">—</span>
+              <span id="hub-fg-lbl" style="font-size:10px;color:#6a7d9f">—</span>
+            </div>
+            <div style="height:4px;background:rgba(255,255,255,.07);border-radius:2px;margin-top:5px;overflow:hidden">
+              <div id="hub-fg-bar" style="height:100%;width:50%;background:#8892b0;border-radius:2px;transition:width .8s,background .5s"></div>
+            </div>
+          </div>
+          <!-- BTC тренд -->
+          <div style="background:rgba(255,255,255,.03);border-radius:8px;padding:8px">
+            <div style="font-size:9px;color:#6a7d9f;margin-bottom:3px">₿ BTC 24ч</div>
+            <div id="hub-btc" style="font-size:14px;font-weight:900;font-family:monospace;color:#f7931a">—</div>
+            <div style="font-size:10px;color:#4a5568;margin-top:3px" id="hub-btc-price">$—</div>
+          </div>
+          <!-- TON CEX -->
+          <div style="background:rgba(255,255,255,.03);border-radius:8px;padding:8px">
+            <div style="font-size:9px;color:#6a7d9f;margin-bottom:3px">💎 TON CEX (Binance)</div>
+            <div id="hub-ton-price" style="font-size:14px;font-weight:900;font-family:monospace;color:#38bdf8">—</div>
+            <div style="font-size:10px;color:#4a5568;margin-top:3px" id="hub-ton-vol">объём: —</div>
+          </div>
+          <!-- Funding rate -->
+          <div style="background:rgba(255,255,255,.03);border-radius:8px;padding:8px">
+            <div style="font-size:9px;color:#6a7d9f;margin-bottom:3px">📊 FUNDING (Bybit TON)</div>
+            <div id="hub-funding" style="font-size:14px;font-weight:900;font-family:monospace;color:#e2e8f0">—</div>
+            <div style="font-size:10px;color:#4a5568;margin-top:3px" id="hub-oi">OI: —</div>
+          </div>
+          <!-- TVL TON -->
+          <div style="background:rgba(255,255,255,.03);border-radius:8px;padding:8px">
+            <div style="font-size:9px;color:#6a7d9f;margin-bottom:3px">🏦 TVL TON (DeFiLlama)</div>
+            <div id="hub-tvl" style="font-size:14px;font-weight:900;font-family:monospace;color:#a78bfa">—</div>
+            <div style="font-size:10px;color:#4a5568;margin-top:3px" id="hub-stonfi">STON.fi: —</div>
+          </div>
+          <!-- GRINCH trending -->
+          <div style="background:rgba(255,255,255,.03);border-radius:8px;padding:8px">
+            <div style="font-size:9px;color:#6a7d9f;margin-bottom:3px">🐸 GRINCH ТРЕНДЫ</div>
+            <div id="hub-trend" style="font-size:14px;font-weight:900;color:#00ff88">—</div>
+            <div style="font-size:10px;color:#4a5568;margin-top:3px" id="hub-trend-vol">vol: —</div>
+          </div>
+        </div>
+        <!-- Статус источников -->
+        <div style="padding:0 12px 8px;display:flex;gap:5px;flex-wrap:wrap" id="hub-sources"></div>
+      </div>
+
       <!-- ══ LIVING ORGANISM ══ -->
       <div id="organism-card" style="margin-top:10px;border-radius:10px;overflow:hidden;border:1px solid rgba(0,255,136,.15);background:rgba(10,18,30,.6)">
         <!-- Header -->
@@ -2841,6 +2894,778 @@ window.switchEqTab       = switchEqTab;
 
   // Обратный отсчёт каждую секунду
   _countdownTimer = setInterval(updateCountdown, 1000);
+})();
+
+// ══ 🌐 MARKET HUB — polling /api/market_hub каждые 30с ═══════════════
+(function() {
+  const POLL_HUB = 30000;
+  const _el = id => document.getElementById(id);
+
+  function fmt(v, digits, suffix) {
+    if (v == null || v === '' || isNaN(+v)) return '—';
+    const n = (+v).toFixed(digits || 0);
+    return suffix ? n + suffix : n;
+  }
+  function fmtPct(v) {
+    if (v == null || isNaN(+v)) return '—';
+    const n = +v, s = n >= 0 ? '+' : '';
+    return s + n.toFixed(2) + '%';
+  }
+  function fmtM(v) {
+    if (!v) return '—';
+    if (v >= 1e9) return '
+(function() {
+  const POLL_ORG = 10000;
+  const _el = id => document.getElementById(id);  // локальный алиас
+
+  function pct(v) { return Math.round((v || 0) * 100) + '%'; }
+
+  function setBar(id, frac) {
+    const el = _el(id);
+    if (el) el.style.width = Math.max(0, Math.min(100, Math.round((frac || 0) * 100))) + '%';
+  }
+
+  function updateOrganism(d) {
+    if (!d || d.error) return;
+
+    // ── 7. Здоровье — бейдж ──────────────────────────────────────────────
+    const hEl = _el('org-health-badge');
+    if (hEl) {
+      const hc = d.health > 0.75 ? '#00ff88' : d.health > 0.55 ? '#ffd166' : d.health > 0.35 ? '#f97316' : '#ef4444';
+      hEl.textContent = '\u2764\ufe0f ' + (d.health_label || '\u2014');
+      hEl.style.color = hc;
+      hEl.style.background = hc + '22';
+    }
+
+    // ── 1. Настроение ─────────────────────────────────────────────────────
+    const emoEl = _el('org-emotion');
+    if (emoEl) emoEl.textContent = d.emotion_label || '\u2014';
+    const moodFrac = ((d.mood || 0) + 1) / 2;
+    setBar('org-mood-bar', moodFrac);
+    const mBarEl = _el('org-mood-bar');
+    if (mBarEl) mBarEl.style.background = d.mood > 0.2 ? '#00ff88' : d.mood < -0.2 ? '#ef4444' : '#8892b0';
+
+    // ── 2. Голод ──────────────────────────────────────────────────────────
+    const huEl = _el('org-hunger-val');
+    if (huEl) huEl.textContent = pct(d.hunger);
+    setBar('org-hunger-bar', d.hunger);
+    const huBarEl = _el('org-hunger-bar');
+    if (huBarEl) huBarEl.style.background = (d.hunger || 0) > 0.7 ? '#ef4444' : '#ffd166';
+
+    // ── 3. Энергия ────────────────────────────────────────────────────────
+    const enEl = _el('org-energy-val');
+    if (enEl) {
+      const ph = {'awake': '\ud83c\udf1f \u0431\u043e\u0434\u0440', 'drowsy': '\ud83d\ude2a \u043a\u043b\u044e\u0451\u0442', 'sleeping': '\ud83d\ude34 \u0441\u043f\u0438\u0442'}[d.sleep_phase] || d.sleep_phase;
+      enEl.textContent = pct(d.energy) + ' ' + ph;
+    }
+    setBar('org-energy-bar', d.energy);
+    const enBarEl = _el('org-energy-bar');
+    if (enBarEl) enBarEl.style.background = (d.energy || 0) > 0.6 ? '#64ffda' : (d.energy || 0) > 0.35 ? '#ffd166' : '#6366f1';
+
+    // ── 6. Сны ────────────────────────────────────────────────────────────
+    const drEl = _el('org-dream-val');
+    if (drEl) drEl.textContent = (d.dreaming ? '\ud83d\udcad ' : '') + pct(d.dream_quality);
+    setBar('org-dream-bar', d.dream_quality);
+
+    // ── 5. Инстинкты ──────────────────────────────────────────────────────
+    const instEl = _el('org-instinct');
+    if (instEl) {
+      if (d.panic_mode) {
+        instEl.textContent = '\ud83d\udd34 \u041f\u0410\u041d\u0418\u041a\u0410';
+        instEl.style.color = '#ef4444';
+      } else if (d.defensive_mode) {
+        instEl.textContent = '\ud83d\udee1\ufe0f \u0437\u0430\u0449\u0438\u0442\u0430 \u00d7' + (d.consecutive_losses || 0);
+        instEl.style.color = '#f97316';
+      } else if (d.flash_crash) {
+        instEl.textContent = '\u26a1 \u0444\u043b\u044d\u0448';
+        instEl.style.color = '#ffd166';
+      } else {
+        instEl.textContent = '\u2705 \u043d\u043e\u0440\u043c\u0430';
+        instEl.style.color = '#00ff88';
+      }
+    }
+
+    // ── 4. Эволюция ───────────────────────────────────────────────────────
+    const evoEl = _el('org-evo');
+    if (evoEl) {
+      const fit = Math.round((d.evolution_fitness || 0) * 100);
+      const dlt = (d.evolved_conf_delta >= 0 ? '+' : '') + (d.evolved_conf_delta || 0).toFixed(1);
+      evoEl.textContent = '#' + (d.generation || 0) + ' | ' + fit + '% | ' + dlt + '\u043f\u043f';
+    }
+
+    // Поправки
+    const modEl = _el('org-mods');
+    if (modEl) {
+      const cm = d.conf_modifier || 0;
+      modEl.textContent = '\u0394' + (cm >= 0 ? '+' : '') + cm.toFixed(1) + '\u043f\u043f \u00d7' + (d.size_multiplier || 1).toFixed(2);
+      modEl.style.color = cm < -2 ? '#00ff88' : cm > 5 ? '#ef4444' : '#8892b0';
+    }
+  }
+
+  async function pollOrganism() {
+    try {
+      const d = await fetch('/api/organism').then(r => r.json());
+      updateOrganism(d);
+    } catch(e) {
+      console.warn('[Organism]', e);
+    }
+  }
+
+  pollOrganism();
+  setInterval(pollOrganism, POLL_ORG);
+})();
+</script>
+</body>
+</html>
+ + (v/1e9).toFixed(2) + 'B';
+    if (v >= 1e6) return '
+(function() {
+  const POLL_ORG = 10000;
+  const _el = id => document.getElementById(id);  // локальный алиас
+
+  function pct(v) { return Math.round((v || 0) * 100) + '%'; }
+
+  function setBar(id, frac) {
+    const el = _el(id);
+    if (el) el.style.width = Math.max(0, Math.min(100, Math.round((frac || 0) * 100))) + '%';
+  }
+
+  function updateOrganism(d) {
+    if (!d || d.error) return;
+
+    // ── 7. Здоровье — бейдж ──────────────────────────────────────────────
+    const hEl = _el('org-health-badge');
+    if (hEl) {
+      const hc = d.health > 0.75 ? '#00ff88' : d.health > 0.55 ? '#ffd166' : d.health > 0.35 ? '#f97316' : '#ef4444';
+      hEl.textContent = '\u2764\ufe0f ' + (d.health_label || '\u2014');
+      hEl.style.color = hc;
+      hEl.style.background = hc + '22';
+    }
+
+    // ── 1. Настроение ─────────────────────────────────────────────────────
+    const emoEl = _el('org-emotion');
+    if (emoEl) emoEl.textContent = d.emotion_label || '\u2014';
+    const moodFrac = ((d.mood || 0) + 1) / 2;
+    setBar('org-mood-bar', moodFrac);
+    const mBarEl = _el('org-mood-bar');
+    if (mBarEl) mBarEl.style.background = d.mood > 0.2 ? '#00ff88' : d.mood < -0.2 ? '#ef4444' : '#8892b0';
+
+    // ── 2. Голод ──────────────────────────────────────────────────────────
+    const huEl = _el('org-hunger-val');
+    if (huEl) huEl.textContent = pct(d.hunger);
+    setBar('org-hunger-bar', d.hunger);
+    const huBarEl = _el('org-hunger-bar');
+    if (huBarEl) huBarEl.style.background = (d.hunger || 0) > 0.7 ? '#ef4444' : '#ffd166';
+
+    // ── 3. Энергия ────────────────────────────────────────────────────────
+    const enEl = _el('org-energy-val');
+    if (enEl) {
+      const ph = {'awake': '\ud83c\udf1f \u0431\u043e\u0434\u0440', 'drowsy': '\ud83d\ude2a \u043a\u043b\u044e\u0451\u0442', 'sleeping': '\ud83d\ude34 \u0441\u043f\u0438\u0442'}[d.sleep_phase] || d.sleep_phase;
+      enEl.textContent = pct(d.energy) + ' ' + ph;
+    }
+    setBar('org-energy-bar', d.energy);
+    const enBarEl = _el('org-energy-bar');
+    if (enBarEl) enBarEl.style.background = (d.energy || 0) > 0.6 ? '#64ffda' : (d.energy || 0) > 0.35 ? '#ffd166' : '#6366f1';
+
+    // ── 6. Сны ────────────────────────────────────────────────────────────
+    const drEl = _el('org-dream-val');
+    if (drEl) drEl.textContent = (d.dreaming ? '\ud83d\udcad ' : '') + pct(d.dream_quality);
+    setBar('org-dream-bar', d.dream_quality);
+
+    // ── 5. Инстинкты ──────────────────────────────────────────────────────
+    const instEl = _el('org-instinct');
+    if (instEl) {
+      if (d.panic_mode) {
+        instEl.textContent = '\ud83d\udd34 \u041f\u0410\u041d\u0418\u041a\u0410';
+        instEl.style.color = '#ef4444';
+      } else if (d.defensive_mode) {
+        instEl.textContent = '\ud83d\udee1\ufe0f \u0437\u0430\u0449\u0438\u0442\u0430 \u00d7' + (d.consecutive_losses || 0);
+        instEl.style.color = '#f97316';
+      } else if (d.flash_crash) {
+        instEl.textContent = '\u26a1 \u0444\u043b\u044d\u0448';
+        instEl.style.color = '#ffd166';
+      } else {
+        instEl.textContent = '\u2705 \u043d\u043e\u0440\u043c\u0430';
+        instEl.style.color = '#00ff88';
+      }
+    }
+
+    // ── 4. Эволюция ───────────────────────────────────────────────────────
+    const evoEl = _el('org-evo');
+    if (evoEl) {
+      const fit = Math.round((d.evolution_fitness || 0) * 100);
+      const dlt = (d.evolved_conf_delta >= 0 ? '+' : '') + (d.evolved_conf_delta || 0).toFixed(1);
+      evoEl.textContent = '#' + (d.generation || 0) + ' | ' + fit + '% | ' + dlt + '\u043f\u043f';
+    }
+
+    // Поправки
+    const modEl = _el('org-mods');
+    if (modEl) {
+      const cm = d.conf_modifier || 0;
+      modEl.textContent = '\u0394' + (cm >= 0 ? '+' : '') + cm.toFixed(1) + '\u043f\u043f \u00d7' + (d.size_multiplier || 1).toFixed(2);
+      modEl.style.color = cm < -2 ? '#00ff88' : cm > 5 ? '#ef4444' : '#8892b0';
+    }
+  }
+
+  async function pollOrganism() {
+    try {
+      const d = await fetch('/api/organism').then(r => r.json());
+      updateOrganism(d);
+    } catch(e) {
+      console.warn('[Organism]', e);
+    }
+  }
+
+  pollOrganism();
+  setInterval(pollOrganism, POLL_ORG);
+})();
+</script>
+</body>
+</html>
+ + (v/1e6).toFixed(1) + 'M';
+    if (v >= 1e3) return '
+(function() {
+  const POLL_ORG = 10000;
+  const _el = id => document.getElementById(id);  // локальный алиас
+
+  function pct(v) { return Math.round((v || 0) * 100) + '%'; }
+
+  function setBar(id, frac) {
+    const el = _el(id);
+    if (el) el.style.width = Math.max(0, Math.min(100, Math.round((frac || 0) * 100))) + '%';
+  }
+
+  function updateOrganism(d) {
+    if (!d || d.error) return;
+
+    // ── 7. Здоровье — бейдж ──────────────────────────────────────────────
+    const hEl = _el('org-health-badge');
+    if (hEl) {
+      const hc = d.health > 0.75 ? '#00ff88' : d.health > 0.55 ? '#ffd166' : d.health > 0.35 ? '#f97316' : '#ef4444';
+      hEl.textContent = '\u2764\ufe0f ' + (d.health_label || '\u2014');
+      hEl.style.color = hc;
+      hEl.style.background = hc + '22';
+    }
+
+    // ── 1. Настроение ─────────────────────────────────────────────────────
+    const emoEl = _el('org-emotion');
+    if (emoEl) emoEl.textContent = d.emotion_label || '\u2014';
+    const moodFrac = ((d.mood || 0) + 1) / 2;
+    setBar('org-mood-bar', moodFrac);
+    const mBarEl = _el('org-mood-bar');
+    if (mBarEl) mBarEl.style.background = d.mood > 0.2 ? '#00ff88' : d.mood < -0.2 ? '#ef4444' : '#8892b0';
+
+    // ── 2. Голод ──────────────────────────────────────────────────────────
+    const huEl = _el('org-hunger-val');
+    if (huEl) huEl.textContent = pct(d.hunger);
+    setBar('org-hunger-bar', d.hunger);
+    const huBarEl = _el('org-hunger-bar');
+    if (huBarEl) huBarEl.style.background = (d.hunger || 0) > 0.7 ? '#ef4444' : '#ffd166';
+
+    // ── 3. Энергия ────────────────────────────────────────────────────────
+    const enEl = _el('org-energy-val');
+    if (enEl) {
+      const ph = {'awake': '\ud83c\udf1f \u0431\u043e\u0434\u0440', 'drowsy': '\ud83d\ude2a \u043a\u043b\u044e\u0451\u0442', 'sleeping': '\ud83d\ude34 \u0441\u043f\u0438\u0442'}[d.sleep_phase] || d.sleep_phase;
+      enEl.textContent = pct(d.energy) + ' ' + ph;
+    }
+    setBar('org-energy-bar', d.energy);
+    const enBarEl = _el('org-energy-bar');
+    if (enBarEl) enBarEl.style.background = (d.energy || 0) > 0.6 ? '#64ffda' : (d.energy || 0) > 0.35 ? '#ffd166' : '#6366f1';
+
+    // ── 6. Сны ────────────────────────────────────────────────────────────
+    const drEl = _el('org-dream-val');
+    if (drEl) drEl.textContent = (d.dreaming ? '\ud83d\udcad ' : '') + pct(d.dream_quality);
+    setBar('org-dream-bar', d.dream_quality);
+
+    // ── 5. Инстинкты ──────────────────────────────────────────────────────
+    const instEl = _el('org-instinct');
+    if (instEl) {
+      if (d.panic_mode) {
+        instEl.textContent = '\ud83d\udd34 \u041f\u0410\u041d\u0418\u041a\u0410';
+        instEl.style.color = '#ef4444';
+      } else if (d.defensive_mode) {
+        instEl.textContent = '\ud83d\udee1\ufe0f \u0437\u0430\u0449\u0438\u0442\u0430 \u00d7' + (d.consecutive_losses || 0);
+        instEl.style.color = '#f97316';
+      } else if (d.flash_crash) {
+        instEl.textContent = '\u26a1 \u0444\u043b\u044d\u0448';
+        instEl.style.color = '#ffd166';
+      } else {
+        instEl.textContent = '\u2705 \u043d\u043e\u0440\u043c\u0430';
+        instEl.style.color = '#00ff88';
+      }
+    }
+
+    // ── 4. Эволюция ───────────────────────────────────────────────────────
+    const evoEl = _el('org-evo');
+    if (evoEl) {
+      const fit = Math.round((d.evolution_fitness || 0) * 100);
+      const dlt = (d.evolved_conf_delta >= 0 ? '+' : '') + (d.evolved_conf_delta || 0).toFixed(1);
+      evoEl.textContent = '#' + (d.generation || 0) + ' | ' + fit + '% | ' + dlt + '\u043f\u043f';
+    }
+
+    // Поправки
+    const modEl = _el('org-mods');
+    if (modEl) {
+      const cm = d.conf_modifier || 0;
+      modEl.textContent = '\u0394' + (cm >= 0 ? '+' : '') + cm.toFixed(1) + '\u043f\u043f \u00d7' + (d.size_multiplier || 1).toFixed(2);
+      modEl.style.color = cm < -2 ? '#00ff88' : cm > 5 ? '#ef4444' : '#8892b0';
+    }
+  }
+
+  async function pollOrganism() {
+    try {
+      const d = await fetch('/api/organism').then(r => r.json());
+      updateOrganism(d);
+    } catch(e) {
+      console.warn('[Organism]', e);
+    }
+  }
+
+  pollOrganism();
+  setInterval(pollOrganism, POLL_ORG);
+})();
+</script>
+</body>
+</html>
+ + (v/1e3).toFixed(0) + 'K';
+    return '
+(function() {
+  const POLL_ORG = 10000;
+  const _el = id => document.getElementById(id);  // локальный алиас
+
+  function pct(v) { return Math.round((v || 0) * 100) + '%'; }
+
+  function setBar(id, frac) {
+    const el = _el(id);
+    if (el) el.style.width = Math.max(0, Math.min(100, Math.round((frac || 0) * 100))) + '%';
+  }
+
+  function updateOrganism(d) {
+    if (!d || d.error) return;
+
+    // ── 7. Здоровье — бейдж ──────────────────────────────────────────────
+    const hEl = _el('org-health-badge');
+    if (hEl) {
+      const hc = d.health > 0.75 ? '#00ff88' : d.health > 0.55 ? '#ffd166' : d.health > 0.35 ? '#f97316' : '#ef4444';
+      hEl.textContent = '\u2764\ufe0f ' + (d.health_label || '\u2014');
+      hEl.style.color = hc;
+      hEl.style.background = hc + '22';
+    }
+
+    // ── 1. Настроение ─────────────────────────────────────────────────────
+    const emoEl = _el('org-emotion');
+    if (emoEl) emoEl.textContent = d.emotion_label || '\u2014';
+    const moodFrac = ((d.mood || 0) + 1) / 2;
+    setBar('org-mood-bar', moodFrac);
+    const mBarEl = _el('org-mood-bar');
+    if (mBarEl) mBarEl.style.background = d.mood > 0.2 ? '#00ff88' : d.mood < -0.2 ? '#ef4444' : '#8892b0';
+
+    // ── 2. Голод ──────────────────────────────────────────────────────────
+    const huEl = _el('org-hunger-val');
+    if (huEl) huEl.textContent = pct(d.hunger);
+    setBar('org-hunger-bar', d.hunger);
+    const huBarEl = _el('org-hunger-bar');
+    if (huBarEl) huBarEl.style.background = (d.hunger || 0) > 0.7 ? '#ef4444' : '#ffd166';
+
+    // ── 3. Энергия ────────────────────────────────────────────────────────
+    const enEl = _el('org-energy-val');
+    if (enEl) {
+      const ph = {'awake': '\ud83c\udf1f \u0431\u043e\u0434\u0440', 'drowsy': '\ud83d\ude2a \u043a\u043b\u044e\u0451\u0442', 'sleeping': '\ud83d\ude34 \u0441\u043f\u0438\u0442'}[d.sleep_phase] || d.sleep_phase;
+      enEl.textContent = pct(d.energy) + ' ' + ph;
+    }
+    setBar('org-energy-bar', d.energy);
+    const enBarEl = _el('org-energy-bar');
+    if (enBarEl) enBarEl.style.background = (d.energy || 0) > 0.6 ? '#64ffda' : (d.energy || 0) > 0.35 ? '#ffd166' : '#6366f1';
+
+    // ── 6. Сны ────────────────────────────────────────────────────────────
+    const drEl = _el('org-dream-val');
+    if (drEl) drEl.textContent = (d.dreaming ? '\ud83d\udcad ' : '') + pct(d.dream_quality);
+    setBar('org-dream-bar', d.dream_quality);
+
+    // ── 5. Инстинкты ──────────────────────────────────────────────────────
+    const instEl = _el('org-instinct');
+    if (instEl) {
+      if (d.panic_mode) {
+        instEl.textContent = '\ud83d\udd34 \u041f\u0410\u041d\u0418\u041a\u0410';
+        instEl.style.color = '#ef4444';
+      } else if (d.defensive_mode) {
+        instEl.textContent = '\ud83d\udee1\ufe0f \u0437\u0430\u0449\u0438\u0442\u0430 \u00d7' + (d.consecutive_losses || 0);
+        instEl.style.color = '#f97316';
+      } else if (d.flash_crash) {
+        instEl.textContent = '\u26a1 \u0444\u043b\u044d\u0448';
+        instEl.style.color = '#ffd166';
+      } else {
+        instEl.textContent = '\u2705 \u043d\u043e\u0440\u043c\u0430';
+        instEl.style.color = '#00ff88';
+      }
+    }
+
+    // ── 4. Эволюция ───────────────────────────────────────────────────────
+    const evoEl = _el('org-evo');
+    if (evoEl) {
+      const fit = Math.round((d.evolution_fitness || 0) * 100);
+      const dlt = (d.evolved_conf_delta >= 0 ? '+' : '') + (d.evolved_conf_delta || 0).toFixed(1);
+      evoEl.textContent = '#' + (d.generation || 0) + ' | ' + fit + '% | ' + dlt + '\u043f\u043f';
+    }
+
+    // Поправки
+    const modEl = _el('org-mods');
+    if (modEl) {
+      const cm = d.conf_modifier || 0;
+      modEl.textContent = '\u0394' + (cm >= 0 ? '+' : '') + cm.toFixed(1) + '\u043f\u043f \u00d7' + (d.size_multiplier || 1).toFixed(2);
+      modEl.style.color = cm < -2 ? '#00ff88' : cm > 5 ? '#ef4444' : '#8892b0';
+    }
+  }
+
+  async function pollOrganism() {
+    try {
+      const d = await fetch('/api/organism').then(r => r.json());
+      updateOrganism(d);
+    } catch(e) {
+      console.warn('[Organism]', e);
+    }
+  }
+
+  pollOrganism();
+  setInterval(pollOrganism, POLL_ORG);
+})();
+</script>
+</body>
+</html>
+ + v.toFixed(0);
+  }
+  function colorPct(v) { return +v > 0 ? '#00ff88' : +v < 0 ? '#ef4444' : '#8892b0'; }
+
+  function updateHub(snap) {
+    if (!snap) return;
+
+    // Fear & Greed
+    const fgEl = _el('hub-fg-val');
+    const fgLb = _el('hub-fg-lbl');
+    const fgBar= _el('hub-fg-bar');
+    const fg = snap.fg_value;
+    if (fgEl) { fgEl.textContent = fg ?? '—'; }
+    if (fgLb && snap.fg_label) { fgLb.textContent = snap.fg_label; }
+    if (fgBar && fg != null) {
+      fgBar.style.width = fg + '%';
+      fgBar.style.background = fg < 30 ? '#ef4444' : fg < 45 ? '#f97316' : fg < 55 ? '#8892b0' : fg < 75 ? '#00ff88' : '#ffd166';
+    }
+
+    // BTC
+    const btcEl = _el('hub-btc');
+    if (btcEl) {
+      const ch = snap.btc_change24h;
+      btcEl.textContent = fmtPct(ch);
+      btcEl.style.color = colorPct(ch);
+    }
+    const btcPrEl = _el('hub-btc-price');
+    if (btcPrEl && snap.btc_price) {
+      btcPrEl.textContent = '
+(function() {
+  const POLL_ORG = 10000;
+  const _el = id => document.getElementById(id);  // локальный алиас
+
+  function pct(v) { return Math.round((v || 0) * 100) + '%'; }
+
+  function setBar(id, frac) {
+    const el = _el(id);
+    if (el) el.style.width = Math.max(0, Math.min(100, Math.round((frac || 0) * 100))) + '%';
+  }
+
+  function updateOrganism(d) {
+    if (!d || d.error) return;
+
+    // ── 7. Здоровье — бейдж ──────────────────────────────────────────────
+    const hEl = _el('org-health-badge');
+    if (hEl) {
+      const hc = d.health > 0.75 ? '#00ff88' : d.health > 0.55 ? '#ffd166' : d.health > 0.35 ? '#f97316' : '#ef4444';
+      hEl.textContent = '\u2764\ufe0f ' + (d.health_label || '\u2014');
+      hEl.style.color = hc;
+      hEl.style.background = hc + '22';
+    }
+
+    // ── 1. Настроение ─────────────────────────────────────────────────────
+    const emoEl = _el('org-emotion');
+    if (emoEl) emoEl.textContent = d.emotion_label || '\u2014';
+    const moodFrac = ((d.mood || 0) + 1) / 2;
+    setBar('org-mood-bar', moodFrac);
+    const mBarEl = _el('org-mood-bar');
+    if (mBarEl) mBarEl.style.background = d.mood > 0.2 ? '#00ff88' : d.mood < -0.2 ? '#ef4444' : '#8892b0';
+
+    // ── 2. Голод ──────────────────────────────────────────────────────────
+    const huEl = _el('org-hunger-val');
+    if (huEl) huEl.textContent = pct(d.hunger);
+    setBar('org-hunger-bar', d.hunger);
+    const huBarEl = _el('org-hunger-bar');
+    if (huBarEl) huBarEl.style.background = (d.hunger || 0) > 0.7 ? '#ef4444' : '#ffd166';
+
+    // ── 3. Энергия ────────────────────────────────────────────────────────
+    const enEl = _el('org-energy-val');
+    if (enEl) {
+      const ph = {'awake': '\ud83c\udf1f \u0431\u043e\u0434\u0440', 'drowsy': '\ud83d\ude2a \u043a\u043b\u044e\u0451\u0442', 'sleeping': '\ud83d\ude34 \u0441\u043f\u0438\u0442'}[d.sleep_phase] || d.sleep_phase;
+      enEl.textContent = pct(d.energy) + ' ' + ph;
+    }
+    setBar('org-energy-bar', d.energy);
+    const enBarEl = _el('org-energy-bar');
+    if (enBarEl) enBarEl.style.background = (d.energy || 0) > 0.6 ? '#64ffda' : (d.energy || 0) > 0.35 ? '#ffd166' : '#6366f1';
+
+    // ── 6. Сны ────────────────────────────────────────────────────────────
+    const drEl = _el('org-dream-val');
+    if (drEl) drEl.textContent = (d.dreaming ? '\ud83d\udcad ' : '') + pct(d.dream_quality);
+    setBar('org-dream-bar', d.dream_quality);
+
+    // ── 5. Инстинкты ──────────────────────────────────────────────────────
+    const instEl = _el('org-instinct');
+    if (instEl) {
+      if (d.panic_mode) {
+        instEl.textContent = '\ud83d\udd34 \u041f\u0410\u041d\u0418\u041a\u0410';
+        instEl.style.color = '#ef4444';
+      } else if (d.defensive_mode) {
+        instEl.textContent = '\ud83d\udee1\ufe0f \u0437\u0430\u0449\u0438\u0442\u0430 \u00d7' + (d.consecutive_losses || 0);
+        instEl.style.color = '#f97316';
+      } else if (d.flash_crash) {
+        instEl.textContent = '\u26a1 \u0444\u043b\u044d\u0448';
+        instEl.style.color = '#ffd166';
+      } else {
+        instEl.textContent = '\u2705 \u043d\u043e\u0440\u043c\u0430';
+        instEl.style.color = '#00ff88';
+      }
+    }
+
+    // ── 4. Эволюция ───────────────────────────────────────────────────────
+    const evoEl = _el('org-evo');
+    if (evoEl) {
+      const fit = Math.round((d.evolution_fitness || 0) * 100);
+      const dlt = (d.evolved_conf_delta >= 0 ? '+' : '') + (d.evolved_conf_delta || 0).toFixed(1);
+      evoEl.textContent = '#' + (d.generation || 0) + ' | ' + fit + '% | ' + dlt + '\u043f\u043f';
+    }
+
+    // Поправки
+    const modEl = _el('org-mods');
+    if (modEl) {
+      const cm = d.conf_modifier || 0;
+      modEl.textContent = '\u0394' + (cm >= 0 ? '+' : '') + cm.toFixed(1) + '\u043f\u043f \u00d7' + (d.size_multiplier || 1).toFixed(2);
+      modEl.style.color = cm < -2 ? '#00ff88' : cm > 5 ? '#ef4444' : '#8892b0';
+    }
+  }
+
+  async function pollOrganism() {
+    try {
+      const d = await fetch('/api/organism').then(r => r.json());
+      updateOrganism(d);
+    } catch(e) {
+      console.warn('[Organism]', e);
+    }
+  }
+
+  pollOrganism();
+  setInterval(pollOrganism, POLL_ORG);
+})();
+</script>
+</body>
+</html>
+ + Math.round(snap.btc_price).toLocaleString();
+    }
+
+    // TON CEX
+    const tonEl = _el('hub-ton-price');
+    if (tonEl) {
+      const ch = snap.ton_cex_change24h;
+      const pr = snap.ton_cex_price;
+      const chStr = ch != null ? ' (' + fmtPct(ch) + ')' : '';
+      tonEl.textContent = pr ? '
+(function() {
+  const POLL_ORG = 10000;
+  const _el = id => document.getElementById(id);  // локальный алиас
+
+  function pct(v) { return Math.round((v || 0) * 100) + '%'; }
+
+  function setBar(id, frac) {
+    const el = _el(id);
+    if (el) el.style.width = Math.max(0, Math.min(100, Math.round((frac || 0) * 100))) + '%';
+  }
+
+  function updateOrganism(d) {
+    if (!d || d.error) return;
+
+    // ── 7. Здоровье — бейдж ──────────────────────────────────────────────
+    const hEl = _el('org-health-badge');
+    if (hEl) {
+      const hc = d.health > 0.75 ? '#00ff88' : d.health > 0.55 ? '#ffd166' : d.health > 0.35 ? '#f97316' : '#ef4444';
+      hEl.textContent = '\u2764\ufe0f ' + (d.health_label || '\u2014');
+      hEl.style.color = hc;
+      hEl.style.background = hc + '22';
+    }
+
+    // ── 1. Настроение ─────────────────────────────────────────────────────
+    const emoEl = _el('org-emotion');
+    if (emoEl) emoEl.textContent = d.emotion_label || '\u2014';
+    const moodFrac = ((d.mood || 0) + 1) / 2;
+    setBar('org-mood-bar', moodFrac);
+    const mBarEl = _el('org-mood-bar');
+    if (mBarEl) mBarEl.style.background = d.mood > 0.2 ? '#00ff88' : d.mood < -0.2 ? '#ef4444' : '#8892b0';
+
+    // ── 2. Голод ──────────────────────────────────────────────────────────
+    const huEl = _el('org-hunger-val');
+    if (huEl) huEl.textContent = pct(d.hunger);
+    setBar('org-hunger-bar', d.hunger);
+    const huBarEl = _el('org-hunger-bar');
+    if (huBarEl) huBarEl.style.background = (d.hunger || 0) > 0.7 ? '#ef4444' : '#ffd166';
+
+    // ── 3. Энергия ────────────────────────────────────────────────────────
+    const enEl = _el('org-energy-val');
+    if (enEl) {
+      const ph = {'awake': '\ud83c\udf1f \u0431\u043e\u0434\u0440', 'drowsy': '\ud83d\ude2a \u043a\u043b\u044e\u0451\u0442', 'sleeping': '\ud83d\ude34 \u0441\u043f\u0438\u0442'}[d.sleep_phase] || d.sleep_phase;
+      enEl.textContent = pct(d.energy) + ' ' + ph;
+    }
+    setBar('org-energy-bar', d.energy);
+    const enBarEl = _el('org-energy-bar');
+    if (enBarEl) enBarEl.style.background = (d.energy || 0) > 0.6 ? '#64ffda' : (d.energy || 0) > 0.35 ? '#ffd166' : '#6366f1';
+
+    // ── 6. Сны ────────────────────────────────────────────────────────────
+    const drEl = _el('org-dream-val');
+    if (drEl) drEl.textContent = (d.dreaming ? '\ud83d\udcad ' : '') + pct(d.dream_quality);
+    setBar('org-dream-bar', d.dream_quality);
+
+    // ── 5. Инстинкты ──────────────────────────────────────────────────────
+    const instEl = _el('org-instinct');
+    if (instEl) {
+      if (d.panic_mode) {
+        instEl.textContent = '\ud83d\udd34 \u041f\u0410\u041d\u0418\u041a\u0410';
+        instEl.style.color = '#ef4444';
+      } else if (d.defensive_mode) {
+        instEl.textContent = '\ud83d\udee1\ufe0f \u0437\u0430\u0449\u0438\u0442\u0430 \u00d7' + (d.consecutive_losses || 0);
+        instEl.style.color = '#f97316';
+      } else if (d.flash_crash) {
+        instEl.textContent = '\u26a1 \u0444\u043b\u044d\u0448';
+        instEl.style.color = '#ffd166';
+      } else {
+        instEl.textContent = '\u2705 \u043d\u043e\u0440\u043c\u0430';
+        instEl.style.color = '#00ff88';
+      }
+    }
+
+    // ── 4. Эволюция ───────────────────────────────────────────────────────
+    const evoEl = _el('org-evo');
+    if (evoEl) {
+      const fit = Math.round((d.evolution_fitness || 0) * 100);
+      const dlt = (d.evolved_conf_delta >= 0 ? '+' : '') + (d.evolved_conf_delta || 0).toFixed(1);
+      evoEl.textContent = '#' + (d.generation || 0) + ' | ' + fit + '% | ' + dlt + '\u043f\u043f';
+    }
+
+    // Поправки
+    const modEl = _el('org-mods');
+    if (modEl) {
+      const cm = d.conf_modifier || 0;
+      modEl.textContent = '\u0394' + (cm >= 0 ? '+' : '') + cm.toFixed(1) + '\u043f\u043f \u00d7' + (d.size_multiplier || 1).toFixed(2);
+      modEl.style.color = cm < -2 ? '#00ff88' : cm > 5 ? '#ef4444' : '#8892b0';
+    }
+  }
+
+  async function pollOrganism() {
+    try {
+      const d = await fetch('/api/organism').then(r => r.json());
+      updateOrganism(d);
+    } catch(e) {
+      console.warn('[Organism]', e);
+    }
+  }
+
+  pollOrganism();
+  setInterval(pollOrganism, POLL_ORG);
+})();
+</script>
+</body>
+</html>
+ + (+pr).toFixed(4) + chStr : '—';
+      tonEl.style.color = ch != null ? colorPct(ch) : '#38bdf8';
+    }
+    const tonVolEl = _el('hub-ton-vol');
+    if (tonVolEl && snap.ton_cex_volume24h) {
+      tonVolEl.textContent = 'объём: ' + fmtM(snap.ton_cex_volume24h);
+    }
+
+    // Funding rate
+    const fundEl = _el('hub-funding');
+    if (fundEl) {
+      const fr = snap.bybit_funding_rate_pct;
+      if (fr != null) {
+        const sign = +fr >= 0 ? '+' : '';
+        fundEl.textContent = sign + (+fr).toFixed(4) + '%';
+        fundEl.style.color = +fr > 0.01 ? '#ef4444' : +fr < -0.01 ? '#00ff88' : '#8892b0';
+        fundEl.title = +fr > 0 ? 'Лонги перегреты — давление вниз' : +fr < 0 ? 'Шорты перегреты — давление вверх' : 'Нейтрально';
+      }
+    }
+    const oiEl = _el('hub-oi');
+    if (oiEl && snap.bybit_oi) {
+      oiEl.textContent = 'OI: ' + fmtM(snap.bybit_oi);
+    }
+
+    // TVL
+    const tvlEl = _el('hub-tvl');
+    if (tvlEl) {
+      const tvl = snap.ton_tvl;
+      const ch  = snap.ton_tvl_change;
+      const chStr = ch != null ? ' ' + fmtPct(ch) : '';
+      tvlEl.textContent = tvl ? fmtM(tvl) + chStr : '—';
+      tvlEl.style.color = ch != null ? colorPct(ch) : '#a78bfa';
+    }
+    const stonEl = _el('hub-stonfi');
+    if (stonEl && snap.stonfi_tvl) {
+      stonEl.textContent = 'STON.fi: ' + fmtM(snap.stonfi_tvl);
+    }
+
+    // GRINCH trending
+    const trEl = _el('hub-trend');
+    if (trEl) {
+      const rank = snap.grinch_trend_rank;
+      if (rank && rank > 0) {
+        trEl.textContent = '\ud83d\udd25 #' + (snap.ton_trending_pools - rank + 1) + ' в топе TON';
+        trEl.style.color = '#00ff88';
+      } else {
+        trEl.textContent = 'не в трендах';
+        trEl.style.color = '#4a5568';
+      }
+    }
+    const trVolEl = _el('hub-trend-vol');
+    if (trVolEl && snap.grinch_trend_vol24h != null) {
+      trVolEl.textContent = 'vol: ' + fmtM(snap.grinch_trend_vol24h);
+    }
+
+    // Timestamp
+    const updEl = _el('hub-updated');
+    if (updEl) {
+      const now = new Date();
+      updEl.textContent = now.toLocaleTimeString('ru-RU', {hour:'2-digit', minute:'2-digit', second:'2-digit'});
+    }
+  }
+
+  function updateSources(sources) {
+    const el = _el('hub-sources');
+    if (!el || !sources) return;
+    el.innerHTML = sources.map(s => {
+      const key = Object.keys(s)[0];
+      const ico = Object.values(s)[0];
+      const names = {'fear_greed':'F&G','binance':'BNB','bybit':'Bybit','defillama':'DFL','geckotrend':'GT','ton_stats':'TON'};
+      return `<span style="font-size:9px;padding:2px 6px;border-radius:6px;background:rgba(255,255,255,.05);color:#6a7d9f">${ico} ${names[key]||key}</span>`;
+    }).join('');
+  }
+
+  async function pollHub() {
+    try {
+      const r = await fetch('/api/market_hub').then(x => x.json());
+      if (r.ok) {
+        updateHub(r.data);
+        updateSources(r.sources ? r.sources.map(s => {
+          const k = s.source;
+          return {[k]: s.fresh ? '\u2705' : s.stale ? '\u274c' : '\u26a0\ufe0f'};
+        }) : []);
+      }
+    } catch(e) { console.warn('[Hub]', e); }
+  }
+
+  pollHub();
+  setInterval(pollHub, POLL_HUB);
 })();
 
 // ══ 🧬 ЖИВОЙ ОРГАНИЗМ — polling /api/organism каждые 10с ══════════════

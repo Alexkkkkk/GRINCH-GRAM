@@ -2415,6 +2415,20 @@ class AIEngine:
         total_vol_5 = v.rolling(5).sum()
         df["buy_pressure"] = bull_vol_5 / (total_vol_5 + 1e-10)
 
+        # ── DataHub: внешние рыночные признаки (6 бесплатных источников) ──
+        try:
+            from data_hub import get_ml_features as _hub_ml
+            _hub = _hub_ml()
+            df["fg_norm"]          = _hub["fg_norm"]
+            df["btc_trend"]        = _hub["btc_trend"]
+            df["funding_rate_ml"]  = _hub["funding_rate_ml"]
+            df["ton_tvl_ml"]       = _hub["ton_tvl_ml"]
+            df["grinch_trending"]  = _hub["grinch_trending"]
+        except Exception:
+            for _hcol in ["fg_norm", "btc_trend", "funding_rate_ml", "ton_tvl_ml", "grinch_trending"]:
+                if _hcol not in df.columns:
+                    df[_hcol] = 0.0
+
         df.dropna(inplace=True)
         return df
 
@@ -2468,6 +2482,12 @@ class AIEngine:
             "dump_velocity",       # скорость падения за 5 баров (%)
             "vol_collapse",        # коллапс объёма от пикового значения за 20 баров
             "post_pump_dump",      # флаг паттерна: цена -18% от хая + объём -40%
+            # ── v5 NEW: DataHub — внешние рыночные данные ─────────────────────
+            "fg_norm",             # Fear&Greed нормализованный -1..+1
+            "btc_trend",           # BTC изм. 24ч / 10 (рыночный ветер)
+            "funding_rate_ml",     # Bybit funding rate × 1000 (лонг/шорт перекос)
+            "ton_tvl_ml",          # DeFiLlama TON TVL изменение / 5
+            "grinch_trending",     # позиция в трендах GeckoTerminal / 10
         ]
         # Оставляем только существующие столбцы
         feature_cols = [col for col in feature_cols if col in df.columns]
