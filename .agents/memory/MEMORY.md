@@ -57,3 +57,4 @@
 - [Settings JSON/DB drift](settings-json-db-drift.md) — always write settings via settings_store.update_section() (DB+JSON), never db_store.settings_update_section() directly, or the section only exists in DB and is lost if DB is unreachable.
 
 - [Checkpoint backup captures gitignored secrets](checkpoint-backup-secrets.md) — a locally-generated private key in a .gitignore'd dir can still land in an internal Replit backup branch; rotate if it does.
+- [Living Organism AI](living-organism.md) — organism.py singleton; 7 bio-systems; JS IIFE must declare its own `const _el = id => document.getElementById(id)` since _el defined in another IIFE scope; /api/organism endpoint; all hooks wrapped in try/except so failure never crashes trader.

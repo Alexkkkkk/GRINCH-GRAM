@@ -9,6 +9,12 @@ from ai_engine import AIEngine
 from experience_manager import experience_manager
 import liquidity_guard
 try:
+    from organism import organism as _organism
+except Exception as _org_err:
+    import logging as _orglog
+    _orglog.getLogger("trader").warning(f"organism не загружен: {_org_err}")
+    _organism = None
+try:
     import brain_fusion as _bf
 except Exception as _bf_err:
     import logging as _bflog
@@ -142,6 +148,12 @@ class Trader:
         # ── Долговременная память + само-управление ИИ ───────────────────
         self.exp = experience_manager
         self.exp.restore_trader(self)
+        # ── Живой организм: восстанавливаем из статистики ────────────────
+        try:
+            if _organism is not None:
+                _organism.restore(self)
+        except Exception as _oe:
+            self.log(f"⚠️ Organism restore: {_oe}", "WARN")
         # Восстанавливаем Smart BUY из DB (если был при перезапуске)
         # Примечание: ai/analysis не сохраняются (тяжёлые объекты), поэтому
         # восстановленный ордер помечаем флагом restored=True — в _tick()
@@ -1061,6 +1073,12 @@ class Trader:
         if price_usd <= 0:
             self.log("⚠️ DCA: нет цены GRINCH, пропускаем тик", "WARN")
             return
+        # ── Живой организм: обновляем биосистемы (DCA тик) ───────────────
+        try:
+            if _organism is not None:
+                _organism.update_tick(price_usd, None)
+        except Exception:
+            pass
 
         grinch_ton = price_feed.get_grinch_ton_price() or 0.0
 
@@ -2016,6 +2034,12 @@ class Trader:
         self.last_analysis = result   # кэш для get_status() — не пересчитываем каждые 2с
         ai     = self.ai.analyze(ohlcv)
         self.last_ai = ai
+        # ── Живой организм: обновляем все 7 биосистем ────────────────────
+        try:
+            if _organism is not None:
+                _organism.update_tick(result.get("price", 0), ai)
+        except Exception:
+            pass
 
         # ── BrainFusion: обновляем единый мозг ───────────────────────────
         try:
@@ -2187,6 +2211,13 @@ class Trader:
                     Config.SMART_MONEY_MIN_FLOOR,
                     min_conf - Config.SMART_MONEY_CONF_BONUS,
                 )
+            # ── Организм: голод/настроение/сон/эволюция корректируют порог
+            try:
+                if _organism is not None:
+                    _org_delta = _organism.get_conf_modifier()
+                    min_conf   = max(20.0, min_conf + _org_delta)
+            except Exception:
+                pass
             if ai_signal != "HOLD" and conf >= min_conf:
                 final_signal = ai_signal
                 signal_source = "AI🤖"
@@ -2207,6 +2238,19 @@ class Trader:
             self._buy_confirm_count += 1
         else:
             self._buy_confirm_count = 0
+
+        # ── Инстинкт-рефлекс организма (приоритет над ML) ───────────────
+        try:
+            if _organism is not None:
+                _inst = _organism.get_instinct_override()
+                if _inst == "SELL_PANIC" and self.open_trades:
+                    final_signal  = "SELL"
+                    signal_source = "🧬ПАНИКА"
+                elif _inst == "BUY_EXCITEMENT" and not self.open_trades:
+                    final_signal  = "BUY"
+                    signal_source = "🧬ВОЗБУЖДЕНИЕ"
+        except Exception:
+            pass
 
         # ── Фильтры входа (ТОЛЬКО для BUY) ─────────────────────────────
         blocked = None
@@ -2595,6 +2639,12 @@ class Trader:
             return False
 
         ai_conf = ai.get("confidence", 0) if ai else 0
+        # ── Организм: сделка открывается (сброс голода, обновление ts) ──
+        try:
+            if _organism is not None:
+                _organism.on_trade_opened()
+        except Exception:
+            pass
 
         # ── Kelly-adjusted position sizing ────────────────────────────────
         # Base: пропорционально уверенности AI (50%→0.5× .. 90%→1.0×)
@@ -3480,6 +3530,12 @@ class Trader:
         self.stats["total_trades"] = self.stats.get("total_trades", 0) + 1
         if pnl > 0:
             self.stats["winning_trades"] += 1
+        # ── Организм: обратная связь о закрытой сделке ───────────────────
+        try:
+            if _organism is not None:
+                _organism.on_trade_closed(float(pnl), pnl > 0)
+        except Exception:
+            pass
 
         self.open_trades = [t for t in self.open_trades if t["id"] != trade["id"]]
         for t in self.trades:

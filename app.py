@@ -1205,6 +1205,16 @@ def api_amm_preview():
     except Exception as e:
         return jsonify({"error": str(e), "ok": None, "cached": False}), 500
 
+# ─────────────────────────── Living Organism ────────────────────────────────
+@app.route("/api/organism")
+def api_organism():
+    """Состояние живого организма QuantumBrain (7 биосистем)."""
+    try:
+        from organism import organism as _org
+        return jsonify(_org.get_state())
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
 _CANDLES_CACHE = {"ts": 0.0, "payload": None}
 _CANDLES_CACHE_TTL = 2  # сек — свечи обновляются раз в 15м, считать индикаторы на каждый опрос незачем
 
