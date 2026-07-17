@@ -14,6 +14,7 @@ alerts.py — оповещения о состоянии торгового бо
   каждые 20 секунд.
 """
 import logging
+import os
 import threading
 import time
 
