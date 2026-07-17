@@ -267,14 +267,16 @@ class ExchangeClient:
             print(f"[Exchange] get_balance error: {e}")
             return {"USDT": 0.0}
 
-    def place_order(self, side, amount, price=None, ton_stake=None):
+    def place_order(self, side, amount, price=None, ton_stake=None, min_net_ton=None):
         """
         side: "buy" | "sell"
         amount: количество базового актива (GRINCH)
         ton_stake: для DeDust-режима — сколько TON тратим на покупку (опционально)
+        min_net_ton: для sell — минимум TON нетто после газа; если AMM вернёт меньше,
+                     транзакция блокируется ДО отправки в сеть (amm_blocked=True в ответе).
         """
         if self._dedust:
-            return self._dedust_order(side, amount, price, ton_stake=ton_stake)
+            return self._dedust_order(side, amount, price, ton_stake=ton_stake, min_net_ton=min_net_ton)
         if self.demo_mode:
             return self._fake_order(side, amount, price)
         try:
@@ -289,7 +291,7 @@ class ExchangeClient:
 
     # ──────────────────────────── DeDust order ──────────────────────────
 
-    def _dedust_order(self, side, amount, price=None, ton_stake=None):
+    def _dedust_order(self, side, amount, price=None, ton_stake=None, min_net_ton=None):
         """Реальный своп через DeDust DEX."""
         fill_price = price or self.get_live_price()
         try:
@@ -298,7 +300,7 @@ class ExchangeClient:
                 ton_amount = ton_stake if ton_stake is not None else amount * fill_price
                 result = self._dedust.buy(ton_amount)
             else:
-                result = self._dedust.sell(amount)
+                result = self._dedust.sell(amount, min_net_ton=min_net_ton)
 
             if not result.get("ok"):
                 print(f"[DeDust] Ошибка ордера: {result.get('error')}")

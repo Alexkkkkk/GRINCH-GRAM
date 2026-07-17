@@ -934,11 +934,14 @@ class DedustClient:
 
     # ─────────────────────────── swap: sell ────────────────────────────────
 
-    async def _sell_async(self, grinch_amount: float) -> dict:
+    async def _sell_async(self, grinch_amount: float, min_net_ton: float = None) -> dict:
         """GRINCH → TON: jetton-transfer GRINCH НАПРЯМУЮ в пул с forward-payload свопа.
 
         Газ: 0.35 TON прикладывается к сообщению; 0.25 TON форвардится в пул на
         исполнение свопа. Излишек возвращается на кошелёк.
+
+        min_net_ton — минимум TON нетто (после газа), который должна вернуть продажа.
+        Если ожидаемый выход ниже — своп блокируется ДО отправки транзакции в сеть.
         """
         # Защита от проскальзывания: считаем min-out TON ДО перевода жеттонов.
         min_out_nano, expected_ton = self._min_out_sell_ton(grinch_amount)
@@ -952,6 +955,44 @@ class DedustClient:
                     "отправляется во избежание убыточного курса)."
                 ),
             }
+
+        # ── AMM preflight: проверка прибыльности по реальному выходу свопа ──────
+        # expected_ton — то что придёт из пула (CPMM с учётом price impact).
+        # Вычитаем реальный net-gas продажи (подтверждён on-chain: ~0.253 TON).
+        # Если нетто < min_net_ton — блокируем ДО отправки транзакции в блокчейн.
+        if min_net_ton is not None and min_net_ton > 0:
+            sell_gas = Config.SELL_GAS_TON
+            net_received = expected_ton - sell_gas
+            if net_received < min_net_ton:
+                shortfall = min_net_ton - net_received
+                log.warning(
+                    f"[DeDust] 🛡️ AMM preflight BLOCKED: ожидаем {net_received:.4f} TON нетто "
+                    f"(из пула {expected_ton:.4f} − газ {sell_gas:.3f}), "
+                    f"нужно ≥ {min_net_ton:.4f} TON. Дефицит {shortfall:.4f} TON."
+                )
+                return {
+                    "ok": False,
+                    "side": "sell",
+                    "amm_blocked": True,
+                    "error": (
+                        f"🛡️ AMM preflight: продажа заблокирована — "
+                        f"пул вернёт {expected_ton:.3f} TON (price impact учтён), "
+                        f"за вычетом газа {sell_gas:.3f} = {net_received:.3f} TON нетто. "
+                        f"Нужно ≥ {min_net_ton:.3f} TON чтобы выйти без убытка. "
+                        f"Дефицит: {shortfall:.3f} TON. "
+                        f"Транзакция НЕ отправлена в сеть."
+                    ),
+                    "expected_ton":  round(expected_ton, 4),
+                    "net_ton":       round(net_received, 4),
+                    "min_net_ton":   round(min_net_ton, 4),
+                    "shortfall_ton": round(shortfall, 4),
+                }
+            else:
+                surplus = net_received - min_net_ton
+                log.info(
+                    f"[DeDust] ✅ AMM preflight OK: ожидаем {net_received:.4f} TON нетто "
+                    f"(нужно ≥ {min_net_ton:.4f}, запас +{surplus:.4f} TON)"
+                )
 
         wallet, provider = await self._wallet_and_provider()
         try:
@@ -1068,15 +1109,20 @@ class DedustClient:
         finally:
             await provider.close_all()
 
-    def sell(self, grinch_amount: float) -> dict:
-        """Продажа GRINCH за TON через DeDust. Блокирует до завершения транзакции."""
+    def sell(self, grinch_amount: float, min_net_ton: float = None) -> dict:
+        """Продажа GRINCH за TON через DeDust. Блокирует до завершения транзакции.
+
+        min_net_ton — минимум TON нетто (после газа) для разрешения продажи.
+        Если AMM вернёт меньше — транзакция НЕ отправляется, возвращается ошибка
+        с amm_blocked=True и деталями (expected_ton, net_ton, shortfall_ton).
+        """
         if not self._ready:
             return {"ok": False, "error": self._error}
         # Сериализуем свопы (см. комментарий в buy): один своп за раз, иначе
         # параллельные операции исказят проверку GRINCH-баланса.
         with self._lock:
             try:
-                result = _run(self._sell_async(grinch_amount))
+                result = _run(self._sell_async(grinch_amount, min_net_ton=min_net_ton))
             except Exception as e:
                 log.error(f"[DeDust] sell ошибка: {e}")
                 return {"ok": False, "error": str(e)}

@@ -1534,15 +1534,24 @@ class Trader:
         )
 
         if self.exchange.mode == "dedust":
-            sell_result = self.exchange.place_order("sell", sell_amount)
-            if not sell_result or sell_result.get("error"):
-                # Одна повторная попытка через 5 с (сетевой сбой / RPC таймаут)
+            # AMM preflight: считаем min_net_ton для доли продажи
+            _total_stake   = sum(t.get("stake_ton", 0) or 0 for t in self.open_trades)
+            _n_entries     = max(1, len(self.open_trades))
+            _min_net_ton   = (_total_stake + Config.BUY_GAS_TON * _n_entries) * sell_fraction
+            sell_result = self.exchange.place_order("sell", sell_amount, min_net_ton=_min_net_ton)
+            if not sell_result or (sell_result.get("error") and not sell_result.get("amm_blocked")):
+                # Retry только при сетевых ошибках, но НЕ при блокировке AMM preflight
                 self.log("⚠️ Каскад: продажа Ур.1 не прошла — retry через 5с…", "WARN")
                 time.sleep(5)
-                sell_result = self.exchange.place_order("sell", sell_amount)
+                sell_result = self.exchange.place_order("sell", sell_amount, min_net_ton=_min_net_ton)
             if not sell_result or sell_result.get("error"):
                 err = (sell_result or {}).get("error", "нет ответа")
-                self.log(f"⚠️ Каскад: продажа Ур.1 не исполнена после retry — {err}", "WARN")
+                blocked = (sell_result or {}).get("amm_blocked", False)
+                level = "WARN"
+                if blocked:
+                    self.log(f"🛡️ Каскад: продажа заблокирована AMM preflight — {err}", level)
+                else:
+                    self.log(f"⚠️ Каскад: продажа Ур.1 не исполнена после retry — {err}", level)
                 return False
             self.log(
                 f"✅ Каскад Ур.1: продажа исполнена | id={sell_result.get('id', '—')}",
@@ -1670,15 +1679,27 @@ class Trader:
         )
 
         if self.exchange.mode == "dedust":
-            sell_result = self.exchange.place_order("sell", sell_amount)
-            if not sell_result or sell_result.get("error"):
-                # Одна повторная попытка через 5 с (сетевой сбой / RPC таймаут)
+            # AMM preflight: полная стоимость всех позиций
+            _total_stake  = sum(t.get("stake_ton", 0) or 0 for t in self.open_trades)
+            _n_entries    = max(1, len(self.open_trades))
+            _min_net_ton  = _total_stake + Config.BUY_GAS_TON * _n_entries
+            self.log(
+                f"🔍 AMM preflight: нужно ≥ {_min_net_ton:.3f} TON нетто "
+                f"(стейк {_total_stake:.3f} + газ покупки {Config.BUY_GAS_TON * _n_entries:.3f})",
+                "INFO"
+            )
+            sell_result = self.exchange.place_order("sell", sell_amount, min_net_ton=_min_net_ton)
+            if not sell_result or (sell_result.get("error") and not sell_result.get("amm_blocked")):
+                # Retry только при сетевых ошибках, НЕ при блокировке AMM preflight
                 self.log("⚠️ DCA: продажа не прошла — retry через 5с…", "WARN")
                 time.sleep(5)
-                sell_result = self.exchange.place_order("sell", sell_amount)
+                sell_result = self.exchange.place_order("sell", sell_amount, min_net_ton=_min_net_ton)
             if not sell_result or sell_result.get("error"):
                 err = (sell_result or {}).get("error", "нет ответа")
-                self.log(f"⚠️ DCA: продажа не исполнена после retry — {err}. Позиции остаются.", "WARN")
+                if (sell_result or {}).get("amm_blocked"):
+                    self.log(f"🛡️ DCA: продажа заблокирована AMM preflight — {err}", "WARN")
+                else:
+                    self.log(f"⚠️ DCA: продажа не исполнена после retry — {err}. Позиции остаются.", "WARN")
                 return False
             self.log(
                 f"✅ DCA: продажа GRINCH → TON исполнена | "
@@ -3382,13 +3403,16 @@ class Trader:
                                 return False
                     except Exception:
                         pass
+                # AMM preflight: стоимость этой конкретной позиции
+                _stake_ton   = float(trade.get("stake_ton", 0) or 0)
+                _min_net_ton = _stake_ton + Config.BUY_GAS_TON
                 self.log(
                     f"💸 Продаём {grinch_amount:.6f} GRINCH на DeDust "
-                    f"(причина: {reason})...", "INFO"
+                    f"(причина: {reason}, AMM min_net ≥ {_min_net_ton:.3f} TON)...", "INFO"
                 )
                 sell_ok = False
                 try:
-                    sell_result = self.exchange.place_order("sell", grinch_amount)
+                    sell_result = self.exchange.place_order("sell", grinch_amount, min_net_ton=_min_net_ton)
                     if sell_result and not sell_result.get("error"):
                         sell_ok = True
                         self.log(
@@ -3397,7 +3421,10 @@ class Trader:
                         )
                     else:
                         err = sell_result.get("error", "нет ответа") if sell_result else "нет ответа"
-                        self.log(f"⚠️ Продажа не исполнена: {err}", "WARN")
+                        if (sell_result or {}).get("amm_blocked"):
+                            self.log(f"🛡️ AMM preflight заблокировал продажу: {err}", "WARN")
+                        else:
+                            self.log(f"⚠️ Продажа не исполнена: {err}", "WARN")
                 except Exception as e:
                     self.log(f"⚠️ Ошибка продажи GRINCH: {e}", "WARN")
 
