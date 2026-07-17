@@ -1098,6 +1098,113 @@ def api_status():
     # Пока буфер не прогрет (самый первый запрос) — считаем напрямую один раз.
     return jsonify(_status_for_response())
 
+# ─────────────────────────── AMM Preview ────────────────────────────────────
+_AMM_PREVIEW_CACHE = {"ts": 0.0, "payload": None}
+_AMM_PREVIEW_TTL   = 12  # сек — TonAPI reserves запрос, не долбим чаще раза в 12с
+
+@app.route("/api/amm/preview")
+def api_amm_preview():
+    """Реальная CPMM-оценка: сколько TON вернёт пул за весь GRINCH прямо сейчас.
+
+    Кэшируется 12 секунд чтобы не насиловать TonAPI при частом polling-е.
+    Возвращает:
+      grinch_amount   — GRINCH на кошельке (из открытых позиций)
+      expected_ton    — брутто-выход из пула (CPMM с price impact)
+      net_ton         — нетто (expected_ton − sell_gas)
+      min_net_ton     — минимум для безубыточного выхода (stake + buy_gas * entries)
+      shortfall_ton   — дефицит (< 0) или запас (> 0)
+      ok              — True если net_ton ≥ min_net_ton
+      pool_ton_reserve, pool_grinch_reserve — резервы пула
+      sell_gas        — Config.SELL_GAS_TON
+      cached          — True если данные из кэша
+    """
+    now = time.time()
+    if _AMM_PREVIEW_CACHE["payload"] and (now - _AMM_PREVIEW_CACHE["ts"]) < _AMM_PREVIEW_TTL:
+        payload = dict(_AMM_PREVIEW_CACHE["payload"])
+        payload["cached"] = True
+        payload["cache_age"] = round(now - _AMM_PREVIEW_CACHE["ts"], 1)
+        return jsonify(payload)
+
+    try:
+        from config import Config as _Cfg
+        dc = trader.exchange._dedust  # DeDustClient instance
+
+        # 1. GRINCH из открытых позиций
+        open_trades  = trader.open_trades or []
+        grinch_amount = sum(t.get("amount", 0) or 0 for t in open_trades)
+        total_stake   = sum(t.get("stake_ton", 0) or 0 for t in open_trades)
+        n_entries     = max(1, len(open_trades)) if open_trades else 1
+
+        # Если нет открытых позиций — берём реальный баланс кошелька (для индикации)
+        if grinch_amount <= 0:
+            try:
+                from wallet_manager import wallet_manager as _wm
+                snap = _wm.get_snapshot() or {}
+                grinch_amount = float(snap.get("grinch", 0) or 0)
+            except Exception:
+                pass
+
+        # 2. Минимум для безубытка (только если есть открытые позиции)
+        min_net_ton = (total_stake + _Cfg.BUY_GAS_TON * n_entries) if open_trades else 0.0
+        sell_gas    = _Cfg.SELL_GAS_TON
+
+        # 3. Резервы пула + CPMM
+        pool_ton = pool_grinch = None
+        expected_ton = None
+        reserves = None
+        if dc is not None:
+            try:
+                reserves = dc._pool_reserves()
+            except Exception:
+                reserves = None
+
+        if reserves:
+            pool_ton, pool_grinch = reserves
+            if grinch_amount > 0:
+                expected_ton = dc._cpmm_out(grinch_amount, pool_grinch, pool_ton)
+        elif grinch_amount > 0:
+            # Fallback: spot-цена из price_feed
+            try:
+                from price_feed import price_feed as _pf
+                gtp = _pf.get_grinch_ton_price()
+                if gtp and gtp > 0:
+                    expected_ton = grinch_amount * gtp * (1 - _Cfg.FEE_PCT / 100)
+            except Exception:
+                pass
+
+        net_ton      = round(expected_ton - sell_gas, 4) if expected_ton is not None else None
+        shortfall    = round(net_ton - min_net_ton, 4)  if net_ton is not None else None
+        amm_ok       = (shortfall >= 0) if shortfall is not None else None
+        price_impact = None
+        if expected_ton and pool_ton and pool_grinch and grinch_amount > 0:
+            spot_price_ton = pool_ton / pool_grinch  # цена GRINCH в TON без impact
+            ideal_out      = grinch_amount * spot_price_ton * (1 - _Cfg.FEE_PCT / 100)
+            price_impact   = round((1 - expected_ton / ideal_out) * 100, 3) if ideal_out > 0 else None
+
+        payload = {
+            "grinch_amount":       round(grinch_amount, 2),
+            "expected_ton":        round(expected_ton, 4)  if expected_ton  is not None else None,
+            "net_ton":             net_ton,
+            "min_net_ton":         round(min_net_ton, 4),
+            "shortfall_ton":       shortfall,
+            "ok":                  amm_ok,
+            "price_impact_pct":    price_impact,
+            "pool_ton_reserve":    round(pool_ton, 2)    if pool_ton    is not None else None,
+            "pool_grinch_reserve": round(pool_grinch, 0) if pool_grinch is not None else None,
+            "sell_gas":            sell_gas,
+            "n_entries":           n_entries,
+            "has_position":        len(open_trades) > 0,
+            "cached":              False,
+            "cache_age":           0,
+            "ts":                  round(now),
+        }
+        _AMM_PREVIEW_CACHE["ts"]      = now
+        _AMM_PREVIEW_CACHE["payload"] = payload
+        return jsonify(payload)
+
+    except Exception as e:
+        return jsonify({"error": str(e), "ok": None, "cached": False}), 500
+
 _CANDLES_CACHE = {"ts": 0.0, "payload": None}
 _CANDLES_CACHE_TTL = 2  # сек — свечи обновляются раз в 15м, считать индикаторы на каждый опрос незачем
 

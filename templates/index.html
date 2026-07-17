@@ -725,6 +725,55 @@
           <div style="font-size:9px;color:#6a7d9f;margin-bottom:2px">🔴 Точка безубытка (с газом)</div>
           <div id="wf-breakeven-val" style="font-size:13px;font-weight:800;font-family:monospace;color:#ff6b6b">—</div>
         </div>
+
+        <!-- ══ AMM LIVE PREVIEW ══ -->
+        <div id="amm-preview-card" style="margin-top:12px;border-radius:10px;overflow:hidden;border:1px solid rgba(255,255,255,.08);background:rgba(10,18,30,.6)">
+          <!-- Заголовок -->
+          <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 12px;background:rgba(255,255,255,.04);border-bottom:1px solid rgba(255,255,255,.06)">
+            <span style="font-size:11px;font-weight:700;color:#8892b0;letter-spacing:.5px">🔄 AMM РЕАЛЬНЫЙ ВЫХОД (CPMM)</span>
+            <span id="amm-age" style="font-size:9px;color:#3d4f6a">обновление…</span>
+          </div>
+
+          <!-- Основная строка: ожидается / нужно / дефицит -->
+          <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:1px;background:rgba(255,255,255,.04)">
+            <div style="background:rgba(10,18,30,.9);padding:10px 8px;text-align:center">
+              <div style="font-size:9px;color:#6a7d9f;margin-bottom:4px">📤 Пул вернёт (нетто)</div>
+              <div id="amm-net-ton" style="font-size:17px;font-weight:900;font-family:monospace;color:#8892b0">—</div>
+              <div id="amm-impact" style="font-size:9px;color:#6a7d9f;margin-top:2px">impact —</div>
+            </div>
+            <div style="background:rgba(10,18,30,.9);padding:10px 8px;text-align:center">
+              <div style="font-size:9px;color:#6a7d9f;margin-bottom:4px">🎯 Нужно для безубытка</div>
+              <div id="amm-min-ton" style="font-size:17px;font-weight:900;font-family:monospace;color:#ffd166">—</div>
+              <div style="font-size:9px;color:#6a7d9f;margin-top:2px" id="amm-entries-lbl">— позиций</div>
+            </div>
+            <div style="background:rgba(10,18,30,.9);padding:10px 8px;text-align:center">
+              <div style="font-size:9px;color:#6a7d9f;margin-bottom:4px" id="amm-delta-lbl">⚖️ Баланс</div>
+              <div id="amm-shortfall" style="font-size:17px;font-weight:900;font-family:monospace;color:#8892b0">—</div>
+              <div id="amm-verdict" style="font-size:9px;margin-top:2px;font-weight:700">—</div>
+            </div>
+          </div>
+
+          <!-- Прогресс-бар: net_ton / min_net_ton -->
+          <div style="padding:8px 12px 4px">
+            <div style="display:flex;justify-content:space-between;font-size:9px;color:#3d4f6a;margin-bottom:3px">
+              <span>0 TON</span>
+              <span id="amm-bar-label" style="color:#8892b0">—</span>
+              <span id="amm-bar-target">— TON нужно</span>
+            </div>
+            <div style="background:rgba(255,255,255,.06);border-radius:4px;height:6px;overflow:hidden;position:relative">
+              <div id="amm-bar" style="height:100%;width:0%;border-radius:4px;transition:width 1s,background .5s;background:#3d4f6a"></div>
+              <!-- Маркер цели -->
+              <div id="amm-bar-marker" style="position:absolute;top:0;height:100%;width:2px;background:rgba(255,209,102,.6);display:none"></div>
+            </div>
+          </div>
+
+          <!-- Резервы пула -->
+          <div style="padding:4px 12px 8px;display:flex;justify-content:space-between;align-items:center">
+            <span style="font-size:9px;color:#3d4f6a">Резервы пула:</span>
+            <span id="amm-reserves" style="font-size:9px;font-family:monospace;color:#4a5568">—</span>
+            <span id="amm-grinch-lbl" style="font-size:9px;color:#3d4f6a">GRINCH в позиции: <b id="amm-grinch-amt" style="color:#8892b0">—</b></span>
+          </div>
+        </div>
       </div>
 
       <!-- ══ EQUITY HISTORY CHART ══ -->
@@ -2587,5 +2636,157 @@ window.switchEqTab       = switchEqTab;
 
 <div id="toast-container"></div>
 <script src="/static/js/app.js?v={{ range(1,9999)|random }}"></script>
+
+<script>
+// ══════════════════════════════════════════════════════
+//  AMM LIVE PREVIEW — polling /api/amm/preview каждые 12с
+// ══════════════════════════════════════════════════════
+(function() {
+  const POLL_INTERVAL = 12000; // мс — совпадает с кэшем сервера
+  let _ammTimer = null;
+  let _countdownTimer = null;
+  let _nextUpdate = 0;
+
+  function fmt(v, d=2) { return v == null ? '—' : Number(v).toFixed(d); }
+  function fmtK(v) {
+    if (v == null) return '—';
+    if (v >= 1e6)  return (v/1e6).toFixed(2) + 'M';
+    if (v >= 1e3)  return (v/1e3).toFixed(1) + 'K';
+    return Number(v).toFixed(0);
+  }
+
+  function _el(id) { return document.getElementById(id); }
+
+  function updateAmmWidget(d) {
+    if (d.error) {
+      if (_el('amm-age')) _el('amm-age').textContent = '⚠️ ошибка API';
+      return;
+    }
+
+    const hasPos   = d.has_position;
+    const netTon   = d.net_ton;
+    const minTon   = d.min_net_ton;
+    const delta    = d.shortfall_ton;   // >0 = запас, <0 = дефицит
+    const ok       = d.ok;
+    const impact   = d.price_impact_pct;
+    const grinch   = d.grinch_amount;
+
+    // Цвета
+    const colorOk  = '#00ff88';
+    const colorWarn= '#ffd166';
+    const colorBad = '#ff5a78';
+    const colorNeu = '#8892b0';
+
+    // ── Пул вернёт (нетто) ──────────────────────────
+    const netEl = _el('amm-net-ton');
+    if (netEl) {
+      netEl.textContent = netTon != null ? fmt(netTon, 3) + ' TON' : '—';
+      netEl.style.color = ok === true ? colorOk : ok === false ? colorBad : colorNeu;
+    }
+    if (_el('amm-impact')) {
+      _el('amm-impact').textContent = impact != null ? `impact ${fmt(impact,2)}%` : 'impact —';
+    }
+
+    // ── Нужно для безубытка ─────────────────────────
+    if (_el('amm-min-ton')) {
+      _el('amm-min-ton').textContent = hasPos ? fmt(minTon, 3) + ' TON' : '—';
+    }
+    if (_el('amm-entries-lbl')) {
+      _el('amm-entries-lbl').textContent = hasPos ? `${d.n_entries} позиц.` : 'нет позиции';
+    }
+
+    // ── Дефицит / запас ─────────────────────────────
+    const sfEl = _el('amm-shortfall');
+    const vdEl = _el('amm-verdict');
+    const dlEl = _el('amm-delta-lbl');
+    if (sfEl && delta != null) {
+      if (ok === true) {
+        sfEl.textContent = '+' + fmt(delta, 3) + ' TON';
+        sfEl.style.color = colorOk;
+        if (vdEl) { vdEl.textContent = '✅ можно продать'; vdEl.style.color = colorOk; }
+        if (dlEl) { dlEl.textContent = '✅ Запас'; }
+      } else if (ok === false) {
+        sfEl.textContent = fmt(delta, 3) + ' TON';
+        sfEl.style.color = colorBad;
+        if (vdEl) { vdEl.textContent = '🛡️ AMM заблокирует'; vdEl.style.color = colorBad; }
+        if (dlEl) { dlEl.textContent = '⚠️ Дефицит'; }
+      }
+    } else if (sfEl && !hasPos) {
+      sfEl.textContent = '—';
+      sfEl.style.color = colorNeu;
+      if (vdEl) { vdEl.textContent = 'нет позиции'; vdEl.style.color = '#3d4f6a'; }
+      if (dlEl) { dlEl.textContent = '⚖️ Баланс'; }
+    }
+
+    // ── Прогресс-бар ────────────────────────────────
+    const bar    = _el('amm-bar');
+    const marker = _el('amm-bar-marker');
+    const barLbl = _el('amm-bar-label');
+    const barTgt = _el('amm-bar-target');
+    if (bar && netTon != null) {
+      let pct = 0;
+      if (minTon > 0) {
+        pct = Math.min(Math.max((netTon / minTon) * 100, 0), 140);
+      } else {
+        pct = 80; // нет позиции — просто показываем заполненность
+      }
+      bar.style.width = Math.min(pct, 100) + '%';
+      bar.style.background =
+        ok === true  ? 'linear-gradient(90deg,#00ff88,#00d4aa)' :
+        ok === false ? 'linear-gradient(90deg,#ff5a78,#ff8c00)' :
+                       'linear-gradient(90deg,#3d4f6a,#8892b0)';
+
+      // Маркер цели на 100% от minTon
+      if (marker && minTon > 0 && netTon != null) {
+        const markerPct = (minTon / Math.max(netTon, minTon) * 100);
+        marker.style.left = Math.min(markerPct, 98) + '%';
+        marker.style.display = 'block';
+      }
+      if (barLbl) barLbl.textContent = (netTon != null ? fmt(netTon,2) : '—') + ' TON нетто';
+      if (barTgt) barTgt.textContent = hasPos ? fmt(minTon,2) + ' TON нужно' : 'нет позиции';
+    }
+
+    // ── Резервы ─────────────────────────────────────
+    if (_el('amm-reserves')) {
+      const rt = d.pool_ton_reserve, rg = d.pool_grinch_reserve;
+      _el('amm-reserves').textContent =
+        rt != null ? fmtK(rt) + ' TON / ' + fmtK(rg) + ' GRINCH' : '—';
+    }
+    if (_el('amm-grinch-amt')) {
+      _el('amm-grinch-amt').textContent = grinch > 0 ? fmtK(grinch) : '—';
+    }
+  }
+
+  function updateCountdown() {
+    const ageEl = _el('amm-age');
+    if (!ageEl) return;
+    const secsLeft = Math.max(0, Math.ceil((_nextUpdate - Date.now()) / 1000));
+    if (secsLeft > 0) {
+      ageEl.textContent = `обновление через ${secsLeft}с`;
+    } else {
+      ageEl.textContent = 'загрузка…';
+    }
+  }
+
+  async function pollAmm() {
+    try {
+      const d = await fetch('/api/amm/preview').then(r => r.json());
+      updateAmmWidget(d);
+      _nextUpdate = Date.now() + POLL_INTERVAL;
+    } catch(e) {
+      console.warn('[AMM preview]', e);
+      if (_el('amm-age')) _el('amm-age').textContent = '⚠️ нет ответа';
+    }
+  }
+
+  // Первый запрос — сразу, затем каждые 12с
+  pollAmm();
+  _nextUpdate = Date.now() + POLL_INTERVAL;
+  _ammTimer = setInterval(pollAmm, POLL_INTERVAL);
+
+  // Обратный отсчёт каждую секунду
+  _countdownTimer = setInterval(updateCountdown, 1000);
+})();
+</script>
 </body>
 </html>
