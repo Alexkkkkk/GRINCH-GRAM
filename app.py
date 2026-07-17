@@ -94,6 +94,9 @@ def _apply_saved_config():
                     _v = getattr(Config, _a, None)
                     if _v is not None:
                         defaults[_a] = _v
+                # DEAD_HOURS_UTC — список, сохраняем как строку
+                defaults["DEAD_HOURS_UTC"] = ",".join(str(h) for h in Config.DEAD_HOURS_UTC)
+                defaults["DEAD_HOURS_DROP_MULT"] = Config.DEAD_HOURS_DROP_MULT
                 if defaults:
                     update_section("config", defaults)
                     _startup_log.info(f"[Config] ✅ Сохранено {len(defaults)} дефолтных настроек в DB")
@@ -168,6 +171,19 @@ def _apply_saved_config():
                 if attr == "FEE_PCT":
                     Config.FEE_ROUND_TRIP = Config.FEE_PCT * 2
                 applied += 1
+
+        # DEAD_HOURS_UTC — хранится как строка "0,22,23", восстанавливаем как список int
+        if (raw_dh := saved.get("DEAD_HOURS_UTC")) is not None:
+            try:
+                Config.DEAD_HOURS_UTC = [
+                    int(h) for h in str(raw_dh).split(",") if h.strip().lstrip("-").isdigit()
+                ]
+                applied += 1
+            except Exception as _dh_err:
+                _startup_log.warning(f"[Config] ⚠️ Не удалось восстановить DEAD_HOURS_UTC: {_dh_err}")
+        if (v := saved.get("DEAD_HOURS_DROP_MULT")) is not None:
+            _safe_set("DEAD_HOURS_DROP_MULT", v, float)
+            applied += 1
 
         _startup_log.info(f"[Config] ✅ Восстановлено {applied} сохранённых настроек из settings_store")
     except Exception as e:
@@ -1837,6 +1853,9 @@ def api_config_get():
         "confluence_rsi_max":       Config.CONFLUENCE_RSI_MAX,
         "confluence_vol_min_ratio": Config.CONFLUENCE_VOL_MIN_RATIO,
         "ev_threshold":             Config.EV_THRESHOLD,
+        # Временной фильтр
+        "dead_hours_utc":          Config.DEAD_HOURS_UTC,
+        "dead_hours_drop_mult":    Config.DEAD_HOURS_DROP_MULT,
     })
 
 @app.route("/api/config", methods=["POST"])
@@ -1969,6 +1988,20 @@ def api_config_set():
     if (v := num("confluence_vol_min_ratio", 0,  10))    is not None: Config.CONFLUENCE_VOL_MIN_RATIO = v
     if (v := num("ev_threshold",            -100, 100))  is not None: Config.EV_THRESHOLD             = v
 
+    # Временной фильтр: мёртвые часы
+    if "dead_hours_utc" in data:
+        _dh_raw = data["dead_hours_utc"]
+        try:
+            if isinstance(_dh_raw, list):
+                Config.DEAD_HOURS_UTC = [int(h) for h in _dh_raw]
+            else:
+                Config.DEAD_HOURS_UTC = [
+                    int(h) for h in str(_dh_raw).split(",") if str(h).strip().lstrip("-").isdigit()
+                ]
+        except Exception:
+            pass
+    if (v := num("dead_hours_drop_mult", 1.0, 5.0)) is not None: Config.DEAD_HOURS_DROP_MULT = v
+
     if "symbol" in data and data["symbol"] != Config.SYMBOL:
         if trader.open_trades:
             return jsonify({"ok": False, "message": "Нельзя сменить пару при открытых сделках."}), 409
@@ -2044,6 +2077,9 @@ def api_config_set():
             "CONFLUENCE_RSI_MAX":       Config.CONFLUENCE_RSI_MAX,
             "CONFLUENCE_VOL_MIN_RATIO": Config.CONFLUENCE_VOL_MIN_RATIO,
             "EV_THRESHOLD":             Config.EV_THRESHOLD,
+            # Временной фильтр
+            "DEAD_HOURS_UTC":       ",".join(str(h) for h in Config.DEAD_HOURS_UTC),
+            "DEAD_HOURS_DROP_MULT": Config.DEAD_HOURS_DROP_MULT,
         })
     except Exception as e:  # noqa: BLE001
         return jsonify({"ok": True, "message": f"Настройки применены, но не сохранены на диск: {e}"})

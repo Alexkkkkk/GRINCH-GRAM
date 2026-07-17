@@ -1031,6 +1031,11 @@ class Trader:
     # ══════════════════════════════════════════════════════════════════
     # DCA (Усреднение позиции) стратегия
     # ══════════════════════════════════════════════════════════════════
+    def _is_dead_hour(self) -> bool:
+        """True если текущий UTC час — «мёртвый» (низкий объём, новые входы блокируются)."""
+        import datetime as _dt
+        return _dt.datetime.utcnow().hour in Config.DEAD_HOURS_UTC
+
     def _tick_dca(self):
         """
         DCA-стратегия торговли GRINCH/TON:
@@ -1044,6 +1049,8 @@ class Trader:
            ПОСЛЕДНЕЙ покупки → докупаем ещё DCA_STAKE_TON.
         4. После достижения цели и продажи всего: ждём отката 25-30%
            от максимальной цены, затем начинаем новый цикл.
+        Временной фильтр: в DEAD_HOURS_UTC первые входы и ре-входы блокируются;
+        докупка к уже открытым позициям допускается с расширенным триггером x DEAD_HOURS_DROP_MULT.
         """
         if self._trading_disabled_guard():
             return
@@ -1139,6 +1146,14 @@ class Trader:
 
             if drop_from_peak_pct >= pullback_needed:
                 mode_label = "умный реentri (AI бычий)" if _smart_reentry_possible else "новый цикл после отката"
+                # Временной фильтр: не открываем новый цикл в мёртвые часы
+                if self._is_dead_hour():
+                    self.log(
+                        f"🌙 DCA: откат {drop_from_peak_pct:.1f}% достигнут, но мёртвый час "
+                        f"({datetime.utcnow().hour:02d}:xx UTC) — ждём активного времени",
+                        "INFO"
+                    )
+                    return
                 self.log(
                     f"✅ DCA: откат {drop_from_peak_pct:.1f}% ≥ {pullback_needed:.0f}% — "
                     f"{mode_label}!",
@@ -1265,13 +1280,20 @@ class Trader:
                         (self.dca_last_buy_price - price_usd) / self.dca_last_buy_price * 100
                     )
                     # Адаптивный порог: рынок летит → докупаем агрессивнее
+                    # В мёртвые часы — расширяем триггер (меньше ложных докупок в низком объёме)
+                    _dead_now = self._is_dead_hour()
                     drop_trigger = (
                         Config.DCA_ADAPTIVE_FAST_DROP_PCT
                         if _fast_market
                         else Config.DCA_DROP_TRIGGER_PCT
                     )
-                    _trigger_tag = f"⚡ адаптивный {drop_trigger:.0f}%" if _fast_market \
+                    if _dead_now and not _fast_market:
+                        drop_trigger = drop_trigger * Config.DEAD_HOURS_DROP_MULT
+                    _trigger_tag = (
+                        f"⚡ адаптивный {drop_trigger:.0f}%" if _fast_market
+                        else f"🌙 мёртвый час {drop_trigger:.1f}%" if _dead_now
                         else f"стандартный {drop_trigger:.0f}%"
+                    )
                     _dca_cooldown_left = Config.DCA_REENTRY_COOLDOWN_SEC - (time.time() - self._last_dca_entry_ts)
                     if drop_from_last_pct >= drop_trigger:
                         if self.dca_entries_count < Config.DCA_MAX_ENTRIES and _dca_cooldown_left <= 0:
@@ -1316,6 +1338,14 @@ class Trader:
 
         # ── Фаза 3: Нет позиций, не ждём — первый вход ───────────────
         if self.dca_entries_count == 0:
+            # Временной фильтр: в мёртвые часы не открываем новый цикл
+            if self._is_dead_hour():
+                self.log(
+                    f"🌙 DCA: мёртвый час ({datetime.utcnow().hour:02d}:xx UTC) — "
+                    f"первый вход отложен до активного времени",
+                    "INFO"
+                )
+                return
             self.log(
                 f"🚀 DCA: нет позиций — открываем первый вход "
                 f"({Config.DCA_STAKE_TON:.0f} TON @ ${price_usd:.8f})",

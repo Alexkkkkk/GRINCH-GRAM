@@ -259,9 +259,9 @@ class Config:
     # TON за каждый вход (первая покупка и каждая докупка)
     DCA_STAKE_TON       = float(os.getenv("DCA_STAKE_TON", "100"))
     # Продать ВСЁ когда общая стоимость GRINCH выросла на N% относительно суммарных затрат
-    DCA_TARGET_PROFIT_PCT = float(os.getenv("DCA_TARGET_PROFIT_PCT", "15"))
+    DCA_TARGET_PROFIT_PCT = float(os.getenv("DCA_TARGET_PROFIT_PCT", "25"))   # дневной диапазон GRINCH 20-50%
     # Докупать ещё когда цена упала N% от цены ПОСЛЕДНЕЙ покупки
-    DCA_DROP_TRIGGER_PCT  = float(os.getenv("DCA_DROP_TRIGGER_PCT", "3"))   # макс. агрессия: докупаем на ещё меньшем откате
+    DCA_DROP_TRIGGER_PCT  = float(os.getenv("DCA_DROP_TRIGGER_PCT", "5"))   # выше шума 15min (~2.9%), меньше ложных входов
     # После продажи: ждать падения цены на N% от пика перед следующей покупкой
     DCA_PULLBACK_WAIT_PCT = float(os.getenv("DCA_PULLBACK_WAIT_PCT", "4"))  # макс. агрессия: реентри быстрее
     # Максимальное количество DCA-входов за один цикл (защита от бесконечного усреднения)
@@ -280,8 +280,19 @@ class Config:
     # Уровень 2 (+40%): продаём оставшиеся 50%, ловим дополнительный памп.
     # При отключении — стандартная продажа всего на уровне 1.
     DCA_CASCADE_ENABLED    = bool(int(os.getenv("DCA_CASCADE_ENABLED",    "1")))
-    DCA_CASCADE_LEVEL1_PCT = float(os.getenv("DCA_CASCADE_LEVEL1_PCT", "20"))  # +20% → продать 50%; выше DCA_TARGET (~7%) чтобы не конкурировали
+    DCA_CASCADE_LEVEL1_PCT = float(os.getenv("DCA_CASCADE_LEVEL1_PCT", "30"))  # выше DCA_TARGET (25%) — нет конкуренции уровней
     DCA_CASCADE_LEVEL2_PCT = float(os.getenv("DCA_CASCADE_LEVEL2_PCT", "35"))  # +35% → продать остаток (ловим памп)
+
+    # ── Временной фильтр: мёртвые UTC-часы (низкий объём, не открываем новые позиции) ──
+    # По умолчанию: 0, 22, 23 UTC — самый низкий объём и диапазон по статистике GRINCH.
+    # В мёртвые часы первый вход и ре-вход блокируются; докупка к существующим позициям
+    # допускается только при расширенном триггере (x DEAD_HOURS_DROP_MULT).
+    DEAD_HOURS_UTC = [
+        int(h) for h in os.getenv("DEAD_HOURS_UTC", "0,22,23").split(",")
+        if h.strip().lstrip("-").isdigit()
+    ]
+    # Множитель для DCA_DROP_TRIGGER в мёртвые часы (1.0 = не менять)
+    DEAD_HOURS_DROP_MULT = float(os.getenv("DEAD_HOURS_DROP_MULT", "1.5"))
 
     # ── Умный реentri: после ТП входим быстрее если AI бычий ────────────────
     # Вместо ожидания -25% отката: при AI-уверенности ≥ порога достаточно -8%.
