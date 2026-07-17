@@ -5,155 +5,256 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>GRINCH-GRAM — Мой дашборд</title>
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🐸</text></svg>">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     :root {
-      --ton: #0098EA; --grinch: #00ff88; --bg: #080d16; --card: #0e1726;
-      --card2: #131f35; --border: #1e2d4a; --text: #e8edf5; --muted: #6b82a8;
-      --red: #ff4466; --yellow: #ffd700;
+      --ton: #0098EA; --ton2: #33b5ff;
+      --grinch: #00ff88; --grinch2: #00cc6a;
+      --bg: #030508; --bg2: #060a10; --bg3: #0a1018;
+      --card: #0e1420; --card2: #121c2c;
+      --border: rgba(255,255,255,.07); --border2: rgba(255,255,255,.12);
+      --text: #e8eef8; --text2: #6a7d9f; --text3: #3d4f6a;
+      --red: #ff2d55; --yellow: #ffd700;
+      --r: 14px; --r2: 10px; --r3: 7px;
+      --t: all .2s cubic-bezier(.4,0,.2,1);
     }
-    body { background: var(--bg); color: var(--text); font-family: 'Inter', system-ui, sans-serif; min-height: 100vh; }
+    html { scroll-behavior: smooth; }
+    body {
+      background: var(--bg); color: var(--text);
+      font-family: 'Inter', system-ui, sans-serif;
+      font-size: 14px; line-height: 1.5;
+      min-height: 100vh;
+      -webkit-font-smoothing: antialiased;
+    }
+    /* Grid background */
+    body::before {
+      content: '';
+      position: fixed; inset: 0; pointer-events: none; z-index: 0;
+      background-image:
+        linear-gradient(rgba(0,229,255,.02) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(0,229,255,.02) 1px, transparent 1px);
+      background-size: 48px 48px;
+    }
 
+    /* ── Header ── */
     header {
       display: flex; align-items: center; justify-content: space-between;
-      padding: 14px 28px; border-bottom: 1px solid var(--border);
-      background: rgba(8,13,22,.95); backdrop-filter: blur(12px);
+      padding: 0 28px; height: 52px;
+      background: rgba(6,10,16,.92); backdrop-filter: blur(20px);
+      border-bottom: 1px solid rgba(0,229,255,.08);
       position: sticky; top: 0; z-index: 100;
     }
-    .logo { display: flex; align-items: center; gap: 9px; text-decoration: none; }
-    .logo-text { font-size: 1.05rem; font-weight: 800; background: linear-gradient(135deg, var(--ton), var(--grinch)); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
-    .hdr-right { display: flex; align-items: center; gap: 10px; }
-    .pill { padding: 5px 12px; border-radius: 100px; font-size: .73rem; font-weight: 700; }
-    .pill-ok  { background: rgba(0,255,136,.1); border: 1px solid rgba(0,255,136,.3); color: var(--grinch); }
-    .pill-off { background: rgba(255,68,102,.1); border: 1px solid rgba(255,68,102,.3); color: var(--red); }
-
-    .main { max-width: 1080px; margin: 0 auto; padding: 24px 18px 60px; }
-    h1 { font-size: 1.35rem; font-weight: 800; margin-bottom: 4px; }
-    .user-sub { font-size: .8rem; color: var(--muted); font-family: monospace; margin-bottom: 20px; }
-
-    /* Deposit CTA (shown when balance is 0) */
-    .deposit-cta {
-      background: linear-gradient(135deg, rgba(0,152,234,.12), rgba(0,255,136,.06));
-      border: 1px solid rgba(0,152,234,.3); border-radius: 20px; padding: 24px 28px;
-      margin-bottom: 24px;
+    header::after {
+      content: ''; position: absolute; bottom: 0; left: 0; right: 0; height: 1px;
+      background: linear-gradient(90deg, transparent, rgba(0,229,255,.3), transparent);
+      pointer-events: none;
     }
-    .deposit-cta h2 { font-size: 1.1rem; font-weight: 800; margin-bottom: 6px; }
-    .deposit-cta p { color: var(--muted); font-size: .85rem; margin-bottom: 16px; }
-    .dep-row { display: grid; grid-template-columns: 1fr auto; gap: 12px; align-items: start; margin-bottom: 12px; }
-    .dep-block { background: var(--card2); border: 1px solid var(--border); border-radius: 12px; padding: 12px 16px; }
-    .dep-lbl { font-size: .72rem; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; margin-bottom: 4px; }
-    .dep-val { font-family: monospace; font-size: .85rem; word-break: break-all; }
-    .dep-code-big { font-family: monospace; font-size: 1.15rem; font-weight: 700; color: var(--grinch); letter-spacing: .08em; }
-    .copy-btn { background: none; border: 1px solid var(--border); color: var(--muted); border-radius: 8px; padding: 6px 12px; font-size: .75rem; cursor: pointer; white-space: nowrap; }
-    .copy-btn:hover { border-color: var(--ton); color: var(--ton); }
+    .logo { display: flex; align-items: center; gap: 9px; text-decoration: none; }
+    .logo-icon { font-size: 1.1rem; }
+    .logo-text {
+      font-size: 1rem; font-weight: 900; letter-spacing: .06em;
+      background: linear-gradient(135deg, #00e5ff, #00ff88);
+      -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;
+    }
+    .hdr-right { display: flex; align-items: center; gap: 10px; }
+    .pill {
+      padding: 4px 12px; border-radius: 100px;
+      font-size: .72rem; font-weight: 700; letter-spacing: .04em; text-transform: uppercase;
+    }
+    .pill-ok  { background: rgba(0,255,136,.08); border: 1px solid rgba(0,255,136,.25); color: var(--grinch); }
+    .pill-off { background: rgba(255,45,85,.08);  border: 1px solid rgba(255,45,85,.25);  color: var(--red); }
+    .hdr-link {
+      font-size: .8rem; color: var(--text2); text-decoration: none;
+      padding: 4px 10px; border-radius: 8px;
+      border: 1px solid rgba(255,255,255,.07);
+      transition: var(--t);
+    }
+    .hdr-link:hover { color: var(--ton2); border-color: rgba(0,152,234,.3); }
 
-    /* KPIs */
-    .grid4 { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 14px; margin-bottom: 20px; }
-    .kpi { background: var(--card); border: 1px solid var(--border); border-radius: 16px; padding: 18px 22px; }
-    .kpi-lbl { font-size: .72rem; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: .05em; margin-bottom: 5px; }
-    .kpi-val { font-size: 1.7rem; font-weight: 800; }
-    .kpi-val.blue  { color: var(--ton); }
-    .kpi-val.green { color: var(--grinch); }
+    /* ── Main ── */
+    .main { max-width: 1080px; margin: 0 auto; padding: 28px 20px 80px; position: relative; z-index: 1; }
+
+    /* ── User title ── */
+    .user-title { font-size: 1.4rem; font-weight: 900; margin-bottom: 3px; }
+    .user-addr {
+      font-size: .78rem; color: var(--text2); font-family: 'JetBrains Mono', monospace;
+      margin-bottom: 24px; word-break: break-all;
+    }
+
+    /* ── Deposit card (unified) ── */
+    .deposit-card {
+      background: linear-gradient(135deg, rgba(0,152,234,.1), rgba(0,255,136,.05));
+      border: 1px solid rgba(0,152,234,.25); border-radius: var(--r);
+      margin-bottom: 24px; overflow: hidden;
+      transition: var(--t);
+    }
+    .deposit-card-hdr {
+      display: flex; align-items: center; gap: 10px;
+      padding: 14px 20px; cursor: pointer; user-select: none;
+    }
+    .deposit-card-hdr:hover { background: rgba(255,255,255,.02); }
+    .deposit-card-hdr-icon { font-size: 1.2rem; }
+    .deposit-card-hdr-text { flex: 1; }
+    .deposit-card-hdr-text h2 { font-size: 1rem; font-weight: 800; margin-bottom: 1px; }
+    .deposit-card-hdr-text p { font-size: .78rem; color: var(--text2); }
+    .deposit-card-arrow { color: var(--text2); font-size: .8rem; transition: transform .25s; }
+    .deposit-card-arrow.open { transform: rotate(180deg); }
+    .deposit-card-body { display: none; padding: 0 20px 18px; }
+    .deposit-card-body.open { display: block; }
+
+    .dep-row { display: grid; grid-template-columns: 1fr auto; gap: 10px; align-items: start; margin-bottom: 10px; }
+    .dep-block {
+      background: var(--card2); border: 1px solid var(--border);
+      border-radius: var(--r2); padding: 11px 15px;
+    }
+    .dep-lbl {
+      font-size: .7rem; font-weight: 700; color: var(--text2);
+      text-transform: uppercase; letter-spacing: .05em; margin-bottom: 4px;
+    }
+    .dep-val { font-family: 'JetBrains Mono', monospace; font-size: .84rem; word-break: break-all; }
+    .dep-code-big {
+      font-family: 'JetBrains Mono', monospace; font-size: 1.1rem;
+      font-weight: 800; color: var(--grinch); letter-spacing: .1em;
+    }
+    .copy-btn {
+      background: rgba(0,152,234,.1); border: 1px solid rgba(0,152,234,.3);
+      color: var(--ton2); border-radius: 9px; padding: 7px 14px;
+      font-size: .76rem; font-weight: 700; cursor: pointer; white-space: nowrap;
+      transition: var(--t);
+    }
+    .copy-btn:hover { background: rgba(0,152,234,.2); }
+    .dep-note { font-size: .76rem; color: var(--text2); padding-top: 4px; }
+
+    /* ── KPI grid ── */
+    .kpi-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 14px; margin-bottom: 22px; }
+    .kpi {
+      background: var(--card); border: 1px solid var(--border); border-radius: var(--r);
+      padding: 18px 20px; transition: var(--t); position: relative; overflow: hidden;
+    }
+    .kpi::before {
+      content: ''; position: absolute; inset: 0; border-radius: var(--r);
+      background: linear-gradient(135deg, rgba(255,255,255,.02), transparent);
+      pointer-events: none;
+    }
+    .kpi:hover { border-color: rgba(0,229,255,.15); transform: translateY(-1px); }
+    .kpi-lbl {
+      font-size: .7rem; font-weight: 700; color: var(--text2);
+      text-transform: uppercase; letter-spacing: .06em; margin-bottom: 6px;
+    }
+    .kpi-val { font-size: 1.7rem; font-weight: 900; font-family: 'JetBrains Mono', monospace; }
+    .kpi-val.blue  { color: var(--ton2); text-shadow: 0 0 20px rgba(0,152,234,.3); }
+    .kpi-val.green { color: var(--grinch); text-shadow: 0 0 20px rgba(0,255,136,.3); }
     .kpi-val.red   { color: var(--red); }
-    .kpi-sub { font-size: .75rem; color: var(--muted); margin-top: 2px; }
+    .kpi-sub { font-size: .74rem; color: var(--text2); margin-top: 3px; }
 
-    .sec-title { font-size: .95rem; font-weight: 700; margin: 22px 0 12px; display: flex; align-items: center; gap: 8px; }
+    /* ── Section header ── */
+    .sec-hdr {
+      display: flex; align-items: center; gap: 8px;
+      font-size: .88rem; font-weight: 800; color: var(--text);
+      margin: 26px 0 12px; text-transform: uppercase; letter-spacing: .04em;
+    }
+    .sec-hdr::after {
+      content: ''; flex: 1; height: 1px;
+      background: linear-gradient(90deg, rgba(255,255,255,.08), transparent);
+    }
 
-    /* Withdrawal */
-    .withdraw-bar { display: flex; gap: 10px; align-items: center; margin-bottom: 22px; }
-    .wd-input { background: var(--card2); border: 1px solid var(--border); color: var(--text); border-radius: 10px; padding: 10px 14px; font-size: .9rem; width: 140px; outline: none; }
-    .wd-input:focus { border-color: var(--ton); }
-    .wd-btn { background: var(--ton); color: #fff; border: none; border-radius: 10px; padding: 10px 18px; font-size: .88rem; font-weight: 700; cursor: pointer; }
-    .wd-btn:hover { opacity: .85; }
-    .wd-result { font-size: .82rem; margin-left: 4px; }
+    /* ── Withdrawal ── */
+    .withdraw-bar { display: flex; gap: 10px; align-items: flex-start; margin-bottom: 4px; }
+    .wd-input {
+      background: var(--card2); border: 1px solid var(--border2); color: var(--text);
+      border-radius: var(--r2); padding: 10px 14px; font-size: .9rem; width: 140px;
+      outline: none; font-family: inherit; transition: var(--t);
+    }
+    .wd-input:focus { border-color: var(--ton); box-shadow: 0 0 0 3px rgba(0,152,234,.12); }
+    .wd-btn {
+      background: linear-gradient(135deg, var(--ton), var(--ton2)); color: #fff;
+      border: none; border-radius: var(--r2); padding: 10px 20px;
+      font-size: .88rem; font-weight: 800; cursor: pointer; transition: var(--t);
+    }
+    .wd-btn:hover { opacity: .88; transform: translateY(-1px); }
+    .wd-result { font-size: .82rem; margin-top: 6px; min-height: 1.2em; }
 
-    /* Open position */
-    .pos-card { background: var(--card); border: 1px solid rgba(0,255,136,.3); border-radius: 16px; padding: 18px 22px; margin-bottom: 20px; }
-    .pos-card.empty { border-color: var(--border); opacity: .55; }
+    /* ── Open position ── */
+    .pos-card {
+      background: var(--card); border: 1px solid rgba(0,255,136,.25);
+      border-radius: var(--r); padding: 18px 20px; margin-bottom: 4px;
+      transition: var(--t);
+    }
+    .pos-card.empty { border-color: var(--border); opacity: .65; }
     .pos-row { display: flex; flex-wrap: wrap; gap: 20px; align-items: center; }
-    .pos-item .pi-lbl { font-size: .7rem; color: var(--muted); margin-bottom: 2px; }
-    .pos-item .pi-val { font-size: 1rem; font-weight: 700; }
+    .pos-item .pi-lbl { font-size: .7rem; color: var(--text2); margin-bottom: 3px; text-transform: uppercase; letter-spacing: .04em; }
+    .pos-item .pi-val { font-size: 1.05rem; font-weight: 800; font-family: 'JetBrains Mono', monospace; }
 
-    /* Trades table */
-    .table-wrap { background: var(--card); border: 1px solid var(--border); border-radius: 16px; overflow: hidden; margin-bottom: 20px; }
+    /* ── Trades table ── */
+    .table-wrap {
+      background: var(--card); border: 1px solid var(--border); border-radius: var(--r);
+      overflow: hidden;
+    }
     table { width: 100%; border-collapse: collapse; font-size: .8rem; }
-    th { padding: 10px 14px; text-align: left; color: var(--muted); font-size: .7rem; font-weight: 600; text-transform: uppercase; letter-spacing: .04em; border-bottom: 1px solid var(--border); }
-    td { padding: 10px 14px; border-bottom: 1px solid rgba(30,45,74,.4); }
+    th {
+      padding: 10px 16px; text-align: left; color: var(--text2);
+      font-size: .68rem; font-weight: 700; text-transform: uppercase;
+      letter-spacing: .06em; border-bottom: 1px solid var(--border);
+      background: rgba(255,255,255,.02);
+    }
+    td { padding: 10px 16px; border-bottom: 1px solid rgba(255,255,255,.04); }
     tr:last-child td { border-bottom: none; }
+    tr:hover td { background: rgba(255,255,255,.02); }
     .pnl-pos { color: var(--grinch); font-weight: 700; }
     .pnl-neg { color: var(--red); font-weight: 700; }
-    .empty-row { text-align: center; padding: 32px; color: var(--muted); }
-    .badge-buy  { background: rgba(0,255,136,.1); color: var(--grinch); padding: 2px 8px; border-radius: 6px; font-size: .72rem; font-weight: 700; }
-    .badge-sell { background: rgba(255,68,102,.1); color: var(--red);   padding: 2px 8px; border-radius: 6px; font-size: .72rem; font-weight: 700; }
+    .empty-row { text-align: center; padding: 36px; color: var(--text2); }
+    .badge-buy  { background: rgba(0,255,136,.1);  color: var(--grinch); padding: 2px 9px; border-radius: 6px; font-size: .7rem; font-weight: 800; }
+    .badge-sell { background: rgba(255,45,85,.1);   color: var(--red);    padding: 2px 9px; border-radius: 6px; font-size: .7rem; font-weight: 800; }
 
-    /* Logs */
-    .log-wrap { background: var(--card); border: 1px solid var(--border); border-radius: 16px; padding: 14px; max-height: 280px; overflow-y: auto; }
-    .log-line { display: flex; gap: 10px; padding: 4px 0; border-bottom: 1px solid rgba(30,45,74,.35); font-size: .79rem; }
+    /* ── Logs ── */
+    .log-wrap {
+      background: var(--card); border: 1px solid var(--border); border-radius: var(--r);
+      padding: 12px 14px; max-height: 260px; overflow-y: auto;
+    }
+    .log-line { display: flex; gap: 10px; padding: 4px 2px; border-bottom: 1px solid rgba(255,255,255,.04); font-size: .78rem; }
     .log-line:last-child { border-bottom: none; }
-    .log-time { color: var(--muted); font-family: monospace; flex-shrink: 0; }
+    .log-time { color: var(--text2); font-family: 'JetBrains Mono', monospace; flex-shrink: 0; }
     .log-INFO  { color: var(--text); }
     .log-BUY   { color: var(--grinch); font-weight: 700; }
     .log-SELL  { color: var(--red); font-weight: 700; }
     .log-WARN  { color: var(--yellow); }
     .log-ERROR { color: var(--red); }
 
-    footer { text-align: center; padding: 20px; color: var(--muted); font-size: .76rem; border-top: 1px solid var(--border); }
-    footer a { color: var(--ton); text-decoration: none; }
+    /* ── Footer ── */
+    footer {
+      text-align: center; padding: 20px; color: var(--text2); font-size: .75rem;
+      border-top: 1px solid var(--border); position: relative; z-index: 1;
+    }
+    footer a { color: var(--ton2); text-decoration: none; }
+    footer a:hover { text-decoration: underline; }
+
+    /* ── Scrollbar ── */
+    ::-webkit-scrollbar { width: 4px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: rgba(0,229,255,.2); border-radius: 2px; }
 
     /* ── Responsive ── */
     @media (max-width: 768px) {
-      header { padding: 10px 16px; }
-      .logo-text { font-size: .95rem; }
-      .hdr-right { gap: 6px; }
-      .hdr-right a { display: none; } /* скрываем "Новый аккаунт" — экономим место */
-
-      .main { padding: 14px 12px 48px; }
-      h1 { font-size: 1.1rem; }
-      .user-sub { font-size: .72rem; word-break: break-all; }
-
-      /* KPI сетка: 2 колонки */
-      .grid4 { grid-template-columns: 1fr 1fr !important; gap: 10px; }
+      header { padding: 0 16px; }
+      .main { padding: 18px 14px 60px; }
+      .kpi-grid { grid-template-columns: 1fr 1fr; gap: 10px; }
       .kpi { padding: 14px 14px; }
       .kpi-val { font-size: 1.4rem; }
-
-      /* Deposit CTA */
-      .deposit-cta { padding: 16px 14px; border-radius: 14px; }
-      .deposit-cta h2 { font-size: .95rem; }
-      .dep-row {
-        grid-template-columns: 1fr !important;
-        gap: 6px;
-      }
-      .copy-btn { width: 100%; margin-top: 4px; padding: 8px; }
-
-      /* Вывод средств — в стек */
-      .withdraw-bar { flex-wrap: wrap; gap: 8px; }
+      .dep-row { grid-template-columns: 1fr; gap: 6px; }
+      .copy-btn { width: 100%; text-align: center; }
+      .withdraw-bar { flex-wrap: wrap; }
       .wd-input { width: 100%; }
-      .wd-btn { width: 100%; padding: 12px; }
-      .wd-result { width: 100%; margin-left: 0; text-align: center; }
-
-      /* Таблица — горизонтальный скролл */
-      .table-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+      .wd-btn { width: 100%; }
+      .table-wrap { overflow-x: auto; }
       table { min-width: 460px; }
-      th, td { padding: 8px 10px; font-size: .75rem; }
-
-      /* Лог */
-      .log-wrap { max-height: 200px; }
-      .log-line { flex-direction: column; gap: 1px; }
-      .log-time { font-size: .7rem; }
-
-      /* Позиция */
-      .pos-row { gap: 12px; }
-      .pos-item .pi-val { font-size: .9rem; }
-
-      /* Section titles */
-      .sec-title { font-size: .85rem; margin: 16px 0 8px; }
+      th, td { padding: 8px 10px; }
+      .hdr-right .hdr-link { display: none; }
     }
-
     @media (max-width: 400px) {
-      /* KPI → 1 колонка на очень маленьких экранах */
-      .grid4 { grid-template-columns: 1fr !important; }
-      .kpi-val { font-size: 1.6rem; }
-      header { padding: 8px 12px; }
+      .kpi-grid { grid-template-columns: 1fr; }
     }
   </style>
 </head>
@@ -161,50 +262,58 @@
 
 <header>
   <a class="logo" href="/">
-    <span style="font-size:1.25rem">◆×🐸</span>
+    <span class="logo-icon">◆×🐸</span>
     <span class="logo-text">GRINCH-GRAM</span>
   </a>
   <div class="hdr-right">
     <span id="status-pill" class="pill pill-ok">● АКТИВЕН</span>
-    <a href="/join" style="color:var(--muted);font-size:.8rem;text-decoration:none">+ Новый аккаунт</a>
+    <a href="/join" class="hdr-link">+ Новый аккаунт</a>
   </div>
 </header>
 
 <div class="main">
 
-  <h1 id="user-name">Загрузка...</h1>
-  <div class="user-sub" id="user-addr">{{ init_status.ton_address if init_status else '' }}</div>
+  <div class="user-title" id="user-name">Загрузка…</div>
+  <div class="user-addr" id="user-addr">{{ init_status.ton_address if init_status else '' }}</div>
 
-  <!-- Deposit CTA -->
-  <div id="deposit-cta" class="deposit-cta" style="display:none">
-    <h2>💰 Пополни баланс для начала торговли</h2>
-    <p>Отправь TON на адрес ниже с обязательным комментарием-кодом. Баланс зачислится автоматически.</p>
-    <div class="dep-row">
-      <div class="dep-block">
-        <div class="dep-lbl">Адрес платформы</div>
-        <div class="dep-val" id="dep-addr">{{ platform_wallet }}</div>
+  <!-- ── Unified deposit card (auto-expands when balance = 0) ── -->
+  <div id="deposit-card" class="deposit-card">
+    <div class="deposit-card-hdr" onclick="toggleDeposit()">
+      <span class="deposit-card-hdr-icon">💰</span>
+      <div class="deposit-card-hdr-text">
+        <h2>Пополнить баланс</h2>
+        <p id="dep-hdr-sub">Отправь TON с обязательным кодом-комментарием</p>
       </div>
-      <button class="copy-btn" onclick="copyEl('dep-addr', this)">Копировать адрес</button>
+      <span class="deposit-card-arrow" id="dep-arrow">▼</span>
     </div>
-    <div class="dep-row">
-      <div class="dep-block">
-        <div class="dep-lbl">Комментарий к переводу (обязательно!)</div>
-        <div class="dep-code-big" id="dep-code-display">{{ deposit_code }}</div>
+    <div class="deposit-card-body" id="dep-body">
+      <div class="dep-row">
+        <div class="dep-block">
+          <div class="dep-lbl">Адрес платформы</div>
+          <div class="dep-val" id="dep-addr">{{ platform_wallet }}</div>
+        </div>
+        <button class="copy-btn" onclick="copyEl('dep-addr', this)">📋 Копировать</button>
       </div>
-      <button class="copy-btn" onclick="copyEl('dep-code-display', this)">Копировать код</button>
-    </div>
-    <div style="font-size:.78rem;color:var(--muted);margin-top:4px">
-      Депозит зачислится в течение 1–2 минут после подтверждения транзакции.
-      Всего пополнено: <strong style="color:var(--text)">{{ '%.4f'|format(total_deposited) }} TON</strong>
+      <div class="dep-row">
+        <div class="dep-block">
+          <div class="dep-lbl">Комментарий к переводу (обязательно!)</div>
+          <div class="dep-code-big" id="dep-code">{{ deposit_code }}</div>
+        </div>
+        <button class="copy-btn" onclick="copyEl('dep-code', this)">📋 Копировать</button>
+      </div>
+      <div class="dep-note">
+        Баланс зачислится за 1–2 минуты после подтверждения транзакции.
+        Всего пополнено: <strong style="color:var(--text)">{{ '%.4f'|format(total_deposited) }} TON</strong>
+      </div>
     </div>
   </div>
 
-  <!-- KPIs -->
-  <div class="grid4">
+  <!-- ── KPIs ── -->
+  <div class="kpi-grid">
     <div class="kpi">
       <div class="kpi-lbl">Баланс TON</div>
       <div class="kpi-val blue" id="kpi-balance">—</div>
-      <div class="kpi-sub">виртуальный</div>
+      <div class="kpi-sub">виртуальный счёт</div>
     </div>
     <div class="kpi">
       <div class="kpi-lbl">GRINCH в позиции</div>
@@ -220,67 +329,63 @@
     </div>
   </div>
 
-  <!-- Withdrawal -->
-  <div class="sec-title">📤 Вывод средств</div>
+  <!-- ── Withdrawal ── -->
+  <div class="sec-hdr">📤 Вывод средств</div>
   <div class="withdraw-bar">
     <input class="wd-input" type="number" id="wd-amount" placeholder="TON" min="0.1" step="0.1">
     <button class="wd-btn" onclick="doWithdraw()">Вывести TON</button>
-    <span class="wd-result" id="wd-result"></span>
   </div>
+  <div class="wd-result" id="wd-result"></div>
 
-  <!-- Open position -->
-  <div class="sec-title">📂 Открытая позиция</div>
+  <!-- ── Open position ── -->
+  <div class="sec-hdr">📂 Открытая позиция</div>
   <div id="pos-card" class="pos-card empty">
-    <span style="color:var(--muted);font-size:.86rem">Нет открытых позиций — ожидаем BUY сигнал</span>
+    <span style="color:var(--text2);font-size:.88rem">Нет открытых позиций — ожидаем BUY сигнал</span>
   </div>
 
-  <!-- Trade history -->
-  <div class="sec-title">📈 История сделок</div>
+  <!-- ── Trade history ── -->
+  <div class="sec-hdr">📈 История сделок</div>
   <div class="table-wrap">
     <table>
-      <thead><tr>
-        <th>Тип</th><th>Цена</th><th>TON</th><th>P&L</th><th>Время</th>
-      </tr></thead>
+      <thead>
+        <tr>
+          <th>Тип</th><th>Цена</th><th>TON</th><th>P&L</th><th>Время</th>
+        </tr>
+      </thead>
       <tbody id="trades-body">
         <tr><td colspan="5" class="empty-row">Сделок пока нет</td></tr>
       </tbody>
     </table>
   </div>
 
-  <!-- Bot logs -->
-  <div class="sec-title">📋 Лог бота</div>
+  <!-- ── Bot logs ── -->
+  <div class="sec-hdr">📋 Лог бота</div>
   <div id="log-wrap" class="log-wrap">
-    <div style="color:var(--muted);font-size:.8rem">Загрузка...</div>
+    <div style="color:var(--text2);font-size:.8rem">Загрузка…</div>
   </div>
 
-  <!-- Deposit instructions (collapsible) -->
-  <div class="sec-title" style="margin-top:28px;cursor:pointer" onclick="toggleDep()">
-    ➕ Пополнить баланс <span id="dep-arrow" style="color:var(--muted);font-size:.8rem">▼</span>
-  </div>
-  <div id="dep-section" style="display:none">
-    <div class="deposit-cta" style="margin-bottom:0">
-      <div class="dep-row">
-        <div class="dep-block"><div class="dep-lbl">Адрес платформы</div><div class="dep-val" id="dep-addr2">{{ platform_wallet }}</div></div>
-        <button class="copy-btn" onclick="copyEl('dep-addr2', this)">Копировать</button>
-      </div>
-      <div class="dep-row" style="margin-bottom:0">
-        <div class="dep-block"><div class="dep-lbl">Комментарий к переводу</div><div class="dep-code-big">{{ deposit_code }}</div></div>
-        <button class="copy-btn" onclick="copyText('{{ deposit_code }}', this)">Копировать</button>
-      </div>
-    </div>
-  </div>
-
-</div>
+</div><!-- /.main -->
 
 <footer>
-  <p>GRINCH-GRAM · <a href="/">Главный дашборд</a> &nbsp;|&nbsp; <a href="/join">Подключить кошелёк</a></p>
+  <p>GRINCH-GRAM &nbsp;|&nbsp; <a href="/">Главный дашборд</a> &nbsp;·&nbsp; <a href="/join">Подключить кошелёк</a></p>
 </footer>
 
 <script>
   const TOKEN = "{{ token }}";
   const PLATFORM_WALLET = "{{ platform_wallet }}";
 
-  // Init from server-rendered data
+  // ── Deposit card toggle ────────────────────────────────────────────────────
+  let _depOpen = false;
+
+  function toggleDeposit(force) {
+    _depOpen = (force !== undefined) ? force : !_depOpen;
+    const body  = document.getElementById('dep-body');
+    const arrow = document.getElementById('dep-arrow');
+    body.classList.toggle('open', _depOpen);
+    arrow.classList.toggle('open', _depOpen);
+  }
+
+  // ── Init ──────────────────────────────────────────────────────────────────
   const initStatus = {{ init_status | tojson | safe }};
   if (initStatus) render(initStatus);
 
@@ -293,19 +398,25 @@
   }
 
   function render(d) {
+    // Name + address
     document.getElementById('user-name').textContent = d.name || 'Трейдер';
     if (d.ton_address) document.getElementById('user-addr').textContent = d.ton_address;
 
-    // Deposit CTA
+    // Deposit card: auto-expand when balance is empty
     const bal = d.balance_ton ?? 0;
-    document.getElementById('deposit-cta').style.display = bal < 0.01 ? 'block' : 'none';
+    if (bal < 0.01) {
+      toggleDeposit(true);
+      document.getElementById('dep-hdr-sub').textContent = 'Пополни баланс для начала торговли — отправь TON с кодом';
+    } else {
+      document.getElementById('dep-hdr-sub').textContent = 'Всего пополнено: ' + bal.toFixed(4) + ' TON';
+    }
 
     // KPIs
     document.getElementById('kpi-balance').textContent = bal.toFixed(4) + ' TON';
     const grn = d.grinch_held ?? 0;
-    document.getElementById('kpi-grinch').textContent = grn > 0 ? '~' + Math.round(grn).toLocaleString() : '—';
+    document.getElementById('kpi-grinch').textContent = grn > 0 ? '~' + Math.round(grn).toLocaleString('ru') : '—';
 
-    const pnl = d.stats?.total_pnl_ton ?? 0;
+    const pnl   = d.stats?.total_pnl_ton ?? 0;
     const pnlEl = document.getElementById('kpi-pnl');
     pnlEl.textContent = (pnl >= 0 ? '+' : '') + pnl.toFixed(4) + ' TON';
     pnlEl.className   = 'kpi-val ' + (pnl >= 0 ? 'green' : 'red');
@@ -323,13 +434,13 @@
     if (grn > 0 && d.entry_price) {
       posCard.className = 'pos-card';
       posCard.innerHTML = `<div class="pos-row">
-        <div class="pos-item"><div class="pi-lbl">Вход (цена)</div><div class="pi-val" style="color:var(--grinch)">${fmtPrice(d.entry_price)}</div></div>
-        <div class="pos-item"><div class="pi-lbl">GRINCH</div><div class="pi-val">~${Math.round(grn).toLocaleString()}</div></div>
-        <div class="pos-item"><div class="pi-lbl">Последний сигнал</div><div class="pi-val">${d.last_signal || 'HOLD'}</div></div>
+        <div class="pos-item"><div class="pi-lbl">Цена входа</div><div class="pi-val" style="color:var(--grinch)">${fmtPrice(d.entry_price)}</div></div>
+        <div class="pos-item"><div class="pi-lbl">GRINCH</div><div class="pi-val">~${Math.round(grn).toLocaleString('ru')}</div></div>
+        <div class="pos-item"><div class="pi-lbl">Последний сигнал</div><div class="pi-val" style="color:var(--ton2)">${d.last_signal || 'HOLD'}</div></div>
       </div>`;
     } else {
       posCard.className = 'pos-card empty';
-      posCard.innerHTML = `<span style="color:var(--muted);font-size:.86rem">Нет открытых позиций — ожидаем BUY сигнал</span>`;
+      posCard.innerHTML = `<span style="color:var(--text2);font-size:.88rem">Нет открытых позиций — ожидаем BUY сигнал</span>`;
     }
 
     // Trades
@@ -339,13 +450,13 @@
       tbody.innerHTML = `<tr><td colspan="5" class="empty-row">Сделок пока нет</td></tr>`;
     } else {
       tbody.innerHTML = trades.map(t => {
-        const isBuy  = t.type === 'buy';
-        const badge  = isBuy ? '<span class="badge-buy">BUY</span>' : '<span class="badge-sell">SELL</span>';
-        const price  = fmtPrice(t.price);
-        const ton    = isBuy ? (t.ton_spent ?? 0).toFixed(4) : (t.received ?? 0).toFixed(4);
-        const pnl    = isBuy ? '—' : pnlCell(t.pnl_ton);
-        const dt     = fmtTime(t.time);
-        return `<tr><td>${badge}</td><td>${price}</td><td>${ton}</td><td>${pnl}</td><td style="color:var(--muted)">${dt}</td></tr>`;
+        const isBuy = t.type === 'buy';
+        const badge = isBuy ? '<span class="badge-buy">BUY</span>' : '<span class="badge-sell">SELL</span>';
+        const price = fmtPrice(t.price);
+        const ton   = isBuy ? (t.ton_spent ?? 0).toFixed(4) : (t.received ?? 0).toFixed(4);
+        const pnl   = isBuy ? '—' : pnlCell(t.pnl_ton);
+        const dt    = fmtTime(t.time);
+        return `<tr><td>${badge}</td><td>${price}</td><td>${ton}</td><td>${pnl}</td><td style="color:var(--text2)">${dt}</td></tr>`;
       }).join('');
     }
 
@@ -353,7 +464,7 @@
     const logWrap = document.getElementById('log-wrap');
     const logs    = (d.logs || []).slice().reverse();
     if (!logs.length) {
-      logWrap.innerHTML = `<div style="color:var(--muted);font-size:.8rem">Лог пуст</div>`;
+      logWrap.innerHTML = `<div style="color:var(--text2);font-size:.8rem">Лог пуст</div>`;
     } else {
       logWrap.innerHTML = logs.map(l =>
         `<div class="log-line"><span class="log-time">${l.time}</span><span class="log-${l.level}">${l.msg}</span></div>`
@@ -361,12 +472,14 @@
     }
   }
 
-  // ── Withdrawal ─────────────────────────────────────────────────────────────
+  // ── Withdrawal ────────────────────────────────────────────────────────────
   async function doWithdraw() {
     const amount = parseFloat(document.getElementById('wd-amount').value);
     const res = document.getElementById('wd-result');
-    if (isNaN(amount) || amount < 0.1) { res.textContent = '⚠️ Мин. 0.1 TON'; res.style.color = 'var(--yellow)'; return; }
-    res.textContent = 'Отправляем...'; res.style.color = 'var(--muted)';
+    if (isNaN(amount) || amount < 0.1) {
+      res.textContent = '⚠️ Минимум 0.1 TON'; res.style.color = 'var(--yellow)'; return;
+    }
+    res.textContent = 'Отправляем…'; res.style.color = 'var(--text2)';
     try {
       const r = await fetch('/api/user/withdraw', {
         method: 'POST',
@@ -379,12 +492,12 @@
     } catch(e) { res.textContent = '❌ Ошибка сети'; res.style.color = 'var(--red)'; }
   }
 
-  // ── Helpers ────────────────────────────────────────────────────────────────
+  // ── Helpers ───────────────────────────────────────────────────────────────
   function fmtPrice(p) {
     if (!p) return '—';
-    if (p < 0.001) return p.toFixed(8);
-    if (p < 1)     return p.toFixed(6);
-    return p.toFixed(4);
+    if (p < 0.001) return p.toFixed(8) + ' TON';
+    if (p < 1)     return p.toFixed(6) + ' TON';
+    return p.toFixed(4) + ' TON';
   }
   function pnlCell(pnl) {
     if (pnl == null) return '—';
@@ -394,22 +507,13 @@
   }
   function fmtTime(iso) {
     if (!iso) return '—';
-    const d = new Date(iso);
-    return d.toLocaleString('ru-RU', {day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'});
+    return new Date(iso).toLocaleString('ru-RU', {day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'});
   }
   function copyEl(elId, btn) {
-    copyText(document.getElementById(elId).textContent.trim(), btn);
-  }
-  function copyText(text, btn) {
+    const text = document.getElementById(elId)?.textContent?.trim() || '';
     navigator.clipboard.writeText(text).then(() => {
-      if (btn) { btn.textContent = '✓ Скопировано'; setTimeout(() => btn.textContent = 'Копировать', 2000); }
+      if (btn) { btn.textContent = '✓ Скопировано'; setTimeout(() => btn.textContent = '📋 Копировать', 2000); }
     });
-  }
-  function toggleDep() {
-    const s = document.getElementById('dep-section');
-    const a = document.getElementById('dep-arrow');
-    s.style.display = s.style.display === 'none' ? 'block' : 'none';
-    a.textContent   = s.style.display === 'none' ? '▼' : '▲';
   }
 
   // Poll every 6 sec

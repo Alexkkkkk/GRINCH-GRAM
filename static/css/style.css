@@ -1354,7 +1354,7 @@ body::after {
   border-bottom: 1px solid rgba(0,229,255,.15); backdrop-filter: blur(20px); }
 
 /* ═══════════════════════════════════════════════════════════════
-   QuantumBrain v3 — Kelly + 6-Model Grid
+   QuantumBrain v4 — Kelly + 6-Model Grid
 ═══════════════════════════════════════════════════════════════ */
 
 .quantum-brain-card {
@@ -1940,7 +1940,7 @@ body::after {
 .at-item { font-size:10px !important; }
 
 
-/* ── Momentum Engine + AI Full Rights (v3) ─────────────────────────────────── */
+/* ── Momentum Engine + AI Full Rights (v4) ─────────────────────────────────── */
 .brain-momentum-row {
   display: flex;
   flex-direction: column;

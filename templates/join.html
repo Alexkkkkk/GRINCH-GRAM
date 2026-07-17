@@ -5,26 +5,57 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>GRINCH-GRAM — Подключить кошелёк</title>
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🐸</text></svg>">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
   <script src="https://unpkg.com/@tonconnect/ui@latest/dist/tonconnect-ui.min.js" crossorigin="anonymous"></script>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     :root {
-      --ton: #0098EA; --grinch: #00ff88; --bg: #080d16; --card: #0e1726;
-      --card2: #131f35; --border: #1e2d4a; --text: #e8edf5; --muted: #6b82a8;
-      --red: #ff4466; --yellow: #ffd700;
+      --ton: #0098EA; --ton2: #33b5ff;
+      --grinch: #00ff88; --grinch2: #00cc6a;
+      --bg: #030508; --card: #0e1420; --card2: #12192a;
+      --border: rgba(255,255,255,.07); --border2: rgba(255,255,255,.12);
+      --text: #e8eef8; --muted: #6a7d9f;
+      --red: #ff2d55; --yellow: #ffd700;
+      --r: 16px; --r2: 12px; --t: all .2s cubic-bezier(.4,0,.2,1);
     }
-    body { background: var(--bg); color: var(--text); font-family: 'Inter', system-ui, sans-serif; min-height: 100vh; }
+    body {
+      background: var(--bg); color: var(--text);
+      font-family: 'Inter', system-ui, sans-serif;
+      min-height: 100vh; -webkit-font-smoothing: antialiased;
+    }
+    body::before {
+      content: ''; position: fixed; inset: 0; pointer-events: none; z-index: 0;
+      background-image: linear-gradient(rgba(0,229,255,.018) 1px, transparent 1px),
+                        linear-gradient(90deg, rgba(0,229,255,.018) 1px, transparent 1px);
+      background-size: 48px 48px;
+    }
 
     header {
       display: flex; align-items: center; justify-content: space-between;
-      padding: 16px 32px; border-bottom: 1px solid var(--border);
-      background: rgba(8,13,22,.95); backdrop-filter: blur(12px);
+      padding: 0 32px; height: 52px;
+      background: rgba(6,10,16,.92); backdrop-filter: blur(20px);
+      border-bottom: 1px solid rgba(0,229,255,.08);
       position: sticky; top: 0; z-index: 200;
     }
-    .logo { display: flex; align-items: center; gap: 10px; text-decoration: none; }
-    .logo-text { font-size: 1.2rem; font-weight: 800; background: linear-gradient(135deg, var(--ton), var(--grinch)); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
-    .hdr-link { color: var(--muted); font-size: .88rem; text-decoration: none; }
-    .hdr-link:hover { color: var(--ton); }
+    header::after {
+      content: ''; position: absolute; bottom: 0; left: 0; right: 0; height: 1px;
+      background: linear-gradient(90deg, transparent, rgba(0,229,255,.3), transparent);
+      pointer-events: none;
+    }
+    .logo { display: flex; align-items: center; gap: 9px; text-decoration: none; }
+    .logo-text {
+      font-size: 1rem; font-weight: 900; letter-spacing: .06em;
+      background: linear-gradient(135deg, #00e5ff, #00ff88);
+      -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;
+    }
+    .hdr-link {
+      font-size: .8rem; color: var(--muted); text-decoration: none;
+      padding: 4px 12px; border-radius: 8px;
+      border: 1px solid rgba(255,255,255,.07); transition: var(--t);
+    }
+    .hdr-link:hover { color: var(--ton2); border-color: rgba(0,152,234,.25); }
 
     /* Hero */
     .hero { text-align: center; padding: 64px 24px 40px; background: radial-gradient(ellipse 80% 60% at 50% -10%, rgba(0,152,234,.12), transparent); }
