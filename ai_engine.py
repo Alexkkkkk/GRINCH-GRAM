@@ -1611,21 +1611,64 @@ class AIEngine:
 
     def import_experience(self, data: dict) -> int:
         """Восстанавливает опыт с диска и дообучает модели.
-        Возвращает число восстановленных подтверждённых примеров (0 — если
-        несовместимо или пусто). Вызывать ПОСЛЕ pretrain (нужны feature_names)."""
+        Возвращает число восстановленных подтверждённых примеров.
+        ВАЖНО: метаданные (_retrains, slot_acc, kelly) восстанавливаются ВСЕГДА,
+        даже если confirmed_X пуст — иначе точность/Sharpe/счётчик обнуляются после
+        каждого рестарта пока нет ни одной закрытой сделки.
+        Вызывать ПОСЛЕ pretrain (нужны feature_names)."""
         if not data:
-            return 0
-        X = data.get("confirmed_X") or []
-        if not X:
             return 0
         with self._lock:
             cur_dim   = len(self._feature_names)
             saved_dim = data.get("feature_dim")
-            # Изменился набор признаков → старый опыт несовместим, пропускаем
-            if cur_dim and saved_dim and cur_dim != saved_dim:
-                log.warning(f"[AI] Опыт несовместим: признаков {saved_dim}≠{cur_dim}, пропуск")
-                return 0
             try:
+                # ── Блок 1: метаданные — восстанавливаем ВСЕГДА ──────────────
+                # Счётчик переобучений, точность моделей, Kelly-история, Sharpe.
+                # Не зависят от совместимости признаков и не требуют confirmed_X.
+                self._retrains = int(data.get("retrains", 0))
+
+                acc = data.get("slot_acc", {}) or {}
+                for s in self._slots:
+                    h = acc.get(s.name)
+                    if h:
+                        s._history = deque(h, maxlen=ACCURACY_WINDOW)
+                        if s._history:
+                            a = sum(s._history) / len(s._history)
+                            s.weight = max(0.15, a ** 2)
+
+                kw = data.get("kelly_wins", [])
+                kp = data.get("kelly_pnls", [])
+                if kw:
+                    for v in kw[-KELLY_LOOKBACK:]:
+                        self._kelly_wins.append(int(v))
+                if kp:
+                    for v in kp[-KELLY_LOOKBACK:]:
+                        self._kelly_pnls.append(float(v))
+
+                # Фичи последней покупки: feedback() проверяет при закрытии сделки
+                lbf = data.get("last_buy_features")
+                if lbf and cur_dim and len(lbf) == cur_dim:
+                    self._last_buy_features = np.array(lbf, dtype=float)
+                    log.info("[AI] _last_buy_features восстановлены из experience")
+
+                # ── Блок 2: confirmed_X — только если есть примеры ───────────
+                X = data.get("confirmed_X") or []
+                if not X:
+                    if self._retrains:
+                        log.info(
+                            f"[AI] Метаданные восстановлены: переобучений={self._retrains}, "
+                            f"Kelly={len(self._kelly_wins)} сделок (примеров ещё нет)"
+                        )
+                    return 0
+
+                # Изменился набор признаков → подтверждённые примеры несовместимы
+                if cur_dim and saved_dim and cur_dim != saved_dim:
+                    log.warning(
+                        f"[AI] Подтверждённые примеры несовместимы: признаков {saved_dim}≠{cur_dim}, "
+                        f"пропуск. Метаданные восстановлены."
+                    )
+                    return 0
+
                 self._confirmed_X = [np.array(x, dtype=float) for x in X]
                 self._confirmed_y = [int(v) for v in data.get("confirmed_y", [])]
                 self._confirmed_w = [float(v) for v in data.get("confirmed_w", [])]
@@ -1635,33 +1678,14 @@ class AIEngine:
                     self._confirmed_X = self._confirmed_X[-CONFIRMED_CAP:]
                     self._confirmed_y = self._confirmed_y[-CONFIRMED_CAP:]
                     self._confirmed_w = self._confirmed_w[-CONFIRMED_CAP:]
-                acc = data.get("slot_acc", {}) or {}
-                for s in self._slots:
-                    h = acc.get(s.name)
-                    if h:
-                        s._history = deque(h, maxlen=ACCURACY_WINDOW)
-                        if s._history:
-                            a = sum(s._history) / len(s._history)
-                            s.weight = max(0.15, a ** 2)
-                # Восстанавливаем Kelly историю
-                kw = data.get("kelly_wins", [])
-                kp = data.get("kelly_pnls", [])
-                if kw:
-                    for v in kw[-KELLY_LOOKBACK:]:
-                        self._kelly_wins.append(int(v))
-                if kp:
-                    for v in kp[-KELLY_LOOKBACK:]:
-                        self._kelly_pnls.append(float(v))
-                self._retrains = int(data.get("retrains", 0))
-                # Восстанавливаем фичи последней покупки: feedback() проверяет их при закрытии сделки
-                lbf = data.get("last_buy_features")
-                if lbf and cur_dim and len(lbf) == cur_dim:
-                    self._last_buy_features = np.array(lbf, dtype=float)
-                    log.info("[AI] _last_buy_features восстановлены из experience (feedback сработает при закрытии)")
+
                 n = len(self._confirmed_X)
                 if n and self._trained:
                     self._refit_all()
-                log.info(f"[AI] Восстановлено {n} подтверждённых примеров, Kelly={len(self._kelly_wins)} сделок")
+                log.info(
+                    f"[AI] Восстановлено {n} подтверждённых примеров · "
+                    f"переобучений={self._retrains} · Kelly={len(self._kelly_wins)} сделок"
+                )
                 return n
             except Exception as e:
                 log.warning(f"[AI] import_experience error: {e}")
