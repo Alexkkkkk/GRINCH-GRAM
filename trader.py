@@ -882,6 +882,18 @@ class Trader:
         portfolio_pct = (total_value_ton - total_cost_ton) / total_cost_ton * 100
         total_grinch  = sum(t.get("amount", 0) for t in self.open_trades)
 
+        # ONLY_PROFIT_EXIT: никогда не продаём в убыток даже через защиту прибыли.
+        # Сценарий: прибыль была ≥ PROFIT_PROTECT_TON (флаг взведён), потом цена
+        # упала ниже средней цены входа → portfolio_pct < 0. Продажа сейчас —
+        # это реализованный убыток. Блокируем и ждём возврата в прибыль.
+        if Config.ONLY_PROFIT_EXIT and portfolio_pct < 0:
+            self.log(
+                f"🛡️ ONLY_PROFIT_EXIT: защита прибыли заблокирована — "
+                f"портфель {portfolio_pct:+.1f}% (убыток). Держим до возврата в плюс.",
+                "WARN"
+            )
+            return False
+
         self.log(
             f"🛡️ ЗАЩИТА ПРИБЫЛИ: {profit_ton:+.4f} TON ({portfolio_pct:+.1f}%) | "
             f"пик {self.portfolio_high_water_ton:.4f} TON | "
@@ -1585,6 +1597,17 @@ class Trader:
         total_stake  = sum(t.get("stake_ton", 0) for t in self.open_trades)
 
         if total_grinch <= 0:
+            return False
+
+        # ── ЖЕЛЕЗНЫЙ ЗАМОК ONLY_PROFIT_EXIT ──────────────────────────────────
+        # Второй барьер (первый — в вызывающем коде). Блокируем продажу в убыток
+        # независимо от того, кто вызвал эту функцию.
+        if Config.ONLY_PROFIT_EXIT and portfolio_pct < 0:
+            self.log(
+                f"🛡️ ONLY_PROFIT_EXIT (_dca_sell_all): портфель {portfolio_pct:+.1f}% — "
+                f"продажа заблокирована, ждём возврата в прибыль.",
+                "WARN"
+            )
             return False
 
         # ── Консолидация: продаём ВЕСЬ GRINCH на балансе одной сделкой,
