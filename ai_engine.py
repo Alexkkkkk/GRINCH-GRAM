@@ -1595,15 +1595,18 @@ class AIEngine:
     def export_experience(self) -> dict:
         """Сериализует подтверждённый опыт ИИ для записи на диск."""
         with self._lock:
+            lbf = (self._last_buy_features.tolist()
+                   if self._last_buy_features is not None else None)
             return {
-                "confirmed_X":  [list(map(float, x)) for x in self._confirmed_X],
-                "confirmed_y":  [int(v) for v in self._confirmed_y],
-                "confirmed_w":  [float(v) for v in self._confirmed_w],
-                "slot_acc":     {s.name: list(s._history) for s in self._slots},
-                "feature_dim":  len(self._feature_names),
-                "kelly_wins":   list(self._kelly_wins),
-                "kelly_pnls":   list(self._kelly_pnls),
-                "retrains":     self._retrains,
+                "confirmed_X":       [list(map(float, x)) for x in self._confirmed_X],
+                "confirmed_y":       [int(v) for v in self._confirmed_y],
+                "confirmed_w":       [float(v) for v in self._confirmed_w],
+                "slot_acc":          {s.name: list(s._history) for s in self._slots},
+                "feature_dim":       len(self._feature_names),
+                "kelly_wins":        list(self._kelly_wins),
+                "kelly_pnls":        list(self._kelly_pnls),
+                "retrains":          self._retrains,
+                "last_buy_features": lbf,  # сохраняем чтобы feedback() работал после рестарта
             }
 
     def import_experience(self, data: dict) -> int:
@@ -1650,6 +1653,11 @@ class AIEngine:
                     for v in kp[-KELLY_LOOKBACK:]:
                         self._kelly_pnls.append(float(v))
                 self._retrains = int(data.get("retrains", 0))
+                # Восстанавливаем фичи последней покупки: feedback() проверяет их при закрытии сделки
+                lbf = data.get("last_buy_features")
+                if lbf and cur_dim and len(lbf) == cur_dim:
+                    self._last_buy_features = np.array(lbf, dtype=float)
+                    log.info("[AI] _last_buy_features восстановлены из experience (feedback сработает при закрытии)")
                 n = len(self._confirmed_X)
                 if n and self._trained:
                     self._refit_all()
