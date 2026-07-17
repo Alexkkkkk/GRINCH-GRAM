@@ -308,6 +308,10 @@ class Trader:
         except Exception as _bal_check_err:
             self.log(f"⚠️ Сверка баланса при старте не удалась: {_bal_check_err}", "WARN")
 
+        # ── Летучие поля DCA/profit-protect/cooldown ───────────────────
+        # Восстанавливаем после рестарта (cascade, compound bonus, HWM, cooldowns)
+        self._restore_volatile_state()
+
         # ── Санитайз статистики ────────────────────────────────────────
         # winning_trades не может быть больше total_trades (иначе winrate
         # >100%, как показывал дашборд после старого бага в каскадном выходе).
@@ -485,6 +489,68 @@ class Trader:
         except Exception:
             pass
 
+    def _save_volatile_state(self) -> None:
+        """Персистирует летучие поля DCA/profit-protect/cooldown в trader_state (DB+JSON).
+        Вызывается при каждом изменении этих полей и периодически из тик-цикла.
+        Best-effort: ошибка не должна ронять торговый цикл."""
+        try:
+            from settings_store import update_section
+            update_section("trader_state", {
+                "dca_cascade_half_sold":    str(self.dca_cascade_half_sold),
+                "dca_compound_bonus_ton":   str(self.dca_compound_bonus_ton),
+                "portfolio_high_water_ton": str(self.portfolio_high_water_ton),
+                "profit_protect_activated": str(self.profit_protect_activated),
+                "last_loss_ts":             str(self._last_loss_ts),
+                "last_large_sell_buy_ts":   str(self._last_large_sell_buy_ts),
+            })
+        except Exception:
+            pass
+
+    def _restore_volatile_state(self) -> None:
+        """Восстанавливает летучие поля из trader_state при старте бота."""
+        try:
+            from settings_store import get_section
+            st = get_section("trader_state")
+            if not st:
+                return
+
+            def _float(key, default=0.0):
+                v = st.get(key)
+                try:
+                    return float(v) if v not in (None, "", "None") else default
+                except (ValueError, TypeError):
+                    return default
+
+            def _bool(key, default=False):
+                v = st.get(key)
+                if v is None:
+                    return default
+                return str(v).lower() == "true"
+
+            self.dca_cascade_half_sold    = _bool("dca_cascade_half_sold")
+            self.dca_compound_bonus_ton   = _float("dca_compound_bonus_ton")
+            self.portfolio_high_water_ton = _float("portfolio_high_water_ton")
+            self.profit_protect_activated = _bool("profit_protect_activated")
+            self._last_loss_ts            = _float("last_loss_ts")
+            self._last_large_sell_buy_ts  = _float("last_large_sell_buy_ts")
+
+            parts = []
+            if self.dca_cascade_half_sold:
+                parts.append("cascade=True")
+            if self.dca_compound_bonus_ton > 0:
+                parts.append(f"compound={self.dca_compound_bonus_ton:.2f} TON")
+            if self.portfolio_high_water_ton > 0:
+                parts.append(f"hwm={self.portfolio_high_water_ton:.4f} TON")
+            if self.profit_protect_activated:
+                parts.append("profit_protect=ON")
+            cd_left = Config.LOSS_COOLDOWN_SEC - (time.time() - self._last_loss_ts)
+            if cd_left > 0:
+                parts.append(f"loss_cd={cd_left/60:.1f} мин")
+            if parts:
+                self.log(f"🔄 Volatile state восстановлен: {' | '.join(parts)}", "INFO")
+        except Exception as _e:
+            self.log(f"⚠️ _restore_volatile_state: {_e}", "WARN")
+
     def enable_trading(self):
         self.trading_enabled = True
         self._save_trading_enabled(True)
@@ -574,6 +640,13 @@ class Trader:
                 if self.open_trades and (now - _last_db_sync) >= 15:
                     self._sync_open_trades_to_db()
                     _last_db_sync = now
+                # Летучие поля DCA/profit-protect/cooldown — сохраняем раз в 60 сек
+                # (страховка: даже если точечный save в точке мутации не сработал)
+                if not hasattr(self, "_last_volatile_save_ts"):
+                    self._last_volatile_save_ts = 0.0
+                if now - self._last_volatile_save_ts >= 60:
+                    self._save_volatile_state()
+                    self._last_volatile_save_ts = now
                 self.last_tick_ts = time.time()
                 self.last_tick_ok = True
             except Exception as e:
@@ -758,11 +831,16 @@ class Trader:
         # Обновляем пик стоимости портфеля (всегда, не только в профите)
         if total_value_ton > self.portfolio_high_water_ton:
             self.portfolio_high_water_ton = total_value_ton
+            self._save_volatile_state()  # новый HWM → сохраняем
 
         # Активируем защиту как только прибыль достигла порога — флаг остаётся
         # активным даже если цена временно откатилась ниже порога
         if profit_ton >= Config.PROFIT_PROTECT_TON:
-            self.profit_protect_activated = True
+            if not self.profit_protect_activated:  # только при первой активации
+                self.profit_protect_activated = True
+                self._save_volatile_state()
+            else:
+                self.profit_protect_activated = True
 
         if not self.profit_protect_activated:
             return False
@@ -869,6 +947,7 @@ class Trader:
         _cfg.Config.TRADE_AMOUNT = orig
         if opened:
             self._last_large_sell_buy_ts = now
+            self._save_volatile_state()  # large-sell cooldown переживёт рестарт
             self._emit_signal("BUY", price_usd, ai)
             self.log(
                 f"✅ Large Sell DCA: куплено {Config.LARGE_SELL_DCA_TON:.0f} TON @ ${price_usd:.8f}",
@@ -1453,6 +1532,7 @@ class Trader:
 
             self.dca_total_stake   = sum(t.get("stake_ton", 0) for t in self.open_trades)
         self.dca_cascade_half_sold = True
+        self._save_volatile_state()  # cascade флаг переживёт рестарт
         # Лок: self.stats мутируется из нескольких потоков — без него возможна
         # гонка при одновременном закрытии позиций (потерянный инкремент).
         with self._close_lock:
@@ -1620,6 +1700,7 @@ class Trader:
                 f"(лимит {Config.DCA_COMPOUND_MAX_TON:.0f} TON)",
                 "INFO"
             )
+            self._save_volatile_state()  # compound bonus переживёт рестарт
 
         # Снимаем dca_entries ПЕРЕД сбросом (иначе советник получит 0)
         _dca_entries_snap = self.dca_entries_count
@@ -3321,6 +3402,7 @@ class Trader:
             # Кулдаун после убытка: фиксируем время для защиты от повторного входа
             if outcome == "loss":
                 self._last_loss_ts = time.time()
+                self._save_volatile_state()  # cooldown переживёт рестарт
                 self.log(
                     f"⏸️ Loss cooldown активирован: пауза {Config.LOSS_COOLDOWN_SEC//60} мин перед следующим входом",
                     "WARN"
