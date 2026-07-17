@@ -2691,8 +2691,9 @@ class Trader:
             )
 
         order = self.exchange.place_order(side, amount, ton_stake=ton_stake)
-        if not order:
-            self.log("⚠️ BUY ордер не исполнен — пропускаем", "WARN")
+        if not order or order.get("error"):
+            err = (order or {}).get("error", "нет ответа") if order else "нет ответа"
+            self.log(f"⚠️ BUY ордер не исполнен — {err}", "WARN")
             return False
 
         # В DeDust-режиме используем реальное кол-во GRINCH из подтверждённого свопа,

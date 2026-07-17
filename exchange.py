@@ -304,16 +304,21 @@ class ExchangeClient:
 
             if not result.get("ok"):
                 print(f"[DeDust] Ошибка ордера: {result.get('error')}")
-                # Возвращаем структурированный dict (не None), чтобы вызывающий код
-                # мог проверить amm_blocked=True и не делать бессмысленный retry.
-                return {
-                    "error":       result.get("error"),
-                    "amm_blocked": result.get("amm_blocked", False),
-                    "expected_ton":  result.get("expected_ton"),
-                    "net_ton":       result.get("net_ton"),
-                    "min_net_ton":   result.get("min_net_ton"),
-                    "shortfall_ton": result.get("shortfall_ton"),
-                }
+                if side == "sell":
+                    # Для SELL — возвращаем структурированный dict, чтобы вызывающий
+                    # код мог проверить amm_blocked=True и не делать бессмысленный retry.
+                    # Caller-ы sell проверяют `sell_result.get("error")`, а не `if not`.
+                    return {
+                        "error":         result.get("error"),
+                        "amm_blocked":   result.get("amm_blocked", False),
+                        "expected_ton":  result.get("expected_ton"),
+                        "net_ton":       result.get("net_ton"),
+                        "min_net_ton":   result.get("min_net_ton"),
+                        "shortfall_ton": result.get("shortfall_ton"),
+                    }
+                # Для BUY — оставляем None (исторический контракт).
+                # Caller-ы buy проверяют `if not order`.
+                return None
 
             return {
                 "id":       f"dedust_{int(time.time())}",
