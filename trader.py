@@ -1746,6 +1746,10 @@ class Trader:
             trade["close_reason"] = f"dca_target_{portfolio_pct:.1f}pct"
             trade["status"]       = "closed"
             trade["outcome"]      = "win" if pnl_ton > 0 else "loss"
+            # Bug-fix #2: удаляем пересчитанные по текущей цене поля —
+            # они создаются _enriched_open_trades() и не должны попадать в историю закрытых сделок
+            for _ef in ("net_ton_now", "value_ton_now", "net_pct_now", "in_profit", "breakeven_price"):
+                trade.pop(_ef, None)
             total_pnl            += pnl_ton
             # Лок: self.stats мутируется из нескольких потоков — без него
             # возможна гонка при одновременном закрытии позиций.
@@ -3347,6 +3351,8 @@ class Trader:
                 trade["closed_at"]    = now_iso
                 trade["close_reason"] = "liquidator_auto_sell"
                 trade["status"]       = "closed"
+                for _ef in ("net_ton_now", "value_ton_now", "net_pct_now", "in_profit", "breakeven_price"):
+                    trade.pop(_ef, None)
                 # PnL посчитаем честно с учётом комиссии
                 fee = Config.FEE_PCT / 100.0
                 buy_gas  = Config.BUY_GAS_TON
@@ -3523,6 +3529,9 @@ class Trader:
         trade["closed_at"]    = datetime.utcnow().isoformat()
         trade["close_reason"] = reason
         trade["status"]       = "closed"
+        # Bug-fix #2: убираем пересчитанные по текущей цене поля из истории
+        for _ef in ("net_ton_now", "value_ton_now", "net_pct_now", "in_profit", "breakeven_price"):
+            trade.pop(_ef, None)
 
         self.stats["total_pnl"] = round(self.stats["total_pnl"] + pnl, 6)
         # Единая точка учёта: total_trades считается только здесь, в момент

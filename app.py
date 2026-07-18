@@ -1708,13 +1708,21 @@ def api_wallet_analytics():
         total_bought_grinch = sum(t.get("amount", 0) or 0 for t in buy_trades)
         # GRINCH продано = GRINCH из закрытых LONG-позиций (купили → продали обратно за TON)
         total_sold_grinch   = sum(t.get("amount", 0) or 0 for t in closed_buy)
+        # Bug-fix #4: включаем BUY_GAS в реально потраченное
+        _buy_gas = getattr(Config, "BUY_GAS_TON", 0.103)
         total_ton_spent     = sum(
-            (t.get("stake_ton", 0) or t.get("ton_spent", 0) or 0) for t in buy_trades
+            (t.get("stake_ton", 0) or t.get("ton_spent", 0) or 0) + _buy_gas
+            for t in buy_trades
         )
-        # TON получено = ставка + прибыль по каждой закрытой LONG-сделке
+        # TON получено = ставка + газ покупки + прибыль по каждой закрытой LONG-сделке
         total_ton_received  = sum(
-            (t.get("stake_ton", 0) or 0) + (t.get("pnl", 0) or 0) for t in closed_buy
+            (t.get("stake_ton", 0) or t.get("ton_spent", 0) or 0) + _buy_gas
+            + (t.get("pnl", 0) or 0)
+            for t in closed_buy
         )
+        # Bug-fix #3: net_pnl считаем напрямую как сумму реализованных PnL —
+        # это не зависит от открытых позиций и всегда показывает реальную прибыль
+        net_pnl_ton = round(sum((t.get("pnl", 0) or 0) for t in closed_buy), 4)
 
         # Цена безубытка по открытым позициям
         open_trades_enriched = getattr(trader, "open_trades", [])
@@ -1746,7 +1754,7 @@ def api_wallet_analytics():
                 "total_sold_grinch":    round(total_sold_grinch, 2),
                 "total_ton_spent":      round(total_ton_spent, 4),
                 "total_ton_received":   round(total_ton_received, 4),
-                "net_pnl_ton":          round(total_ton_received - total_ton_spent, 4),
+                "net_pnl_ton":          net_pnl_ton,
             },
             "recent_trades": grinch_trades[:20],
         })

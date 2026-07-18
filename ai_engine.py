@@ -2752,7 +2752,10 @@ class AIEngine:
                 "name":     s.name,
                 "icon":     icons.get(s.name, "🤖"),
                 "weight":   round(s.weight, 2),
-                "accuracy": round(s.accuracy * 100, 1),
+                # Bug-fix #1: samples — это история ЖИВЫХ предсказаний, не обучающих примеров.
+                # Когда samples=0, accuracy всегда возвращает 0.5 (default) — это вводило в заблуждение.
+                # Теперь accuracy=None когда нет живых предсказаний (фронтенд покажет «нет данных»).
+                "accuracy": round(s.accuracy * 100, 1) if s._history else None,
                 "samples":  len(s._history),
             }
             for s in self._slots

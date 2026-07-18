@@ -149,6 +149,12 @@ class CoinInfo:
         return data or []
 
     def _pool(self, base):
+        # Bug-fix #6: для GRINCH используем адрес пула из конфига как приоритетный
+        # источник — DexScreener может быть недоступен, а адрес у нас уже известен
+        if base == "GRINCH":
+            pool_from_config = getattr(Config, "GRINCH_POOL_ADDRESS", None)
+            if pool_from_config:
+                return pool_from_config
         with self._lock:
             entry = self._pool_cache.get(base)
             if entry and time.time() - entry[1] < 600:
