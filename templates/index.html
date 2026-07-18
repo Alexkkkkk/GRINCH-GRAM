@@ -3646,7 +3646,7 @@ window.switchEqTab       = switchEqTab;
     el.innerHTML = sources.map(s => {
       const key = Object.keys(s)[0];
       const ico = Object.values(s)[0];
-      const names = {'fear_greed':'F&G','binance':'BNB','bybit':'Bybit','defillama':'DFL','geckotrend':'GT','ton_stats':'TON'};
+      const names = {'fear_greed':'F&G','kraken':'Kraken','bybit':'Bybit','cg_trending':'CG','defillama':'DFL','geckotrend':'GT','ton_stats':'TON'};
       return `<span style="font-size:9px;padding:2px 6px;border-radius:6px;background:rgba(255,255,255,.05);color:#6a7d9f">${ico} ${names[key]||key}</span>`;
     }).join('');
   }

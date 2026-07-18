@@ -24,8 +24,9 @@ log = logging.getLogger("data_hub")
 # ─── TTL для каждого источника (секунды) ─────────────────────────────────────
 _TTL = {
     "fear_greed":  1800,   # 30 мин — обновляется очень редко
-    "binance":       30,   # 30 сек — живая цена CEX
+    "kraken":        30,   # 30 сек — живая цена CEX
     "bybit":         60,   # 1 мин  — funding rate
+    "cg_trending":  120,   # 2 мин  — CoinGecko тренды
     "defillama":    300,   # 5 мин  — TVL меняется медленно
     "geckotrend":   120,   # 2 мин  — позиция в трендах
     "ton_stats":    180,   # 3 мин  — сетевая статистика
@@ -85,25 +86,50 @@ def _fetch_kraken() -> dict:
     d = _get("https://api.kraken.com/0/public/Ticker?pair=XBTUSD,TONUSD")
     if not d or d.get("error"):
         return result
-    pairs_map = {"XXBTZUSD": "btc", "TONUSD": "ton_cex", "XTONZUSD": "ton_cex"}
     for pair_key, data in (d.get("result") or {}).items():
-        key = None
-        for k, v in pairs_map.items():
-            if k in pair_key or pair_key.endswith("TONUSD"):
-                key = v
-                break
-        if not key:
-            # авто: XBT → btc, TON → ton_cex
-            key = "btc" if "XBT" in pair_key or "BTC" in pair_key else "ton_cex"
-        price = float((data.get("c") or ["0"])[0])
-        open_ = float(data.get("o") or price)
-        vol   = float((data.get("v") or ["0", "0"])[1])   # 24h rolling volume
+        # Определяем ключ по содержимому пары, без хитрых условий
+        pk = pair_key.upper()
+        if "XBT" in pk or (pk.startswith("BTC") and "TON" not in pk):
+            key = "btc"
+        elif "TON" in pk:
+            key = "ton_cex"
+        else:
+            continue
+        price  = float((data.get("c") or ["0"])[0])
+        open_  = float(data.get("o") or price)
+        vol    = float((data.get("v") or ["0", "0"])[1])   # 24h rolling volume
         chg24h = (price - open_) / open_ * 100 if open_ else 0.0
         result[f"{key}_price"]     = round(price, 6)
         result[f"{key}_change24h"] = round(chg24h, 4)
         result[f"{key}_volume24h"] = round(vol, 2)
         result[f"{key}_high24h"]   = float((data.get("h") or ["0", "0"])[1])
         result[f"{key}_low24h"]    = float((data.get("l") or ["0", "0"])[1])
+    return result
+
+
+def _fetch_bybit() -> dict:
+    """Bybit — funding rate и Open Interest TONUSDT бессрочный фьюч."""
+    result = {}
+    # Funding rate (последний)
+    d = _get(
+        "https://api.bybit.com/v5/market/funding/history",
+        params={"category": "linear", "symbol": "TONUSDT", "limit": 1},
+    )
+    if d and d.get("retCode") == 0:
+        lst = (d.get("result") or {}).get("list") or []
+        if lst:
+            fr = float(lst[0].get("fundingRate", 0) or 0) * 100   # → %
+            result["bybit_funding_rate_pct"] = round(fr, 6)
+    # Open Interest (последний снапшот)
+    d2 = _get(
+        "https://api.bybit.com/v5/market/open-interest",
+        params={"category": "linear", "symbol": "TONUSDT", "intervalTime": "1h", "limit": 1},
+    )
+    if d2 and d2.get("retCode") == 0:
+        lst2 = (d2.get("result") or {}).get("list") or []
+        if lst2:
+            oi = float(lst2[0].get("openInterest", 0) or 0)
+            result["bybit_oi"] = round(oi, 0)
     return result
 
 
@@ -200,6 +226,7 @@ def _fetch_ton_stats() -> dict:
 _FETCHERS = {
     "fear_greed":  _fetch_fear_greed,
     "kraken":      _fetch_kraken,
+    "bybit":       _fetch_bybit,
     "cg_trending": _fetch_cg_trending,
     "defillama":   _fetch_defillama,
     "geckotrend":  _fetch_geckotrend,
