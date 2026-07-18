@@ -134,7 +134,7 @@ class ExchangeClient:
     #   {"ts": время успеха, "bars": свечи, "fail_ts": время последней ошибки}
     _ohlcv_cache = {}
     _ohlcv_lock     = threading.Lock()
-    _OHLCV_TTL      = 12   # сек — обновлять свечи чаще (быстрый сигнал)
+    _OHLCV_TTL      = 45   # сек — GeckoTerminal даёт 429 при TTL<30с; 45с = баланс свежести и лимита
     _OHLCV_BACKOFF  = 8    # сек — после ошибки ждём меньше, чтобы не пропустить сигнал
 
     def get_real_ohlcv(self, limit=100, currency="usd", token="base", tf="hour", aggregate=1):
