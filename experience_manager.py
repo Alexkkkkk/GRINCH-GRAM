@@ -341,12 +341,24 @@ class ExperienceManager:
         except Exception as _hist_err:
             logger.warning(f"[Experience] restore closed trades error: {_hist_err}")
         try:
+            # Показываем ставку, актуальную для текущего режима:
+            # в DCA — стейк на вход из конфига, в AI-режиме — адаптивная ставка.
+            try:
+                from config import Config as _Cfg
+                _dca = _Cfg.DCA_MODE
+                _stake_label = (f"ставка DCA={_Cfg.DCA_STAKE_TON:.0f} TON/вход"
+                                if _dca else f"ставка AI={ctrl['trade_amount']:.3f} TON")
+            except Exception:
+                _dca = False
+                _stake_label = f"ставка={ctrl['trade_amount']:.3f}"
             note = (
                 f"🧠 Память загружена: {len(self.data['trades'])} сделок"
                 + (f" | ⏳ {len(open_trades)} LONG восстановлено" if open_trades else "")
                 + (f" | 📉 {len(open_short_trades)} SHORT восстановлено" if open_short_trades else "")
-                + f" | порог={ctrl['min_conf']:.0f}% ставка={ctrl['trade_amount']:.3f} | "
-                f"{'⏸️ ПАУЗА' if ctrl['paused'] else '▶️ активна'}"
+                + f" | порог={ctrl['min_conf']:.0f}% {_stake_label}"
+                # «AI-пауза» — авто-пауза по статистике, не то же что ручной выключатель торговли.
+                # Ручной статус («торговля вкл/выкл») логируется отдельно при старте агента.
+                + f" | {'⏸️ AI-пауза активна' if ctrl['paused'] else '▶️ AI-пауза: нет'}"
             )
             trader.log(note, "INFO")
             for t in open_trades:
