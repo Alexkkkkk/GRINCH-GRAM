@@ -476,6 +476,9 @@ _startup_log.info("WalletTracker OK")
 from wallet_manager import wallet_manager as _wallet_mgr
 _startup_log.info("WalletManager OK")
 
+import data_hub   # запускает фоновый поток обновления при старте приложения
+_startup_log.info("DataHub OK")
+
 
 def _safe_status():
     raw = trader.get_status()

@@ -669,8 +669,11 @@ class DedustClient:
             )
             grinch_reserve = None
             for b in r2.json().get("balances", []):
-                jaddr = (b.get("jetton", {}) or {}).get("address", "")
-                if self._same_addr(jaddr, Config.GRINCH_TOKEN_ADDRESS):
+                jetton  = b.get("jetton", {}) or {}
+                jaddr   = jetton.get("address", "")
+                jsymbol = (jetton.get("symbol", "") or "").upper()
+                # Сначала совпадение по адресу, затем по символу "GRINCH"
+                if self._same_addr(jaddr, Config.GRINCH_TOKEN_ADDRESS) or jsymbol == "GRINCH":
                     grinch_reserve = float(b.get("balance", 0)) / TON
                     break
             if ton_reserve > 0 and grinch_reserve and grinch_reserve > 0:
