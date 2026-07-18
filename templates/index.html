@@ -1172,7 +1172,7 @@
                     <input type="number" id="cfg-dca-compound-max" value="500" min="10" max="10000" step="10" style="font-size:11px">
                   </label>
                 </div>
-                <small style="color:var(--text-mid)">Прибыль 20 TON → +30% = +6 TON к следующей ставке</small>
+                <small id="dca-compound-hint" style="color:var(--text-mid)">Прибыль 20 TON → +30% = +6 TON к следующей ставке</small>
               </div>
 
               <!-- Адаптивный триггер -->
@@ -1189,7 +1189,7 @@
                     <input type="number" id="cfg-dca-fast-drop" value="6" min="1" max="30" step="0.5" style="font-size:11px">
                   </label>
                 </div>
-                <small style="color:var(--text-mid)">Если рынок вырос >5% за 75 сек → докупать уже при -6% (не -12%)</small>
+                <small id="dca-adaptive-hint" style="color:var(--text-mid)">Если рынок вырос >5% за 75 сек → докупать уже при -6% (не -12%)</small>
               </div>
             </div>
           </div>
@@ -1201,7 +1201,7 @@
               <span style="color:var(--text-mid)">Фаза:</span>          <span id="dca-phase" style="font-weight:700">—</span>
               <span style="color:var(--text-mid)">Входов в цикле:</span><span id="dca-entries" style="font-weight:700">—</span>
               <span style="color:var(--text-mid)">Вложено TON:</span>   <span id="dca-stake" style="font-weight:700">—</span>
-              <span style="color:var(--text-mid)">Прибыль порт. (без комиссий):</span><span id="dca-profit" style="font-weight:700">—</span>
+              <span style="color:var(--text-mid)">Прибыль порт. (с комиссиями):</span><span id="dca-profit" style="font-weight:700">—</span>
               <span style="color:var(--text-mid)">Цена посл. докупки:</span>    <span id="dca-last-buy" style="font-weight:700">—</span>
               <span style="color:var(--text-mid)">Пик (откат от):</span><span id="dca-peak" style="font-weight:700">—</span>
               <span style="color:var(--text-mid)">Каскад:</span>        <span id="dca-cascade-status" style="font-weight:700">—</span>

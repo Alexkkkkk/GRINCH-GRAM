@@ -3812,13 +3812,18 @@ class Trader:
         )
         # ── DCA статус ───────────────────────────────────────────────
         dca_portfolio_pct = None
-        if Config.DCA_MODE and self.open_trades and grinch_ton:
-            try:
-                cost_ton, val_ton = self._dca_portfolio_value(grinch_ton)
-                if cost_ton > 0:
-                    dca_portfolio_pct = round((val_ton - cost_ton) / cost_ton * 100, 2)
-            except Exception:
-                pass
+        dca_portfolio_ton = None
+        if Config.DCA_MODE and self.open_trades:
+            # Fallback: если price_feed вернул 0, берём цену последней покупки
+            _gt = grinch_ton or self.dca_last_buy_price
+            if _gt and _gt > 0:
+                try:
+                    cost_ton, val_ton = self._dca_portfolio_value(_gt)
+                    if cost_ton > 0:
+                        dca_portfolio_pct = round((val_ton - cost_ton) / cost_ton * 100, 2)
+                        dca_portfolio_ton = round(val_ton - cost_ton, 4)
+                except Exception:
+                    pass
 
         return {
             "running":       self.running,
@@ -3861,6 +3866,7 @@ class Trader:
                 "entries_count":   self.dca_entries_count,
                 "total_stake":     self.dca_total_stake,
                 "portfolio_pct":   dca_portfolio_pct,
+                "portfolio_ton":   dca_portfolio_ton,
                 "target_pct":      Config.DCA_TARGET_PROFIT_PCT,
                 "drop_trigger_pct": Config.DCA_DROP_TRIGGER_PCT,
                 "pullback_wait_pct": Config.DCA_PULLBACK_WAIT_PCT,

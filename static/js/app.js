@@ -310,10 +310,21 @@ function renderDcaState(st, active) {
   if (g("dca-entries")) g("dca-entries").textContent = (st.entries_count ?? "—") + " / " + (st.max_entries ?? "—");
   if (g("dca-stake"))   g("dca-stake").textContent   = st.total_stake != null ? Number(st.total_stake).toFixed(2) + " TON" : "—";
 
-  // Прибыль портфеля (поле portfolio_pct из get_status)
-  const profit = st.portfolio_pct;
-  const target = st.target_pct ?? 20;
-  if (g("dca-profit"))       g("dca-profit").textContent      = profit != null ? (profit >= 0 ? "+" : "") + Number(profit).toFixed(2) + "%" : "—";
+  // Прибыль портфеля (поля portfolio_pct + portfolio_ton из get_status)
+  const profit    = st.portfolio_pct;
+  const profitTon = st.portfolio_ton;
+  const target    = st.target_pct ?? 20;
+  if (g("dca-profit")) {
+    if (profit != null) {
+      const pStr  = (profit >= 0 ? "+" : "") + Number(profit).toFixed(2) + "%";
+      const tStr  = profitTon != null ? " / " + (profitTon >= 0 ? "+" : "") + Number(profitTon).toFixed(3) + " TON" : "";
+      g("dca-profit").textContent = pStr + tStr;
+      g("dca-profit").style.color = profit > 0 ? "#00ff88" : profit < 0 ? "#ff453a" : "#ffd700";
+    } else {
+      g("dca-profit").textContent = "—";
+      g("dca-profit").style.color = "";
+    }
+  }
   if (g("dca-target-label")) g("dca-target-label").textContent = "+" + target + "%";
 
   // Прогресс-бар
@@ -359,6 +370,34 @@ function renderDcaState(st, active) {
       g("dca-compound-bonus").textContent = "0 TON (накопится после профита)";
       g("dca-compound-bonus").style.color = "#8892b0";
     }
+  }
+}
+
+// Обновляет подсказки под compound и adaptive полями в реальном времени
+function updateDcaHints() {
+  const g = id => document.getElementById(id);
+  // ── Compound hint ─────────────────────────────────────────────────────────
+  const stakeEl = g("cfg-dca-stake");
+  const ratioEl = g("cfg-dca-compound-ratio");
+  const dropEl  = g("cfg-dca-drop");
+  const hintC   = g("dca-compound-hint");
+  if (hintC && stakeEl && ratioEl) {
+    const stake = parseFloat(stakeEl.value) || 20;
+    const ratio = parseFloat(ratioEl.value) || 0.30;
+    const pct   = Math.round(ratio * 100);
+    const bonus = (stake * ratio).toFixed(1);
+    hintC.textContent = `Прибыль ${stake} TON → +${pct}% = +${bonus} TON к следующей ставке`;
+  }
+  // ── Adaptive trigger hint ─────────────────────────────────────────────────
+  const fastMoveEl = g("cfg-dca-fast-move");
+  const fastDropEl = g("cfg-dca-fast-drop");
+  const normalDrop = dropEl ? parseFloat(dropEl.value) || 12 : 12;
+  const hintA      = g("dca-adaptive-hint");
+  if (hintA && fastMoveEl && fastDropEl) {
+    const fm = parseFloat(fastMoveEl.value) || 5;
+    const fd = parseFloat(fastDropEl.value) || 6;
+    hintA.textContent =
+      `Если рынок вырос >${fm}% за 75 сек → докупать уже при -${fd}% (не -${normalDrop}%)`;
   }
 }
 
@@ -1247,6 +1286,12 @@ function onDcaModeChange() {
 document.addEventListener("DOMContentLoaded", () => {
   const cb = document.getElementById("cfg-dca-mode");
   if (cb) cb.addEventListener("change", onDcaModeChange);
+
+  // Live-обновление подсказок при изменении полей DCA
+  ["cfg-dca-stake","cfg-dca-compound-ratio","cfg-dca-fast-move","cfg-dca-fast-drop","cfg-dca-drop"].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.addEventListener("input", updateDcaHints);
+  });
 });
 
 async function saveDcaConfig() {
@@ -1475,6 +1520,8 @@ async function loadConfig() {
   if (g("cfg-dca-adaptive"))       g("cfg-dca-adaptive").checked       = cfg.dca_adaptive_trigger_enabled ?? true;
   if (g("cfg-dca-fast-move"))      g("cfg-dca-fast-move").value        = cfg.dca_adaptive_fast_move_pct   ?? 5;
   if (g("cfg-dca-fast-drop"))      g("cfg-dca-fast-drop").value        = cfg.dca_adaptive_fast_drop_pct   ?? 6;
+  // Обновляем подсказки после загрузки конфига
+  updateDcaHints();
 
   // Детектор крупных продаж
   if (g("cfg-lsd-enabled"))  g("cfg-lsd-enabled").checked   = cfg.large_sell_dca_enabled  ?? true;
