@@ -1,8 +1,7 @@
 /* ═══════════════════════════════════════════════════════════════════
    GRINCH-GRAM  —  Quantum Trading Terminal  —  Premium Dark UI
    ═══════════════════════════════════════════════════════════════════ */
-
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600;700;800&display=swap');
+/* Google Fonts loaded via <link> in HTML head (preconnect + display=swap) */
 
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -19,6 +18,10 @@
   --text:     #e8eef8;
   --text2:    #6a7d9f;
   --text3:    #3d4f6a;
+  --text-mid: #8892b0;   /* между text2 и text; #8892b0 */
+  --text-dim: #ccd6f6;   /* светлее text; #ccd6f6 — для описаний/результатов AI */
+  --text-muted: #4a5568; /* темнее text3; #4a5568 — для вторичных меток */
+  --teal:     #64ffda;   /* тил/аква; #64ffda — organism energy, brain signals */
 
   --cyan:     #00e5ff;
   --cyan2:    #00b8d4;
@@ -637,7 +640,6 @@ body::after {
 /* ════════════════════════════════════════════════════════════
    COIN CARD
 ════════════════════════════════════════════════════════════ */
-.coin-card { }
 .coin-source { margin-left: auto; font-size: 9px; color: var(--text3); font-weight: 500; text-transform: uppercase; letter-spacing: .04em; }
 .coin-link { font-size: 11px; color: var(--cyan); opacity: .6; transition: opacity .2s; }
 .coin-link:hover { opacity: 1; }
@@ -653,7 +655,6 @@ body::after {
 /* ════════════════════════════════════════════════════════════
    EXCHANGE CARD
 ════════════════════════════════════════════════════════════ */
-.exch-card { }
 .exch-ai { margin-bottom: 10px; padding: 10px; background: rgba(255,255,255,.03); border-radius: var(--r2); border: 1px solid rgba(255,255,255,.07); }
 .exch-ai-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px; }
 .exch-ai-signal { font-size: 13px; font-weight: 800; font-family: var(--mono); }
@@ -684,7 +685,6 @@ body::after {
 /* ════════════════════════════════════════════════════════════
    КОШЕЛЬКИ / УМНЫЕ ДЕНЬГИ
 ════════════════════════════════════════════════════════════ */
-.wallets-card { }
 .sm-signal { margin-bottom: 10px; }
 .sm-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 5px; }
 .sm-label { font-size: 10px; color: var(--text3); text-transform: uppercase; letter-spacing: .05em; font-weight: 600; }
@@ -862,7 +862,6 @@ body::after {
 /* ════════════════════════════════════════════════════════════
    MARKET OVERVIEW
 ════════════════════════════════════════════════════════════ */
-#market-overview-card { }
 .mo-regime-badge { margin-left: auto; font-size: 9px; font-weight: 800; padding: 2px 10px; border-radius: 100px; text-transform: uppercase; letter-spacing: .06em; }
 
 .mo-top-row { display: flex; gap: 8px; margin-bottom: 12px; }
@@ -1330,28 +1329,13 @@ body::after {
 .score-weak    { color: var(--orange); font-weight: 700; }
 .score-bad     { color: var(--red);    font-weight: 800; }
 
-/* ── Waiting sell label ── */
-.ot-wait { font-size: 10px; font-weight: 600; }
-
 /* ── Кнопка TonConnect в шапке ── */
 .hdr-tc-btn { display: inline-flex; align-items: center; }
 .hdr-tc-btn > * { vertical-align: middle; }
 
-/* ── График свечей ── */
-.grinch-chart { width: 100%; height: 320px; position: relative; }
-
 /* ── Инлайн-стили price-change без класса pos/neg ── */
 .price-change[style*="color:#00"] { background: rgba(0,255,136,.08); border: 1px solid rgba(0,255,136,.15); }
 .price-change[style*="color:#ff"] { background: rgba(255,45,85,.08);  border: 1px solid rgba(255,45,85,.15); }
-
-/* ── Обёртки данных ── */
-.pos b { color: var(--green) !important; }
-.neg b { color: var(--red)   !important; }
-
-/* AI шкала обучения inline */
-#training-banner { position: relative; z-index: 90; overflow: hidden;
-  background: linear-gradient(135deg, rgba(0,229,255,.04), rgba(124,58,237,.04));
-  border-bottom: 1px solid rgba(0,229,255,.15); backdrop-filter: blur(20px); }
 
 /* ═══════════════════════════════════════════════════════════════
    QuantumBrain v4 — Kelly + 6-Model Grid
@@ -1400,14 +1384,14 @@ body::after {
 }
 .kelly-stat-val {
   font-size: 15px; font-weight: 800;
-  font-family: var(--mono); color: #00ff88;
+  font-family: var(--mono); color: var(--green);
 }
 .kelly-stat-lbl {
   font-size: 9px; color: var(--text3); margin-top: 2px;
   letter-spacing: .5px;
 }
 .kelly-desc {
-  margin-top: 10px; font-size: 10px; color: #8892b0;
+  margin-top: 10px; font-size: 10px; color: var(--text-mid);
   font-family: var(--mono); text-align: center; letter-spacing: .3px;
 }
 
@@ -1433,12 +1417,12 @@ body::after {
 .qb-model-icon { font-size: 20px; flex-shrink: 0; }
 .qb-model-body { flex: 1; min-width: 0; }
 .qb-model-name {
-  font-size: 11px; font-weight: 700; color: var(--text1);
+  font-size: 11px; font-weight: 700; color: var(--text);
   font-family: var(--mono); margin-bottom: 4px;
 }
 .qb-model-desc {
   font-size: 9px; color: var(--text3); font-weight: 400;
-  font-family: var(--sans); margin-left: 4px;
+  font-family: var(--font); margin-left: 4px;
 }
 .qb-model-bar-wrap {
   width: 100%; height: 4px; background: rgba(255,255,255,.07);
@@ -1458,90 +1442,7 @@ body::after {
   .qb-models-grid   { grid-template-columns: 1fr; }
 }
 
-/* ════════════════════════════════════════════════════════════
-   PORTFOLIO TOTAL + ROI TRACKER
-════════════════════════════════════════════════════════════ */
-.portfolio-total-wrap {
-  display: flex; align-items: center; justify-content: space-between;
-  background: linear-gradient(135deg, rgba(0,229,255,.05) 0%, rgba(124,58,237,.07) 100%);
-  border: 1px solid rgba(0,229,255,.12);
-  border-radius: var(--r); padding: 14px 16px; margin-bottom: 12px;
-}
-.portfolio-total-left { flex: 1; }
-.pt-label {
-  font-size: 9px; font-weight: 800; letter-spacing: 2px;
-  color: var(--text3); text-transform: uppercase; margin-bottom: 4px;
-}
-.pt-value {
-  font-size: 22px; font-weight: 900; color: var(--text);
-  font-family: var(--mono); line-height: 1;
-}
-.pt-change {
-  font-size: 12px; font-weight: 700; font-family: var(--mono);
-  margin-top: 4px; transition: color .4s;
-}
-.pt-change.pos { color: var(--green); }
-.pt-change.neg { color: var(--red); }
-.pt-change.neu { color: var(--text2); }
-
-.portfolio-roi-ring {
-  display: flex; flex-direction: column; align-items: center; gap: 4px;
-}
-.roi-ring-svg { width: 72px; height: 72px; }
-.roi-ring-label {
-  font-size: 9px; color: var(--text3); text-align: center;
-  font-weight: 600; line-height: 1.3; letter-spacing: .5px;
-  text-transform: uppercase;
-}
-
-/* ROI Goal progress bar */
-.roi-goal-wrap {
-  background: rgba(255,255,255,.03);
-  border: 1px solid rgba(255,255,255,.06);
-  border-radius: var(--r2); padding: 10px 13px; margin-bottom: 12px;
-}
-.roi-goal-header {
-  display: flex; align-items: center; justify-content: space-between;
-  margin-bottom: 8px;
-}
-.roi-goal-lbl { font-size: 11px; color: var(--text2); font-weight: 500; }
-.roi-goal-val {
-  font-size: 13px; font-weight: 800; color: var(--green);
-  font-family: var(--mono);
-}
-.roi-goal-track {
-  position: relative; height: 7px;
-  background: rgba(255,255,255,.07); border-radius: 100px; overflow: visible;
-  margin-bottom: 6px;
-}
-.roi-goal-fill {
-  height: 100%; border-radius: 100px; max-width: 100%;
-  background: linear-gradient(90deg, #0098ea, #00ff88);
-  transition: width 1s cubic-bezier(.4,0,.2,1);
-  position: relative;
-}
-.roi-goal-fill::after {
-  content: '';
-  position: absolute; top: 0; right: 0; bottom: 0; width: 40px;
-  background: linear-gradient(90deg, transparent, rgba(255,255,255,.4));
-  animation: roi-shine 1.5s linear infinite;
-}
-@keyframes roi-shine { from{opacity:0} 50%{opacity:1} to{opacity:0} }
-
-.roi-goal-marker {
-  position: absolute; top: -3px; transform: translateX(-50%); z-index: 2;
-}
-.roi-goal-flag {
-  font-size: 9px; color: var(--green); font-weight: 700;
-  white-space: nowrap; background: rgba(0,255,136,.1);
-  border: 1px solid rgba(0,255,136,.3); border-radius: 4px;
-  padding: 2px 5px; transform: translateY(-18px);
-}
-.roi-goal-sub {
-  font-size: 10px; color: var(--text3); font-family: var(--mono);
-}
-
-/* ════ Fix undefined CSS vars ════ */
+/* ════ Fix undefined CSS vars (overrides corrected above but kept for specificity) ════ */
 .qb-model-name { font-family: var(--mono) !important; }
 .qb-model-desc { font-family: var(--font) !important; color: var(--text3) !important; }
 .qb-model-stats .qm-stat-val { color: var(--text) !important; }
@@ -1903,30 +1804,52 @@ body::after {
 .aac-desc { font-size:11px;color:var(--text2);line-height:1.6; }
 .aac-indicator { display:flex;flex-direction:column;align-items:center;gap:4px;flex-shrink:0; }
 
-/* ROI + portfolio (from previous sessions, kept) */
+/* ════════════════════════════════════════════════════════════
+   PORTFOLIO TOTAL + ROI TRACKER
+════════════════════════════════════════════════════════════ */
 .portfolio-total-wrap {
-  display:flex;align-items:center;justify-content:space-between;
-  background:linear-gradient(135deg,rgba(0,209,143,.06),rgba(0,152,234,.06));
-  border:1px solid rgba(0,209,143,.15);border-radius:12px;padding:14px 18px;flex-shrink:0;
+  display: flex; align-items: center; justify-content: space-between;
+  background: linear-gradient(135deg, rgba(0,209,143,.06), rgba(0,152,234,.06));
+  border: 1px solid rgba(0,209,143,.15); border-radius: 12px;
+  padding: 14px 18px; flex-shrink: 0;
 }
-.portfolio-total-left { display:flex;flex-direction:column;gap:4px; }
-.pt-label { font-size:9px;color:var(--text3);text-transform:uppercase;letter-spacing:.1em; }
-.pt-value { font-size:24px;font-weight:900;color:var(--cyan);font-family:var(--mono);text-shadow:0 0 20px rgba(0,229,255,.3); }
-.pt-change { font-size:12px;font-weight:700; }
-.pt-change.pos { color:var(--green); }
-.pt-change.neg { color:var(--red); }
-.portfolio-roi-ring { display:flex;align-items:center;gap:10px; }
-.roi-ring-svg { width:72px;height:72px; }
-.roi-ring-label { font-size:10px;color:var(--text3);text-align:center;line-height:1.4; }
-.roi-goal-wrap { background:rgba(255,255,255,.02);border:1px solid rgba(255,255,255,.05);border-radius:10px;padding:12px 14px;flex-shrink:0; }
-.roi-goal-header { display:flex;align-items:center;justify-content:space-between;margin-bottom:8px; }
-.roi-goal-lbl { font-size:11px;color:var(--text2);font-weight:600; }
-.roi-goal-val { font-size:15px;font-weight:900;color:var(--green);font-family:var(--mono); }
-.roi-goal-track { position:relative;height:8px;background:rgba(255,255,255,.06);border-radius:100px;overflow:visible;margin-bottom:6px; }
-.roi-goal-fill { height:100%;border-radius:100px;background:linear-gradient(90deg,#0098ea,#00ff88);transition:width .9s ease;box-shadow:0 0 10px rgba(0,255,136,.3); }
-.roi-goal-marker { position:absolute;top:-4px;transform:translateX(-50%); }
-.roi-goal-flag { font-size:9px;color:var(--text3);white-space:nowrap;margin-top:2px; }
-.roi-goal-sub { font-size:10px;color:var(--text3); }
+.portfolio-total-left { display: flex; flex-direction: column; gap: 4px; }
+.pt-label { font-size: 9px; color: var(--text3); text-transform: uppercase; letter-spacing: .1em; font-weight: 800; }
+.pt-value { font-size: 24px; font-weight: 900; color: var(--cyan); font-family: var(--mono); text-shadow: 0 0 20px rgba(0,229,255,.3); }
+.pt-change { font-size: 12px; font-weight: 700; font-family: var(--mono); margin-top: 4px; transition: color .4s; }
+.pt-change.pos { color: var(--green); }
+.pt-change.neg { color: var(--red); }
+.pt-change.neu { color: var(--text2); }
+.portfolio-roi-ring { display: flex; align-items: center; gap: 10px; }
+.roi-ring-svg { width: 72px; height: 72px; }
+.roi-ring-label { font-size: 10px; color: var(--text3); text-align: center; line-height: 1.4; font-weight: 600; letter-spacing: .5px; text-transform: uppercase; }
+
+/* ROI Goal progress bar */
+.roi-goal-wrap { background: rgba(255,255,255,.02); border: 1px solid rgba(255,255,255,.05); border-radius: 10px; padding: 12px 14px; flex-shrink: 0; }
+.roi-goal-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
+.roi-goal-lbl { font-size: 11px; color: var(--text2); font-weight: 600; }
+.roi-goal-val { font-size: 15px; font-weight: 900; color: var(--green); font-family: var(--mono); }
+.roi-goal-track { position: relative; height: 8px; background: rgba(255,255,255,.06); border-radius: 100px; overflow: visible; margin-bottom: 6px; }
+.roi-goal-fill {
+  height: 100%; border-radius: 100px; max-width: 100%; position: relative;
+  background: linear-gradient(90deg, var(--ton), var(--green));
+  transition: width .9s ease; box-shadow: 0 0 10px rgba(0,255,136,.3);
+}
+.roi-goal-fill::after {
+  content: '';
+  position: absolute; top: 0; right: 0; bottom: 0; width: 40px;
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,.4));
+  animation: roi-shine 1.5s linear infinite;
+}
+@keyframes roi-shine { from{opacity:0} 50%{opacity:1} to{opacity:0} }
+.roi-goal-marker { position: absolute; top: -4px; transform: translateX(-50%); z-index: 2; }
+.roi-goal-flag {
+  font-size: 9px; color: var(--green); font-weight: 700;
+  white-space: nowrap; background: rgba(0,255,136,.1);
+  border: 1px solid rgba(0,255,136,.3); border-radius: 4px;
+  padding: 2px 5px; transform: translateY(-18px);
+}
+.roi-goal-sub { font-size: 10px; color: var(--text3); font-family: var(--mono); }
 
 /* Compact card inside tabs */
 .card-c .settings-form { padding:12px; }
@@ -1958,19 +1881,19 @@ body::after {
   font-size: 10px;
   font-weight: 800;
   letter-spacing: .08em;
-  color: #00ff88;
+  color: var(--green);
   text-transform: uppercase;
 }
 .bm-rights-dot {
   width: 7px; height: 7px;
   border-radius: 50%;
-  background: #00ff88;
-  box-shadow: 0 0 8px #00ff88;
+  background: var(--green);
+  box-shadow: 0 0 8px var(--green);
   animation: pulse-green 1.4s ease-in-out infinite;
 }
 @keyframes pulse-green {
-  0%,100% { opacity:1; box-shadow: 0 0 6px #00ff88; }
-  50%      { opacity:.6; box-shadow: 0 0 14px #00ff88; }
+  0%,100% { opacity:1; box-shadow: 0 0 6px var(--green); }
+  50%      { opacity:.6; box-shadow: 0 0 14px var(--green); }
 }
 .bm-momentum-block { display:flex;flex-direction:column;gap:3px; }
 .bm-momentum-label { font-size:9px;color:var(--text3);text-transform:uppercase;letter-spacing:.1em; }
@@ -1992,7 +1915,7 @@ body::after {
 .bm-momentum-meta { display:flex;align-items:center;justify-content:space-between;margin-top:2px; }
 .bm-momentum-sig {
   font-size:10px;font-weight:700;letter-spacing:.06em;
-  color: #00ff88;
+  color: var(--green);
 }
 .bm-momentum-sig.surge { color:#ffdd00; }
 .bm-momentum-sig.explosive { color:#ff9900; animation: glow-text 1s ease-in-out infinite alternate; }
@@ -2006,8 +1929,8 @@ body::after {
 .bm-ms-item { display:flex;flex-direction:column;align-items:center;gap:1px; }
 .bm-ms-lbl { font-size:8px;color:var(--text3);text-transform:uppercase;letter-spacing:.06em; }
 .bm-ms-val { font-size:10px;font-weight:700;color:white;font-family:var(--mono); }
-.bm-boost-val { color:#00ff88; }
-.bm-boost-val.active { color:#ffdd00; text-shadow:0 0 8px #ffdd00; }
+.bm-boost-val { color: var(--green); }
+.bm-boost-val.active { color: var(--yellow); text-shadow: 0 0 8px var(--yellow); }
 
 /* ── Breakout Engine (GRINCH Pump Predictor) ──────────────────────────────── */
 .brain-breakout-row {
@@ -2032,7 +1955,7 @@ body::after {
 .bbr-title { font-size:9px;text-transform:uppercase;letter-spacing:.1em;color:var(--text3);font-weight:700; }
 .bo-signal {
   font-size:13px;font-weight:900;letter-spacing:.05em;
-  color:#0098ea;
+  color: var(--ton);
   transition: color .3s;
 }
 .bo-signal.primed   { color:#ff9900; }

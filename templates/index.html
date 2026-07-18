@@ -121,7 +121,7 @@
     <div class="at-sep">│</div>
     <div class="at-item at-pnl">💰 P&amp;L: <span id="at-pnl">+0.0000 TON</span></div>
     <div class="at-sep">│</div>
-    <div class="at-item" style="color:#a78bfa">🎲 Kelly: <span id="at-kelly-frac">—</span></div>
+    <div class="at-item" style="color:var(--purple2)">🎲 Kelly: <span id="at-kelly-frac">—</span></div>
     <div class="at-sep">│</div>
     <div class="at-clock" id="at-clock">00:00:00</div>
   </div>
@@ -433,7 +433,7 @@
         </div>
         <div class="mo-grid-c">
           <div class="moc"><span class="moc-n">RSI</span><span class="moc-v" id="mo-rsi-val">—</span><span class="moc-z" id="mo-rsi-zone">—</span><div class="mo-bar-track"><div class="mo-bar-fill" id="mo-rsi-bar"></div><div class="mo-bar-marker" id="mo-rsi-marker"></div></div></div>
-          <div class="moc"><span class="moc-n">ADX</span><span class="moc-v" id="mo-adx-val">—</span><span class="moc-z" id="mo-adx-zone">—</span><div class="mo-bar-track"><div class="mo-bar-fill" id="mo-adx-bar"></div></div><div style="display:flex;gap:6px;font-size:9px;margin-top:2px"><span style="color:#00ff88">▲<span id="mo-di-plus">—</span></span><span style="color:#ff4d6d">▼<span id="mo-di-minus">—</span></span></div></div>
+          <div class="moc"><span class="moc-n">ADX</span><span class="moc-v" id="mo-adx-val">—</span><span class="moc-z" id="mo-adx-zone">—</span><div class="mo-bar-track"><div class="mo-bar-fill" id="mo-adx-bar"></div></div><div style="display:flex;gap:6px;font-size:9px;margin-top:2px"><span style="color:var(--green)">▲<span id="mo-di-plus">—</span></span><span style="color:#ff4d6d">▼<span id="mo-di-minus">—</span></span></div></div>
           <div class="moc"><span class="moc-n">Объём</span><span class="moc-v" id="mo-vol-val">—</span><span class="moc-z" id="mo-vol-zone">—</span><div class="mo-bar-track"><div class="mo-bar-fill" id="mo-vol-bar"></div></div></div>
           <div class="moc"><span class="moc-n">MACD</span><span class="moc-v" id="mo-macd-val">—</span><span class="moc-z" id="mo-macd-zone">—</span><div class="mo-bar-track"><div class="mo-bar-fill" id="mo-macd-bar"></div></div></div>
           <div class="moc"><span class="moc-n">StochRSI</span><span class="moc-v" id="mo-stoch-val">—</span><span class="moc-z" id="mo-stoch-zone">—</span><div class="mo-bar-track"><div class="mo-bar-fill" id="mo-stoch-bar"></div></div></div>
@@ -484,7 +484,7 @@
           <div class="card-title ctit">📐 Уровни S/R</div>
           <div class="sr-grid">
             <div><div class="sr-label" style="color:#ff4d6d">🔴 Сопр.</div><div id="sr-res" class="sr-list"></div></div>
-            <div><div class="sr-label" style="color:#00ff88">🟢 Подд.</div><div id="sr-sup" class="sr-list"></div></div>
+            <div><div class="sr-label" style="color:var(--green)">🟢 Подд.</div><div id="sr-sup" class="sr-list"></div></div>
           </div>
         </div>
         <div class="card card-c">
@@ -599,17 +599,17 @@
           <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
             <span style="font-size:20px">◆</span>
             <div>
-              <div style="font-size:10px;color:#0098ea;font-weight:700;letter-spacing:.5px">TON</div>
-              <div style="font-size:9px;color:#6a7d9f">The Open Network</div>
+              <div style="font-size:10px;color:var(--ton);font-weight:700;letter-spacing:.5px">TON</div>
+              <div style="font-size:9px;color:var(--text2)">The Open Network</div>
             </div>
-            <button onclick="refreshWalletFull()" style="margin-left:auto;background:rgba(0,152,234,.15);border:1px solid rgba(0,152,234,.3);border-radius:6px;padding:3px 8px;color:#0098ea;font-size:10px;cursor:pointer">⟳</button>
+            <button onclick="refreshWalletFull()" style="margin-left:auto;background:rgba(0,152,234,.15);border:1px solid rgba(0,152,234,.3);border-radius:6px;padding:3px 8px;color:var(--ton);font-size:10px;cursor:pointer">⟳</button>
           </div>
-          <div id="wf-ton-bal" style="font-size:26px;font-weight:900;font-family:monospace;color:#e8eef8">—</div>
-          <div id="wf-ton-usd" style="font-size:11px;color:#6a7d9f;margin-top:2px">≈ $—</div>
+          <div id="wf-ton-bal" style="font-size:26px;font-weight:900;font-family:var(--mono);color:var(--text)">—</div>
+          <div id="wf-ton-usd" style="font-size:11px;color:var(--text2);margin-top:2px">≈ $—</div>
           <div style="margin-top:8px;padding-top:8px;border-top:1px solid rgba(0,152,234,.1)">
             <div style="display:flex;justify-content:space-between;font-size:10px">
-              <span style="color:#6a7d9f">Цена TON</span>
-              <span id="wf-ton-price" style="color:#0098ea;font-weight:700">—</span>
+              <span style="color:var(--text2)">Цена TON</span>
+              <span id="wf-ton-price" style="color:var(--ton);font-weight:700">—</span>
             </div>
           </div>
         </div>
@@ -619,16 +619,16 @@
           <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
             <span style="font-size:20px">🐸</span>
             <div>
-              <div style="font-size:10px;color:#00ff88;font-weight:700;letter-spacing:.5px">GRINCH</div>
-              <div style="font-size:9px;color:#6a7d9f">TON Jetton</div>
+              <div style="font-size:10px;color:var(--green);font-weight:700;letter-spacing:.5px">GRINCH</div>
+              <div style="font-size:9px;color:var(--text2)">TON Jetton</div>
             </div>
           </div>
-          <div id="wf-grn-bal" style="font-size:22px;font-weight:900;font-family:monospace;color:#e8eef8">—</div>
-          <div id="wf-grn-usd" style="font-size:11px;color:#6a7d9f;margin-top:2px">≈ $— · ≈ — TON</div>
+          <div id="wf-grn-bal" style="font-size:22px;font-weight:900;font-family:var(--mono);color:var(--text)">—</div>
+          <div id="wf-grn-usd" style="font-size:11px;color:var(--text2);margin-top:2px">≈ $— · ≈ — TON</div>
           <div style="margin-top:8px;padding-top:8px;border-top:1px solid rgba(0,255,136,.1)">
             <div style="display:flex;justify-content:space-between;font-size:10px">
-              <span style="color:#6a7d9f">Цена GRINCH</span>
-              <span id="wf-grn-price" style="color:#00ff88;font-weight:700">—</span>
+              <span style="color:var(--text2)">Цена GRINCH</span>
+              <span id="wf-grn-price" style="color:var(--green);font-weight:700">—</span>
             </div>
           </div>
         </div>
@@ -669,95 +669,95 @@
       <div class="card card-c" id="grinch-position-card">
         <div class="card-title ctit">
           🐸 GRINCH Позиция — Полный анализ
-          <span id="wf-position-badge" style="display:none;font-size:10px;font-weight:700;padding:2px 8px;border-radius:8px;background:rgba(0,255,136,.15);color:#00ff88;border:1px solid rgba(0,255,136,.3)">В ПОЗИЦИИ</span>
-          <span id="wf-no-position-badge" style="font-size:10px;color:#6a7d9f">нет позиции</span>
+          <span id="wf-position-badge" style="display:none;font-size:10px;font-weight:700;padding:2px 8px;border-radius:8px;background:rgba(0,255,136,.15);color:var(--green);border:1px solid rgba(0,255,136,.3)">В ПОЗИЦИИ</span>
+          <span id="wf-no-position-badge" style="font-size:10px;color:var(--text2)">нет позиции</span>
         </div>
 
         <!-- Количество GRINCH + цена покупки -->
         <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:10px">
           <div style="background:rgba(0,255,136,.06);border:1px solid rgba(0,255,136,.12);border-radius:8px;padding:8px;text-align:center">
-            <div style="font-size:9px;color:#6a7d9f;margin-bottom:3px">GRINCH на кошельке</div>
-            <div id="wf-pos-grinch" style="font-size:16px;font-weight:900;font-family:monospace;color:#00ff88">—</div>
+            <div style="font-size:9px;color:var(--text2);margin-bottom:3px">GRINCH на кошельке</div>
+            <div id="wf-pos-grinch" style="font-size:16px;font-weight:900;font-family:var(--mono);color:var(--green)">—</div>
           </div>
           <div style="background:rgba(0,152,234,.06);border:1px solid rgba(0,152,234,.12);border-radius:8px;padding:8px;text-align:center">
-            <div style="font-size:9px;color:#6a7d9f;margin-bottom:3px">Куплено по цене</div>
-            <div id="wf-entry-ton" style="font-size:13px;font-weight:800;font-family:monospace;color:#0098ea">—</div>
-            <div id="wf-entry-usd" style="font-size:10px;color:#6a7d9f;margin-top:1px">—</div>
+            <div style="font-size:9px;color:var(--text2);margin-bottom:3px">Куплено по цене</div>
+            <div id="wf-entry-ton" style="font-size:13px;font-weight:800;font-family:var(--mono);color:var(--ton)">—</div>
+            <div id="wf-entry-usd" style="font-size:10px;color:var(--text2);margin-top:1px">—</div>
           </div>
           <div id="wf-pnl-card" style="background:rgba(255,255,136,.06);border:1px solid rgba(255,255,136,.12);border-radius:8px;padding:8px;text-align:center">
-            <div style="font-size:9px;color:#6a7d9f;margin-bottom:3px">P&amp;L (с комиссией)</div>
-            <div id="wf-pnl-ton" style="font-size:16px;font-weight:900;font-family:monospace;color:#6a7d9f">—</div>
-            <div id="wf-pnl-pct" style="font-size:11px;color:#6a7d9f">—</div>
+            <div style="font-size:9px;color:var(--text2);margin-bottom:3px">P&amp;L (с комиссией)</div>
+            <div id="wf-pnl-ton" style="font-size:16px;font-weight:900;font-family:var(--mono);color:var(--text2)">—</div>
+            <div id="wf-pnl-pct" style="font-size:11px;color:var(--text2)">—</div>
           </div>
         </div>
 
         <!-- Текущая цена vs цена входа -->
         <div style="background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.06);border-radius:8px;padding:10px;margin-bottom:10px">
-          <div style="font-size:10px;font-weight:700;color:#8892b0;margin-bottom:6px;letter-spacing:.5px">ЦЕНА GRINCH</div>
+          <div style="font-size:10px;font-weight:700;color:var(--text-mid);margin-bottom:6px;letter-spacing:.5px">ЦЕНА GRINCH</div>
           <div style="display:grid;grid-template-columns:1fr auto 1fr;gap:8px;align-items:center">
             <div>
-              <div style="font-size:9px;color:#6a7d9f">Куплено по</div>
-              <div id="wf-entry-price-display" style="font-size:14px;font-weight:800;font-family:monospace;color:#0098ea">— TON</div>
+              <div style="font-size:9px;color:var(--text2)">Куплено по</div>
+              <div id="wf-entry-price-display" style="font-size:14px;font-weight:800;font-family:var(--mono);color:var(--ton)">— TON</div>
             </div>
-            <div style="text-align:center;color:#3d4f6a">→</div>
+            <div style="text-align:center;color:var(--text3)">→</div>
             <div>
-              <div style="font-size:9px;color:#6a7d9f">Текущая цена</div>
-              <div id="wf-cur-price-display" style="font-size:14px;font-weight:800;font-family:monospace;color:#00ff88">— TON</div>
+              <div style="font-size:9px;color:var(--text2)">Текущая цена</div>
+              <div id="wf-cur-price-display" style="font-size:14px;font-weight:800;font-family:var(--mono);color:var(--green)">— TON</div>
             </div>
           </div>
           <!-- Движение цены прогресс-бар -->
           <div style="margin-top:8px;background:rgba(255,255,255,.06);border-radius:4px;height:4px;overflow:hidden">
             <div id="wf-price-move-bar" style="height:100%;width:50%;background:linear-gradient(90deg,#0098ea,#00ff88);border-radius:4px;transition:width .8s"></div>
           </div>
-          <div style="display:flex;justify-content:space-between;font-size:9px;color:#3d4f6a;margin-top:2px">
-            <span>цена входа</span><span id="wf-price-move-pct" style="color:#8892b0">0%</span><span>текущая</span>
+          <div style="display:flex;justify-content:space-between;font-size:9px;color:var(--text3);margin-top:2px">
+            <span>цена входа</span><span id="wf-price-move-pct" style="color:var(--text-mid)">0%</span><span>текущая</span>
           </div>
         </div>
 
         <!-- Потенциал при разных целях -->
         <div id="wf-potential-block" style="display:none">
-          <div style="font-size:10px;font-weight:700;color:#ffd166;margin-bottom:6px;letter-spacing:.5px">🎯 ПОТЕНЦИАЛ ПРИБЫЛИ (расчёт с учётом комиссий)</div>
+          <div style="font-size:10px;font-weight:700;color:var(--yellow);margin-bottom:6px;letter-spacing:.5px">🎯 ПОТЕНЦИАЛ ПРИБЫЛИ (расчёт с учётом комиссий)</div>
           <div id="wf-potential-grid" style="display:grid;grid-template-columns:repeat(5,1fr);gap:4px"></div>
         </div>
 
         <!-- Точка безубытка -->
         <div id="wf-breakeven-row" style="display:none;margin-top:10px;padding:8px 10px;background:rgba(255,107,107,.07);border:1px solid rgba(255,107,107,.2);border-radius:8px">
-          <div style="font-size:9px;color:#6a7d9f;margin-bottom:2px">🔴 Точка безубытка (с газом)</div>
-          <div id="wf-breakeven-val" style="font-size:13px;font-weight:800;font-family:monospace;color:#ff6b6b">—</div>
+          <div style="font-size:9px;color:var(--text2);margin-bottom:2px">🔴 Точка безубытка (с газом)</div>
+          <div id="wf-breakeven-val" style="font-size:13px;font-weight:800;font-family:var(--mono);color:var(--red)">—</div>
         </div>
 
         <!-- ══ AMM LIVE PREVIEW ══ -->
         <div id="amm-preview-card" style="margin-top:12px;border-radius:10px;overflow:hidden;border:1px solid rgba(255,255,255,.08);background:rgba(10,18,30,.6)">
           <!-- Заголовок -->
           <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 12px;background:rgba(255,255,255,.04);border-bottom:1px solid rgba(255,255,255,.06)">
-            <span style="font-size:11px;font-weight:700;color:#8892b0;letter-spacing:.5px">🔄 AMM РЕАЛЬНЫЙ ВЫХОД (CPMM)</span>
-            <span id="amm-age" style="font-size:9px;color:#3d4f6a">обновление…</span>
+            <span style="font-size:11px;font-weight:700;color:var(--text-mid);letter-spacing:.5px">🔄 AMM РЕАЛЬНЫЙ ВЫХОД (CPMM)</span>
+            <span id="amm-age" style="font-size:9px;color:var(--text3)">обновление…</span>
           </div>
 
           <!-- Основная строка: ожидается / нужно / дефицит -->
           <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:1px;background:rgba(255,255,255,.04)">
             <div style="background:rgba(10,18,30,.9);padding:10px 8px;text-align:center">
-              <div style="font-size:9px;color:#6a7d9f;margin-bottom:4px">📤 Пул вернёт (нетто)</div>
-              <div id="amm-net-ton" style="font-size:17px;font-weight:900;font-family:monospace;color:#8892b0">—</div>
-              <div id="amm-impact" style="font-size:9px;color:#6a7d9f;margin-top:2px">impact —</div>
+              <div style="font-size:9px;color:var(--text2);margin-bottom:4px">📤 Пул вернёт (нетто)</div>
+              <div id="amm-net-ton" style="font-size:17px;font-weight:900;font-family:var(--mono);color:var(--text-mid)">—</div>
+              <div id="amm-impact" style="font-size:9px;color:var(--text2);margin-top:2px">impact —</div>
             </div>
             <div style="background:rgba(10,18,30,.9);padding:10px 8px;text-align:center">
-              <div style="font-size:9px;color:#6a7d9f;margin-bottom:4px">🎯 Нужно для безубытка</div>
-              <div id="amm-min-ton" style="font-size:17px;font-weight:900;font-family:monospace;color:#ffd166">—</div>
-              <div style="font-size:9px;color:#6a7d9f;margin-top:2px" id="amm-entries-lbl">— позиций</div>
+              <div style="font-size:9px;color:var(--text2);margin-bottom:4px">🎯 Нужно для безубытка</div>
+              <div id="amm-min-ton" style="font-size:17px;font-weight:900;font-family:var(--mono);color:var(--yellow)">—</div>
+              <div style="font-size:9px;color:var(--text2);margin-top:2px" id="amm-entries-lbl">— позиций</div>
             </div>
             <div style="background:rgba(10,18,30,.9);padding:10px 8px;text-align:center">
-              <div style="font-size:9px;color:#6a7d9f;margin-bottom:4px" id="amm-delta-lbl">⚖️ Баланс</div>
-              <div id="amm-shortfall" style="font-size:17px;font-weight:900;font-family:monospace;color:#8892b0">—</div>
+              <div style="font-size:9px;color:var(--text2);margin-bottom:4px" id="amm-delta-lbl">⚖️ Баланс</div>
+              <div id="amm-shortfall" style="font-size:17px;font-weight:900;font-family:var(--mono);color:var(--text-mid)">—</div>
               <div id="amm-verdict" style="font-size:9px;margin-top:2px;font-weight:700">—</div>
             </div>
           </div>
 
           <!-- Прогресс-бар: net_ton / min_net_ton -->
           <div style="padding:8px 12px 4px">
-            <div style="display:flex;justify-content:space-between;font-size:9px;color:#3d4f6a;margin-bottom:3px">
+            <div style="display:flex;justify-content:space-between;font-size:9px;color:var(--text3);margin-bottom:3px">
               <span>0 TON</span>
-              <span id="amm-bar-label" style="color:#8892b0">—</span>
+              <span id="amm-bar-label" style="color:var(--text-mid)">—</span>
               <span id="amm-bar-target">— TON нужно</span>
             </div>
             <div style="background:rgba(255,255,255,.06);border-radius:4px;height:6px;overflow:hidden;position:relative">
@@ -769,9 +769,9 @@
 
           <!-- Резервы пула -->
           <div style="padding:4px 12px 8px;display:flex;justify-content:space-between;align-items:center">
-            <span style="font-size:9px;color:#3d4f6a">Резервы пула:</span>
-            <span id="amm-reserves" style="font-size:9px;font-family:monospace;color:#4a5568">—</span>
-            <span id="amm-grinch-lbl" style="font-size:9px;color:#3d4f6a">GRINCH в позиции: <b id="amm-grinch-amt" style="color:#8892b0">—</b></span>
+            <span style="font-size:9px;color:var(--text3)">Резервы пула:</span>
+            <span id="amm-reserves" style="font-size:9px;font-family:var(--mono);color:var(--text-muted)">—</span>
+            <span id="amm-grinch-lbl" style="font-size:9px;color:var(--text3)">GRINCH в позиции: <b id="amm-grinch-amt" style="color:var(--text-mid)">—</b></span>
           </div>
         </div>
       </div>
@@ -779,16 +779,16 @@
       <!-- ══ MARKET HUB — 6 внешних источников ══ -->
       <div id="hub-card" style="margin-top:10px;border-radius:10px;overflow:hidden;border:1px solid rgba(255,255,255,.07);background:rgba(10,18,30,.6)">
         <div style="padding:7px 12px;background:rgba(56,189,248,.05);display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid rgba(255,255,255,.05)">
-          <span style="font-size:11px;font-weight:700;color:#38bdf8;letter-spacing:.5px">🌐 РЫНОК — 6 ИСТОЧНИКОВ</span>
-          <span id="hub-updated" style="font-size:9px;color:#4a5568">обновление…</span>
+          <span style="font-size:11px;font-weight:700;color:var(--ton2);letter-spacing:.5px">🌐 РЫНОК — 6 ИСТОЧНИКОВ</span>
+          <span id="hub-updated" style="font-size:9px;color:var(--text-muted)">обновление…</span>
         </div>
         <div style="padding:9px 12px;display:grid;grid-template-columns:1fr 1fr;gap:7px">
           <!-- Fear & Greed -->
           <div style="background:rgba(255,255,255,.03);border-radius:8px;padding:8px">
-            <div style="font-size:9px;color:#6a7d9f;margin-bottom:3px">😨 FEAR &amp; GREED</div>
+            <div style="font-size:9px;color:var(--text2);margin-bottom:3px">😨 FEAR &amp; GREED</div>
             <div style="display:flex;align-items:baseline;gap:6px">
-              <span id="hub-fg-val" style="font-size:18px;font-weight:900;font-family:monospace;color:#ffd166">—</span>
-              <span id="hub-fg-lbl" style="font-size:10px;color:#6a7d9f">—</span>
+              <span id="hub-fg-val" style="font-size:18px;font-weight:900;font-family:var(--mono);color:var(--yellow)">—</span>
+              <span id="hub-fg-lbl" style="font-size:10px;color:var(--text2)">—</span>
             </div>
             <div style="height:4px;background:rgba(255,255,255,.07);border-radius:2px;margin-top:5px;overflow:hidden">
               <div id="hub-fg-bar" style="height:100%;width:50%;background:#8892b0;border-radius:2px;transition:width .8s,background .5s"></div>
@@ -796,33 +796,33 @@
           </div>
           <!-- BTC тренд -->
           <div style="background:rgba(255,255,255,.03);border-radius:8px;padding:8px">
-            <div style="font-size:9px;color:#6a7d9f;margin-bottom:3px">₿ BTC 24ч</div>
-            <div id="hub-btc" style="font-size:14px;font-weight:900;font-family:monospace;color:#f7931a">—</div>
-            <div style="font-size:10px;color:#4a5568;margin-top:3px" id="hub-btc-price">$—</div>
+            <div style="font-size:9px;color:var(--text2);margin-bottom:3px">₿ BTC 24ч</div>
+            <div id="hub-btc" style="font-size:14px;font-weight:900;font-family:var(--mono);color:#f7931a">—</div>
+            <div style="font-size:10px;color:var(--text-muted);margin-top:3px" id="hub-btc-price">$—</div>
           </div>
           <!-- TON CEX -->
           <div style="background:rgba(255,255,255,.03);border-radius:8px;padding:8px">
-            <div style="font-size:9px;color:#6a7d9f;margin-bottom:3px">💎 TON CEX (Binance)</div>
-            <div id="hub-ton-price" style="font-size:14px;font-weight:900;font-family:monospace;color:#38bdf8">—</div>
-            <div style="font-size:10px;color:#4a5568;margin-top:3px" id="hub-ton-vol">объём: —</div>
+            <div style="font-size:9px;color:var(--text2);margin-bottom:3px">💎 TON CEX (Binance)</div>
+            <div id="hub-ton-price" style="font-size:14px;font-weight:900;font-family:var(--mono);color:var(--ton2)">—</div>
+            <div style="font-size:10px;color:var(--text-muted);margin-top:3px" id="hub-ton-vol">объём: —</div>
           </div>
           <!-- Funding rate -->
           <div style="background:rgba(255,255,255,.03);border-radius:8px;padding:8px">
-            <div style="font-size:9px;color:#6a7d9f;margin-bottom:3px">📊 FUNDING (Bybit TON)</div>
-            <div id="hub-funding" style="font-size:14px;font-weight:900;font-family:monospace;color:#e2e8f0">—</div>
-            <div style="font-size:10px;color:#4a5568;margin-top:3px" id="hub-oi">OI: —</div>
+            <div style="font-size:9px;color:var(--text2);margin-bottom:3px">📊 FUNDING (Bybit TON)</div>
+            <div id="hub-funding" style="font-size:14px;font-weight:900;font-family:var(--mono);color:var(--text)">—</div>
+            <div style="font-size:10px;color:var(--text-muted);margin-top:3px" id="hub-oi">OI: —</div>
           </div>
           <!-- TVL TON -->
           <div style="background:rgba(255,255,255,.03);border-radius:8px;padding:8px">
-            <div style="font-size:9px;color:#6a7d9f;margin-bottom:3px">🏦 TVL TON (DeFiLlama)</div>
-            <div id="hub-tvl" style="font-size:14px;font-weight:900;font-family:monospace;color:#a78bfa">—</div>
-            <div style="font-size:10px;color:#4a5568;margin-top:3px" id="hub-stonfi">STON.fi: —</div>
+            <div style="font-size:9px;color:var(--text2);margin-bottom:3px">🏦 TVL TON (DeFiLlama)</div>
+            <div id="hub-tvl" style="font-size:14px;font-weight:900;font-family:var(--mono);color:var(--purple2)">—</div>
+            <div style="font-size:10px;color:var(--text-muted);margin-top:3px" id="hub-stonfi">STON.fi: —</div>
           </div>
           <!-- GRINCH trending -->
           <div style="background:rgba(255,255,255,.03);border-radius:8px;padding:8px">
-            <div style="font-size:9px;color:#6a7d9f;margin-bottom:3px">🐸 GRINCH ТРЕНДЫ</div>
-            <div id="hub-trend" style="font-size:14px;font-weight:900;color:#00ff88">—</div>
-            <div style="font-size:10px;color:#4a5568;margin-top:3px" id="hub-trend-vol">vol: —</div>
+            <div style="font-size:9px;color:var(--text2);margin-bottom:3px">🐸 GRINCH ТРЕНДЫ</div>
+            <div id="hub-trend" style="font-size:14px;font-weight:900;color:var(--green)">—</div>
+            <div style="font-size:10px;color:var(--text-muted);margin-top:3px" id="hub-trend-vol">vol: —</div>
           </div>
         </div>
         <!-- Статус источников -->
@@ -833,35 +833,35 @@
       <div id="organism-card" style="margin-top:10px;border-radius:10px;overflow:hidden;border:1px solid rgba(0,255,136,.15);background:rgba(10,18,30,.6)">
         <!-- Header -->
         <div style="padding:8px 12px;background:rgba(0,255,136,.06);display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid rgba(255,255,255,.06)">
-          <span style="font-size:11px;font-weight:700;color:#00ff88;letter-spacing:.5px">🧬 ЖИВОЙ ОРГАНИЗМ</span>
-          <span id="org-health-badge" style="font-size:10px;font-weight:700;padding:2px 8px;border-radius:10px;background:rgba(0,255,136,.15);color:#00ff88">❤️ хорошее</span>
+          <span style="font-size:11px;font-weight:700;color:var(--green);letter-spacing:.5px">🧬 ЖИВОЙ ОРГАНИЗМ</span>
+          <span id="org-health-badge" style="font-size:10px;font-weight:700;padding:2px 8px;border-radius:10px;background:rgba(0,255,136,.15);color:var(--green)">❤️ хорошее</span>
         </div>
         <!-- 4-cell grid: mood, hunger, energy, dreams -->
         <div style="padding:10px 12px;display:grid;grid-template-columns:1fr 1fr;gap:8px">
           <div style="background:rgba(255,255,255,.03);border-radius:8px;padding:8px">
-            <div style="font-size:9px;color:#6a7d9f;margin-bottom:4px">🧠 НАСТРОЕНИЕ</div>
-            <div id="org-emotion" style="font-size:12px;font-weight:700;color:#e2e8f0">—</div>
+            <div style="font-size:9px;color:var(--text2);margin-bottom:4px">🧠 НАСТРОЕНИЕ</div>
+            <div id="org-emotion" style="font-size:12px;font-weight:700;color:var(--text)">—</div>
             <div style="height:4px;background:rgba(255,255,255,.07);border-radius:2px;margin-top:5px;overflow:hidden">
               <div id="org-mood-bar" style="height:100%;width:50%;background:#8892b0;border-radius:2px;transition:width .8s,background .5s"></div>
             </div>
           </div>
           <div style="background:rgba(255,255,255,.03);border-radius:8px;padding:8px">
-            <div style="font-size:9px;color:#6a7d9f;margin-bottom:4px">🍽️ ГОЛОД</div>
-            <div id="org-hunger-val" style="font-size:12px;font-weight:700;font-family:monospace;color:#ffd166">—</div>
+            <div style="font-size:9px;color:var(--text2);margin-bottom:4px">🍽️ ГОЛОД</div>
+            <div id="org-hunger-val" style="font-size:12px;font-weight:700;font-family:var(--mono);color:var(--yellow)">—</div>
             <div style="height:4px;background:rgba(255,255,255,.07);border-radius:2px;margin-top:5px;overflow:hidden">
               <div id="org-hunger-bar" style="height:100%;width:0%;background:#ffd166;border-radius:2px;transition:width .8s"></div>
             </div>
           </div>
           <div style="background:rgba(255,255,255,.03);border-radius:8px;padding:8px">
-            <div style="font-size:9px;color:#6a7d9f;margin-bottom:4px">⚡ ЭНЕРГИЯ</div>
-            <div id="org-energy-val" style="font-size:12px;font-weight:700;font-family:monospace;color:#64ffda">—</div>
+            <div style="font-size:9px;color:var(--text2);margin-bottom:4px">⚡ ЭНЕРГИЯ</div>
+            <div id="org-energy-val" style="font-size:12px;font-weight:700;font-family:var(--mono);color:var(--teal)">—</div>
             <div style="height:4px;background:rgba(255,255,255,.07);border-radius:2px;margin-top:5px;overflow:hidden">
               <div id="org-energy-bar" style="height:100%;width:70%;background:#64ffda;border-radius:2px;transition:width .8s,background .5s"></div>
             </div>
           </div>
           <div style="background:rgba(255,255,255,.03);border-radius:8px;padding:8px">
-            <div style="font-size:9px;color:#6a7d9f;margin-bottom:4px">💤 СНЫ</div>
-            <div id="org-dream-val" style="font-size:12px;font-weight:700;font-family:monospace;color:#a78bfa">—</div>
+            <div style="font-size:9px;color:var(--text2);margin-bottom:4px">💤 СНЫ</div>
+            <div id="org-dream-val" style="font-size:12px;font-weight:700;font-family:var(--mono);color:var(--purple2)">—</div>
             <div style="height:4px;background:rgba(255,255,255,.07);border-radius:2px;margin-top:5px;overflow:hidden">
               <div id="org-dream-bar" style="height:100%;width:50%;background:#a78bfa;border-radius:2px;transition:width .8s"></div>
             </div>
@@ -870,16 +870,16 @@
         <!-- Row 2: instincts, evolution, modifiers -->
         <div style="padding:0 12px 10px;display:flex;gap:8px;flex-wrap:wrap">
           <div style="flex:1;min-width:70px;background:rgba(255,255,255,.03);border-radius:8px;padding:7px 9px">
-            <div style="font-size:9px;color:#6a7d9f;margin-bottom:3px">⚡ ИНСТИНКТ</div>
-            <div id="org-instinct" style="font-size:11px;font-weight:700;color:#00ff88">✅ норма</div>
+            <div style="font-size:9px;color:var(--text2);margin-bottom:3px">⚡ ИНСТИНКТ</div>
+            <div id="org-instinct" style="font-size:11px;font-weight:700;color:var(--green)">✅ норма</div>
           </div>
           <div style="flex:1;min-width:70px;background:rgba(255,255,255,.03);border-radius:8px;padding:7px 9px">
-            <div style="font-size:9px;color:#6a7d9f;margin-bottom:3px">🧬 ЭВОЛЮЦИЯ</div>
-            <div id="org-evo" style="font-size:11px;font-weight:700;font-family:monospace;color:#38bdf8">#0 | 50%</div>
+            <div style="font-size:9px;color:var(--text2);margin-bottom:3px">🧬 ЭВОЛЮЦИЯ</div>
+            <div id="org-evo" style="font-size:11px;font-weight:700;font-family:var(--mono);color:var(--ton2)">#0 | 50%</div>
           </div>
           <div style="flex:1;min-width:70px;background:rgba(255,255,255,.03);border-radius:8px;padding:7px 9px">
-            <div style="font-size:9px;color:#6a7d9f;margin-bottom:3px">🎚️ ПОПРАВКИ</div>
-            <div id="org-mods" style="font-size:11px;font-weight:700;font-family:monospace;color:#8892b0">Δ0 ×1.0</div>
+            <div style="font-size:9px;color:var(--text2);margin-bottom:3px">🎚️ ПОПРАВКИ</div>
+            <div id="org-mods" style="font-size:11px;font-weight:700;font-family:var(--mono);color:var(--text-mid)">Δ0 ×1.0</div>
           </div>
         </div>
       </div>
@@ -888,21 +888,21 @@
       <div class="card card-c wallet-card">
         <div class="wallet-title">
           📈 История баланса TON + GRINCH
-          <span id="eq-range-lbl" style="font-size:10px;color:#8892b0;margin-left:6px"></span>
+          <span id="eq-range-lbl" style="font-size:10px;color:var(--text-mid);margin-left:6px"></span>
           <button class="btn-wallet-refresh" onclick="refreshWalletFull()" style="margin-left:auto">⟳</button>
         </div>
 
         <!-- Chart tabs: TON / GRINCH / Equity -->
         <div style="display:flex;gap:6px;margin-bottom:8px">
-          <button id="eq-tab-equity" onclick="switchEqTab('equity')" style="padding:4px 10px;font-size:10px;border-radius:6px;border:1px solid rgba(0,255,136,.3);background:rgba(0,255,136,.15);color:#00ff88;cursor:pointer;font-weight:700">Портфель</button>
-          <button id="eq-tab-ton"    onclick="switchEqTab('ton')"    style="padding:4px 10px;font-size:10px;border-radius:6px;border:1px solid rgba(255,255,255,.1);background:transparent;color:#6a7d9f;cursor:pointer">TON</button>
-          <button id="eq-tab-grinch" onclick="switchEqTab('grinch')" style="padding:4px 10px;font-size:10px;border-radius:6px;border:1px solid rgba(255,255,255,.1);background:transparent;color:#6a7d9f;cursor:pointer">GRINCH</button>
-          <button id="eq-tab-pnl"    onclick="switchEqTab('pnl')"    style="padding:4px 10px;font-size:10px;border-radius:6px;border:1px solid rgba(255,255,255,.1);background:transparent;color:#6a7d9f;cursor:pointer">P&amp;L</button>
+          <button id="eq-tab-equity" onclick="switchEqTab('equity')" style="padding:4px 10px;font-size:10px;border-radius:6px;border:1px solid rgba(0,255,136,.3);background:rgba(0,255,136,.15);color:var(--green);cursor:pointer;font-weight:700">Портфель</button>
+          <button id="eq-tab-ton"    onclick="switchEqTab('ton')"    style="padding:4px 10px;font-size:10px;border-radius:6px;border:1px solid rgba(255,255,255,.1);background:transparent;color:var(--text2);cursor:pointer">TON</button>
+          <button id="eq-tab-grinch" onclick="switchEqTab('grinch')" style="padding:4px 10px;font-size:10px;border-radius:6px;border:1px solid rgba(255,255,255,.1);background:transparent;color:var(--text2);cursor:pointer">GRINCH</button>
+          <button id="eq-tab-pnl"    onclick="switchEqTab('pnl')"    style="padding:4px 10px;font-size:10px;border-radius:6px;border:1px solid rgba(255,255,255,.1);background:transparent;color:var(--text2);cursor:pointer">P&amp;L</button>
         </div>
 
         <div style="position:relative;height:120px;margin:6px 0 10px">
           <canvas id="eq-chart" style="width:100%;height:120px;display:block;border-radius:8px"></canvas>
-          <div id="eq-empty" style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:11px;color:#4a5568">Накапливаем историю…</div>
+          <div id="eq-empty" style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:11px;color:var(--text-muted)">Накапливаем историю…</div>
         </div>
 
         <!-- Balance summary -->
@@ -935,34 +935,34 @@
         <!-- Cumulative stats -->
         <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin-bottom:10px">
           <div style="background:rgba(0,255,136,.06);border:1px solid rgba(0,255,136,.1);border-radius:8px;padding:8px;text-align:center">
-            <div style="font-size:9px;color:#6a7d9f;margin-bottom:2px">Куплено GRINCH</div>
-            <div id="wfa-bought" style="font-size:14px;font-weight:800;font-family:monospace;color:#00ff88">—</div>
+            <div style="font-size:9px;color:var(--text2);margin-bottom:2px">Куплено GRINCH</div>
+            <div id="wfa-bought" style="font-size:14px;font-weight:800;font-family:var(--mono);color:var(--green)">—</div>
           </div>
           <div style="background:rgba(255,69,58,.06);border:1px solid rgba(255,69,58,.1);border-radius:8px;padding:8px;text-align:center">
-            <div style="font-size:9px;color:#6a7d9f;margin-bottom:2px">Продано GRINCH</div>
-            <div id="wfa-sold" style="font-size:14px;font-weight:800;font-family:monospace;color:#ff453a">—</div>
+            <div style="font-size:9px;color:var(--text2);margin-bottom:2px">Продано GRINCH</div>
+            <div id="wfa-sold" style="font-size:14px;font-weight:800;font-family:var(--mono);color:var(--red)">—</div>
           </div>
           <div style="background:rgba(0,212,255,.06);border:1px solid rgba(0,212,255,.1);border-radius:8px;padding:8px;text-align:center">
-            <div style="font-size:9px;color:#6a7d9f;margin-bottom:2px">Чистый P&amp;L</div>
-            <div id="wfa-pnl" style="font-size:14px;font-weight:800;font-family:monospace;color:#00d4ff">—</div>
+            <div style="font-size:9px;color:var(--text2);margin-bottom:2px">Чистый P&amp;L</div>
+            <div id="wfa-pnl" style="font-size:14px;font-weight:800;font-family:var(--mono);color:#00d4ff">—</div>
           </div>
         </div>
 
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:10px;font-size:11px">
           <div style="background:rgba(255,255,255,.03);border-radius:6px;padding:8px">
-            <div style="color:#6a7d9f;margin-bottom:3px">Потрачено TON</div>
-            <div id="wfa-ton-spent" style="font-weight:700;color:#0098ea">—</div>
+            <div style="color:var(--text2);margin-bottom:3px">Потрачено TON</div>
+            <div id="wfa-ton-spent" style="font-weight:700;color:var(--ton)">—</div>
           </div>
           <div style="background:rgba(255,255,255,.03);border-radius:6px;padding:8px">
-            <div style="color:#6a7d9f;margin-bottom:3px">Получено TON</div>
-            <div id="wfa-ton-recv" style="font-weight:700;color:#00ff88">—</div>
+            <div style="color:var(--text2);margin-bottom:3px">Получено TON</div>
+            <div id="wfa-ton-recv" style="font-weight:700;color:var(--green)">—</div>
           </div>
         </div>
 
         <!-- Recent trades -->
-        <div style="font-size:10px;font-weight:700;color:#8892b0;margin-bottom:6px;letter-spacing:.5px">📋 ПОСЛЕДНИЕ СДЕЛКИ GRINCH</div>
+        <div style="font-size:10px;font-weight:700;color:var(--text-mid);margin-bottom:6px;letter-spacing:.5px">📋 ПОСЛЕДНИЕ СДЕЛКИ GRINCH</div>
         <div id="wfa-trades-list" style="max-height:200px;overflow-y:auto;display:flex;flex-direction:column;gap:4px">
-          <div style="text-align:center;color:#4a5568;font-size:11px;padding:20px">Загрузка…</div>
+          <div style="text-align:center;color:var(--text-muted);font-size:11px;padding:20px">Загрузка…</div>
         </div>
       </div>
 
@@ -971,7 +971,7 @@
         <div class="card-title ctit">🤖 ИИ-анализ позиции GRINCH
           <button onclick="loadWalletAI()" style="margin-left:auto;background:rgba(160,0,255,.15);border:1px solid rgba(160,0,255,.3);border-radius:6px;padding:3px 10px;color:#a06fff;font-size:10px;cursor:pointer">🔄 Обновить</button>
         </div>
-        <div id="wallet-ai-body" style="font-size:11px;color:#6a7d9f">
+        <div id="wallet-ai-body" style="font-size:11px;color:var(--text2)">
           Нажмите «Обновить» для загрузки AI-анализа текущей позиции GRINCH…
         </div>
       </div>
@@ -1014,7 +1014,7 @@
           </div>
           <div class="liq-progress-wrap"><div class="liq-progress-bar" id="lg-bar" style="width:0%"></div></div>
           <div id="lg-warn" class="liq-gas-warn" style="display:none"></div>
-          <div style="font-size:10px;color:#8892b0;margin-top:8px">Постоянный опрос пула каждые 15с. Если ликвидность резко проседает (вывод ликвидности, обвал), новые покупки автоматически ставятся на паузу — открытые позиции и продажи никогда не блокируются.</div>
+          <div style="font-size:10px;color:var(--text-mid);margin-top:8px">Постоянный опрос пула каждые 15с. Если ликвидность резко проседает (вывод ликвидности, обвал), новые покупки автоматически ставятся на паузу — открытые позиции и продажи никогда не блокируются.</div>
         </div>
       </div>
 
@@ -1032,7 +1032,7 @@
         </div>
         <div class="aac-indicator">
           <span class="at-mode-dot" style="width:10px;height:10px"></span>
-          <span style="font-size:10px;font-weight:700;color:#00ff88">АВТО</span>
+          <span style="font-size:10px;font-weight:700;color:var(--green)">АВТО</span>
         </div>
       </div>
 
@@ -1061,23 +1061,23 @@
           <div class="cfg-section-title">🤖 Авто-TP — ИИ сам подбирает цель прибыли</div>
           <label>Мин. прибыль (% от ставки)
             <input type="number" id="cfg-min-profit-ton" value="5" min="0.1" max="100" step="0.5">
-            <small style="color:#8892b0">5 = 5% от любой ставки: 100 TON → 5 TON мин., 200 TON → 10 TON мин., 500 TON → 25 TON мин. и так далее</small>
+            <small style="color:var(--text-mid)">5 = 5% от любой ставки: 100 TON → 5 TON мин., 200 TON → 10 TON мин., 500 TON → 25 TON мин. и так далее</small>
           </label>
           <label>Стартовать авто-TP со сделки №
             <input type="number" id="cfg-ai-tp-min-trades" value="5" min="1" max="100" step="1">
-            <small style="color:#8892b0">Сколько сделок нужно закрыть прежде чем ИИ начнёт адаптировать процент</small>
+            <small style="color:var(--text-mid)">Сколько сделок нужно закрыть прежде чем ИИ начнёт адаптировать процент</small>
           </label>
           <label>Потолок авто-TP (%)
             <input type="number" id="cfg-ai-tp-cap" value="80" min="5" max="500" step="1">
-            <small style="color:#8892b0">ИИ не поставит цель выше этого % (защита от нереалистичных целей)</small>
+            <small style="color:var(--text-mid)">ИИ не поставит цель выше этого % (защита от нереалистичных целей)</small>
           </label>
           <!-- Статус авто-TP -->
           <div id="ai-tp-status" style="margin:10px 0 4px;padding:10px 12px;background:rgba(0,255,136,.06);border:1px solid rgba(0,255,136,.18);border-radius:8px;font-size:11px">
-            <div style="font-weight:700;color:#00ff88;margin-bottom:6px">🎯 Авто-TP статус</div>
-            <div style="display:grid;grid-template-columns:1fr 1fr;gap:4px 12px;color:#8892b0">
-              <span>Режим:</span>        <span id="ai-tp-mode-label" style="color:#ffd166;font-weight:700">Загружаю…</span>
+            <div style="font-weight:700;color:var(--green);margin-bottom:6px">🎯 Авто-TP статус</div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:4px 12px;color:var(--text-mid)">
+              <span>Режим:</span>        <span id="ai-tp-mode-label" style="color:var(--yellow);font-weight:700">Загружаю…</span>
               <span>Текущий TP:</span>   <span id="ai-tp-current" style="font-weight:700;color:#00d4ff">—</span>
-              <span>Пол (мин.):</span>   <span id="ai-tp-floor" style="font-weight:700;color:#00ff88">—</span>
+              <span>Пол (мин.):</span>   <span id="ai-tp-floor" style="font-weight:700;color:var(--green)">—</span>
               <span>Ср. прибыль:</span>  <span id="ai-tp-avg-win" style="font-weight:700">—</span>
               <span>Обучено сделок:</span><span id="ai-tp-trades" style="font-weight:700">—</span>
             </div>
@@ -1092,42 +1092,42 @@
       <div class="card card-c" id="dca-settings-card">
         <div class="card-title ctit">📉 DCA Стратегия — Усреднение позиции</div>
         <div class="settings-form">
-          <div class="cfg-section-title" style="color:#ffd166">⚠️ При включении DCA — ИИ отключается. Бот торгует по ценовым уровням.</div>
+          <div class="cfg-section-title" style="color:var(--yellow)">⚠️ При включении DCA — ИИ отключается. Бот торгует по ценовым уровням.</div>
           <label class="cfg-check" style="margin-bottom:12px">
             <input type="checkbox" id="cfg-dca-mode">
-            <span style="font-weight:700;color:#00ff88">Включить DCA стратегию</span>
+            <span style="font-weight:700;color:var(--green)">Включить DCA стратегию</span>
           </label>
 
           <div id="dca-params" style="display:none">
             <label>Ставка за вход (TON)
               <input type="number" id="cfg-dca-stake" value="100" min="1" step="5">
-              <small style="color:#8892b0">Сколько TON тратить на каждую покупку (первую и каждую докупку)</small>
+              <small style="color:var(--text-mid)">Сколько TON тратить на каждую покупку (первую и каждую докупку)</small>
             </label>
             <label>Цель прибыли портфеля (%)
               <input type="number" id="cfg-dca-target" value="20" min="1" max="200" step="1">
-              <small style="color:#8892b0">Продать ВСЁ когда суммарный GRINCH вырос на N% от вложенных TON</small>
+              <small style="color:var(--text-mid)">Продать ВСЁ когда суммарный GRINCH вырос на N% от вложенных TON</small>
             </label>
             <label>Докупка при падении (%)
               <input type="number" id="cfg-dca-drop" value="12" min="1" max="90" step="1">
-              <small style="color:#8892b0">Купить ещё если цена упала на N% от цены последней покупки</small>
+              <small style="color:var(--text-mid)">Купить ещё если цена упала на N% от цены последней покупки</small>
             </label>
             <label>Ждать откат после продажи (%)
               <input type="number" id="cfg-dca-pullback" value="25" min="5" max="90" step="1">
-              <small style="color:#8892b0">После продажи — ждать падения на N% от пика перед новым входом</small>
+              <small style="color:var(--text-mid)">После продажи — ждать падения на N% от пика перед новым входом</small>
             </label>
             <label>Макс. докупок за цикл
               <input type="number" id="cfg-dca-max-entries" value="10" min="1" max="50" step="1">
-              <small style="color:#8892b0">Максимум раз докупиться в одном цикле (защита от бесконечного усреднения)</small>
+              <small style="color:var(--text-mid)">Максимум раз докупиться в одном цикле (защита от бесконечного усреднения)</small>
             </label>
 
             <!-- ── 4 улучшения DCA ──────────────────────────────────── -->
             <div style="margin-top:14px;padding:10px;background:rgba(255,214,0,.07);border:1px solid rgba(255,214,0,.2);border-radius:8px">
-              <div style="font-size:11px;font-weight:700;color:#ffd166;margin-bottom:10px">⚡ Улучшения DCA</div>
+              <div style="font-size:11px;font-weight:700;color:var(--yellow);margin-bottom:10px">⚡ Улучшения DCA</div>
 
               <!-- Каскадный выход -->
               <label class="cfg-check">
                 <input type="checkbox" id="cfg-dca-cascade" checked>
-                <span style="font-weight:600;color:#00ff88">🎯 Каскадный выход (продажа частями)</span>
+                <span style="font-weight:600;color:var(--green)">🎯 Каскадный выход (продажа частями)</span>
               </label>
               <div style="padding-left:22px;margin-bottom:8px">
                 <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px">
@@ -1138,7 +1138,7 @@
                     <input type="number" id="cfg-dca-cascade-l2" value="40" min="5" max="200" step="1" style="font-size:11px">
                   </label>
                 </div>
-                <small style="color:#8892b0">+20% → фиксируем 50% прибыли, +40% → продаём остаток</small>
+                <small style="color:var(--text-mid)">+20% → фиксируем 50% прибыли, +40% → продаём остаток</small>
               </div>
 
               <!-- Умный реentri -->
@@ -1155,13 +1155,13 @@
                     <input type="number" id="cfg-dca-reentry-ai-conf" value="60" min="30" max="99" step="1" style="font-size:11px">
                   </label>
                 </div>
-                <small style="color:#8892b0">Вместо -25% откат: при AI BUY ≥60% достаточно -8%</small>
+                <small style="color:var(--text-mid)">Вместо -25% откат: при AI BUY ≥60% достаточно -8%</small>
               </div>
 
               <!-- Компаундирование -->
               <label class="cfg-check">
                 <input type="checkbox" id="cfg-dca-compound" checked>
-                <span style="font-weight:600;color:#ffd166">🔄 Компаундирование (реинвест прибыли)</span>
+                <span style="font-weight:600;color:var(--yellow)">🔄 Компаундирование (реинвест прибыли)</span>
               </label>
               <div style="padding-left:22px;margin-bottom:8px">
                 <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px">
@@ -1172,7 +1172,7 @@
                     <input type="number" id="cfg-dca-compound-max" value="500" min="10" max="10000" step="10" style="font-size:11px">
                   </label>
                 </div>
-                <small style="color:#8892b0">Прибыль 20 TON → +30% = +6 TON к следующей ставке</small>
+                <small style="color:var(--text-mid)">Прибыль 20 TON → +30% = +6 TON к следующей ставке</small>
               </div>
 
               <!-- Адаптивный триггер -->
@@ -1189,7 +1189,7 @@
                     <input type="number" id="cfg-dca-fast-drop" value="6" min="1" max="30" step="0.5" style="font-size:11px">
                   </label>
                 </div>
-                <small style="color:#8892b0">Если рынок вырос >5% за 75 сек → докупать уже при -6% (не -12%)</small>
+                <small style="color:var(--text-mid)">Если рынок вырос >5% за 75 сек → докупать уже при -6% (не -12%)</small>
               </div>
             </div>
           </div>
@@ -1198,17 +1198,17 @@
           <div id="dca-status-panel" style="display:none;margin-top:14px;padding:12px;background:rgba(0,212,255,.07);border:1px solid rgba(0,212,255,.2);border-radius:10px">
             <div style="font-size:11px;font-weight:700;color:#00d4ff;margin-bottom:8px">📊 DCA — ТЕКУЩИЙ ЦИКЛ</div>
             <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px 12px;font-size:11px">
-              <span style="color:#8892b0">Фаза:</span>          <span id="dca-phase" style="font-weight:700">—</span>
-              <span style="color:#8892b0">Входов в цикле:</span><span id="dca-entries" style="font-weight:700">—</span>
-              <span style="color:#8892b0">Вложено TON:</span>   <span id="dca-stake" style="font-weight:700">—</span>
-              <span style="color:#8892b0">Прибыль порт. (без комиссий):</span><span id="dca-profit" style="font-weight:700">—</span>
-              <span style="color:#8892b0">Цена посл. докупки:</span>    <span id="dca-last-buy" style="font-weight:700">—</span>
-              <span style="color:#8892b0">Пик (откат от):</span><span id="dca-peak" style="font-weight:700">—</span>
-              <span style="color:#8892b0">Каскад:</span>        <span id="dca-cascade-status" style="font-weight:700">—</span>
-              <span style="color:#8892b0">Компаунд-бонус:</span><span id="dca-compound-bonus" style="font-weight:700">—</span>
+              <span style="color:var(--text-mid)">Фаза:</span>          <span id="dca-phase" style="font-weight:700">—</span>
+              <span style="color:var(--text-mid)">Входов в цикле:</span><span id="dca-entries" style="font-weight:700">—</span>
+              <span style="color:var(--text-mid)">Вложено TON:</span>   <span id="dca-stake" style="font-weight:700">—</span>
+              <span style="color:var(--text-mid)">Прибыль порт. (без комиссий):</span><span id="dca-profit" style="font-weight:700">—</span>
+              <span style="color:var(--text-mid)">Цена посл. докупки:</span>    <span id="dca-last-buy" style="font-weight:700">—</span>
+              <span style="color:var(--text-mid)">Пик (откат от):</span><span id="dca-peak" style="font-weight:700">—</span>
+              <span style="color:var(--text-mid)">Каскад:</span>        <span id="dca-cascade-status" style="font-weight:700">—</span>
+              <span style="color:var(--text-mid)">Компаунд-бонус:</span><span id="dca-compound-bonus" style="font-weight:700">—</span>
             </div>
             <div style="margin-top:8px">
-              <div style="font-size:10px;color:#8892b0;margin-bottom:3px">Прогресс к цели <span id="dca-target-label">+20%</span></div>
+              <div style="font-size:10px;color:var(--text-mid);margin-bottom:3px">Прогресс к цели <span id="dca-target-label">+20%</span></div>
               <div style="background:rgba(255,255,255,.08);border-radius:4px;height:6px;overflow:hidden">
                 <div id="dca-progress-bar" style="height:100%;background:linear-gradient(90deg,#00ff88,#00d4ff);border-radius:4px;transition:width .5s;width:0%"></div>
               </div>
@@ -1223,30 +1223,30 @@
       <div class="card card-c" id="profit-protect-card">
         <div class="card-title ctit">🛡️ Защита прибыли — Фиксация при развороте</div>
         <div class="settings-form">
-          <div class="cfg-section-title" style="color:#00ff88">
+          <div class="cfg-section-title" style="color:var(--green)">
             Если портфель в плюсе ≥ N TON <strong>и рынок начинает падать</strong> — бот немедленно
             продаёт весь GRINCH. Работает в AI-режиме и DCA-режиме.
           </div>
           <label class="cfg-check" style="margin-bottom:12px">
             <input type="checkbox" id="cfg-pp-enabled">
-            <span style="font-weight:700;color:#00ff88">Включить защиту прибыли</span>
+            <span style="font-weight:700;color:var(--green)">Включить защиту прибыли</span>
           </label>
 
           <label>Мин. прибыль для защиты (TON)
             <input type="number" id="cfg-pp-ton" value="2" min="0.1" step="0.5">
-            <small style="color:#8892b0">Защита активируется только когда портфель вырос на ≥ N TON. ИИ может снижать порог по истории сделок.</small>
+            <small style="color:var(--text-mid)">Защита активируется только когда портфель вырос на ≥ N TON. ИИ может снижать порог по истории сделок.</small>
           </label>
           <label>Откат от пика портфеля (%)
             <input type="number" id="cfg-pp-drop" value="1.5" min="0.3" max="20" step="0.5">
-            <small style="color:#8892b0">Если стоимость портфеля упала на N% от своего пика — продаём немедленно</small>
+            <small style="color:var(--text-mid)">Если стоимость портфеля упала на N% от своего пика — продаём немедленно</small>
           </label>
           <label class="cfg-check">
             <input type="checkbox" id="cfg-pp-ai-sell">
             <span>Продавать также при AI-сигнале SELL (≥55% уверенность)</span>
           </label>
 
-          <div style="margin-top:10px;padding:8px 12px;background:rgba(0,255,136,.07);border:1px solid rgba(0,255,136,.15);border-radius:8px;font-size:11px;color:#8892b0">
-            <strong style="color:#00ff88">ИИ-адаптация:</strong> ИИ автоматически снижает порог защиты до 50% от средней прибыли
+          <div style="margin-top:10px;padding:8px 12px;background:rgba(0,255,136,.07);border:1px solid rgba(0,255,136,.15);border-radius:8px;font-size:11px;color:var(--text-mid)">
+            <strong style="color:var(--green)">ИИ-адаптация:</strong> ИИ автоматически снижает порог защиты до 50% от средней прибыли
             по истории сделок — ловит прибыль раньше по мере обучения.
           </div>
 
@@ -1264,28 +1264,28 @@
           </div>
           <label class="cfg-check" style="margin-bottom:12px">
             <input type="checkbox" id="cfg-lsd-enabled">
-            <span style="font-weight:700;color:#00ff88">Включить детектор крупных продаж</span>
+            <span style="font-weight:700;color:var(--green)">Включить детектор крупных продаж</span>
           </label>
 
           <div id="lsd-params">
             <label>Сумма покупки (TON)
               <input type="number" id="cfg-lsd-buy-ton" value="100" min="10" step="10">
-              <small style="color:#8892b0">Сколько TON тратить на каждую безусловную покупку при срабатывании детектора</small>
+              <small style="color:var(--text-mid)">Сколько TON тратить на каждую безусловную покупку при срабатывании детектора</small>
             </label>
             <label>Порог продажи в пуле (TON)
               <input type="number" id="cfg-lsd-min-ton" value="500" min="50" step="50">
-              <small style="color:#8892b0">Минимальный объём одной продажи в пуле (TON) для срабатывания триггера</small>
+              <small style="color:var(--text-mid)">Минимальный объём одной продажи в пуле (TON) для срабатывания триггера</small>
             </label>
             <label>Пауза между сигналами (сек)
               <input type="number" id="cfg-lsd-cooldown" value="300" min="30" step="30">
-              <small style="color:#8892b0">Минимальная пауза (секунды) между двумя безусловными покупками по этому сигналу</small>
+              <small style="color:var(--text-mid)">Минимальная пауза (секунды) между двумя безусловными покупками по этому сигналу</small>
             </label>
           </div>
 
           <!-- Статус последнего срабатывания -->
           <div id="lsd-status-panel" style="margin-top:12px;padding:10px;background:rgba(255,69,58,.07);border:1px solid rgba(255,69,58,.2);border-radius:10px;font-size:11px;display:none">
-            <div style="font-weight:700;color:#ff453a;margin-bottom:4px">🚨 ПОСЛЕДНЕЕ СРАБАТЫВАНИЕ</div>
-            <div style="color:#8892b0">Куплено: <span id="lsd-last-buy" style="color:#fff;font-weight:700">—</span></div>
+            <div style="font-weight:700;color:var(--red);margin-bottom:4px">🚨 ПОСЛЕДНЕЕ СРАБАТЫВАНИЕ</div>
+            <div style="color:var(--text-mid)">Куплено: <span id="lsd-last-buy" style="color:#fff;font-weight:700">—</span></div>
           </div>
 
           <button class="btn btn-blue" onclick="saveLargeSellConfig()" style="margin-top:14px">💾 Сохранить настройки детектора</button>
@@ -1298,67 +1298,67 @@
           🤖 AI Советник
           <span style="font-size:10px;font-weight:600;color:#a0f;background:rgba(160,0,255,.13);padding:2px 8px;border-radius:10px">LLaMA 3.3-70B · Groq</span>
           <span id="adv-status-dot" style="display:inline-block;width:8px;height:8px;border-radius:50%;background:#444"></span>
-          <span id="adv-auto-badge" style="display:none;font-size:10px;font-weight:700;color:#00ff88;background:rgba(0,255,136,.12);padding:2px 8px;border-radius:10px;border:1px solid rgba(0,255,136,.3)">⚡ АВТОНОМИЯ</span>
-          <span id="adv-running-badge" style="display:none;font-size:10px;color:#ffd166;margin-left:4px">⚙️ думает…</span>
-          <span style="margin-left:auto;font-size:11px;color:#00ff88" id="adv-adapt-count">0 адаптаций</span>
+          <span id="adv-auto-badge" style="display:none;font-size:10px;font-weight:700;color:var(--green);background:rgba(0,255,136,.12);padding:2px 8px;border-radius:10px;border:1px solid rgba(0,255,136,.3)">⚡ АВТОНОМИЯ</span>
+          <span id="adv-running-badge" style="display:none;font-size:10px;color:var(--yellow);margin-left:4px">⚙️ думает…</span>
+          <span style="margin-left:auto;font-size:11px;color:var(--green)" id="adv-adapt-count">0 адаптаций</span>
         </div>
 
         <!-- Лимит Groq (если исчерпан) -->
         <div id="adv-ratelimit-wrap" style="display:none;margin-bottom:10px;padding:8px 12px;background:rgba(255,107,107,.08);border:1px solid rgba(255,107,107,.25);border-radius:8px">
-          <div style="font-size:11px;font-weight:700;color:#ff6b6b;margin-bottom:3px">⏳ Лимит токенов Groq исчерпан</div>
-          <div id="adv-ratelimit-text" style="font-size:11px;color:#ccd6f6;line-height:1.6"></div>
+          <div style="font-size:11px;font-weight:700;color:var(--red);margin-bottom:3px">⏳ Лимит токенов Groq исчерпан</div>
+          <div id="adv-ratelimit-text" style="font-size:11px;color:var(--text-dim);line-height:1.6"></div>
         </div>
 
         <!-- Панель автономии -->
         <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:10px">
           <div style="background:rgba(0,255,136,.06);border:1px solid rgba(0,255,136,.15);border-radius:8px;padding:8px;text-align:center">
-            <div style="font-size:10px;color:#8892b0;margin-bottom:3px">следующий анализ</div>
-            <div id="adv-countdown" style="font-size:16px;font-weight:700;color:#00ff88;font-family:monospace">—</div>
+            <div style="font-size:10px;color:var(--text-mid);margin-bottom:3px">следующий анализ</div>
+            <div id="adv-countdown" style="font-size:16px;font-weight:700;color:var(--green);font-family:var(--mono)">—</div>
           </div>
           <div style="background:rgba(0,212,255,.06);border:1px solid rgba(0,212,255,.15);border-radius:8px;padding:8px;text-align:center">
-            <div style="font-size:10px;color:#8892b0;margin-bottom:3px">сделок до анализа</div>
-            <div id="adv-trades-count" style="font-size:16px;font-weight:700;color:#00d4ff;font-family:monospace">— / 3</div>
+            <div style="font-size:10px;color:var(--text-mid);margin-bottom:3px">сделок до анализа</div>
+            <div id="adv-trades-count" style="font-size:16px;font-weight:700;color:#00d4ff;font-family:var(--mono)">— / 3</div>
           </div>
           <div style="background:rgba(160,0,255,.06);border:1px solid rgba(160,0,255,.15);border-radius:8px;padding:8px;text-align:center">
-            <div style="font-size:10px;color:#8892b0;margin-bottom:3px">вердикт</div>
-            <div id="adv-verdict-mini" style="font-size:11px;font-weight:700;color:#ffd166;font-family:monospace">—</div>
+            <div style="font-size:10px;color:var(--text-mid);margin-bottom:3px">вердикт</div>
+            <div id="adv-verdict-mini" style="font-size:11px;font-weight:700;color:var(--yellow);font-family:var(--mono)">—</div>
           </div>
         </div>
 
         <!-- Последний анализ -->
         <div id="adv-verdict-row" style="display:none;margin:0 0 10px;padding:10px 14px;border-radius:10px;background:rgba(0,212,255,.06);border:1px solid rgba(0,212,255,.18)">
           <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;flex-wrap:wrap">
-            <span id="adv-verdict-badge" style="font-size:11px;font-weight:700;padding:2px 10px;border-radius:8px;background:rgba(0,255,136,.15);color:#00ff88">—</span>
-            <span id="adv-conf-label" style="font-size:10px;color:#8892b0"></span>
+            <span id="adv-verdict-badge" style="font-size:11px;font-weight:700;padding:2px 10px;border-radius:8px;background:rgba(0,255,136,.15);color:var(--green)">—</span>
+            <span id="adv-conf-label" style="font-size:10px;color:var(--text-mid)"></span>
             <span id="adv-trigger-label" style="font-size:10px;color:#555"></span>
             <span id="adv-time-label" style="font-size:10px;color:#555;margin-left:auto"></span>
           </div>
-          <div id="adv-analysis-text" style="font-size:11px;color:#ccd6f6;line-height:1.6"></div>
+          <div id="adv-analysis-text" style="font-size:11px;color:var(--text-dim);line-height:1.6"></div>
         </div>
 
         <!-- Рекомендации -->
         <div id="adv-recs-wrap" style="display:none;margin-bottom:10px">
-          <div style="font-size:10px;font-weight:700;color:#ffd166;margin-bottom:5px;letter-spacing:.5px">📋 РЕКОМЕНДАЦИИ</div>
+          <div style="font-size:10px;font-weight:700;color:var(--yellow);margin-bottom:5px;letter-spacing:.5px">📋 РЕКОМЕНДАЦИИ</div>
           <div id="adv-recs-list" style="display:flex;flex-direction:column;gap:4px"></div>
         </div>
 
         <!-- Применённые изменения -->
         <div id="adv-applied-wrap" style="display:none;margin-bottom:10px;padding:8px 12px;background:rgba(0,255,136,.07);border:1px solid rgba(0,255,136,.18);border-radius:8px">
-          <div style="font-size:10px;font-weight:700;color:#00ff88;margin-bottom:4px">✅ ПРИМЕНЕНО АВТОМАТИЧЕСКИ</div>
-          <div id="adv-applied-list" style="font-size:11px;color:#ccd6f6;line-height:1.7"></div>
+          <div style="font-size:10px;font-weight:700;color:var(--green);margin-bottom:4px">✅ ПРИМЕНЕНО АВТОМАТИЧЕСКИ</div>
+          <div id="adv-applied-list" style="font-size:11px;color:var(--text-dim);line-height:1.7"></div>
         </div>
 
         <!-- Лог адаптаций -->
         <div id="adv-adapt-log-wrap" style="display:none;margin-bottom:10px">
-          <div style="font-size:10px;font-weight:700;color:#8892b0;margin-bottom:4px;letter-spacing:.5px">📝 ЛОГ ВСЕХ АДАПТАЦИЙ</div>
+          <div style="font-size:10px;font-weight:700;color:var(--text-mid);margin-bottom:4px;letter-spacing:.5px">📝 ЛОГ ВСЕХ АДАПТАЦИЙ</div>
           <div id="adv-adapt-log-list" style="max-height:110px;overflow-y:auto;display:flex;flex-direction:column;gap:2px"></div>
         </div>
 
         <!-- Money management -->
         <div style="margin-bottom:10px;padding:9px 12px;background:rgba(255,209,102,.06);border:1px solid rgba(255,209,102,.2);border-radius:8px">
           <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px">
-            <span style="font-size:10px;font-weight:700;color:#ffd166;letter-spacing:.5px">💰 РАЗМЕР ПОЗИЦИИ (AI money management)</span>
-            <span id="adv-size-mult" style="font-size:13px;font-weight:700;color:#ffd166;font-family:monospace">×1.00</span>
+            <span style="font-size:10px;font-weight:700;color:var(--yellow);letter-spacing:.5px">💰 РАЗМЕР ПОЗИЦИИ (AI money management)</span>
+            <span id="adv-size-mult" style="font-size:13px;font-weight:700;color:var(--yellow);font-family:var(--mono)">×1.00</span>
           </div>
           <div style="height:5px;border-radius:3px;background:rgba(255,255,255,.06);overflow:hidden">
             <div id="adv-size-bar" style="height:100%;width:58%;background:linear-gradient(90deg,#ff6b6b,#ffd166,#00ff88);border-radius:3px"></div>
@@ -1374,14 +1374,14 @@
 
         <!-- Вопрос советнику -->
         <div style="margin-bottom:8px">
-          <div style="font-size:10px;color:#8892b0;margin-bottom:4px">Вопрос советнику (необязательно):</div>
-          <input id="adv-user-msg" type="text" placeholder="Например: цена падает, стоит ли ждать или усреднять?" style="width:100%;box-sizing:border-box;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.1);border-radius:8px;padding:7px 10px;font-size:11px;color:#ccd6f6;outline:none">
+          <div style="font-size:10px;color:var(--text-mid);margin-bottom:4px">Вопрос советнику (необязательно):</div>
+          <input id="adv-user-msg" type="text" placeholder="Например: цена падает, стоит ли ждать или усреднять?" style="width:100%;box-sizing:border-box;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.1);border-radius:8px;padding:7px 10px;font-size:11px;color:var(--text-dim);outline:none">
         </div>
 
         <!-- Кнопки -->
         <div style="display:flex;gap:7px;flex-wrap:wrap;margin-bottom:8px">
           <button class="btn btn-blue" id="adv-btn-run" onclick="advRun(false)" style="flex:1;min-width:110px;font-size:11px">🔍 Анализ</button>
-          <button class="btn" id="adv-btn-apply" onclick="advRun(true)" style="flex:1;min-width:130px;background:rgba(0,255,136,.15);border:1px solid rgba(0,255,136,.35);color:#00ff88;font-size:11px">⚡ Анализ + Применить</button>
+          <button class="btn" id="adv-btn-apply" onclick="advRun(true)" style="flex:1;min-width:130px;background:rgba(0,255,136,.15);border:1px solid rgba(0,255,136,.35);color:var(--green);font-size:11px">⚡ Анализ + Применить</button>
           <button class="btn-tiny" id="adv-btn-auto" onclick="advToggleAuto()" style="padding:7px 12px;font-size:10px;white-space:nowrap">
             🔄 Авто: <span id="adv-auto-label">ВКЛ</span>
           </button>
@@ -1389,37 +1389,37 @@
 
         <!-- Настройки автономии -->
         <details style="margin-bottom:8px" id="adv-settings-details">
-          <summary style="font-size:10px;color:#8892b0;cursor:pointer;padding:4px 0">⚙️ Настройки автономии</summary>
+          <summary style="font-size:10px;color:var(--text-mid);cursor:pointer;padding:4px 0">⚙️ Настройки автономии</summary>
 
           <!-- GROQ API KEY -->
           <div style="margin-top:10px;padding:10px 12px;background:rgba(160,0,255,.07);border:1px solid rgba(160,0,255,.2);border-radius:8px">
             <div style="font-size:10px;font-weight:700;color:#a06fff;margin-bottom:6px;letter-spacing:.5px">🔑 GROQ API KEY</div>
-            <div id="adv-key-status" style="font-size:10px;color:#8892b0;margin-bottom:6px"></div>
+            <div id="adv-key-status" style="font-size:10px;color:var(--text-mid);margin-bottom:6px"></div>
             <div style="display:flex;gap:6px;align-items:center">
               <input type="password" id="adv-apikey-inp" placeholder="gsk_..." autocomplete="off"
-                style="flex:1;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.12);border-radius:6px;padding:6px 10px;font-size:11px;color:#ccd6f6;outline:none;font-family:monospace">
+                style="flex:1;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.12);border-radius:6px;padding:6px 10px;font-size:11px;color:var(--text-dim);outline:none;font-family:var(--mono)">
               <button class="btn-tiny" onclick="advSaveKey()" style="padding:6px 12px;font-size:10px;white-space:nowrap;background:rgba(160,0,255,.2);border-color:rgba(160,0,255,.4);color:#c084fc">💾 Сохранить</button>
             </div>
             <div style="font-size:9px;color:#555;margin-top:4px">Получить бесплатно: <a href="https://console.groq.com/keys" target="_blank" style="color:#a06fff;text-decoration:none">console.groq.com/keys</a></div>
           </div>
 
           <div style="margin-top:8px;display:grid;grid-template-columns:1fr 1fr;gap:8px">
-            <label style="font-size:11px;color:#8892b0">Таймер (мин)
-              <input type="number" id="adv-cfg-interval" value="15" min="5" max="120" style="display:block;width:100%;margin-top:4px;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.1);border-radius:6px;padding:5px 8px;font-size:11px;color:#ccd6f6">
+            <label style="font-size:11px;color:var(--text-mid)">Таймер (мин)
+              <input type="number" id="adv-cfg-interval" value="15" min="5" max="120" style="display:block;width:100%;margin-top:4px;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.1);border-radius:6px;padding:5px 8px;font-size:11px;color:var(--text-dim)">
             </label>
-            <label style="font-size:11px;color:#8892b0">Сделок до анализа
-              <input type="number" id="adv-cfg-trades" value="3" min="1" max="20" style="display:block;width:100%;margin-top:4px;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.1);border-radius:6px;padding:5px 8px;font-size:11px;color:#ccd6f6">
+            <label style="font-size:11px;color:var(--text-mid)">Сделок до анализа
+              <input type="number" id="adv-cfg-trades" value="3" min="1" max="20" style="display:block;width:100%;margin-top:4px;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.1);border-radius:6px;padding:5px 8px;font-size:11px;color:var(--text-dim)">
             </label>
           </div>
           <button class="btn-tiny" onclick="advSaveCfg()" style="margin-top:8px;padding:5px 12px;font-size:10px">💾 Сохранить</button>
         </details>
 
         <!-- Спиннер -->
-        <div id="adv-spinner" style="display:none;text-align:center;padding:10px;font-size:11px;color:#8892b0">
+        <div id="adv-spinner" style="display:none;text-align:center;padding:10px;font-size:11px;color:var(--text-mid)">
           <span style="animation:spin 1s linear infinite;display:inline-block;margin-right:6px">⚙️</span>LLaMA анализирует рынок…
         </div>
 
-        <div id="adv-error-msg" style="display:none;margin-top:6px;padding:7px 12px;background:rgba(255,69,58,.1);border:1px solid rgba(255,69,58,.3);border-radius:8px;font-size:11px;color:#ff6b6b"></div>
+        <div id="adv-error-msg" style="display:none;margin-top:6px;padding:7px 12px;background:rgba(255,69,58,.1);border:1px solid rgba(255,69,58,.3);border-radius:8px;font-size:11px;color:var(--red)"></div>
 
         <!-- История -->
         <div id="adv-history-wrap" style="display:none;margin-top:8px">
@@ -1431,22 +1431,22 @@
       <!-- Telegram Alerts -->
       <div class="card card-c">
         <div class="card-title ctit">🔔 Оповещения в Telegram</div>
-        <div style="font-size:11px;color:#8892b0;margin-bottom:10px">
+        <div style="font-size:11px;color:var(--text-mid);margin-bottom:10px">
           Бот пришлёт сообщение, если торговый цикл завис или упал с ошибкой — не нужно держать дашборд открытым.
         </div>
         <div style="padding:10px 12px;background:rgba(0,180,255,.07);border:1px solid rgba(0,180,255,.2);border-radius:8px">
           <label class="cfg-check" style="margin-bottom:8px"><input type="checkbox" id="al-enabled" checked> Включить оповещения</label>
-          <div style="font-size:10px;color:#8892b0;margin-bottom:6px">Bot Token (от <a href="https://t.me/BotFather" target="_blank" style="color:#00d4ff;text-decoration:none">@BotFather</a>)</div>
+          <div style="font-size:10px;color:var(--text-mid);margin-bottom:6px">Bot Token (от <a href="https://t.me/BotFather" target="_blank" style="color:#00d4ff;text-decoration:none">@BotFather</a>)</div>
           <input type="password" id="al-token-inp" placeholder="123456:ABC-..." autocomplete="off"
-            style="width:100%;box-sizing:border-box;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.12);border-radius:6px;padding:6px 10px;font-size:11px;color:#ccd6f6;outline:none;font-family:monospace;margin-bottom:8px">
-          <div style="font-size:10px;color:#8892b0;margin-bottom:6px">Chat ID (ваш личный или ID группы — узнать у <a href="https://t.me/userinfobot" target="_blank" style="color:#00d4ff;text-decoration:none">@userinfobot</a>)</div>
+            style="width:100%;box-sizing:border-box;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.12);border-radius:6px;padding:6px 10px;font-size:11px;color:var(--text-dim);outline:none;font-family:var(--mono);margin-bottom:8px">
+          <div style="font-size:10px;color:var(--text-mid);margin-bottom:6px">Chat ID (ваш личный или ID группы — узнать у <a href="https://t.me/userinfobot" target="_blank" style="color:#00d4ff;text-decoration:none">@userinfobot</a>)</div>
           <input type="text" id="al-chatid-inp" placeholder="123456789" autocomplete="off"
-            style="width:100%;box-sizing:border-box;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.12);border-radius:6px;padding:6px 10px;font-size:11px;color:#ccd6f6;outline:none;font-family:monospace;margin-bottom:8px">
+            style="width:100%;box-sizing:border-box;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.12);border-radius:6px;padding:6px 10px;font-size:11px;color:var(--text-dim);outline:none;font-family:var(--mono);margin-bottom:8px">
           <div style="display:flex;gap:6px">
             <button class="btn-tiny" onclick="alSaveConfig()" style="flex:1;padding:6px 12px;font-size:10px;background:rgba(0,180,255,.2);border-color:rgba(0,180,255,.4);color:#5ec9ff">💾 Сохранить</button>
             <button class="btn-tiny" onclick="alSendTest()" style="flex:1;padding:6px 12px;font-size:10px">🔔 Тест</button>
           </div>
-          <div id="al-status-msg" style="font-size:10px;margin-top:6px;color:#8892b0"></div>
+          <div id="al-status-msg" style="font-size:10px;margin-top:6px;color:var(--text-mid)"></div>
         </div>
       </div>
 
@@ -1474,8 +1474,8 @@
 
             <!-- Loss Cooldown -->
             <div id="fc-cooldown" style="padding:12px;border-radius:10px;border:1px solid rgba(255,255,255,.08);background:rgba(255,255,255,.03)">
-              <div style="font-size:10px;color:#6a7d9f;font-weight:700;letter-spacing:.5px;margin-bottom:8px">⏸️ ПАУЗА ПОСЛЕ УБЫТКА</div>
-              <div id="fc-cd-status" style="font-size:13px;font-weight:700;color:#00ff88;margin-bottom:6px">— ожидание</div>
+              <div style="font-size:10px;color:var(--text2);font-weight:700;letter-spacing:.5px;margin-bottom:8px">⏸️ ПАУЗА ПОСЛЕ УБЫТКА</div>
+              <div id="fc-cd-status" style="font-size:13px;font-weight:700;color:var(--green);margin-bottom:6px">— ожидание</div>
               <div style="height:4px;border-radius:4px;background:rgba(255,255,255,.06);overflow:hidden;margin-bottom:5px">
                 <div id="fc-cd-bar" style="height:100%;border-radius:4px;background:#00ff88;transition:width .5s;width:100%"></div>
               </div>
@@ -1484,8 +1484,8 @@
 
             <!-- Confluence RSI -->
             <div id="fc-rsi" style="padding:12px;border-radius:10px;border:1px solid rgba(255,255,255,.08);background:rgba(255,255,255,.03)">
-              <div style="font-size:10px;color:#6a7d9f;font-weight:700;letter-spacing:.5px;margin-bottom:8px">📊 RSI ФИЛЬТР</div>
-              <div id="fc-rsi-val" style="font-size:20px;font-weight:800;color:#00ff88;font-family:monospace;margin-bottom:4px">—</div>
+              <div style="font-size:10px;color:var(--text2);font-weight:700;letter-spacing:.5px;margin-bottom:8px">📊 RSI ФИЛЬТР</div>
+              <div id="fc-rsi-val" style="font-size:20px;font-weight:800;color:var(--green);font-family:var(--mono);margin-bottom:4px">—</div>
               <div style="height:4px;border-radius:4px;background:rgba(255,255,255,.06);overflow:hidden;margin-bottom:5px">
                 <div id="fc-rsi-bar" style="height:100%;border-radius:4px;background:#00ff88;transition:width .5s;width:50%"></div>
               </div>
@@ -1494,8 +1494,8 @@
 
             <!-- Confluence Volume -->
             <div id="fc-vol" style="padding:12px;border-radius:10px;border:1px solid rgba(255,255,255,.08);background:rgba(255,255,255,.03)">
-              <div style="font-size:10px;color:#6a7d9f;font-weight:700;letter-spacing:.5px;margin-bottom:8px">📈 ОБЪЁМ (×MA20)</div>
-              <div id="fc-vol-val" style="font-size:20px;font-weight:800;color:#00ff88;font-family:monospace;margin-bottom:4px">—</div>
+              <div style="font-size:10px;color:var(--text2);font-weight:700;letter-spacing:.5px;margin-bottom:8px">📈 ОБЪЁМ (×MA20)</div>
+              <div id="fc-vol-val" style="font-size:20px;font-weight:800;color:var(--green);font-family:var(--mono);margin-bottom:4px">—</div>
               <div style="height:4px;border-radius:4px;background:rgba(255,255,255,.06);overflow:hidden;margin-bottom:5px">
                 <div id="fc-vol-bar" style="height:100%;border-radius:4px;background:#00ff88;transition:width .5s;width:50%"></div>
               </div>
@@ -1507,7 +1507,7 @@
           <div id="fc-dca-guard" style="padding:10px 14px;border-radius:8px;border:1px solid rgba(255,255,255,.08);background:rgba(255,255,255,.03);margin-bottom:14px;display:flex;align-items:center;gap:12px">
             <div id="fc-dca-dot" style="width:10px;height:10px;border-radius:50%;background:#00ff88;flex-shrink:0"></div>
             <div>
-              <div style="font-size:11px;font-weight:700;color:#ccd6f6">🛡️ DCA AI-guard (защита от падающего ножа)</div>
+              <div style="font-size:11px;font-weight:700;color:var(--text-dim)">🛡️ DCA AI-guard (защита от падающего ножа)</div>
               <div id="fc-dca-txt" style="font-size:11px;color:#4a5d7f;margin-top:2px">Ожидание данных…</div>
             </div>
           </div>
@@ -1524,18 +1524,18 @@
         <!-- Статистика в карточках -->
         <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px">
           <div class="card card-c" style="padding:14px;text-align:center">
-            <div style="font-size:11px;color:#6a7d9f;margin-bottom:6px;text-transform:uppercase;letter-spacing:.5px">Примеров в БД</div>
-            <div id="ai-hist-total" style="font-size:28px;font-weight:800;color:#00ff88;font-family:'JetBrains Mono',monospace">—</div>
+            <div style="font-size:11px;color:var(--text2);margin-bottom:6px;text-transform:uppercase;letter-spacing:.5px">Примеров в БД</div>
+            <div id="ai-hist-total" style="font-size:28px;font-weight:800;color:var(--green);font-family:'JetBrains Mono',monospace">—</div>
             <div style="font-size:10px;color:#4a5d7f;margin-top:4px">накоплено навсегда</div>
           </div>
           <div class="card card-c" style="padding:14px;text-align:center">
-            <div style="font-size:11px;color:#6a7d9f;margin-bottom:6px;text-transform:uppercase;letter-spacing:.5px">Буфер в памяти</div>
+            <div style="font-size:11px;color:var(--text2);margin-bottom:6px;text-transform:uppercase;letter-spacing:.5px">Буфер в памяти</div>
             <div id="ai-hist-buf" style="font-size:28px;font-weight:800;color:#00d4ff;font-family:'JetBrains Mono',monospace">—</div>
             <div style="font-size:10px;color:#4a5d7f;margin-top:4px">для горячего обучения</div>
           </div>
           <div class="card card-c" style="padding:14px;text-align:center">
-            <div style="font-size:11px;color:#6a7d9f;margin-bottom:6px;text-transform:uppercase;letter-spacing:.5px">Переобучений</div>
-            <div id="ai-hist-retrains" style="font-size:28px;font-weight:800;color:#ffd166;font-family:'JetBrains Mono',monospace">—</div>
+            <div style="font-size:11px;color:var(--text2);margin-bottom:6px;text-transform:uppercase;letter-spacing:.5px">Переобучений</div>
+            <div id="ai-hist-retrains" style="font-size:28px;font-weight:800;color:var(--yellow);font-family:'JetBrains Mono',monospace">—</div>
             <div style="font-size:10px;color:#4a5d7f;margin-top:4px">с момента старта</div>
           </div>
         </div>
@@ -1546,7 +1546,7 @@
             <div class="card-title ctit" style="margin:0">📈 Накопление обучающих примеров</div>
             <a id="btn-csv-export" href="/api/ai/examples/export.csv" download
               style="padding:6px 14px;border-radius:8px;border:1px solid rgba(255,209,102,.35);
-                background:rgba(255,209,102,.10);color:#ffd166;font-size:12px;font-weight:700;
+                background:rgba(255,209,102,.10);color:var(--yellow);font-size:12px;font-weight:700;
                 text-decoration:none;white-space:nowrap;display:inline-block">
               ⬇️ Скачать CSV
             </a>
@@ -1588,7 +1588,7 @@
           <div id="ai-deep-models-wrap">
             <table id="ai-deep-table" style="width:100%;border-collapse:collapse;font-size:12px">
               <thead>
-                <tr style="color:#6a7d9f;border-bottom:1px solid rgba(255,255,255,.06)">
+                <tr style="color:var(--text2);border-bottom:1px solid rgba(255,255,255,.06)">
                   <th style="text-align:left;padding:6px 8px">Модель</th>
                   <th style="text-align:center;padding:6px 8px">Точность</th>
                   <th style="text-align:center;padding:6px 8px">Примеров</th>
@@ -1761,8 +1761,8 @@ function loadAiHistory() {
         return `<div style="display:inline-flex;align-items:center;gap:6px;padding:6px 12px;
           border-radius:8px;border:1px solid ${bc};background:${bg}">
           <span style="color:${clr};font-weight:700;font-size:12px">${s.name}</span>${tag}
-          <span style="color:#6a7d9f;font-size:11px">точн: <b style="color:#fff">${s.accuracy}%</b></span>
-          <span style="color:#6a7d9f;font-size:11px">вес: <b style="color:#ffd166">${s.weight}</b></span>
+          <span style="color:var(--text2);font-size:11px">точн: <b style="color:#fff">${s.accuracy}%</b></span>
+          <span style="color:var(--text2);font-size:11px">вес: <b style="color:var(--yellow)">${s.weight}</b></span>
         </div>`;
       }).join(''));
     } else {
@@ -1781,10 +1781,10 @@ function loadAiHistory() {
           <td style="padding:8px;font-weight:700;color:#00d4ff">${m.model_name}</td>
           <td style="padding:8px;text-align:center;color:${accClr};font-weight:700">${acc}</td>
           <td style="padding:8px;text-align:center;color:#aaa">${nEx}</td>
-          <td style="padding:8px;text-align:right;color:#6a7d9f;font-size:11px">${trained}</td>
+          <td style="padding:8px;text-align:right;color:var(--text2);font-size:11px">${trained}</td>
           <td style="padding:8px;text-align:center">
             <span style="padding:2px 8px;border-radius:4px;font-size:10px;font-weight:700;
-              background:rgba(0,255,136,.15);color:#00ff88">✓ В БД</span>
+              background:rgba(0,255,136,.15);color:var(--green)">✓ В БД</span>
           </td>
         </tr>`;
       }).join(''));
@@ -1896,8 +1896,8 @@ function _showRetrainStatus(type, msg) {
   if (!el) return;
   const styles = {
     info:  'background:rgba(0,212,255,.10);border:1px solid rgba(0,212,255,.25);color:#00d4ff',
-    ok:    'background:rgba(0,255,136,.10);border:1px solid rgba(0,255,136,.25);color:#00ff88',
-    error: 'background:rgba(255,107,107,.10);border:1px solid rgba(255,107,107,.25);color:#ff6b6b',
+    ok:    'background:rgba(0,255,136,.10);border:1px solid rgba(0,255,136,.25);color:var(--green)',
+    error: 'background:rgba(255,107,107,.10);border:1px solid rgba(255,107,107,.25);color:var(--red)',
   };
   el.setAttribute('style', `display:block;margin-bottom:8px;padding:8px 12px;border-radius:8px;font-size:12px;${styles[type]||styles.info}`);
   el.textContent = msg;
@@ -2066,7 +2066,7 @@ function advRenderResult(res) {
         <span style="color:#666;font-size:10px">${r.current} →</span>
         <strong style="color:${up?'#00ff88':'#ffd166'};font-size:11px">${r.suggested} ${up?'↑':'↓'}</strong>
       </div>
-      <div style="font-size:10px;color:#8892b0;line-height:1.45">${r.reason||''}</div>
+      <div style="font-size:10px;color:var(--text-mid);line-height:1.45">${r.reason||''}</div>
     </div>`;
   }).join(''));
 
@@ -2082,7 +2082,7 @@ function advRenderHistory(history) {
   wrap.style.display = 'block';
   _smoothHTML(list, [...history].reverse().map(h => {
     const col = ADV_COLORS[h.verdict] || '#ffd166';
-    const app = h.applied&&h.applied.length ? ` <span style="color:#00ff88">✅${h.applied.length}</span>` : '';
+    const app = h.applied&&h.applied.length ? ` <span style="color:var(--green)">✅${h.applied.length}</span>` : '';
     return `<div style="font-size:10px;color:#666;padding:1px 0">${h.ts} <span style="color:${col};font-weight:700">${h.verdict||''}</span> ·${h.trigger||'manual'}${app}</div>`;
   }).join(''));
 }
@@ -2093,7 +2093,7 @@ function advRenderAdaptLog(log) {
   if (!wrap||!list||!log.length) return;
   wrap.style.display = 'block';
   _smoothHTML(list, [...log].reverse().map(l =>
-    `<div style="font-size:10px;color:#8892b0;padding:1px 0">${l.ts} <span style="color:#00ff88">✅</span> ${l.change}</div>`
+    `<div style="font-size:10px;color:var(--text-mid);padding:1px 0">${l.ts} <span style="color:var(--green)">✅</span> ${l.change}</div>`
   ).join(''));
 }
 
@@ -2108,7 +2108,7 @@ function advRenderStrategyToggles(toggles, labels) {
     const border = on ? 'rgba(0,255,136,.25)' : 'rgba(255,255,255,.08)';
     return `<div style="display:flex;align-items:center;gap:6px;background:${bg};border:1px solid ${border};border-radius:8px;padding:6px 9px">
       <span style="width:7px;height:7px;border-radius:50%;background:${col};flex-shrink:0"></span>
-      <span style="font-size:10px;color:#ccd6f6;line-height:1.3">${label}</span>
+      <span style="font-size:10px;color:var(--text-dim);line-height:1.3">${label}</span>
       <span style="margin-left:auto;font-size:9px;font-weight:700;color:${col};white-space:nowrap">${on?'ВКЛ':'ВЫКЛ'}</span>
     </div>`;
   }).join(''));
@@ -2363,9 +2363,9 @@ function renderWalletFull(d) {
       const p   = v?.pnl_ton;
       const col = p!=null ? (p>0?'#00ff88':p<0?'#ff453a':'#ffd700') : '#6a7d9f';
       return `<div style="background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.08);border-radius:6px;padding:6px 4px;text-align:center">
-        <div style="font-size:9px;color:#6a7d9f;margin-bottom:2px">${k}</div>
-        <div style="font-size:12px;font-weight:800;font-family:monospace;color:${col}">${p!=null?(p>=0?'+':'')+Number(p).toFixed(3):'—'}</div>
-        <div style="font-size:9px;color:#3d4f6a">TON</div>
+        <div style="font-size:9px;color:var(--text2);margin-bottom:2px">${k}</div>
+        <div style="font-size:12px;font-weight:800;font-family:var(--mono);color:${col}">${p!=null?(p>=0?'+':'')+Number(p).toFixed(3):'—'}</div>
+        <div style="font-size:9px;color:var(--text3)">TON</div>
       </div>`;
     }).join(''));
   }
@@ -2557,7 +2557,7 @@ function renderWalletAnalytics(d) {
   if (list) {
     const trades = d.recent_trades || [];
     if (!trades.length) {
-      _smoothHTML(list, '<div style="text-align:center;color:#4a5568;font-size:11px;padding:20px">Нет торговых данных</div>');
+      _smoothHTML(list, '<div style="text-align:center;color:var(--text-muted);font-size:11px;padding:20px">Нет торговых данных</div>');
       return;
     }
     _smoothHTML(list, trades.map(t => {
@@ -2571,11 +2571,11 @@ function renderWalletAnalytics(d) {
       return `<div style="background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.06);border-radius:6px;padding:7px 10px;display:flex;align-items:center;gap:8px;font-size:11px">
         <span style="font-size:10px;font-weight:700;color:${col};min-width:50px">${icon}</span>
         <div style="flex:1">
-          <div style="font-weight:700;color:#ccd6f6">${amount}</div>
-          ${stake ? '<div style="color:#6a7d9f;font-size:10px">Стейк: '+Number(stake).toFixed(4)+' TON</div>' : ''}
+          <div style="font-weight:700;color:var(--text-dim)">${amount}</div>
+          ${stake ? '<div style="color:var(--text2);font-size:10px">Стейк: '+Number(stake).toFixed(4)+' TON</div>' : ''}
         </div>
         ${profit!=null ? `<div style="text-align:right"><div style="font-weight:700;color:${pnlColor(profit)}">${profit>=0?'+':''}${Number(profit).toFixed(4)} TON</div></div>` : ''}
-        <div style="color:#3d4f6a;font-size:10px;min-width:40px;text-align:right">${fmtTs(ts)}</div>
+        <div style="color:var(--text3);font-size:10px;min-width:40px;text-align:right">${fmtTs(ts)}</div>
       </div>`;
     }).join(''));
   }
@@ -2585,7 +2585,7 @@ function renderWalletAnalytics(d) {
 function loadWalletAI() {
   const body = document.getElementById('wallet-ai-body');
   if (!body) return;
-  body.innerHTML = '<span style="color:#6a7d9f">⚙️ Загружаем AI-анализ позиции GRINCH…</span>';
+  body.innerHTML = '<span style="color:var(--text2)">⚙️ Загружаем AI-анализ позиции GRINCH…</span>';
 
   // Используем статус /api/advisor/status + текущий снимок кошелька
   Promise.all([
@@ -2604,16 +2604,16 @@ function loadWalletAI() {
     // Состояние позиции
     if (inPos) {
       lines.push(`<div style="margin-bottom:6px;padding:8px;background:rgba(0,255,136,.06);border-radius:6px;border:1px solid rgba(0,255,136,.15)">
-        <div style="color:#00ff88;font-weight:700;margin-bottom:4px">🐸 Открытая позиция GRINCH</div>
-        <div style="color:#8892b0;font-size:10px;line-height:1.6">
-          Количество: <b style="color:#ccd6f6">${fmtGrn(snap.grinch_balance)} GRINCH</b><br>
-          Куплено по: <b style="color:#0098ea">${entry?fmtPrice(entry)+' TON':'—'}</b><br>
-          Текущая: <b style="color:#00ff88">${cur?fmtPrice(cur)+' TON':'—'}</b><br>
+        <div style="color:var(--green);font-weight:700;margin-bottom:4px">🐸 Открытая позиция GRINCH</div>
+        <div style="color:var(--text-mid);font-size:10px;line-height:1.6">
+          Количество: <b style="color:var(--text-dim)">${fmtGrn(snap.grinch_balance)} GRINCH</b><br>
+          Куплено по: <b style="color:var(--ton)">${entry?fmtPrice(entry)+' TON':'—'}</b><br>
+          Текущая: <b style="color:var(--green)">${cur?fmtPrice(cur)+' TON':'—'}</b><br>
           P&amp;L: <b style="color:${pnlColor(pnl)}">${pnl!=null?(pnl>=0?'+':'')+Number(pnl).toFixed(4)+' TON':'—'} (${pnlPct!=null?fmtPct(pnlPct):'—'})</b>
         </div>
       </div>`);
     } else {
-      lines.push(`<div style="margin-bottom:6px;padding:8px;background:rgba(255,255,255,.03);border-radius:6px;border:1px solid rgba(255,255,255,.06);color:#6a7d9f">
+      lines.push(`<div style="margin-bottom:6px;padding:8px;background:rgba(255,255,255,.03);border-radius:6px;border:1px solid rgba(255,255,255,.06);color:var(--text2)">
         ⏸️ Нет открытой позиции GRINCH.
       </div>`);
     }
@@ -2624,17 +2624,17 @@ function loadWalletAI() {
       const v   = last.market_verdict || '—';
       const col = {'НАКАПЛИВАТЬ':'#00ff88','АКТИВНО_ТОРГОВАТЬ':'#00d4ff','ОСТОРОЖНО':'#ffd166','ПАУЗА':'#ff6b6b'}[v] || '#ffd166';
       lines.push(`<div style="padding:8px;background:rgba(255,255,255,.02);border-radius:6px;border:1px solid rgba(255,255,255,.06)">
-        <div style="font-size:10px;font-weight:700;color:#8892b0;margin-bottom:4px">📊 Последний AI-совет (${last.timestamp||''})</div>
+        <div style="font-size:10px;font-weight:700;color:var(--text-mid);margin-bottom:4px">📊 Последний AI-совет (${last.timestamp||''})</div>
         <div style="font-size:12px;font-weight:700;color:${col};margin-bottom:4px">${v}</div>
-        <div style="font-size:10px;color:#8892b0;line-height:1.55">${last.analysis||''}</div>
+        <div style="font-size:10px;color:var(--text-mid);line-height:1.55">${last.analysis||''}</div>
       </div>`);
     } else {
-      lines.push('<div style="color:#4a5568;font-size:11px">AI советник ещё не запускался. Откройте вкладку Настройки → AI Советник и нажмите «Анализ».</div>');
+      lines.push('<div style="color:var(--text-muted);font-size:11px">AI советник ещё не запускался. Откройте вкладку Настройки → AI Советник и нажмите «Анализ».</div>');
     }
 
     _smoothHTML(body, lines.join(''));
   }).catch(e => {
-    _smoothHTML(body, '<span style="color:#ff6b6b">Ошибка: '+e+'</span>');
+    _smoothHTML(body, '<span style="color:var(--red)">Ошибка: '+e+'</span>');
   });
 }
 
@@ -3023,7 +3023,7 @@ window.switchEqTab       = switchEqTab;
       const key = Object.keys(s)[0];
       const ico = Object.values(s)[0];
       const names = {'fear_greed':'F&G','kraken':'Kraken','bybit':'Bybit','cg_trending':'CG','defillama':'DFL','geckotrend':'GT','ton_stats':'TON'};
-      return `<span style="font-size:9px;padding:2px 6px;border-radius:6px;background:rgba(255,255,255,.05);color:#6a7d9f">${ico} ${names[key]||key}</span>`;
+      return `<span style="font-size:9px;padding:2px 6px;border-radius:6px;background:rgba(255,255,255,.05);color:var(--text2)">${ico} ${names[key]||key}</span>`;
     }).join('');
   }
 
