@@ -1604,6 +1604,10 @@ class Trader:
         # (под общим локом — см. _ot_lock: без него wallet_manager мог прочитать
         # позицию между обновлением amount и stake_ton и получить рваные данные).
         partial_pnl = 0.0
+        # BUG-FIX: газ продажи платится ОДИН РАЗ за всю транзакцию (не на каждую позицию
+        # и не масштабируется на sell_fraction). Делим его поровну между позициями.
+        _n_partial_trades = max(1, len(self.open_trades))
+        _sell_gas_per_trade = sell_gas / _n_partial_trades
         with self._ot_lock:
             for trade in self.open_trades:
                 old_amount = trade.get("amount", 0) or 0
@@ -1613,7 +1617,10 @@ class Trader:
                 # PNL от проданной части
                 sold_part = old_amount * sell_fraction
                 if grinch_ton > 0 and sold_part > 0:
-                    proceeds = sold_part * grinch_ton * (1 - fee) - sell_gas * sell_fraction
+                    # Газ продажи: фиксированный за транзакцию, делённый по числу позиций
+                    proceeds = sold_part * grinch_ton * (1 - fee) - _sell_gas_per_trade
+                    # Газ покупки: был уплачен в полном размере при входе;
+                    # атрибутируем пропорциональную часть к закрытой доле.
                     cost     = old_stake * sell_fraction + buy_gas * sell_fraction
                     partial_pnl += round(proceeds - cost, 6)
                 trade["amount"]    = new_amount
@@ -1750,12 +1757,22 @@ class Trader:
         buy_gas  = Config.BUY_GAS_TON
         sell_gas = Config.SELL_GAS_TON
 
+        # ── BUG-FIX: газ за продажу платится ОДИН РАЗ (одна on-chain транзакция),
+        # не за каждую виртуальную позицию. Считаем суммарную выручку один раз,
+        # затем распределяем по позициям пропорционально долям GRINCH.
+        _grinch_in_loop = sum((t.get("amount", 0) or 0) for t in self.open_trades)
+        if grinch_ton > 0 and _grinch_in_loop > 0:
+            _total_proceeds = _grinch_in_loop * grinch_ton * (1 - fee) - sell_gas
+        else:
+            _total_proceeds = 0.0
+
         total_pnl = 0.0
         for trade in list(self.open_trades):
             amount    = trade.get("amount", 0) or 0
             stake_ton = trade.get("stake_ton", 0) or 0
-            if grinch_ton > 0 and amount > 0:
-                proceeds   = amount * grinch_ton * (1 - fee) - sell_gas
+            if grinch_ton > 0 and amount > 0 and _grinch_in_loop > 0:
+                # Пропорциональная выручка от этой позиции (газ уже вычтен из суммарной)
+                proceeds   = _total_proceeds * (amount / _grinch_in_loop)
                 total_cost = stake_ton + buy_gas
                 pnl_ton    = round(proceeds - total_cost, 6)
             else:
@@ -1856,7 +1873,9 @@ class Trader:
                 "regime":       (ai_snap.get("regime") or {}).get("name") or "DCA",
                 "ai_conf":      float(ai_snap.get("confidence", 0) or 0),
                 "close_reason": f"dca_target_{portfolio_pct:.1f}pct",
-                "dca_entries":  self.dca_entries_count,
+                # BUG-FIX: self.dca_entries_count уже обнулён к этому моменту
+                # (reset выше). Используем снапшот, снятый до сброса.
+                "dca_entries":  _dca_entries_snap,
             })
         except Exception:
             pass
