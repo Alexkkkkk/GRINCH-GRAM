@@ -138,7 +138,7 @@ class Config:
     SMART_TP_MIN_CONF       = float(os.getenv("SMART_TP_MIN_CONF", "70.0"))   # мин. уверенность ИИ для удержания
     # GRINCH ATR = 5%/свеча → тугой трейл НЕ может быть < 2×ATR = 10%
     # иначе фиксируется на следующей свече шумом. 6% = минимум выживания.
-    SMART_TP_TIGHT_TRAIL_PCT = float(os.getenv("SMART_TP_TIGHT_TRAIL_PCT", "6.0"))  # было 1.2% — убивало позиции
+    SMART_TP_TIGHT_TRAIL_PCT = float(os.getenv("SMART_TP_TIGHT_TRAIL_PCT", "4.0"))  # было 6.0% (ATR=5%), пересчитано под ATR=2% (реал. Jul 2026)
 
     # ── Прогрессивный трейлинг-стоп, откалиброван под GRINCH ────────────
     # GRINCH ATR-14 (15м) = ~5%, StdDev/свеча = 2.82%, диапазон 24ч = 39%.
@@ -150,14 +150,14 @@ class Config:
     # Этап 2 (прибыль > 18%): трейлинг 11% — 2.2×ATR, переживает свечевой шум
     # Этап 3 (прибыль > 28%): трейлинг 8% — GRINCH-памп может идти 40%+
     # Этап 4 (прибыль > 40%): трейлинг 6% — финальная фиксация на экстремуме
-    TRAIL_BREAKEVEN_AT  = float(os.getenv("TRAIL_BREAKEVEN_AT", "10.0"))   # было 4% — < 1×ATR, шум выбивал сразу
-    TRAIL_STAGE2_AT     = float(os.getenv("TRAIL_STAGE2_AT",    "18.0"))   # было 8%
-    TRAIL_STAGE2_PCT    = float(os.getenv("TRAIL_STAGE2_PCT",   "11.0"))   # было 5% — < 1×ATR, 0% побед в бэктесте
-    TRAIL_STAGE3_AT     = float(os.getenv("TRAIL_STAGE3_AT",    "28.0"))   # было 14%
-    TRAIL_STAGE3_PCT    = float(os.getenv("TRAIL_STAGE3_PCT",    "8.0"))   # было 3.5%
-    TRAIL_STAGE4_AT     = float(os.getenv("TRAIL_STAGE4_AT",    "40.0"))   # было 20% — GRINCH памп может дать 39%+
-    TRAIL_STAGE4_PCT    = float(os.getenv("TRAIL_STAGE4_PCT",    "6.0"))   # было 2%
-    TRAILING_STOP_PCT   = float(os.getenv("TRAILING_STOP_PCT",  "12.0"))   # было 6.5% — < 2×ATR, 0% побед в бэктесте
+    TRAIL_BREAKEVEN_AT  = float(os.getenv("TRAIL_BREAKEVEN_AT",  "6.0"))   # было 10% (ATR=5%), пересчитано под ATR=2% (реал. Jul 2026)
+    TRAIL_STAGE2_AT     = float(os.getenv("TRAIL_STAGE2_AT",    "12.0"))   # было 18% (ATR=5%), пересчитано под ATR=2%
+    TRAIL_STAGE2_PCT    = float(os.getenv("TRAIL_STAGE2_PCT",    "6.0"))   # было 11% (2.2×ATR_old); теперь 3×ATR=2% — выдерживает шум
+    TRAIL_STAGE3_AT     = float(os.getenv("TRAIL_STAGE3_AT",    "18.0"))   # было 28%; диапазон 24ч = 34.6% → этап 3 достижим
+    TRAIL_STAGE3_PCT    = float(os.getenv("TRAIL_STAGE3_PCT",    "4.5"))   # было 8% (1.6×ATR_old); теперь 2.25×ATR=2%
+    TRAIL_STAGE4_AT     = float(os.getenv("TRAIL_STAGE4_AT",    "26.0"))   # было 40%; реал. диапазон 34.6% → ловим памп выше 26%
+    TRAIL_STAGE4_PCT    = float(os.getenv("TRAIL_STAGE4_PCT",    "3.5"))   # было 6% → 1.75×ATR=2% — финальная фиксация
+    TRAILING_STOP_PCT   = float(os.getenv("TRAILING_STOP_PCT",   "7.0"))   # было 12% (2.4×ATR=5%); теперь 3.5×ATR=2% = 7%
     # ── Адаптивный трейлинг по силе тренда (даём прибыли разрастись) ────────
     # В сильном восходящем тренде стоп идёт ШИРЕ (winner runs), в боковике/
     # слабости — ТУЖЕ (быстрее фиксируем). Нижний пол прибыли НЕ затрагивается.
@@ -196,7 +196,7 @@ class Config:
     SHORT_TRADING_ENABLED = bool(int(os.getenv("SHORT_TRADING_ENABLED", "1")))
     # Трейлинг шорта: если цена выросла на X% от минимума → фиксируем
     # GRINCH ATR = 5% → шорт-трейл < 12% выбивается шумом. Мин = 12%.
-    SHORT_TRAIL_PCT = float(os.getenv("SHORT_TRAIL_PCT", "12.0"))
+    SHORT_TRAIL_PCT = float(os.getenv("SHORT_TRAIL_PCT", "7.0"))   # было 12% (ATR=5%), пересчитано под ATR=2% (реал. Jul 2026)
     # Резерв GRINCH — это количество GRINCH, которое бот НИКОГДА не включает в шорт.
     # Нужен, чтобы авто-ликвидатор всегда мог продать свои «зафиксированные» GRINCH.
     GRINCH_RESERVE = float(os.getenv("GRINCH_RESERVE", "500"))
@@ -259,11 +259,11 @@ class Config:
     # TON за каждый вход (первая покупка и каждая докупка)
     DCA_STAKE_TON       = float(os.getenv("DCA_STAKE_TON", "100"))
     # Продать ВСЁ когда общая стоимость GRINCH выросла на N% относительно суммарных затрат
-    DCA_TARGET_PROFIT_PCT = float(os.getenv("DCA_TARGET_PROFIT_PCT", "30"))   # средний дневной диапазон GRINCH = 35.9%
+    DCA_TARGET_PROFIT_PCT = float(os.getenv("DCA_TARGET_PROFIT_PCT", "22"))   # реал. диапазон 24ч = 34.6% → цель ~65% диапазона; было 30%
     # Докупать ещё когда цена упала N% от цены ПОСЛЕДНЕЙ покупки
-    DCA_DROP_TRIGGER_PCT  = float(os.getenv("DCA_DROP_TRIGGER_PCT", "5"))   # p75 15min-range = 3.5% → 5% фильтрует шум
+    DCA_DROP_TRIGGER_PCT  = float(os.getenv("DCA_DROP_TRIGGER_PCT", "4"))   # ATR=2% → p75≈2.5% → 4% фильтрует шум; было 5%
     # После продажи: ждать падения цены на N% от пика перед следующей покупкой
-    DCA_PULLBACK_WAIT_PCT = float(os.getenv("DCA_PULLBACK_WAIT_PCT", "6"))  # p75=3.5% p90=6.5% → 6% = настоящий откат
+    DCA_PULLBACK_WAIT_PCT = float(os.getenv("DCA_PULLBACK_WAIT_PCT", "4"))  # ATR=2% → p90≈4% = настоящий откат; было 6%
     # Максимальное количество DCA-входов за один цикл (защита от бесконечного усреднения)
     DCA_MAX_ENTRIES     = int(os.getenv("DCA_MAX_ENTRIES", "10"))
 
@@ -280,8 +280,8 @@ class Config:
     # Уровень 2 (+40%): продаём оставшиеся 50%, ловим дополнительный памп.
     # При отключении — стандартная продажа всего на уровне 1.
     DCA_CASCADE_ENABLED    = bool(int(os.getenv("DCA_CASCADE_ENABLED",    "1")))
-    DCA_CASCADE_LEVEL1_PCT = float(os.getenv("DCA_CASCADE_LEVEL1_PCT", "40"))  # выше DCA_TARGET (30%) — нет конкуренции уровней
-    DCA_CASCADE_LEVEL2_PCT = float(os.getenv("DCA_CASCADE_LEVEL2_PCT", "65"))  # макс дневной диапазон = 92.6% — ловим ракеты
+    DCA_CASCADE_LEVEL1_PCT = float(os.getenv("DCA_CASCADE_LEVEL1_PCT", "28"))  # выше DCA_TARGET (22%) — нет конкуренции уровней; было 40%
+    DCA_CASCADE_LEVEL2_PCT = float(os.getenv("DCA_CASCADE_LEVEL2_PCT", "42"))  # реал. макс. диапазон 34.6% → ловим ракеты; было 65%
 
     # ── Временной фильтр: мёртвые UTC-часы (низкий объём, не открываем новые позиции) ──
     # По умолчанию: 0, 22, 23 UTC — самый низкий объём и диапазон по статистике GRINCH.
@@ -328,7 +328,7 @@ class Config:
     # Защита «только в плюс»: выход по рынку, но никогда в убыток (ONLY_PROFIT_EXIT).
     PROFIT_PROTECT_ENABLED  = bool(int(os.getenv("PROFIT_PROTECT_ENABLED",  "1")))
     PROFIT_PROTECT_TON      = float(os.getenv("PROFIT_PROTECT_TON",         "3.0"))   # мин. 3 TON прибыли для активации
-    PROFIT_PROTECT_DROP_PCT = float(os.getenv("PROFIT_PROTECT_DROP_PCT",    "8.0"))   # p90 15min-range=6.5% → 8% = настоящий разворот, не шум
+    PROFIT_PROTECT_DROP_PCT = float(os.getenv("PROFIT_PROTECT_DROP_PCT",    "5.0"))   # ATR=2% → p90≈3-4% → 5% = настоящий разворот (было 8% при ATR=5%)
     PROFIT_PROTECT_AI_SELL  = bool(int(os.getenv("PROFIT_PROTECT_AI_SELL",  "1")))    # также при AI SELL
 
     # ── Минимальная АБСОЛЮТНАЯ прибыль в TON — ниже этого не закрываем сделку ──
@@ -430,7 +430,7 @@ class Config:
     SCALP_TP_PCT            = float(os.getenv("SCALP_TP_PCT",              "5.0"))   # gross (3% нетто + 2% DEX)
     SCALP_TRAIL_PCT         = float(os.getenv("SCALP_TRAIL_PCT",           "3.0"))   # trail в боковике
     SCALP_MIN_AI_CONF       = float(os.getenv("SCALP_MIN_AI_CONF",         "52.0"))  # снижено с 55% — больше скальп-входов
-    SCALP_MAX_ATR_PCT       = float(os.getenv("SCALP_MAX_ATR_PCT",         "5.5"))   # ATR < X% → рынок спокойный
+    SCALP_MAX_ATR_PCT       = float(os.getenv("SCALP_MAX_ATR_PCT",         "3.0"))   # ATR реал.=1.83% → скальп АКТИВЕН; было 5.5%
 
     # ── BrainFusion: единый мозг (AI + TA + советник) ───────────────────
     # Когда все три источника согласны с ≥78% → входим без ожидания тика
