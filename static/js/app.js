@@ -654,8 +654,16 @@ function _updateQuantumModels(modelInfo) {
   }).join("");
 }
 
+function _updateUntrainedWarning(trained) {
+  const banner = document.getElementById("ai-untrained-banner");
+  if (!banner) return;
+  banner.style.display = trained ? "none" : "flex";
+}
+
 function updateAIPro(ai) {
   if (!ai) return;
+
+  _updateUntrainedWarning(!!ai.trained);
 
   const signal  = ai.ai_signal  || "HOLD";
   const conf    = Number(ai.confidence)  || 0;
