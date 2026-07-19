@@ -350,6 +350,23 @@ class Config:
     # Защищает от повторного входа в нисходящий тренд сразу после выбивания стопа.
     LOSS_COOLDOWN_SEC = int(os.getenv("LOSS_COOLDOWN_SEC", "120"))   # 2 минуты пауза после убытка (агрессия)
 
+    # ── Дневной автовыключатель (Circuit Breaker) ─────────────────────────────
+    # Если суммарный убыток за текущие сутки UTC превышает порог — торговля
+    # автоматически приостанавливается до следующего дня 00:00 UTC.
+    # Защищает капитал от «чёрного дня»: аномальный рынок, ошибка стратегии,
+    # зависший внешний API — нет смысла продолжать серийные убытки.
+    CIRCUIT_BREAKER_ENABLED        = bool(int(os.getenv("CIRCUIT_BREAKER_ENABLED",        "1")))
+    CIRCUIT_BREAKER_DAILY_LOSS_PCT = float(os.getenv("CIRCUIT_BREAKER_DAILY_LOSS_PCT",  "15.0"))  # % от портфеля на начало дня
+
+    # ── Репер устаревших позиций (Stale Position Reaper) ─────────────────────
+    # Позиция, открытая дольше MAX_HOURS без достижения TP/SL и без прибыли,
+    # считается «мёртвой» — выходим по рынку, высвобождая капитал.
+    # По умолчанию выключен (opt-in): включать осторожно, может срезать длинные
+    # удержания при DCA-стратегии.
+    STALE_POSITION_ENABLED        = bool(int(os.getenv("STALE_POSITION_ENABLED",         "0")))
+    STALE_POSITION_MAX_HOURS      = float(os.getenv("STALE_POSITION_MAX_HOURS",         "72.0"))  # 3 дня
+    STALE_POSITION_MIN_PROFIT_PCT = float(os.getenv("STALE_POSITION_MIN_PROFIT_PCT",     "1.0"))  # если прибыль > N% — не трогаем
+
     # ── DCA AI-guard: не докупать в "падающий нож" ───────────────────────────
     # Если AI уверен в продолжении падения (≥ порога) — блокируем DCA-докупку.
     # Обычная DCA логика включается вновь как только AI сигнал меняется.

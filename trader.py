@@ -67,9 +67,18 @@ class Trader:
         self.last_ai       = {}
         self.last_analysis = {}   # кэш последнего strategy.analyze() — обновляется в _tick()
         self.stats = {
-            "total_trades":   0,
-            "winning_trades": 0,
-            "total_pnl":      0.0,
+            "total_trades":    0,
+            "winning_trades":  0,
+            "total_pnl":       0.0,
+            # ── Расширенная pro-статистика ────────────────────────────────────
+            "win_streak":      0,      # текущая серия побед подряд
+            "max_win_streak":  0,      # лучшая серия за сессию
+            "best_trade_ton":  0.0,    # лучшая одиночная сделка (TON)
+            "worst_trade_ton": 0.0,    # худшая одиночная сделка (TON)
+            "daily_pnl":       0.0,    # P&L за текущие сутки UTC
+            "daily_start_ts":  0.0,    # unix-timestamp 00:00 UTC сегодня
+            "daily_start_equity": 0.0, # equity портфеля на начало дня (для %% расчёта CB)
+            "circuit_breaker_active": False,  # флаг: дневной CB сработал
         }
         self._thread = None
         # ── Ручной выключатель торговли ──────────────────────────────────
@@ -2037,6 +2046,92 @@ class Trader:
             pass  # буфер НИКОГДА не ломает торговлю
 
     # ──────────────────────────────────────────
+    # Расширенная статистика и Circuit Breaker
+    # ──────────────────────────────────────────
+
+    def _reset_daily_stats_if_needed(self):
+        """Сбрасывает daily_pnl и circuit_breaker в полночь UTC.
+        Безопасно вызывать каждый тик — проверяет сами, нужно ли сбросить."""
+        from datetime import datetime, timezone
+        now_utc   = datetime.now(timezone.utc)
+        day_start = now_utc.replace(hour=0, minute=0, second=0, microsecond=0).timestamp()
+        with self._close_lock:
+            if self.stats.get("daily_start_ts", 0.0) >= day_start:
+                return  # ещё тот же день UTC
+            # ── Новый день: обнуляем дневные счётчики ────────────────────────
+            self.stats["daily_pnl"]              = 0.0
+            self.stats["daily_start_ts"]          = day_start
+            self.stats["circuit_breaker_active"]  = False
+            # Снапшот equity для расчёта % просадки в новом дне
+            try:
+                from price_feed import price_feed as _pf2
+                from wallet_manager import wallet_manager as _wm2
+                snap2  = _wm2.get_snapshot() or {}
+                ton2   = float(snap2.get("ton",    0) or 0)
+                grin2  = float(snap2.get("grinch", 0) or 0)
+                gprice2 = _pf2.get_grinch_ton_price() or 0.0
+                self.stats["daily_start_equity"] = round(ton2 + grin2 * gprice2, 3)
+            except Exception:
+                self.stats["daily_start_equity"] = 0.0
+        self.log("📅 Новый день UTC — счётчики daily_pnl и circuit_breaker сброшены", "INFO")
+
+    def _record_trade_pnl(self, pnl_ton: float):
+        """Единая точка обновления расширенной статистики после закрытой сделки.
+        ВЫЗЫВАТЬ ВНУТРИ self._close_lock — иначе гонка данных!
+        Обновляет: daily_pnl, win_streak, max_win_streak, best/worst_trade_ton."""
+        import math as _math
+        if not _math.isfinite(pnl_ton):
+            return
+        self.stats["daily_pnl"] = round(
+            float(self.stats.get("daily_pnl", 0.0)) + pnl_ton, 6
+        )
+        if pnl_ton > 0:
+            streak = self.stats.get("win_streak", 0) + 1
+            self.stats["win_streak"]     = streak
+            self.stats["max_win_streak"] = max(
+                self.stats.get("max_win_streak", 0), streak
+            )
+        else:
+            self.stats["win_streak"] = 0
+        self.stats["best_trade_ton"]  = max(
+            float(self.stats.get("best_trade_ton",   0.0)), pnl_ton
+        )
+        self.stats["worst_trade_ton"] = min(
+            float(self.stats.get("worst_trade_ton",  0.0)), pnl_ton
+        )
+
+    def _check_circuit_breaker(self) -> bool:
+        """Проверяет дневной лимит убытков (Circuit Breaker).
+        Возвращает True если CB активен → торговлю нужно пропустить.
+        НЕ вызывать внутри _close_lock (сам захватывает лок)."""
+        if not Config.CIRCUIT_BREAKER_ENABLED:
+            return False
+        with self._close_lock:
+            if self.stats.get("circuit_breaker_active"):
+                return True   # уже сработал ранее в этот день
+            daily_pnl    = float(self.stats.get("daily_pnl",          0.0))
+            start_equity = float(self.stats.get("daily_start_equity",  0.0))
+        if daily_pnl >= 0 or start_equity <= 0:
+            return False   # нет убытков или нет данных о начале дня
+        loss_pct = abs(daily_pnl) / start_equity * 100
+        if loss_pct >= Config.CIRCUIT_BREAKER_DAILY_LOSS_PCT:
+            with self._close_lock:
+                self.stats["circuit_breaker_active"] = True
+            msg = (
+                f"🔴 Circuit Breaker: суточный убыток {daily_pnl:+.3f} TON "
+                f"({loss_pct:.1f}% ≥ {Config.CIRCUIT_BREAKER_DAILY_LOSS_PCT}%) — "
+                f"торговля приостановлена до 00:00 UTC"
+            )
+            self.log(msg, "ERROR")
+            try:
+                from alerts import send_alert
+                send_alert(msg)
+            except Exception:
+                pass
+            return True
+        return False
+
+    # ──────────────────────────────────────────
     # Торговый тик
     # ──────────────────────────────────────────
     def _run_market_analysis_only(self) -> None:
@@ -2063,6 +2158,12 @@ class Trader:
             pass  # никогда не ломаем цикл
 
     def _tick(self):
+        # ── Дневной сброс счётчиков (полночь UTC) ──────────────────────────
+        try:
+            self._reset_daily_stats_if_needed()
+        except Exception:
+            pass
+
         # ── Ручной выключатель торговли: блокирует ОБА режима (DCA и AI) ──
         if self._trading_disabled_guard():
             # Анализируем рынок и пишем тики в bot_ticks даже при выключенной торговле —
@@ -2073,6 +2174,18 @@ class Trader:
             except Exception:
                 pass
             return
+
+        # ── Circuit Breaker: суточный лимит убытков ─────────────────────────
+        try:
+            if self._check_circuit_breaker():
+                self._run_market_analysis_only()
+                try:
+                    self._push_tick_analytics()
+                except Exception:
+                    pass
+                return
+        except Exception:
+            pass
 
         # ── DCA режим: полностью заменяет AI-логику ─────────────────
         if Config.DCA_MODE:
@@ -3219,6 +3332,34 @@ class Trader:
             entry      = trade["entry_price"]
             profit_pct = (price - entry) / entry * 100
 
+            # ── Stale Position Reaper ─────────────────────────────────────────
+            # Если позиция открыта дольше MAX_HOURS без прибыли — выходим,
+            # высвобождая капитал. Применяется только если прибыль < порога.
+            if Config.STALE_POSITION_ENABLED:
+                opened_at_str = trade.get("opened_at")
+                if opened_at_str:
+                    try:
+                        from datetime import datetime as _dt2, timezone as _tz
+                        opened_dt = _dt2.fromisoformat(
+                            opened_at_str.replace("Z", "+00:00")
+                        )
+                        age_hours = (
+                            _dt2.now(_tz.utc) - opened_dt
+                        ).total_seconds() / 3600
+                        if (age_hours > Config.STALE_POSITION_MAX_HOURS
+                                and profit_pct < Config.STALE_POSITION_MIN_PROFIT_PCT):
+                            self.log(
+                                f"⏰ Stale Reaper: позиция открыта {age_hours:.1f}ч "
+                                f"(лимит {Config.STALE_POSITION_MAX_HOURS}ч), "
+                                f"P&L {profit_pct:.2f}% < {Config.STALE_POSITION_MIN_PROFIT_PCT}% — "
+                                f"закрываем (освобождаем капитал)", "WARN"
+                            )
+                            self._close_trade(trade, price, f"stale_{age_hours:.0f}h")
+                            closed_any = True
+                            continue
+                    except Exception:
+                        pass
+
             # Минимальный нетто-пол прибыли (в gross %): учитывает DEX-комиссию
             # И газ обоих свопов для данной ставки. Для мелких сделок порог выше.
             stake_ton     = trade.get("stake_ton") or None
@@ -3613,6 +3754,8 @@ class Trader:
         self.stats["total_trades"] = self.stats.get("total_trades", 0) + 1
         if pnl > 0:
             self.stats["winning_trades"] += 1
+        # Расширенная pro-статистика (серия побед, daily P&L, best/worst)
+        self._record_trade_pnl(pnl)
         # ── Организм: обратная связь о закрытой сделке ───────────────────
         try:
             if _organism is not None:

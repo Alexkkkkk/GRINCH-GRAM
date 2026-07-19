@@ -1021,6 +1021,10 @@ def api_admin_fix_open_trades():
     return jsonify({"ok": True, "fixed": fixed, "count": len(fixed)})
 
 
+_MEMORY_CACHE: dict = {"ts": 0.0, "payload": None}
+_MEMORY_CACHE_TTL = 10  # секунд — gc.get_objects() дорогой вызов
+
+
 @app.route("/api/memory")
 def api_memory():
     """
@@ -1028,7 +1032,12 @@ def api_memory():
     инциденте (OOM на внешнем хостинге) сразу видеть, что именно раздуто:
     модели AI, буферы опыта, кэши цен/аналитики или количество потоков.
     Не требует psutil — используется resource.getrusage (встроен в Python).
+    Кэшируется на 10 сек: gc.get_objects() дорог при частом polling-е.
     """
+    _now = time.time()
+    if _MEMORY_CACHE["payload"] and (_now - _MEMORY_CACHE["ts"]) < _MEMORY_CACHE_TTL:
+        return jsonify({**_MEMORY_CACHE["payload"], "cached": True}), 200
+
     rss_kb = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
     rss_mb = round(rss_kb / 1024, 1)  # на Linux ru_maxrss уже в КБ
 
@@ -1074,7 +1083,7 @@ def api_memory():
         "gc_generation_counts": gc.get_count(),
     }
 
-    return jsonify({
+    payload = {
         "process": {
             "rss_mb": rss_mb,
             "active_threads": threading.active_count(),
@@ -1084,6 +1093,94 @@ def api_memory():
         "analytics_buffer": analytics_info,
         "caches": cache_info,
         "gc": gc_info,
+    }
+    _MEMORY_CACHE["payload"] = payload
+    _MEMORY_CACHE["ts"]      = time.time()
+    return jsonify(payload), 200
+
+
+# ─────────────────────────── Performance Stats ──────────────────────────────
+
+@app.route("/api/performance")
+def api_performance():
+    """Расширенная торговая статистика: Sharpe, серия побед, daily P&L, circuit breaker.
+
+    Рассчитывает упрощённый Sharpe Ratio по истории сделок сессии.
+    Annualized = (mean_pnl / std_pnl) × √252 (252 торговых дня в году).
+    """
+    stats = getattr(trader, "stats", {}) or {}
+    total = int(stats.get("total_trades",   0))
+    wins  = int(stats.get("winning_trades", 0))
+    pnl   = float(stats.get("total_pnl",    0.0))
+
+    win_rate = round(wins / total * 100, 1) if total > 0 else 0.0
+
+    # Sharpe Ratio из закрытых сделок (upрощённый, аннуализированный)
+    sharpe_ratio = None
+    try:
+        import numpy as _np
+        closed = [t for t in (trader.trades or []) if t.get("pnl") is not None]
+        if len(closed) >= 5:
+            pnls = _np.array([float(t["pnl"]) for t in closed], dtype=float)
+            mean_p = float(_np.mean(pnls))
+            std_p  = float(_np.std(pnls))
+            if std_p > 0:
+                sharpe_ratio = round(mean_p / std_p * (252 ** 0.5), 2)
+    except Exception:
+        pass
+
+    # Max Drawdown из кумулятивного P&L по закрытым сделкам
+    max_drawdown_ton = None
+    try:
+        closed = sorted(
+            [t for t in (trader.trades or []) if t.get("pnl") is not None and t.get("closed_at")],
+            key=lambda t: t.get("closed_at", "")
+        )
+        if len(closed) >= 2:
+            import numpy as _np2
+            pnls_arr  = _np2.array([float(t["pnl"]) for t in closed], dtype=float)
+            cum_pnl   = _np2.cumsum(pnls_arr)
+            running_max = _np2.maximum.accumulate(cum_pnl)
+            drawdowns   = cum_pnl - running_max
+            max_drawdown_ton = round(float(_np2.min(drawdowns)), 4)
+    except Exception:
+        pass
+
+    # BrainFusion: точность источников и динамические веса
+    source_accuracy = {}
+    try:
+        import brain_fusion as _bf_mod
+        _b = _bf_mod.brain
+        with _b._lock:
+            source_accuracy = {
+                "ai":  {"wins": _b._ai_wins,  "total": _b._ai_total,
+                         "pct": round(_b._ai_wins / _b._ai_total * 100, 1)
+                                if _b._ai_total > 0 else None},
+                "ta":  {"wins": _b._ta_wins,  "total": _b._ta_total,
+                         "pct": round(_b._ta_wins / _b._ta_total * 100, 1)
+                                if _b._ta_total > 0 else None},
+                "llm": {"wins": _b._adv_wins, "total": _b._adv_total,
+                         "pct": round(_b._adv_wins / _b._adv_total * 100, 1)
+                                if _b._adv_total > 0 else None},
+            }
+    except Exception:
+        pass
+
+    return jsonify({
+        "ok":                 True,
+        "total_trades":       total,
+        "winning_trades":     wins,
+        "win_rate_pct":       win_rate,
+        "total_pnl_ton":      round(pnl, 4),
+        "win_streak":         int(stats.get("win_streak",      0)),
+        "max_win_streak":     int(stats.get("max_win_streak",  0)),
+        "best_trade_ton":     round(float(stats.get("best_trade_ton",  0.0)), 4),
+        "worst_trade_ton":    round(float(stats.get("worst_trade_ton", 0.0)), 4),
+        "daily_pnl_ton":      round(float(stats.get("daily_pnl",       0.0)), 4),
+        "circuit_breaker":    bool(stats.get("circuit_breaker_active", False)),
+        "sharpe_ratio":       sharpe_ratio,
+        "max_drawdown_ton":   max_drawdown_ton,
+        "source_accuracy":    source_accuracy,
     }), 200
 
 

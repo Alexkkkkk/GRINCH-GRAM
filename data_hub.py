@@ -273,14 +273,25 @@ def refresh_all(parallel: bool = True):
 
 # ─── Публичное API ───────────────────────────────────────────────────────────
 
+_snapshot_cache: dict = {"data": {}, "ts": 0.0}
+_SNAPSHOT_TTL = 5.0  # секунд — исходные источники TTL 30-120с, 5с не создаёт stale-риска
+
+
 def get_snapshot() -> dict:
-    """Возвращает плоский словарь всех актуальных данных из всех источников."""
+    """Возвращает плоский словарь всех актуальных данных из всех источников.
+    Кэшируется на 5 секунд — вызывается из ai_engine и advisor каждый тик,
+    многократное сканирование dict без изменений избыточно."""
+    now = time.time()
+    if _snapshot_cache["data"] and (now - _snapshot_cache["ts"]) < _SNAPSHOT_TTL:
+        return dict(_snapshot_cache["data"])
     snap = {}
     with _lock:
         for key, data in _cache.items():
             if isinstance(data, dict):
                 snap.update(data)
-    return snap
+    _snapshot_cache["data"] = snap
+    _snapshot_cache["ts"]   = now
+    return dict(snap)
 
 
 def get_source_status() -> list:

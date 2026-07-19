@@ -121,6 +121,18 @@
     <div class="at-sep">│</div>
     <div class="at-item at-pnl">💰 P&amp;L: <span id="at-pnl">+0.0000 TON</span></div>
     <div class="at-sep">│</div>
+    <div class="at-item" id="at-daily-pnl-wrap" title="P&L за сутки UTC">
+      📅 Сегодня: <span id="at-daily-pnl" style="font-weight:700">—</span>
+    </div>
+    <div class="at-sep">│</div>
+    <div class="at-item" id="at-streak-wrap" title="Серия побед подряд" style="display:none">
+      🔥 <span id="at-streak">0</span> подряд
+    </div>
+    <div class="at-sep" id="at-streak-sep" style="display:none">│</div>
+    <div class="at-item" id="at-cb-wrap" title="Circuit Breaker" style="display:none;color:#ff4d6d;font-weight:700">
+      ⛔ CB АКТИВЕН
+    </div>
+    <div class="at-sep" id="at-cb-sep" style="display:none">│</div>
     <div class="at-item" style="color:var(--purple2)">🎲 Kelly: <span id="at-kelly-frac">—</span></div>
     <div class="at-sep">│</div>
     <div class="at-clock" id="at-clock">00:00:00</div>
@@ -518,6 +530,10 @@
         <div class="tsb-item"><div class="tsb-lbl">Win Rate</div><div class="tsb-val" id="stat-winrate">0%</div></div>
         <div class="tsb-item"><div class="tsb-lbl">P&amp;L</div><div class="tsb-val" id="stat-pnl">0 TON</div></div>
         <div class="tsb-item"><div class="tsb-lbl">Открытых</div><div class="tsb-val" id="stat-open">0</div></div>
+        <div class="tsb-item" title="Текущая серия побед подряд"><div class="tsb-lbl">🔥 Серия</div><div class="tsb-val" id="stat-streak">—</div></div>
+        <div class="tsb-item" title="Лучшая серия за сессию"><div class="tsb-lbl">⭐ Рекорд</div><div class="tsb-val" id="stat-max-streak">—</div></div>
+        <div class="tsb-item" title="Sharpe Ratio (ann.)"><div class="tsb-lbl">📐 Sharpe</div><div class="tsb-val" id="stat-sharpe">—</div></div>
+        <div class="tsb-item" title="P&L за сутки UTC"><div class="tsb-lbl">📅 Сегодня</div><div class="tsb-val" id="stat-daily-pnl">—</div></div>
         <div class="tsb-balance"><div id="balance-list" class="balance-list"></div></div>
       </div>
 
@@ -3159,6 +3175,81 @@ window.switchEqTab       = switchEqTab;
 
   pollOrganism();
   setInterval(pollOrganism, POLL_ORG);
+})();
+
+// ══ 📊 ПРОИЗВОДИТЕЛЬНОСТЬ — polling /api/performance каждые 15с ═════════════
+(function() {
+  const POLL_PERF = 15000;
+
+  function fmtTon(v) {
+    if (v == null) return '—';
+    const n = parseFloat(v);
+    const sign = n >= 0 ? '+' : '';
+    return sign + n.toFixed(3) + ' TON';
+  }
+  function colorPnl(el, v) {
+    if (!el) return;
+    const n = parseFloat(v);
+    el.style.color = n > 0 ? 'var(--green)' : n < 0 ? 'var(--red)' : '';
+  }
+
+  async function pollPerformance() {
+    try {
+      const r = await fetch('/api/performance').then(x => x.json());
+      if (!r.ok) return;
+
+      // ── Trades stats bar ─────────────────────────────────────────────────
+      const streak    = parseInt(r.win_streak    || 0);
+      const maxStreak = parseInt(r.max_win_streak || 0);
+      const daily     = r.daily_pnl_ton;
+      const sharpe    = r.sharpe_ratio;
+
+      const elStreak    = document.getElementById('stat-streak');
+      const elMaxStreak = document.getElementById('stat-max-streak');
+      const elSharpe    = document.getElementById('stat-sharpe');
+      const elDaily     = document.getElementById('stat-daily-pnl');
+
+      if (elStreak)    elStreak.textContent    = streak > 0 ? '🔥 ' + streak : streak + '';
+      if (elMaxStreak) elMaxStreak.textContent  = maxStreak + '';
+      if (elSharpe)    elSharpe.textContent     = sharpe != null ? sharpe.toFixed(2) : '—';
+      if (elDaily) {
+        elDaily.textContent = fmtTon(daily);
+        colorPnl(elDaily, daily);
+      }
+
+      // ── AI Ticker bar ────────────────────────────────────────────────────
+      const elTickerDaily  = document.getElementById('at-daily-pnl');
+      const elTickerStreak = document.getElementById('at-streak');
+      const elStreakWrap   = document.getElementById('at-streak-wrap');
+      const elStreakSep    = document.getElementById('at-streak-sep');
+      const elCbWrap       = document.getElementById('at-cb-wrap');
+      const elCbSep        = document.getElementById('at-cb-sep');
+
+      if (elTickerDaily) {
+        elTickerDaily.textContent = fmtTon(daily);
+        colorPnl(elTickerDaily, daily);
+      }
+
+      // Серия побед — показываем только при ≥ 2
+      if (elStreakWrap && elStreakSep) {
+        const show = streak >= 2;
+        elStreakWrap.style.display = show ? '' : 'none';
+        elStreakSep.style.display  = show ? '' : 'none';
+        if (elTickerStreak) elTickerStreak.textContent = streak;
+      }
+
+      // Circuit Breaker — мигающий красный баннер
+      if (elCbWrap && elCbSep) {
+        const cbActive = !!r.circuit_breaker;
+        elCbWrap.style.display = cbActive ? '' : 'none';
+        elCbSep.style.display  = cbActive ? '' : 'none';
+      }
+
+    } catch(e) { console.warn('[Perf]', e); }
+  }
+
+  pollPerformance();
+  setInterval(pollPerformance, POLL_PERF);
 })();
 </script>
 </body>

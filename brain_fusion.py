@@ -150,6 +150,16 @@ class BrainFusion:
         self._fusion_wins:   int = 0
         self._fusion_total:  int = 0
 
+        # ── Динамические веса: точность каждого источника за последние сделки ─
+        # Позволяет автоматически усиливать лучший источник сигнала и
+        # ослаблять худший на основе реальных торговых результатов.
+        self._ai_wins:   int = 0    # ML-движок: сколько раз его сигнал совпал с прибылью
+        self._ai_total:  int = 0    # ML-движок: всего оценок
+        self._ta_wins:   int = 0    # TA: сколько раз его сигнал совпал с прибылью
+        self._ta_total:  int = 0    # TA: всего оценок
+        self._adv_wins:  int = 0    # LLM советник: побед
+        self._adv_total: int = 0    # LLM советник: всего оценок
+
         # Состояние скальп-серии (сколько скальпов подряд)
         self._scalp_streak:  int = 0
         self._scalp_profit:  float = 0.0  # накопленная прибыль скальп-серии (TON)
@@ -172,13 +182,23 @@ class BrainFusion:
             self._fusion_total = int(state.get("fusion_total", 0) or 0)
             self._scalp_streak = int(state.get("scalp_streak", 0) or 0)
             self._scalp_profit = float(state.get("scalp_profit", 0.0) or 0.0)
+            # Динамические веса: точность каждого источника
+            self._ai_wins   = int(state.get("ai_wins",   0) or 0)
+            self._ai_total  = int(state.get("ai_total",  0) or 0)
+            self._ta_wins   = int(state.get("ta_wins",   0) or 0)
+            self._ta_total  = int(state.get("ta_total",  0) or 0)
+            self._adv_wins  = int(state.get("adv_wins",  0) or 0)
+            self._adv_total = int(state.get("adv_total", 0) or 0)
             log_data = state.get("decision_log")
             if isinstance(log_data, list):
                 self._decision_log = log_data[-50:]
             log.info(
                 f"[BrainFusion] Самообучение восстановлено из БД: "
                 f"точность={self._fusion_wins}/{self._fusion_total}, "
-                f"серия скальпов={self._scalp_streak}"
+                f"серия скальпов={self._scalp_streak} | "
+                f"точность источников: AI={self._ai_wins}/{self._ai_total} "
+                f"TA={self._ta_wins}/{self._ta_total} "
+                f"LLM={self._adv_wins}/{self._adv_total}"
             )
         except Exception as e:
             log.warning(f"[BrainFusion] _load_state ошибка: {e}")
@@ -196,6 +216,13 @@ class BrainFusion:
                 "scalp_streak":  self._scalp_streak,
                 "scalp_profit":  self._scalp_profit,
                 "decision_log":  self._decision_log[-50:],
+                # Динамические веса — точность источников
+                "ai_wins":   self._ai_wins,
+                "ai_total":  self._ai_total,
+                "ta_wins":   self._ta_wins,
+                "ta_total":  self._ta_total,
+                "adv_wins":  self._adv_wins,
+                "adv_total": self._adv_total,
             })
         except Exception as e:
             log.warning(f"[BrainFusion] _save_state ошибка: {e}")
@@ -302,10 +329,25 @@ class BrainFusion:
         adv_conf_n = self._advisor.confidence       if adv_fresh else 0.5
         ta_conf_n  = min(1.0, (self._ta.entry_score or 0) / 10.0) if ta_fresh else 0.5
 
+        # ── Динамическая корректировка базовых весов по точности источника ──
+        # После ≥5 оценок каждый источник получает поправочный коэффициент:
+        # точность 60% → +25% к весу; 40% → -25%; при <5 оценках — без изменений.
+        # Ни один источник не опускается ниже 30% от своего базового веса.
+        def _dyn_base_w(base_w: float, wins: int, total: int) -> float:
+            if total < 5:
+                return base_w
+            accuracy = wins / total          # [0..1]
+            factor   = 1.0 + (accuracy - 0.5) * 0.5   # [0.75..1.25]
+            return max(base_w * 0.30, min(base_w * 1.50, base_w * factor))
+
+        dyn_w_ai  = _dyn_base_w(_W_AI,      self._ai_wins,  self._ai_total)
+        dyn_w_ta  = _dyn_base_w(_W_TA,      self._ta_wins,  self._ta_total)
+        dyn_w_adv = _dyn_base_w(_W_ADVISOR, self._adv_wins, self._adv_total)
+
         # ── Взвешенный консенсус ──────────────────────────────────────────
-        w_ai  = _W_AI  * ai_conf_n   if ai_fresh  else 0.0
-        w_ta  = _W_TA  * ta_conf_n   if ta_fresh  else 0.0
-        w_adv = _W_ADVISOR * adv_conf_n if adv_fresh else 0.0
+        w_ai  = dyn_w_ai  * ai_conf_n   if ai_fresh  else 0.0
+        w_ta  = dyn_w_ta  * ta_conf_n   if ta_fresh  else 0.0
+        w_adv = dyn_w_adv * adv_conf_n  if adv_fresh else 0.0
         w_sum = w_ai + w_ta + w_adv
 
         if w_sum < 0.01:
@@ -547,24 +589,51 @@ class BrainFusion:
             }
 
     def on_trade_closed(self, pnl_ton: float, was_scalp: bool = False):
-        """Обратная связь после закрытой сделки — самообучение мозга."""
+        """Обратная связь после закрытой сделки — самообучение мозга.
+        Обновляет точность каждого источника (AI/TA/LLM) для динамических весов."""
         with self._lock:
             self._fusion_total += 1
-            if pnl_ton > 0:
+            is_win = pnl_ton > 0
+            if is_win:
                 self._fusion_wins += 1
 
+            # ── Динамические веса: записываем точность каждого источника ────────
+            # Правило: BUY + прибыль = верно; SELL/HOLD + убыток тоже = верно.
+            ai_sig  = self._ai.signal
+            ta_sig  = self._ta.signal
+            adv_sig = self._advisor.verdict
+
+            if ai_sig in ("BUY", "SELL"):
+                self._ai_total += 1
+                if (ai_sig == "BUY" and is_win) or (ai_sig == "SELL" and not is_win):
+                    self._ai_wins += 1
+
+            if ta_sig in ("BUY", "SELL"):
+                self._ta_total += 1
+                if (ta_sig == "BUY" and is_win) or (ta_sig == "SELL" and not is_win):
+                    self._ta_wins += 1
+
+            adv_is_buy = adv_sig in ("ПОКУПАТЬ", "BUY")
+            adv_is_sell = adv_sig in ("ПРОДАВАТЬ", "SELL")
+            if adv_is_buy or adv_is_sell:
+                self._adv_total += 1
+                if (adv_is_buy and is_win) or (adv_is_sell and not is_win):
+                    self._adv_wins += 1
+
             if was_scalp:
-                if pnl_ton > 0:
+                if is_win:
                     self._scalp_streak += 1
                     self._scalp_profit += pnl_ton
                 else:
                     self._scalp_streak = 0
 
-            # Логируем результат
             log.info(
                 f"[BrainFusion] Сделка закрыта: PnL={pnl_ton:+.3f} TON | "
-                f"скальп={was_scalp} | серия скальпов={self._scalp_streak} | "
-                f"точность fusion={self._fusion_wins}/{self._fusion_total}"
+                f"скальп={was_scalp} | серия={self._scalp_streak} | "
+                f"fusion={self._fusion_wins}/{self._fusion_total} | "
+                f"AI={self._ai_wins}/{self._ai_total} "
+                f"TA={self._ta_wins}/{self._ta_total} "
+                f"LLM={self._adv_wins}/{self._adv_total}"
             )
             self._save_state()
 
