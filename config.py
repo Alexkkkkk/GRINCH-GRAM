@@ -35,7 +35,7 @@ class Config:
     # достижима (~3-4 свечи), но не настолько маленькой чтобы выбивало шумом.
     # Бэктест: trail=12%, tp=15% → 55.6% побед, ожид. прибыль 7.2%/сделку.
     TARGET_NET_PCT  = float(os.getenv("TARGET_NET_PCT",  "13.0"))  # минимальная нетто-прибыль (было 10%)
-    TAKE_PROFIT_PCT = float(os.getenv("TAKE_PROFIT_PCT", "15.0"))  # gross: 13% нетто + 2% DEX комиссий (было 22%)
+    TAKE_PROFIT_PCT = float(os.getenv("TAKE_PROFIT_PCT", "28.0"))  # gross: range 22-40% → цель 28%; было 15%/65% в DB
     STOP_LOSS_PCT   = float(os.getenv("STOP_LOSS_PCT",   "5.0"))   # запасной стоп (не используется при ONLY_PROFIT_EXIT)
 
     @classmethod
@@ -221,7 +221,7 @@ class Config:
 
     # Минимальная уверенность AI для самостоятельного входа в автономном режиме
     # Снижен порог входа: AI доверяем больше — 55% уже достаточно для сигнала
-    AI_AUTONOMOUS_MIN_CONF = float(os.getenv("AI_AUTONOMOUS_MIN_CONF", "44.0"))  # макс. агрессия
+    AI_AUTONOMOUS_MIN_CONF = float(os.getenv("AI_AUTONOMOUS_MIN_CONF", "50.0"))  # было 44% — слишком агрессивно для тонкого рынка
 
     # ── ПОЛНЫЕ ПРАВА ТОРГОВЛИ ──────────────────────────────────────────
     # Когда True и уверенность AI >= AI_FULL_RIGHTS_MIN_CONF%, AI имеет полные
@@ -231,7 +231,7 @@ class Config:
     # даже если рынок сейчас «спокойный» по ATR.
     AI_FULL_RIGHTS = bool(int(os.getenv("AI_FULL_RIGHTS", "1")))
     # При 62%+ AI получает полные права — без ATR-фильтра (был 68%)
-    AI_FULL_RIGHTS_MIN_CONF = float(os.getenv("AI_FULL_RIGHTS_MIN_CONF", "48.0"))  # супер агрессия
+    AI_FULL_RIGHTS_MIN_CONF = float(os.getenv("AI_FULL_RIGHTS_MIN_CONF", "52.0"))  # было 48% — повышаем для надёжности
 
     # Коэффициент «реалистичности» входа: минимальный ATR в % от цены, при котором
     # рынок способен дать нужный gross-% (если ATR × mult < required_gross → не входим).
@@ -261,9 +261,9 @@ class Config:
     # Продать ВСЁ когда общая стоимость GRINCH выросла на N% относительно суммарных затрат
     DCA_TARGET_PROFIT_PCT = float(os.getenv("DCA_TARGET_PROFIT_PCT", "22"))   # реал. диапазон 24ч = 34.6% → цель ~65% диапазона; было 30%
     # Докупать ещё когда цена упала N% от цены ПОСЛЕДНЕЙ покупки
-    DCA_DROP_TRIGGER_PCT  = float(os.getenv("DCA_DROP_TRIGGER_PCT", "4"))   # ATR=2% → p75≈2.5% → 4% фильтрует шум; было 5%
+    DCA_DROP_TRIGGER_PCT  = float(os.getenv("DCA_DROP_TRIGGER_PCT", "8"))   # p90 ATR=6% → 8% = надёжный DCA-триггер (было 15% в DB)
     # После продажи: ждать падения цены на N% от пика перед следующей покупкой
-    DCA_PULLBACK_WAIT_PCT = float(os.getenv("DCA_PULLBACK_WAIT_PCT", "4"))  # ATR=2% → p90≈4% = настоящий откат; было 6%
+    DCA_PULLBACK_WAIT_PCT = float(os.getenv("DCA_PULLBACK_WAIT_PCT", "10"))  # защита от дампа + реалистично для range=22%; было 15% в DB
     # Максимальное количество DCA-входов за один цикл (защита от бесконечного усреднения)
     DCA_MAX_ENTRIES     = int(os.getenv("DCA_MAX_ENTRIES", "10"))
 
@@ -297,7 +297,7 @@ class Config:
     # ── Умный реentri: после ТП входим быстрее если AI бычий ────────────────
     # Вместо ожидания -25% отката: при AI-уверенности ≥ порога достаточно -8%.
     DCA_SMART_REENTRY_ENABLED    = bool(int(os.getenv("DCA_SMART_REENTRY_ENABLED",    "1")))
-    DCA_SMART_REENTRY_PULLBACK_PCT = float(os.getenv("DCA_SMART_REENTRY_PULLBACK_PCT", "5"))   # p75 15min = 3.5% → 5% безопаснее
+    DCA_SMART_REENTRY_PULLBACK_PCT = float(os.getenv("DCA_SMART_REENTRY_PULLBACK_PCT", "4"))   # p75 ATR=3.4% → 4% быстрее ловит отскок
     DCA_SMART_REENTRY_MIN_AI_CONF  = float(os.getenv("DCA_SMART_REENTRY_MIN_AI_CONF",  "50")) # супер агрессия: больше реентри
     # Минимальная пауза между DCA-докупками (секунды) — защита от переторговли.
     # При низких порогах входа (drop 9%, conf 55%) без паузы бот может войти 3+ раз
@@ -317,8 +317,8 @@ class Config:
     # летит вверх. В этом режиме порог докупки снижается до FAST_DROP_PCT
     # (вместо стандартных 12%) чтобы не пропустить откат во время ракеты.
     DCA_ADAPTIVE_TRIGGER_ENABLED  = bool(int(os.getenv("DCA_ADAPTIVE_TRIGGER_ENABLED",  "1")))
-    DCA_ADAPTIVE_FAST_MOVE_PCT    = float(os.getenv("DCA_ADAPTIVE_FAST_MOVE_PCT",    "5"))  # порог "ракетного" движения %
-    DCA_ADAPTIVE_FAST_DROP_PCT    = float(os.getenv("DCA_ADAPTIVE_FAST_DROP_PCT",    "6"))  # агрессивный порог докупки %
+    DCA_ADAPTIVE_FAST_MOVE_PCT    = float(os.getenv("DCA_ADAPTIVE_FAST_MOVE_PCT",    "4"))  # было 5%; ATR avg=2.5% → 4% = значимое движение
+    DCA_ADAPTIVE_FAST_DROP_PCT    = float(os.getenv("DCA_ADAPTIVE_FAST_DROP_PCT",    "4"))  # было 6%; p75 ATR=3.4% → 4% оптимально
 
     # ── Защита прибыли: если портфель +N TON И рынок падает → продаём всё ───
     # Продаёт весь GRINCH немедленно, если:
@@ -341,7 +341,7 @@ class Config:
     # Работает и в AI-режиме, и в DCA-режиме. Между двумя такими покупками
     # выдерживается пауза LARGE_SELL_COOLDOWN_SEC секунд.
     LARGE_SELL_DCA_ENABLED  = bool(int(os.getenv("LARGE_SELL_DCA_ENABLED",  "1")))
-    LARGE_SELL_DCA_TON      = float(os.getenv("LARGE_SELL_DCA_TON",         "100.0"))   # TON на покупку
+    LARGE_SELL_DCA_TON      = float(os.getenv("LARGE_SELL_DCA_TON",          "60.0"))   # = DCA_STAKE_TON; было 100
     LARGE_SELL_MIN_TON      = float(os.getenv("LARGE_SELL_MIN_TON",         "150.0"))   # супер агрессия: реагируем на меньшие продажи
     LARGE_SELL_COOLDOWN_SEC = int(os.getenv("LARGE_SELL_COOLDOWN_SEC",      "300"))     # пауза между сигналами
 
