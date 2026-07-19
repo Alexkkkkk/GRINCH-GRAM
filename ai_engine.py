@@ -1607,6 +1607,9 @@ class AIEngine:
                 "kelly_pnls":        list(self._kelly_pnls),
                 "retrains":          self._retrains,
                 "last_buy_features": lbf,  # сохраняем чтобы feedback() работал после рестарта
+                # BUG-FIX: горизонтные веса адаптируются по ходу торговли (v4.3),
+                # но ранее не сохранялись → сбрасывались на дефолт при каждом рестарте.
+                "horizon_weights":   list(self._horizon_weights),
             }
 
     def import_experience(self, data: dict) -> int:
@@ -1650,6 +1653,16 @@ class AIEngine:
                 if lbf and cur_dim and len(lbf) == cur_dim:
                     self._last_buy_features = np.array(lbf, dtype=float)
                     log.info("[AI] _last_buy_features восстановлены из experience")
+
+                # BUG-FIX: горизонтные веса адаптируются по ходу торговли (v4.3),
+                # но ранее не восстанавливались → каждый рестарт сбрасывал их на дефолт.
+                hw = data.get("horizon_weights")
+                if hw and len(hw) == len(self._horizon_weights):
+                    self._horizon_weights = [float(v) for v in hw]
+                    log.info(
+                        f"[AI] horizon_weights восстановлены: "
+                        f"{[round(w, 2) for w in self._horizon_weights]}"
+                    )
 
                 # ── Блок 2: confirmed_X — только если есть примеры ───────────
                 X = data.get("confirmed_X") or []

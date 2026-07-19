@@ -3558,7 +3558,13 @@ class Trader:
         if self.exchange.mode == "dedust":
             from price_feed import price_feed
             ton_usd = price_feed.get("TON") or 2.44
-            pnl = round(pnl_raw / ton_usd, 6)
+            # BUG-FIX: вычитаем газ обоих свопов — он платится on-chain реально,
+            # но ранее не учитывался в P&L этого пути (только в DCA-путях учитывался).
+            # buy_gas уже уплачен при входе (sunk cost), sell_gas — сейчас.
+            pnl = round(
+                pnl_raw / ton_usd - Config.BUY_GAS_TON - Config.SELL_GAS_TON,
+                6
+            )
         else:
             pnl = round(pnl_raw, 6)
 

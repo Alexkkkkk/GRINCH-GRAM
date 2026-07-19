@@ -631,18 +631,22 @@ function _updateQuantumModels(modelInfo) {
   const MODEL_ICONS = {RF:"🌲",ET:"⚡",GB:"🚀",HGB:"💥",XGB:"🔥",MLP:"🧠"};
   const MODEL_DESC  = {RF:"Random Forest",ET:"Extra Trees",GB:"Gradient Boost",HGB:"Hist GB",XGB:"XGBoost",MLP:"Neural Net"};
   grid.innerHTML = modelInfo.map(m => {
-    const pct = Math.round(m.accuracy || 0);
-    const col = pct >= 65 ? "#00ff88" : pct >= 50 ? "#ffd166" : "#ff4d6d";
-    const wPct = Math.min(m.weight / 2.0 * 100, 100).toFixed(0);
+    // accuracy может быть null (нет истории сделок) — показываем "—" вместо "0%"
+    const hasAcc = m.accuracy != null;
+    const pct    = hasAcc ? Math.round(m.accuracy) : null;
+    const col    = !hasAcc ? "#8892b0" : pct >= 65 ? "#00ff88" : pct >= 50 ? "#ffd166" : "#ff4d6d";
+    const wPct   = Math.min(m.weight / 2.0 * 100, 100).toFixed(0);
+    const barW   = hasAcc ? pct : 0;   // полоса не рисуется пока нет данных
+    const accStr = hasAcc ? `${pct}% acc` : "—  нет данных";
     return `<div class="qb-model-card">
       <div class="qb-model-icon">${MODEL_ICONS[m.name]||"🤖"}</div>
       <div class="qb-model-body">
         <div class="qb-model-name">${m.name} <span class="qb-model-desc">${MODEL_DESC[m.name]||""}</span></div>
         <div class="qb-model-bar-wrap">
-          <div class="qb-model-bar" style="width:${pct}%;background:${col}"></div>
+          <div class="qb-model-bar" style="width:${barW}%;background:${col}"></div>
         </div>
         <div class="qb-model-stats">
-          <span style="color:${col}">${pct}% acc</span>
+          <span style="color:${col}">${accStr}</span>
           <span style="color:#8892b0">wt: ${m.weight.toFixed(2)}</span>
         </div>
       </div>

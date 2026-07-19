@@ -148,7 +148,7 @@ class WalletManager:
                         # терял информацию о вложениях.
                         try:
                             from config import Config
-                            buy_gas   = getattr(Config, "BUY_GAS_TON", 0.25)
+                            buy_gas   = getattr(Config, "BUY_GAS_TON", 0.103)  # 0.103 = реальный BUY gas on-chain
                             n_entries = len(open_trades)
                             tracked_amount  = min(total_amount, grinch_bal)
                             tracked_entries = n_entries
