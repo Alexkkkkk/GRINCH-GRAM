@@ -1727,22 +1727,68 @@ def api_advisor_log():
 
 @app.route("/api/advisor/apikey", methods=["POST"])
 def api_advisor_apikey():
+    """Обратная совместимость: сохраняет ключ Groq (старый эндпоинт)."""
     from ai_advisor import reload_key
     data = request.json or {}
     key  = str(data.get("key", "")).strip()
     if not key:
         return jsonify({"ok": False, "error": "Ключ не может быть пустым"})
-    # сохраняем в файл DATA_DIR/groq_key.txt и применяем немедленно
-    reload_key(key)
+    reload_key(key, provider="groq")
     return jsonify({"ok": True, "enabled": True})
 
 @app.route("/api/advisor/apikey", methods=["GET"])
 def api_advisor_apikey_get():
     from ai_advisor import _read_key_file
     stored = _read_key_file()
-    # возвращаем только маску — не раскрываем ключ в UI
     masked = ("gsk_" + "•" * 20 + stored[-4:]) if len(stored) > 8 else ("•" * len(stored) if stored else "")
     return jsonify({"ok": True, "has_key": bool(stored), "masked": masked})
+
+
+# ── Мульти-провайдер API ────────────────────────────────────────────────────
+
+@app.route("/api/advisor/providers", methods=["GET"])
+def api_advisor_providers():
+    """Список всех AI-провайдеров и их статус (есть ключ / активен)."""
+    from ai_advisor import get_providers
+    return jsonify(get_providers())
+
+
+@app.route("/api/advisor/providers/<provider_id>/key", methods=["POST"])
+def api_advisor_provider_key(provider_id):
+    """Сохранить API-ключ для указанного провайдера."""
+    from ai_advisor import reload_key, PROVIDER_CONFIGS
+    if provider_id not in PROVIDER_CONFIGS:
+        return jsonify({"ok": False, "error": f"Неизвестный провайдер: {provider_id}"}), 400
+    data = request.json or {}
+    key  = str(data.get("key", "")).strip()
+    if not key:
+        return jsonify({"ok": False, "error": "Ключ не может быть пустым"}), 400
+    reload_key(key, provider=provider_id)
+    return jsonify({"ok": True, "provider": PROVIDER_CONFIGS[provider_id]["name"]})
+
+
+@app.route("/api/advisor/providers/<provider_id>/key", methods=["GET"])
+def api_advisor_provider_key_get(provider_id):
+    """Проверить наличие ключа у провайдера (без раскрытия значения)."""
+    from ai_advisor import PROVIDER_CONFIGS, _read_provider_key
+    if provider_id not in PROVIDER_CONFIGS:
+        return jsonify({"ok": False, "error": "Неизвестный провайдер"}), 400
+    stored = _read_provider_key(provider_id)
+    masked = ("•" * 8 + stored[-4:]) if len(stored) > 8 else ("•" * len(stored) if stored else "")
+    return jsonify({"ok": True, "has_key": bool(stored), "masked": masked,
+                    "provider": PROVIDER_CONFIGS[provider_id]["name"]})
+
+
+@app.route("/api/advisor/providers/select", methods=["POST"])
+def api_advisor_provider_select():
+    """Выбрать предпочтительный AI-провайдер (или 'auto' для авто-выбора)."""
+    from ai_advisor import set_provider
+    data = request.json or {}
+    pid  = str(data.get("provider_id", "")).strip()
+    if pid.lower() in ("auto", ""):
+        pid = None
+    result = set_provider(pid)
+    return jsonify(result), (200 if result.get("ok") else 400)
 
 @app.route("/api/alerts/config", methods=["POST"])
 def api_alerts_config():

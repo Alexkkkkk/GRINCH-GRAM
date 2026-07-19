@@ -1421,16 +1421,28 @@
         <details style="margin-bottom:8px" id="adv-settings-details">
           <summary style="font-size:10px;color:var(--text-mid);cursor:pointer;padding:4px 0">⚙️ Настройки автономии</summary>
 
-          <!-- GROQ API KEY -->
+          <!-- 🌍 МУЛЬТИ-ПРОВАЙДЕР AI -->
           <div style="margin-top:10px;padding:10px 12px;background:rgba(160,0,255,.07);border:1px solid rgba(160,0,255,.2);border-radius:8px">
-            <div style="font-size:10px;font-weight:700;color:#a06fff;margin-bottom:6px;letter-spacing:.5px">🔑 GROQ API KEY</div>
+            <div style="font-size:10px;font-weight:700;color:#a06fff;margin-bottom:8px;letter-spacing:.5px">🌍 AI ПРОВАЙДЕР — ЛУЧШИЙ МОЗГ МИРА</div>
+            <div id="adv-active-provider" style="font-size:10px;color:#c084fc;margin-bottom:10px;padding:4px 8px;background:rgba(160,0,255,.12);border-radius:5px">⏳ Загрузка...</div>
+
+            <!-- Список провайдеров -->
+            <div id="adv-providers-list" style="display:flex;flex-direction:column;gap:6px;margin-bottom:8px"></div>
+
+            <!-- Кнопка авто -->
+            <button class="btn-tiny" onclick="advSelectProvider(null)" style="font-size:9px;padding:4px 10px;opacity:.7">🔄 Авто-выбор (лучший доступный)</button>
+          </div>
+
+          <!-- GROQ API KEY (обратная совместимость) -->
+          <div style="margin-top:8px;padding:8px 12px;background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.06);border-radius:8px">
+            <div style="font-size:9px;font-weight:700;color:#888;margin-bottom:5px;letter-spacing:.5px">🔑 GROQ API KEY (бесплатный фолбэк)</div>
             <div id="adv-key-status" style="font-size:10px;color:var(--text-mid);margin-bottom:6px"></div>
             <div style="display:flex;gap:6px;align-items:center">
               <input type="password" id="adv-apikey-inp" placeholder="gsk_..." autocomplete="off"
                 style="flex:1;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.12);border-radius:6px;padding:6px 10px;font-size:11px;color:var(--text-dim);outline:none;font-family:var(--mono)">
               <button class="btn-tiny" onclick="advSaveKey()" style="padding:6px 12px;font-size:10px;white-space:nowrap;background:rgba(160,0,255,.2);border-color:rgba(160,0,255,.4);color:#c084fc">💾 Сохранить</button>
             </div>
-            <div style="font-size:9px;color:#555;margin-top:4px">Получить бесплатно: <a href="https://console.groq.com/keys" target="_blank" style="color:#a06fff;text-decoration:none">console.groq.com/keys</a></div>
+            <div style="font-size:9px;color:#555;margin-top:4px">Бесплатно: <a href="https://console.groq.com/keys" target="_blank" style="color:#a06fff;text-decoration:none">console.groq.com/keys</a></div>
           </div>
 
           <div style="margin-top:8px;display:grid;grid-template-columns:1fr 1fr;gap:8px">
@@ -1756,6 +1768,7 @@ document.addEventListener('DOMContentLoaded', () => {
   advLoadStatus();
   advLoadKey();
   alLoadConfig();
+  if (typeof advLoadProviders === "function") advLoadProviders();
 });
 
 // Плавная замена innerHTML: короткий fade-out → подмена контента → fade-in.

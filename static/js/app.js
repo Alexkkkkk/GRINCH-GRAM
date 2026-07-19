@@ -1384,6 +1384,101 @@ async function advSaveKey() {
     if (inp) inp.value = "";
     if (typeof advLoadKey === "function") advLoadKey();
     if (typeof advLoadStatus === "function") advLoadStatus();
+    advLoadProviders();
+  } else {
+    showToast("❌ " + (d.error || "Ошибка"), "err");
+  }
+}
+
+// ─── Мульти-провайдер AI ─────────────────────────────────────────────────────
+const PROVIDER_LINKS = {
+  openai:   "https://platform.openai.com/api-keys",
+  deepseek: "https://platform.deepseek.com/",
+  xai:      "https://console.x.ai/",
+  anthropic: "https://console.anthropic.com/settings/keys",
+  groq:     "https://console.groq.com/keys",
+};
+const PROVIDER_PLACEHOLDERS = {
+  openai:    "sk-...",
+  deepseek:  "sk-...",
+  xai:       "xai-...",
+  anthropic: "sk-ant-...",
+  groq:      "gsk_...",
+};
+
+async function advLoadProviders() {
+  try {
+    const r = await fetch("/api/advisor/providers");
+    if (!r.ok) return;
+    const data = await r.json();
+
+    // Показываем активный провайдер
+    const activeLbl = document.getElementById("adv-active-provider");
+    if (activeLbl) {
+      activeLbl.textContent = `🤖 Активный AI: ${data.active_name || "Нет ключей"}`;
+    }
+
+    // Обновляем список провайдеров
+    const list = document.getElementById("adv-providers-list");
+    if (!list) return;
+    list.innerHTML = "";
+    const providers = data.providers || {};
+    Object.entries(providers).sort((a,b) => a[1].priority - b[1].priority).forEach(([pid, p]) => {
+      const isActive = p.is_active;
+      const hasKey   = p.has_key;
+      const card = document.createElement("div");
+      card.style.cssText = `padding:8px 10px;border-radius:7px;border:1px solid ${isActive ? "rgba(160,0,255,.5)" : "rgba(255,255,255,.07)"};background:${isActive ? "rgba(160,0,255,.12)" : "rgba(255,255,255,.03)"};cursor:pointer;transition:all .2s`;
+      card.innerHTML = `
+        <div style="display:flex;align-items:center;gap:6px;margin-bottom:${hasKey ? 0 : 4}px">
+          <span style="font-size:10px;${isActive ? "color:#c084fc;font-weight:700" : "color:var(--text-mid)"}">${isActive ? "✅" : (hasKey ? "🔑" : "🔒")} ${p.name}</span>
+          <span style="font-size:9px;color:#555;margin-left:auto;font-family:var(--mono)">${p.model}</span>
+          ${isActive ? '<span style="font-size:8px;color:#a06fff;background:rgba(160,0,255,.2);padding:1px 5px;border-radius:3px">АКТИВЕН</span>' : ""}
+        </div>
+        ${!hasKey ? `<div id="prov-key-row-${pid}" style="display:flex;gap:4px;margin-top:5px;align-items:center">
+          <input type="password" id="prov-key-inp-${pid}" placeholder="${PROVIDER_PLACEHOLDERS[pid] || 'sk-...'}" autocomplete="off"
+            style="flex:1;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.1);border-radius:5px;padding:4px 8px;font-size:10px;color:var(--text-dim);outline:none;font-family:var(--mono)">
+          <button class="btn-tiny" onclick="advSaveProviderKey('${pid}')" style="font-size:9px;padding:3px 8px">💾</button>
+          <a href="${PROVIDER_LINKS[pid] || '#'}" target="_blank" style="font-size:9px;color:#a06fff;text-decoration:none">Получить</a>
+        </div>` : `<div style="font-size:9px;color:#555;margin-top:2px">Ключ сохранён
+          <button class="btn-tiny" onclick="advSelectProvider('${pid}')" style="font-size:8px;padding:2px 7px;margin-left:4px;${isActive ? 'opacity:.4' : ''}">Использовать</button>
+        </div>`}
+      `;
+      list.appendChild(card);
+    });
+  } catch(e) {
+    console.warn("advLoadProviders:", e);
+  }
+}
+
+async function advSaveProviderKey(providerId) {
+  const inp = document.getElementById(`prov-key-inp-${providerId}`);
+  const key = inp ? inp.value.trim() : "";
+  if (!key) { showToast("❌ Введите ключ", "err"); return; }
+  const r = await fetch(`/api/advisor/providers/${providerId}/key`, {
+    method:"POST", headers:{"Content-Type":"application/json"},
+    body: JSON.stringify({key})
+  });
+  const d = await r.json();
+  if (d.ok) {
+    showToast(`✅ ${d.provider} ключ сохранён!`, "ok");
+    if (inp) inp.value = "";
+    advLoadProviders();
+    if (typeof advLoadStatus === "function") advLoadStatus();
+  } else {
+    showToast("❌ " + (d.error || "Ошибка"), "err");
+  }
+}
+
+async function advSelectProvider(providerId) {
+  const r = await fetch("/api/advisor/providers/select", {
+    method:"POST", headers:{"Content-Type":"application/json"},
+    body: JSON.stringify({provider_id: providerId || "auto"})
+  });
+  const d = await r.json();
+  if (d.ok) {
+    showToast(`🤖 Активный AI: ${d.active_provider}`, "ok");
+    advLoadProviders();
+    if (typeof advLoadStatus === "function") advLoadStatus();
   } else {
     showToast("❌ " + (d.error || "Ошибка"), "err");
   }
