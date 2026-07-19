@@ -1818,6 +1818,52 @@ def api_alerts_config_get():
         "enabled": bool(sec.get("enabled", True)),
     })
 
+@app.route("/webhook/github", methods=["POST"])
+def webhook_github():
+    """GitHub Webhook — мгновенный триггер деплоя при push в main.
+    Настрой в GitHub: Settings → Webhooks → Payload URL = http://ВАШ_IP/webhook/github
+    """
+    import hmac, hashlib, subprocess, threading
+
+    # Проверяем подпись (опционально, если задан WEBHOOK_SECRET)
+    secret = os.getenv("WEBHOOK_SECRET", "").encode()
+    if secret:
+        sig_header = request.headers.get("X-Hub-Signature-256", "")
+        expected = "sha256=" + hmac.new(secret, request.data, hashlib.sha256).hexdigest()
+        if not hmac.compare_digest(sig_header, expected):
+            logger.warning("[Webhook] ❌ Неверная подпись GitHub")
+            return jsonify({"ok": False, "error": "invalid signature"}), 401
+
+    data = request.get_json(silent=True) or {}
+    ref  = data.get("ref", "")
+    pusher = data.get("pusher", {}).get("name", "?")
+
+    # Реагируем только на push в main/master
+    if ref not in ("refs/heads/main", "refs/heads/master"):
+        return jsonify({"ok": True, "skip": True, "reason": f"ref={ref} не main"})
+
+    commit_msg = data.get("head_commit", {}).get("message", "?")[:80]
+    logger.info(f"[Webhook] 🚀 GitHub push от {pusher}: {commit_msg}")
+
+    # Запускаем деплой в фоне — не блокируем ответ GitHub (таймаут 10 сек)
+    def _run_deploy():
+        try:
+            deploy_script = os.path.join(os.path.dirname(os.path.abspath(__file__)), "deploy.sh")
+            if os.path.exists(deploy_script):
+                result = subprocess.run(
+                    ["/bin/bash", deploy_script],
+                    capture_output=True, text=True, timeout=180
+                )
+                logger.info(f"[Webhook] deploy.sh exit={result.returncode}")
+            else:
+                logger.warning("[Webhook] deploy.sh не найден — пропуск")
+        except Exception as e:
+            logger.error(f"[Webhook] deploy error: {e}")
+
+    threading.Thread(target=_run_deploy, daemon=True, name="github-deploy").start()
+    return jsonify({"ok": True, "queued": True, "commit": commit_msg})
+
+
 @app.route("/api/alerts/test", methods=["POST"])
 def api_alerts_test():
     import alerts
