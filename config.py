@@ -288,9 +288,9 @@ class Config:
     # В мёртвые часы первый вход и ре-вход блокируются; докупка к существующим позициям
     # допускается только при расширенном триггере (x DEAD_HOURS_DROP_MULT).
     DEAD_HOURS_UTC = [
-        int(h) for h in os.getenv("DEAD_HOURS_UTC", "0,22").split(",")
+        int(h) for h in os.getenv("DEAD_HOURS_UTC", "0,22,23").split(",")
         if h.strip().lstrip("-").isdigit()
-    ]  # данные 7 дней: 00:xx=$44/ч, 22:xx=$189/ч — мёртвые; 23:xx=$678/ч — НЕ мёртвый
+    ]  # мёртвые часы UTC; 0,22,23 по анализу объёмов GRINCH
     # Множитель для DCA_DROP_TRIGGER в мёртвые часы (1.0 = не менять)
     DEAD_HOURS_DROP_MULT = float(os.getenv("DEAD_HOURS_DROP_MULT", "1.5"))
 
