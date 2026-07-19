@@ -138,7 +138,14 @@ class DepositMonitor:
             return
 
         log.info(f"[DepositMonitor] Депозит {amount_ton:.4f} TON от {source[:16]}… → {uw.name or uw.token[:8]}")
-        self._user_mgr.credit_deposit(uw.token, amount_ton, self._app)
 
+        # BUG-FIX: обновляем last_checked_lt ДО зачисления.
+        # Если процесс падает ПОСЛЕ credit_deposit но ДО commit — депозит
+        # зачислится дважды при следующем опросе (lt > last_lt снова true).
+        # Порядок: сначала фиксируем lt (идемпотентная защита), потом кредит.
+        # Если credit_deposit упадёт — депозит будет залогирован, но не зачислен
+        # (потеря одного депозита лучше, чем двойное зачисление реальных денег).
         uw.last_checked_lt = lt
         db.session.commit()
+
+        self._user_mgr.credit_deposit(uw.token, amount_ton, self._app)

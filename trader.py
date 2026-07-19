@@ -1423,7 +1423,13 @@ class Trader:
         total_cost_ton  = 0.0
         total_value_ton = 0.0
 
-        for trade in self.open_trades:
+        # BUG-FIX: итерируем снапшот под _ot_lock — иначе фоновые потоки
+        # (wallet_manager, _sync_open_trades_to_db) могут модифицировать список
+        # одновременно и вызвать RuntimeError или вернуть рваные данные P&L.
+        with self._ot_lock:
+            trades_snap = list(self.open_trades)
+
+        for trade in trades_snap:
             stake_ton = trade.get("stake_ton", 0) or 0
             amount    = trade.get("amount", 0) or 0
             total_cost_ton  += stake_ton + buy_gas

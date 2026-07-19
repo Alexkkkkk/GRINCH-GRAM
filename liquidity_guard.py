@@ -33,33 +33,52 @@ _last_update_ts: float = 0.0
 _started = False
 _stop_event = threading.Event()   # мгновенная остановка потока
 
+# BUG-FIX: защита от API-глитча.
+# Если DexScreener вернул разово заниженное (но ненулевое) значение,
+# одного чтения достаточно чтобы drop_pct ≥ 30% → _buys_paused = True.
+# Счётчик требует CONSECUTIVE_LOW_REQUIRED последовательных «плохих» чтений
+# перед тем как поставить BUY на паузу. Одно аномальное значение игнорируется.
+CONSECUTIVE_LOW_REQUIRED = 2
+_consecutive_low_count: int = 0
+
 
 def _evaluate(liq: float):
-    global _peak_liq, _buys_paused, _pause_reason
+    global _peak_liq, _buys_paused, _pause_reason, _consecutive_low_count
     if liq is None or liq <= 0:
         return
     if liq > _peak_liq:
         _peak_liq = liq
+        _consecutive_low_count = 0   # новый пик — сброс счётчика
 
     drop_pct = 0.0
     if _peak_liq > 0:
         drop_pct = (1 - liq / _peak_liq) * 100.0
 
     if not _buys_paused:
-        if liq < MIN_SAFE_LIQ_USD:
-            _buys_paused = True
-            _pause_reason = f"ликвидность ${liq:,.0f} ниже безопасного порога ${MIN_SAFE_LIQ_USD:,.0f}"
-            logger.warning(f"[LiquidityGuard] ⛔ BUY приостановлены: {_pause_reason}")
-        elif drop_pct >= DROP_PAUSE_PCT:
-            _buys_paused = True
-            _pause_reason = f"просадка ликвидности {drop_pct:.1f}% от пика ${_peak_liq:,.0f} → ${liq:,.0f}"
-            logger.warning(f"[LiquidityGuard] ⛔ BUY приостановлены: {_pause_reason}")
+        is_low = liq < MIN_SAFE_LIQ_USD or drop_pct >= DROP_PAUSE_PCT
+        if is_low:
+            _consecutive_low_count += 1
+            if _consecutive_low_count >= CONSECUTIVE_LOW_REQUIRED:
+                _buys_paused = True
+                if liq < MIN_SAFE_LIQ_USD:
+                    _pause_reason = f"ликвидность ${liq:,.0f} ниже безопасного порога ${MIN_SAFE_LIQ_USD:,.0f}"
+                else:
+                    _pause_reason = f"просадка ликвидности {drop_pct:.1f}% от пика ${_peak_liq:,.0f} → ${liq:,.0f}"
+                logger.warning(f"[LiquidityGuard] ⛔ BUY приостановлены: {_pause_reason}")
+            else:
+                logger.warning(
+                    f"[LiquidityGuard] ⚠️ Низкая ликвидность ${liq:,.0f} "
+                    f"(просадка {drop_pct:.1f}%) — подтверждение {_consecutive_low_count}/{CONSECUTIVE_LOW_REQUIRED}"
+                )
+        else:
+            _consecutive_low_count = 0   # чтение нормальное — сброс
     else:
         recovered = liq >= MIN_SAFE_LIQ_USD and drop_pct <= DROP_RESUME_PCT
         if recovered:
             logger.info(f"[LiquidityGuard] ✅ Ликвидность восстановилась (${liq:,.0f}, просадка {drop_pct:.1f}%) — BUY разрешены")
             _buys_paused = False
             _pause_reason = ""
+            _consecutive_low_count = 0
             _peak_liq = liq  # новый пик отсчитываем от текущего восстановленного уровня
 
 
