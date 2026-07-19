@@ -1844,22 +1844,21 @@ def webhook_github():
         return jsonify({"ok": True, "skip": True, "reason": f"ref={ref} не main"})
 
     commit_msg = data.get("head_commit", {}).get("message", "?")[:80]
-    logger.info(f"[Webhook] 🚀 GitHub push от {pusher}: {commit_msg}")
+    log.info(f"[Webhook] 🚀 GitHub push от {pusher}: {commit_msg}")
 
-    # Запускаем деплой в фоне — не блокируем ответ GitHub (таймаут 10 сек)
+    # Запускаем деплой в фоне — не блокируем ответ GitHub
+    # Внимание: deploy.sh запускается на ХОСТЕ через /opt/bot/deploy.sh,
+    # но внутри контейнера docker-команды недоступны.
+    # Поэтому пишем trigger-файл → хост-демон его читает и запускает деплой.
     def _run_deploy():
         try:
-            deploy_script = os.path.join(os.path.dirname(os.path.abspath(__file__)), "deploy.sh")
-            if os.path.exists(deploy_script):
-                result = subprocess.run(
-                    ["/bin/bash", deploy_script],
-                    capture_output=True, text=True, timeout=180
-                )
-                logger.info(f"[Webhook] deploy.sh exit={result.returncode}")
-            else:
-                logger.warning("[Webhook] deploy.sh не найден — пропуск")
+            # Пишем trigger-файл в /app/data (примонтированный volume хоста)
+            trigger_path = "/app/data/.deploy_trigger"
+            with open(trigger_path, "w") as f:
+                f.write(f"{commit_msg}\n")
+            log.info(f"[Webhook] ✅ Trigger записан → {trigger_path}")
         except Exception as e:
-            logger.error(f"[Webhook] deploy error: {e}")
+            log.error(f"[Webhook] ошибка записи trigger: {e}")
 
     threading.Thread(target=_run_deploy, daemon=True, name="github-deploy").start()
     return jsonify({"ok": True, "queued": True, "commit": commit_msg})
