@@ -69,6 +69,9 @@ CREATE TABLE IF NOT EXISTS bot_trades (
     data       JSONB        NOT NULL,
     closed_at  TIMESTAMP
 );
+-- Индекс для быстрой сортировки/фильтрации закрытых сделок по времени.
+-- Без него ORDER BY closed_at на большой таблице делает seq-scan.
+CREATE INDEX IF NOT EXISTS bot_trades_closed_at ON bot_trades (closed_at DESC NULLS LAST);
 
 CREATE TABLE IF NOT EXISTS bot_equity (
     id         BIGSERIAL    PRIMARY KEY,
@@ -132,6 +135,8 @@ CREATE TABLE IF NOT EXISTS bot_ai_examples (
     created_at TIMESTAMP    DEFAULT NOW()
 );
 CREATE INDEX IF NOT EXISTS bot_ai_examples_created ON bot_ai_examples (created_at);
+-- Индекс по label ускоряет выборку примеров с весом для ребалансировки классов.
+CREATE INDEX IF NOT EXISTS bot_ai_examples_label ON bot_ai_examples (label);
 
 -- Скользящая история рыночных тиков для AI-советника. Заменяет прежний
 -- in-memory analytics_buffer (deque, терялся при рестарте) — теперь снимки

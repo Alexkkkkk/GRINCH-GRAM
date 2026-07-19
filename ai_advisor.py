@@ -1217,6 +1217,17 @@ def run_advisor(auto_apply: bool = None, user_message: str = "",
     if not client:
         return {"ok": False, "error": "Groq клиент недоступен"}
 
+    # ── Проактивная проверка rate-limit ДО запроса (не только после ошибки 429) ──
+    # Если мы уже знаем, что лимит активен и ещё не сбросился — не тратим попытку.
+    rl = _rate_limit_status()
+    if rl:
+        wait_sec = rl.get("reset_in_sec", 0) or 0
+        return {
+            "ok": False,
+            "error": f"Groq rate-limit активен, сброс через ~{wait_sec}с",
+            "rate_limit": rl,
+        }
+
     with _lock:
         if _running:
             return {"ok": False, "error": "Советник уже работает…"}

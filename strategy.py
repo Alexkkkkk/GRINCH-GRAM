@@ -45,11 +45,14 @@ def compute_indicators(ohlcv):
     df["bb_width"]    = (df["bb_upper"] - df["bb_lower"]) / (df["bb_mid"] + 1e-10)
     df["bb_width_ma"] = df["bb_width"].rolling(20).mean()
 
-    # ATR (14-период)
+    # ATR (14-период) — сглаживание Уайлдера (alpha=1/14, com=13).
+    # Стандартный ATR использует именно метод Уайлдера, а не SMA rolling(14).
+    # SMA реагирует быстрее и «прыгает» при выпадении старых свечей из окна.
     hl   = df["high"] - df["low"]
     hcp  = (df["high"] - df["close"].shift(1)).abs()
     lcp  = (df["low"]  - df["close"].shift(1)).abs()
-    df["atr"]     = pd.concat([hl, hcp, lcp], axis=1).max(axis=1).rolling(14).mean()
+    tr   = pd.concat([hl, hcp, lcp], axis=1).max(axis=1)
+    df["atr"]     = tr.ewm(com=13, adjust=False).mean()   # Wilder's smoothing
     df["atr_pct"] = df["atr"] / (df["close"] + 1e-10) * 100
 
     # Volume ratio (объём относительно среднего)
@@ -65,21 +68,23 @@ def compute_indicators(ohlcv):
     df["obv"]    = (np.sign(df["close"].diff()) * df["volume"]).fillna(0).cumsum()
     df["obv_ma"] = df["obv"].rolling(10).mean()
 
-    # ADX (Average Directional Index, 14)
+    # ADX (Average Directional Index, 14) — сглаживание Уайлдера.
+    # Стандарт (Wilder, 1978): alpha=1/14, что соответствует com=13 в pandas ewm.
+    # span=14 → alpha=2/15≈0.133 (слишком реактивно); com=13 → alpha=1/14≈0.071 (правильно).
     up_move   = df["high"].diff()
     down_move = -df["low"].diff()
     dm_plus   = np.where((up_move > down_move) & (up_move > 0), up_move, 0.0)
     dm_minus  = np.where((down_move > up_move) & (down_move > 0), down_move, 0.0)
     df["dm_plus"]  = pd.Series(dm_plus,  index=df.index)
     df["dm_minus"] = pd.Series(dm_minus, index=df.index)
-    tr = pd.concat([df["high"] - df["low"],
-                    (df["high"] - df["close"].shift(1)).abs(),
-                    (df["low"]  - df["close"].shift(1)).abs()], axis=1).max(axis=1)
-    atr14    = tr.ewm(span=14, adjust=False).mean()
-    di_plus  = 100 * df["dm_plus"].ewm(span=14, adjust=False).mean()  / (atr14 + 1e-10)
-    di_minus = 100 * df["dm_minus"].ewm(span=14, adjust=False).mean() / (atr14 + 1e-10)
+    tr_adx   = pd.concat([df["high"] - df["low"],
+                          (df["high"] - df["close"].shift(1)).abs(),
+                          (df["low"]  - df["close"].shift(1)).abs()], axis=1).max(axis=1)
+    atr14    = tr_adx.ewm(com=13, adjust=False).mean()           # Wilder's ATR для ADX
+    di_plus  = 100 * df["dm_plus"].ewm(com=13, adjust=False).mean()  / (atr14 + 1e-10)
+    di_minus = 100 * df["dm_minus"].ewm(com=13, adjust=False).mean() / (atr14 + 1e-10)
     dx = 100 * (di_plus - di_minus).abs() / (di_plus + di_minus + 1e-10)
-    df["adx"]      = dx.ewm(span=14, adjust=False).mean()
+    df["adx"]      = dx.ewm(com=13, adjust=False).mean()          # Wilder's ADX
     df["di_plus"]  = di_plus
     df["di_minus"] = di_minus
 
@@ -113,8 +118,15 @@ def compute_indicators(ohlcv):
     df["ha_body"]  = ha_close - ha_open   # >0 бычья, <0 медвежья
     df["ha_trend"] = np.sign(df["ha_body"])
 
-    # ── VWAP отклонение ──────────────────────────────────────────────────
-    df["vwap"] = (df["volume"] * (df["high"] + df["low"] + df["close"]) / 3).cumsum() / (df["volume"].cumsum() + 1e-10)
+    # ── VWAP отклонение (скользящее окно 50 свечей) ──────────────────────
+    # cumsum() по всему DF становится нечувствительным к текущей цене на длинных сериях.
+    # Rolling(50) даёт «сессионный» VWAP — достаточно долгий, но остаётся живым.
+    _w = 50
+    _tp = (df["high"] + df["low"] + df["close"]) / 3
+    df["vwap"] = (
+        (_tp * df["volume"]).rolling(_w, min_periods=1).sum()
+        / (df["volume"].rolling(_w, min_periods=1).sum() + 1e-10)
+    )
     df["vwap_dev"] = (df["close"] - df["vwap"]) / (df["vwap"] + 1e-10) * 100  # % отклонение от VWAP
 
     return df
@@ -666,10 +678,13 @@ def _analyze_impl(ohlcv):
     elif rsi_val > 55:    rsi_zone = "HIGH"
     else:                 rsi_zone = "NEUTRAL"
 
-    # MACD направление
+    # MACD направление (с 5%-гистерезисом чтобы не дёргаться на микро-флуктуациях):
+    #   UP   — гистограмма растёт И уже положительная  (бычий импульс усиливается)
+    #   DOWN — гистограмма падает  И уже отрицательная (медвежий импульс усиливается)
+    #   FLAT — пересечение нуля или слабое изменение
     hist_now  = float(last["macd_hist"])
     hist_prev = float(df["macd_hist"].iloc[-2]) if len(df) > 1 else 0.0
-    if hist_now > hist_prev * 1.05 and hist_now > 0:   macd_dir = "UP"
+    if   hist_now > hist_prev * 1.05 and hist_now > 0:  macd_dir = "UP"
     elif hist_now < hist_prev * 1.05 and hist_now < 0:  macd_dir = "DOWN"
     else:                                                macd_dir = "FLAT"
 

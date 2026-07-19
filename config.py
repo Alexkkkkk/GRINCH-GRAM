@@ -369,6 +369,14 @@ class Config:
 
     DEMO_MODE  = os.getenv("DEMO_MODE",  "false").lower() == "true"
     SECRET_KEY = os.getenv("SECRET_KEY", "grinch-gram-secret-2024")
+    # ⚠️ Предупреждение: если SECRET_KEY не задан в env — Flask-сессии подделываемы.
+    # На боевом деплое ОБЯЗАТЕЛЬНО выставить SECRET_KEY в секретах Bothost/Replit.
+    if SECRET_KEY == "grinch-gram-secret-2024":
+        import logging as _log
+        _log.getLogger("config").warning(
+            "⚠️  SECRET_KEY использует дефолтное значение. "
+            "Задайте переменную SECRET_KEY в секретах для защиты сессий!"
+        )
     # EQ-адрес выводится из TON_MNEMONIC (WalletV5R1 / W5 — кошелёк TonKeeper)
     TON_WALLET = os.getenv("TON_WALLET", "EQDDgb2BTM-KCjntOoUg6uHllvnu3KGqEquKw6IySVP3hGXJ")
     # Адрес контракта токена GRINCH (TON-джеттон)

@@ -37,8 +37,10 @@ localPort = 5000
 externalPort = 80
 
 [deployment]
-deploymentTarget = "autoscale"
-run = ["gunicorn", "--bind", "0.0.0.0:5000", "main:app"]
+# vm-деплой обязателен: бот хранит состояние в памяти (AI-engine, trader, фоновые потоки).
+# autoscale/multi-instance дублируют процессы и теряют состояние при scale-to-zero.
+deploymentTarget = "vm"
+run = ["gunicorn", "--bind", "0.0.0.0:5000", "--worker-class", "gthread", "--threads", "4", "--workers", "1", "main:app"]
 
 [userenv]
 
