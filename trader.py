@@ -522,6 +522,12 @@ class Trader:
                 "profit_protect_activated": str(self.profit_protect_activated),
                 "last_loss_ts":             str(self._last_loss_ts),
                 "last_large_sell_buy_ts":   str(self._last_large_sell_buy_ts),
+                # BUG-FIX: после продажи всех позиций бот выставляет wait_pullback=True
+                # и запоминает peak_price, но эти два поля НЕ сохранялись ранее.
+                # При рестарте с open_trades=[] restore-блок пропускался и бот
+                # сразу входил в новую позицию, не дождавшись отката.
+                "dca_wait_pullback":        str(self.dca_wait_pullback),
+                "dca_peak_price":           str(self.dca_peak_price),
             })
         except Exception:
             pass
@@ -553,6 +559,17 @@ class Trader:
             self.profit_protect_activated = _bool("profit_protect_activated")
             self._last_loss_ts            = _float("last_loss_ts")
             self._last_large_sell_buy_ts  = _float("last_large_sell_buy_ts")
+            # BUG-FIX: восстанавливаем wait_pullback/peak_price.
+            # Используем OR-логику: True перезаписывает только если там True.
+            # Если open_trades уже установили wait_pullback=True (строки 231-242),
+            # этот блок не перезапишет их в False — мы сохраняем более сильное значение.
+            # Ключевой сценарий: после DCA sell-all (open_trades=[]) restore-блок
+            # выше пропускается, но здесь мы правильно восстанавливаем True.
+            if _bool("dca_wait_pullback"):
+                self.dca_wait_pullback = True
+                _saved_peak = _float("dca_peak_price")
+                if _saved_peak > 0 and _saved_peak > self.dca_peak_price:
+                    self.dca_peak_price = _saved_peak
 
             parts = []
             if self.dca_cascade_half_sold:
@@ -563,6 +580,8 @@ class Trader:
                 parts.append(f"hwm={self.portfolio_high_water_ton:.4f} TON")
             if self.profit_protect_activated:
                 parts.append("profit_protect=ON")
+            if self.dca_wait_pullback:
+                parts.append(f"wait_pullback=True пик=${self.dca_peak_price:.6f}")
             cd_left = Config.LOSS_COOLDOWN_SEC - (time.time() - self._last_loss_ts)
             if cd_left > 0:
                 parts.append(f"loss_cd={cd_left/60:.1f} мин")
@@ -946,6 +965,7 @@ class Trader:
             if Config.DCA_MODE:
                 self.dca_wait_pullback = True
                 self.dca_peak_price    = price_usd
+                self._save_volatile_state()  # persist wait state
         return closed
 
     def _check_large_sell_dca(self, price_usd: float, grinch_ton: float) -> bool:
@@ -1201,6 +1221,7 @@ class Trader:
                 self.dca_peak_price     = 0.0
                 self.dca_entries_count  = 0
                 self.dca_total_stake    = 0.0
+                self._save_volatile_state()  # persist wait_pullback=False
                 self._dca_buy(price_usd, grinch_ton, mode_label)
             return
 
@@ -1257,6 +1278,7 @@ class Trader:
                         if closed:
                             self.dca_wait_pullback = True
                             self.dca_peak_price    = price_usd
+                            self._save_volatile_state()  # persist wait state
                             self._emit_signal("SELL", price_usd, self.last_ai)
                             self.log(
                                 f"✅ Каскад завершён! Ждём откат "
@@ -1303,6 +1325,7 @@ class Trader:
                         if closed:
                             self.dca_wait_pullback = True
                             self.dca_peak_price    = price_usd
+                            self._save_volatile_state()  # persist wait state
                             self._emit_signal("SELL", price_usd, self.last_ai)
                             self.log(
                                 f"⏳ DCA: продали всё, ждём откат "
