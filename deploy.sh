@@ -52,7 +52,7 @@ git reset --hard origin/main >> "$LOG" 2>&1
 echo "[$(TS)] ✅ git reset OK" >> "$LOG"
 
 # ── Собираем и запускаем ─────────────────────────────────────────────────────
-docker compose up -d --build >> "$LOG" 2>&1
+docker compose up -d --build --remove-orphans --force-recreate >> "$LOG" 2>&1
 echo "[$(TS)] ✅ docker compose OK" >> "$LOG"
 
 # ── Health-check (ждём до 60 сек пока бот поднимется) ─────────────────────────

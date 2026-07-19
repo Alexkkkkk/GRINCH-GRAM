@@ -12,7 +12,12 @@ description: How code actually reaches the production VPS bot container — matt
 
 GitHub push через HTTPS не работает (нет токена). Deploy-ключ `vps-bot-deploy` на GitHub — read-only. Поэтому `git push origin main` из Replit падает с 403.
 
-**Cron deploy.sh** на VPS (`*/3 * * * *`) делает `git fetch` → если `origin/main` сдвинулся → `git reset --hard origin/main` + `docker compose up -d --build`. Пока push в GitHub не работает — cron ничего не трогает (HEAD == origin/main). Но если кто-то сделает push в GitHub из другого места — cron перезапишет все scp-правки!
+**Полная авто-деплой система (настроена и работает):**
+- Replit пушит в GitHub через `gitPush({})` (Replit-managed credentials, работает)
+- Cron на VPS `*/3 * * * *` → `deploy.sh` → `git fetch` → если сдвинулся origin/main → `git reset --hard` + `docker compose up -d --build --force-recreate`
+- GitHub Webhook → `POST /webhook/github` на боте → пишет trigger-файл в `/var/lib/docker/volumes/bot_bot_data/_data/.deploy_trigger`
+- `quantumbrain-watcher.service` (systemd, active) мониторит trigger-файл каждые 5с → запускает `deploy.sh` на хосте
+- GitHub webhook нужно настроить вручную: `http://2.27.25.126/webhook/github` (Settings → Webhooks в репо)
 
 **Почему docker cp недостаточен:** изменения в container writable layer живут только до следующего `docker compose up -d --build` (rebuild из /opt/bot). Всегда после docker cp нужно также обновить файл в /opt/bot — тогда rebuild подхватит правильную версию.
 
