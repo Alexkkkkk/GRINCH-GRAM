@@ -1621,7 +1621,7 @@ def api_advisor_config():
             trades_trigger = data.get("trades_trigger"),
         )
         return jsonify({"ok": True, **result})
-    return jsonify({"interval_min": AUTO_INTERVAL_MIN, "trades_trigger": AUTO_TRADES_TRIGGER})
+    return jsonify({"ok": True, "interval_min": AUTO_INTERVAL_MIN, "trades_trigger": AUTO_TRADES_TRIGGER})
 
 @app.route("/api/advisor/log")
 def api_advisor_log():
