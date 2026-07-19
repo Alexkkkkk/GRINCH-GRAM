@@ -700,6 +700,12 @@ from datetime import timedelta
 ADMIN_USERNAME = os.environ.get("ADMIN_USERNAME", "")
 ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "")
 
+if not (ADMIN_USERNAME and ADMIN_PASSWORD):
+    _startup_log.critical(
+        "⛔ ADMIN_USERNAME / ADMIN_PASSWORD не заданы! "
+        "Все изменяющие API (POST) заблокированы до их установки."
+    )
+
 app.permanent_session_lifetime = timedelta(days=30)
 
 # Публичные пути — доступны без входа (страницы участников платформы).
@@ -722,9 +728,25 @@ def _is_public_path(path):
 
 
 @app.before_request
+def _ensure_csrf_token():
+    """Генерируем CSRF-токен в сессии при первом запросе."""
+    import secrets as _s
+    if "_csrf" not in session:
+        session["_csrf"] = _s.token_hex(32)
+
+
+@app.before_request
 def _require_login():
-    # Пока логин/пароль не заданы — доступ не блокируем (чтобы не закрыть панель).
+    # Если логин/пароль не заданы — блокируем state-changing запросы (POST/PUT/DELETE).
+    # GET-запросы пропускаем, чтобы дашборд оставался доступным.
     if not _auth_configured():
+        if request.method in ("POST", "PUT", "DELETE", "PATCH"):
+            path = request.path or "/"
+            if not _is_public_path(path) and path != "/login":
+                return jsonify({
+                    "ok": False,
+                    "error": "Панель не защищена паролем. Задайте ADMIN_USERNAME и ADMIN_PASSWORD."
+                }), 403
         return None
     path = request.path or "/"
     if _is_public_path(path):
@@ -734,6 +756,27 @@ def _require_login():
     if path.startswith("/api") or path.startswith("/socket.io"):
         return jsonify({"ok": False, "error": "Требуется вход"}), 401
     return redirect(url_for("login", next=path))
+
+
+@app.before_request
+def _check_csrf():
+    """Проверяем CSRF-токен для всех изменяющих запросов."""
+    if request.method not in ("POST", "PUT", "DELETE", "PATCH"):
+        return None
+    path = request.path or "/"
+    # Публичные пути и SocketIO — не проверяем
+    if _is_public_path(path) or path.startswith("/socket.io") or path == "/login":
+        return None
+    token = (
+        request.headers.get("X-CSRF-Token")
+        or request.form.get("csrf_token")
+        or ""
+    )
+    session_token = session.get("_csrf") or ""
+    if not session_token or not hmac.compare_digest(token, session_token):
+        if path.startswith("/api"):
+            return jsonify({"ok": False, "error": "CSRF token invalid"}), 403
+        return redirect(url_for("login"))
 
 
 @app.route("/login", methods=["GET", "POST"])

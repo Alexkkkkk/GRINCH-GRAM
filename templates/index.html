@@ -2757,6 +2757,7 @@ window.switchEqTab       = switchEqTab;
 </script>
 
 <div id="toast-container"></div>
+<script>window._csrfToken = "{{ session.get('_csrf', '') | e }}";</script>
 <script src="/static/js/app.js?v={{ range(1,9999)|random }}"></script>
 
 <script>

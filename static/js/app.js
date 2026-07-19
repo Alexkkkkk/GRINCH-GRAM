@@ -1,3 +1,18 @@
+// ═══ CSRF-защита — добавляем X-CSRF-Token ко всем state-changing запросам ═══
+(function() {
+  var _csrf = (typeof window._csrfToken !== "undefined" ? window._csrfToken : "")
+              || (document.querySelector('meta[name="csrf-token"]') || {}).content || "";
+  var _origFetch = window.fetch;
+  window.fetch = function(url, opts) {
+    opts = opts || {};
+    var method = (opts.method || "GET").toUpperCase();
+    if (_csrf && ["POST","PUT","DELETE","PATCH"].indexOf(method) !== -1) {
+      opts.headers = Object.assign({"X-CSRF-Token": _csrf}, opts.headers || {});
+    }
+    return _origFetch.call(this, url, opts);
+  };
+})();
+
 // ═══ Toast-уведомления (заменяет alert(), который блокируется в iframe) ═══
 function showToast(msg, type) {
   // type: "ok" | "err" | "info"  (default: "info")
@@ -226,7 +241,7 @@ function updateUI(data) {
   balList.innerHTML = Object.entries(bal).map(([k, v]) => {
     const m = ASSET_META[k] || { cls: "", icon: "", aCls: "" };
     return `<div class="balance-item ${m.cls}">
-      <span class="balance-asset ${m.aCls}">${m.icon} ${k}</span>
+      <span class="balance-asset ${m.aCls}">${m.icon} ${escapeHtml(k)}</span>
       <span class="balance-amount">${Number(v).toFixed(4)}</span>
     </div>`;
   }).join("") || '<div class="empty-msg">Нет данных</div>';
@@ -477,7 +492,7 @@ function renderEntryQuality(eq, signal) {
   const reasonsHtml = reasons.length
     ? `<div style="margin-top:5px;display:flex;flex-wrap:wrap;gap:4px">
         ${reasons.map(r => `<span style="background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.08);
-          border-radius:5px;padding:2px 7px;color:#c8d6e8;font-size:10px">${r}</span>`).join("")}
+          border-radius:5px;padding:2px 7px;color:#c8d6e8;font-size:10px">${escapeHtml(r)}</span>`).join("")}
        </div>`
     : "";
 
@@ -511,7 +526,7 @@ function renderSmartMoneyBar(sm) {
   el.style.borderColor = col + "55";
   el.style.background  = bg;
   el.innerHTML = `
-    <span style="color:${col};font-weight:700">🐋 ${arrow} ${sm.label || "умные деньги"}</span>
+    <span style="color:${col};font-weight:700">🐋 ${arrow} ${escapeHtml(sm.label || "умные деньги")}</span>
     <span style="color:#8892b0;margin-left:8px">score ${score > 0 ? "+" : ""}${score.toFixed(2)}</span>
     ${sm.buys_1h  != null ? `<span style="color:#00ff88;margin-left:8px">↑ ${sm.buys_1h.toFixed(1)} TON/ч</span>` : ""}
     ${sm.sells_1h != null ? `<span style="color:#ff4d6d;margin-left:6px">↓ ${sm.sells_1h.toFixed(1)} TON/ч</span>` : ""}
@@ -641,7 +656,7 @@ function _updateQuantumModels(modelInfo) {
     return `<div class="qb-model-card">
       <div class="qb-model-icon">${MODEL_ICONS[m.name]||"🤖"}</div>
       <div class="qb-model-body">
-        <div class="qb-model-name">${m.name} <span class="qb-model-desc">${MODEL_DESC[m.name]||""}</span></div>
+        <div class="qb-model-name">${escapeHtml(m.name)} <span class="qb-model-desc">${MODEL_DESC[m.name]||""}</span></div>
         <div class="qb-model-bar-wrap">
           <div class="qb-model-bar" style="width:${barW}%;background:${col}"></div>
         </div>
@@ -990,10 +1005,10 @@ function renderSR(sr) {
   const res = sr.resistance || [];
   const sup = sr.support    || [];
   document.getElementById("sr-res").innerHTML = res.length
-    ? res.reverse().map(v => `<div class="sr-val sr-res">$${v}</div>`).join("")
+    ? res.reverse().map(v => `<div class="sr-val sr-res">${escapeHtml(String(v))}</div>`).join("")
     : '<div class="empty-msg">—</div>';
   document.getElementById("sr-sup").innerHTML = sup.length
-    ? sup.map(v => `<div class="sr-val sr-sup">$${v}</div>`).join("")
+    ? sup.map(v => `<div class="sr-val sr-sup">${escapeHtml(String(v))}</div>`).join("")
     : '<div class="empty-msg">—</div>';
 }
 
@@ -1006,7 +1021,7 @@ function renderPatterns(patterns) {
   el.innerHTML = patterns.map(p => {
     const cls  = p.type === "bullish" ? "pat-bull" : p.type === "bearish" ? "pat-bear" : "pat-neut";
     const icon = p.type === "bullish" ? "🟢" : p.type === "bearish" ? "🔴" : "🟡";
-    return `<div class="pattern-item ${cls}">${icon} <b>${p.name}</b> — <span>${p.desc}</span></div>`;
+    return `<div class="pattern-item ${cls}">${icon} <b>${escapeHtml(p.name)}</b> — <span>${escapeHtml(p.desc)}</span></div>`;
   }).join("");
 }
 
@@ -1021,7 +1036,7 @@ function renderFeatureImportance(fi) {
     const barColor = `hsl(${hue},80%,60%)`;
     return `
     <div class="fi-row">
-      <span class="fi-name">${f.feature}</span>
+      <span class="fi-name">${escapeHtml(f.feature)}</span>
       <div class="fi-bar-wrap">
         <div class="fi-bar" style="width:${w}%;background:linear-gradient(90deg,${barColor},${barColor}88)"></div>
       </div>
@@ -1190,7 +1205,7 @@ function renderHistory(trades) {
     return `
       <div class="trade-card ${cls}">
         <div class="trade-row">
-          <span class="trade-side ${t.side}">${t.side?.toUpperCase()}</span>
+          <span class="trade-side ${t.side}">${escapeHtml(t.side?.toUpperCase() || "")}</span>
           <span class="${pnlCls}">${pnl >= 0 ? "+" : ""}${pnl.toFixed(4)} TON</span>
         </div>
         <div class="trade-row">
@@ -1198,7 +1213,7 @@ function renderHistory(trades) {
           <span style="color:#8892b0">Выход: $${t.exit_price || "—"}</span>
         </div>
         <div class="trade-row" style="color:#4a5568;font-size:10px">
-          <span>${t.close_reason || ""}</span>
+          <span>${escapeHtml(t.close_reason || "")}</span>
           <span>${t.closed_at?.slice(11,19) || ""}</span>
         </div>
       </div>`;
@@ -2360,7 +2375,7 @@ function renderMarketOverview(analysis) {
   const gradeEl = g("mo-eq-grade");
   if (gradeEl) {
     const gc = gradeColors[eq] || "#8892b0";
-    gradeEl.innerHTML = `<span style="color:${gc};font-weight:800;font-size:13px">${eq}</span>`;
+    gradeEl.innerHTML = `<span style="color:${gc};font-weight:800;font-size:13px">${escapeHtml(eq)}</span>`;
   }
   if (g("mo-eq-score")) g("mo-eq-score").textContent = score + " очков";
 
@@ -2377,8 +2392,8 @@ function renderMarketOverview(analysis) {
       const pts    = f.pts;
       return `<div class="mo-factor ${active ? "active" : "inactive"}">
         <span>${active ? "✅" : "⬜"}</span>
-        <span style="flex:1">${name}</span>
-        ${pts > 0 ? `<span class="mo-factor-pts">+${pts}</span>` : ""}
+        <span style="flex:1">${escapeHtml(name)}</span>
+        ${pts > 0 ? `<span class="mo-factor-pts">+${escapeHtml(String(pts))}</span>` : ""}
       </div>`;
     }).join("");
   }
@@ -2423,10 +2438,10 @@ function renderAIAnalytics(a) {
       const conf = Number(m.conf || 50);
       const col  = m.color || "#8892b0";
       return `<div class="ai-mtf-row" style="border-left:3px solid ${col}20">
-        <span class="ai-mtf-tf">${m.tf}</span>
+        <span class="ai-mtf-tf">${escapeHtml(m.tf)}</span>
         <div style="flex:1">
           <div style="display:flex;justify-content:space-between;margin-bottom:3px">
-            <span class="ai-mtf-sig" style="color:${col}">${m.signal}</span>
+            <span class="ai-mtf-sig" style="color:${col}">${escapeHtml(m.signal)}</span>
             <span class="ai-mtf-pct">${conf}%</span>
           </div>
           <div class="ai-comp-bar-track" style="height:3px">
@@ -2445,8 +2460,8 @@ function renderAIAnalytics(a) {
       const pct = Number(c.pct || 0);
       const col = c.color || "#5cc8ff";
       return `<div class="ai-comp-row">
-        <span class="ai-comp-icon">${c.icon}</span>
-        <span class="ai-comp-name">${c.name}</span>
+        <span class="ai-comp-icon">${escapeHtml(String(c.icon || ""))}</span>
+        <span class="ai-comp-name">${escapeHtml(c.name)}</span>
         <div class="ai-comp-bar-track">
           <div class="ai-comp-bar-fill" style="width:${pct}%;background:${col};color:${col}"></div>
         </div>
@@ -2573,15 +2588,15 @@ function renderDecisionLog(log) {
     const regShort = (d.regime || "").replace("RANGING","RANG").replace("DOWNTREND","DOWN")
       .replace("UPTREND","UP").replace("BREAKOUT","BRK").replace("VOLATILE","VOLT")
       .replace("TRANSITION","TRANS");
-    const reasonTip = d.reason ? ` title="${d.reason}"` : "";
+    const reasonTip = d.reason ? ` title="${escapeHtml(d.reason)}"` : "";
     return `<div class="ai-dec-row ${cls}"${reasonTip}>
-      <span class="ai-dec-time">${d.t || "—"}</span>
+      <span class="ai-dec-time">${escapeHtml(d.t || "—")}</span>
       <span class="ai-dec-result">${icon}</span>
-      <span class="ai-dec-conf" style="color:${result==='BUY'?'#00ff88':result==='SELL'?'#ff4d6d':'#8892b0'}">${d.conf || 0}%</span>
-      <span class="ai-dec-rsi">RSI ${d.rsi != null ? d.rsi : "—"}</span>
-      <span class="ai-dec-regime">${regShort}</span>
-      <span style="font-size:9px;color:rgba(255,255,255,.4);min-width:30px">${src}</span>
-      <span class="ai-dec-grade" style="color:${gc}">${d.quality || "C"}(${d.score || 0})</span>
+      <span class="ai-dec-conf" style="color:${result==='BUY'?'#00ff88':result==='SELL'?'#ff4d6d':'#8892b0'}">${Number(d.conf || 0)}%</span>
+      <span class="ai-dec-rsi">RSI ${d.rsi != null ? escapeHtml(String(d.rsi)) : "—"}</span>
+      <span class="ai-dec-regime">${escapeHtml(regShort)}</span>
+      <span style="font-size:9px;color:rgba(255,255,255,.4);min-width:30px">${escapeHtml(src)}</span>
+      <span class="ai-dec-grade" style="color:${gc}">${escapeHtml(d.quality || "C")}(${Number(d.score || 0)})</span>
     </div>`;
   }).join("");
 }
@@ -2705,8 +2720,8 @@ function updateFiltersPanel(d) {
           border-radius:8px;background:rgba(255,77,109,.06);border:1px solid rgba(255,77,109,.15)">
           <span style="font-size:10px;color:#4a5d7f;white-space:nowrap;padding-top:1px">${b.t}</span>
           <div style="flex:1;min-width:0">
-            <div style="font-size:11px;color:#ff8585;word-break:break-word">${b.reason || "—"}</div>
-            <div style="font-size:10px;color:#4a5d7f;margin-top:2px">AI ${b.conf || 0}% | ${regime}</div>
+            <div style="font-size:11px;color:#ff8585;word-break:break-word">${escapeHtml(b.reason || "—")}</div>
+            <div style="font-size:10px;color:#4a5d7f;margin-top:2px">AI ${Number(b.conf || 0)}% | ${escapeHtml(regime)}</div>
           </div>
         </div>`;
       }).join("");
