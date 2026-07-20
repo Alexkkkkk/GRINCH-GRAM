@@ -648,6 +648,10 @@ def analyze(ohlcv):
 
 
 def _analyze_impl(ohlcv):
+    if not ohlcv or len(ohlcv) < 2:
+        # compute_indicators обращается к iloc[0] — упадёт на пустом списке
+        return {"signal": "HOLD", "strength": 0, "price": 0, "candles": [],
+                "regime": {"name": "UNKNOWN"}, "rsi": 50}
     df = compute_indicators(ohlcv)
     signal, strength = get_signal(df)
 
