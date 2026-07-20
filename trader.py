@@ -9,6 +9,24 @@ from ai_engine import AIEngine
 from experience_manager import experience_manager
 import liquidity_guard
 try:
+    import ai_entry_optimizer as _entry_opt
+except Exception as _eo_err:
+    import logging as _eolog
+    _eolog.getLogger("trader").warning(f"ai_entry_optimizer не загружен: {_eo_err}")
+    _entry_opt = None
+try:
+    import ai_tp_optimizer as _tp_opt
+except Exception as _to_err:
+    import logging as _tolog
+    _tolog.getLogger("trader").warning(f"ai_tp_optimizer не загружен: {_to_err}")
+    _tp_opt = None
+try:
+    import ai_market_scanner as _scanner
+except Exception as _sc_err:
+    import logging as _sclog
+    _sclog.getLogger("trader").warning(f"ai_market_scanner не загружен: {_sc_err}")
+    _scanner = None
+try:
     from organism import organism as _organism
 except Exception as _org_err:
     import logging as _orglog
@@ -1314,8 +1332,39 @@ class Trader:
                         return
 
                 else:
+                    # ── TP Optimizer: динамический целевой % ────────────
+                    _dynamic_tp = Config.DCA_TARGET_PROFIT_PCT
+                    if _tp_opt is not None:
+                        try:
+                            _ai_state = self.last_ai or {}
+                            _tp_res = _tp_opt.predict_tp(
+                                regime       = str(_ai_state.get("regime", "UNKNOWN") or "UNKNOWN"),
+                                pump_score   = float(_ai_state.get("pump_score", 0) or 0),
+                                momentum     = str(_ai_state.get("momentum", "CALM") or "CALM"),
+                                rsi          = float(_ai_state.get("rsi", 50) or 50),
+                                atr_pct      = float(_ai_state.get("atr_pct", 2) or 2),
+                                sm_score     = float(_ai_state.get("sm_score", 0) or 0),
+                                volume_ratio = float(_ai_state.get("volume_ratio", 1) or 1),
+                                dca_entries  = int(self.dca_entries_count or 1),
+                                hours_in_trade = (
+                                    (time.time() - (self._last_dca_entry_ts or time.time())) / 3600
+                                ),
+                                confidence   = float(_ai_state.get("confidence", 50) or 50) / 100,
+                            )
+                            # Принимаем TP от оптимизатора только если он ≥ конфигурационного
+                            # (никогда не берём меньше чем задано в Config — защита прибыли)
+                            _dynamic_tp = max(Config.DCA_TARGET_PROFIT_PCT, _tp_res["tp_pct"])
+                            if abs(_dynamic_tp - Config.DCA_TARGET_PROFIT_PCT) > 0.5:
+                                self.log(
+                                    f"🎯 TPOpt: {_tp_res['regime_label']} "
+                                    f"(Config={Config.DCA_TARGET_PROFIT_PCT:.1f}% → "
+                                    f"dynamic={_dynamic_tp:.1f}%, src={_tp_res['source']})",
+                                    "INFO"
+                                )
+                        except Exception as _tpe:
+                            self.log(f"⚠️ TPOpt error: {_tpe}", "DEBUG")
                     # ── Стандартный выход: продаём ВСЁ на целевом % ─────
-                    if portfolio_pct >= Config.DCA_TARGET_PROFIT_PCT:
+                    if portfolio_pct >= _dynamic_tp:
                         if profit_ton_abs < min_ton:
                             self.log(
                                 f"⏳ DCA: цель +{portfolio_pct:.1f}% но прибыль "
@@ -1325,7 +1374,7 @@ class Trader:
                         else:
                             self.log(
                                 f"🎯 DCA ЦЕЛЬ: +{portfolio_pct:.1f}% ≥ "
-                                f"+{Config.DCA_TARGET_PROFIT_PCT:.0f}% | "
+                                f"+{_dynamic_tp:.1f}% | "
                                 f"{profit_ton_abs:.2f} TON — продаём ВСЁ!",
                                 "INFO"
                             )
@@ -1382,17 +1431,43 @@ class Trader:
                                     "WARN"
                                 )
                             else:
-                                self.log(
-                                    f"📉 DCA ДОКУПКА: цена упала {drop_from_last_pct:.1f}% "
-                                    f"(триггер: {_trigger_tag}) | "
-                                    f"вход #{self.dca_entries_count + 1}",
-                                    "INFO"
-                                )
-                                self._dca_buy(
-                                    price_usd, grinch_ton,
-                                    f"докупка #{self.dca_entries_count + 1} "
-                                    f"(падение {drop_from_last_pct:.1f}%, {_trigger_tag})"
-                                )
+                                # ── AI Entry Optimizer: входить сейчас или ждать дна? ─────
+                                _entry_decision = {"enter": True, "reason": "fallback", "wait_drop_pct": 0}
+                                if _entry_opt is not None:
+                                    try:
+                                        _ai_state = self.last_ai or {}
+                                        _entry_decision = _entry_opt.should_enter_now(
+                                            drop_pct       = drop_from_last_pct,
+                                            rsi            = float(_ai_state.get("rsi", 50) or 50),
+                                            volume_ratio   = float(_ai_state.get("volume_ratio", 1) or 1),
+                                            momentum       = str(_ai_state.get("momentum", "CALM") or "CALM"),
+                                            regime         = str(_ai_state.get("regime", "UNKNOWN") or "UNKNOWN"),
+                                            sm_score       = float(_ai_state.get("sm_score", 0) or 0),
+                                            atr_pct        = float(_ai_state.get("atr_pct", 2) or 2),
+                                            pump_score     = float(_ai_state.get("pump_score", 0) or 0),
+                                        )
+                                    except Exception as _eo_ex:
+                                        self.log(f"⚠️ EntryOpt error: {_eo_ex}", "DEBUG")
+                                if not _entry_decision.get("enter", True):
+                                    self.log(
+                                        f"🧠 EntryOpt: ждём дна "
+                                        f"(–{_entry_decision.get('wait_drop_pct', 0):.1f}% ещё) "
+                                        f"— {_entry_decision.get('reason', '')}",
+                                        "INFO"
+                                    )
+                                else:
+                                    self.log(
+                                        f"📉 DCA ДОКУПКА: цена упала {drop_from_last_pct:.1f}% "
+                                        f"(триггер: {_trigger_tag}) | "
+                                        f"вход #{self.dca_entries_count + 1} "
+                                        f"[EntryOpt: {_entry_decision.get('reason', 'ok')}]",
+                                        "INFO"
+                                    )
+                                    self._dca_buy(
+                                        price_usd, grinch_ton,
+                                        f"докупка #{self.dca_entries_count + 1} "
+                                        f"(падение {drop_from_last_pct:.1f}%, {_trigger_tag})"
+                                    )
                         elif _dca_cooldown_left > 0:
                             self.log(
                                 f"⏸️ DCA: кулдаун {_dca_cooldown_left:.0f}с до следующей докупки",
@@ -1415,6 +1490,32 @@ class Trader:
                     f"первый вход отложен до активного времени",
                     "INFO"
                 )
+                return
+            # ── EntryOpt: стоит ли входить сейчас? ──────────────────────
+            _first_entry_ok = True
+            if _entry_opt is not None:
+                try:
+                    _ai_state = self.last_ai or {}
+                    _eo = _entry_opt.should_enter_now(
+                        drop_pct     = 0.0,
+                        rsi          = float(_ai_state.get("rsi", 50) or 50),
+                        volume_ratio = float(_ai_state.get("volume_ratio", 1) or 1),
+                        momentum     = str(_ai_state.get("momentum", "CALM") or "CALM"),
+                        regime       = str(_ai_state.get("regime", "UNKNOWN") or "UNKNOWN"),
+                        sm_score     = float(_ai_state.get("sm_score", 0) or 0),
+                        atr_pct      = float(_ai_state.get("atr_pct", 2) or 2),
+                        pump_score   = float(_ai_state.get("pump_score", 0) or 0),
+                    )
+                    if not _eo.get("enter", True) and _eo.get("confidence", 0) > 0.70:
+                        self.log(
+                            f"🧠 EntryOpt: первый вход отложен "
+                            f"({_eo.get('reason', '')} | conf={_eo.get('confidence',0):.0%})",
+                            "INFO"
+                        )
+                        _first_entry_ok = False
+                except Exception:
+                    pass
+            if not _first_entry_ok:
                 return
             self.log(
                 f"🚀 DCA: нет позиций — открываем первый вход "
@@ -1924,6 +2025,43 @@ class Trader:
             f"портфель был +{portfolio_pct:.1f}%",
             "SELL"
         )
+        # ── AI-модули: обратная связь для онлайн-обучения ────────────────
+        try:
+            _ai_snap = self.last_ai or {}
+            # EntryOpt: был ли вход хорошим? (вошли и получили прибыль)
+            if _entry_opt is not None:
+                _entry_was_good = total_pnl > 0
+                # features от последнего входа (сохранены в сделке если есть)
+                _eo_feats = _entry_opt._build_features(
+                    drop_pct     = 0.0,
+                    rsi          = float(_ai_snap.get("rsi", 50) or 50),
+                    volume_ratio = float(_ai_snap.get("volume_ratio", 1) or 1),
+                    momentum     = str(_ai_snap.get("momentum", "CALM") or "CALM"),
+                    regime       = str(_ai_snap.get("regime", "UNKNOWN") or "UNKNOWN"),
+                    sm_score     = float(_ai_snap.get("sm_score", 0) or 0),
+                    atr_pct      = float(_ai_snap.get("atr_pct", 2) or 2),
+                    pump_score   = float(_ai_snap.get("pump_score", 0) or 0),
+                )
+                _entry_opt.record_outcome(_eo_feats, _entry_was_good)
+            # TPOpt: фактический % прибыли портфеля
+            if _tp_opt is not None:
+                _tp_feats = _tp_opt._build_features(
+                    regime       = str(_ai_snap.get("regime", "UNKNOWN") or "UNKNOWN"),
+                    pump_score   = float(_ai_snap.get("pump_score", 0) or 0),
+                    momentum     = str(_ai_snap.get("momentum", "CALM") or "CALM"),
+                    rsi          = float(_ai_snap.get("rsi", 50) or 50),
+                    atr_pct      = float(_ai_snap.get("atr_pct", 2) or 2),
+                    sm_score     = float(_ai_snap.get("sm_score", 0) or 0),
+                    volume_ratio = float(_ai_snap.get("volume_ratio", 1) or 1),
+                    dca_entries  = int(_dca_entries_snap or 1),
+                    hours_in_trade = (
+                        (time.time() - (self._last_dca_entry_ts or time.time())) / 3600
+                    ),
+                    confidence   = float(_ai_snap.get("confidence", 50) or 50) / 100,
+                )
+                _tp_opt.record_trade_result(_tp_feats, max(0.0, portfolio_pct))
+        except Exception as _aim_ex:
+            self.log(f"⚠️ AI-модули обратная связь: {_aim_ex}", "DEBUG")
         # ── BrainFusion: обратная связь после закрытия ───────────────────
         try:
             _bf.on_trade_closed(total_pnl, was_scalp=self._last_entry_was_scalp)

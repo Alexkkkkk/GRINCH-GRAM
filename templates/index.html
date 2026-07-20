@@ -914,6 +914,35 @@
         </div>
       </div>
 
+      <!-- ══ AI MODULES STATUS ══ -->
+      <div id="ai-modules-card" style="margin-top:10px;border-radius:10px;overflow:hidden;border:1px solid rgba(100,180,255,.18);background:rgba(10,18,30,.6)">
+        <!-- Header -->
+        <div style="padding:8px 12px;background:rgba(100,180,255,.07);display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid rgba(255,255,255,.06)">
+          <span style="font-size:11px;font-weight:700;color:#64b4ff;letter-spacing:.5px">🤖 AI-МОДУЛИ</span>
+          <span id="aim-scanner-badge" style="font-size:10px;font-weight:700;padding:2px 8px;border-radius:10px;background:rgba(100,180,255,.12);color:#64b4ff">сканер</span>
+        </div>
+        <div style="padding:10px 12px;display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px">
+          <!-- Entry Optimizer -->
+          <div style="background:rgba(255,255,255,.03);border-radius:8px;padding:8px">
+            <div style="font-size:9px;color:var(--text2);margin-bottom:4px">📍 ВХОД</div>
+            <div id="aim-entry-model" style="font-size:10px;font-weight:700;color:var(--green)">—</div>
+            <div id="aim-entry-samples" style="font-size:9px;color:var(--text-mid);margin-top:2px">0 примеров</div>
+          </div>
+          <!-- TP Optimizer -->
+          <div style="background:rgba(255,255,255,.03);border-radius:8px;padding:8px">
+            <div style="font-size:9px;color:var(--text2);margin-bottom:4px">🎯 ТЕЙК</div>
+            <div id="aim-tp-model" style="font-size:10px;font-weight:700;color:var(--yellow)">—</div>
+            <div id="aim-tp-samples" style="font-size:9px;color:var(--text-mid);margin-top:2px">avg —%</div>
+          </div>
+          <!-- Market Scanner -->
+          <div style="background:rgba(255,255,255,.03);border-radius:8px;padding:8px">
+            <div style="font-size:9px;color:var(--text2);margin-bottom:4px">🔭 ПАТТЕРН</div>
+            <div id="aim-scan-pattern" style="font-size:10px;font-weight:700;color:#a78bfa">—</div>
+            <div id="aim-scan-conf" style="font-size:9px;color:var(--text-mid);margin-top:2px">—</div>
+          </div>
+        </div>
+      </div>
+
       <!-- ══ EQUITY HISTORY CHART ══ -->
       <div class="card card-c wallet-card">
         <div class="wallet-title">
@@ -3188,6 +3217,76 @@ window.switchEqTab       = switchEqTab;
 
   pollOrganism();
   setInterval(pollOrganism, POLL_ORG);
+})();
+
+// ══ 🤖 AI-МОДУЛИ — polling /api/ai-modules каждые 20с ═══════════════════════
+(function() {
+  const POLL_AIM = 20000;
+  const _e = id => document.getElementById(id);
+
+  function updateAiModules(d) {
+    if (!d) return;
+
+    // Entry Optimizer
+    const eo = d.entry_optimizer || {};
+    const eoModel = _e('aim-entry-model');
+    const eoSamples = _e('aim-entry-samples');
+    if (eoModel) {
+      eoModel.textContent = eo.trained ? '✅ ML обучен' : '⚙️ эвристика';
+      eoModel.style.color = eo.trained ? '#00ff88' : '#ffd166';
+    }
+    if (eoSamples) eoSamples.textContent = (eo.samples || 0) + ' примеров';
+
+    // TP Optimizer
+    const tp = d.tp_optimizer || {};
+    const tpModel = _e('aim-tp-model');
+    const tpSamples = _e('aim-tp-samples');
+    if (tpModel) {
+      tpModel.textContent = tp.trained ? '✅ ML обучен' : '⚙️ правила';
+      tpModel.style.color = tp.trained ? '#00ff88' : '#ffd166';
+    }
+    if (tpSamples) {
+      const avg = tp.avg_real_tp > 0 ? 'avg ' + tp.avg_real_tp.toFixed(1) + '%' : 'нет данных';
+      tpSamples.textContent = avg + ' · ' + (tp.samples || 0) + ' сд.';
+    }
+
+    // Market Scanner
+    const sc = d.market_scanner || {};
+    const scPattern = _e('aim-scan-pattern');
+    const scConf = _e('aim-scan-conf');
+    const scBadge = _e('aim-scanner-badge');
+    const sig = sc.active_signal;
+    if (scPattern) {
+      scPattern.textContent = sig ? sig.label : (sc.running ? '🔭 сканирую…' : '⛔ выкл.');
+      scPattern.style.color = sig ? '#a78bfa' : '#8892b0';
+    }
+    if (scConf) {
+      scConf.textContent = sig
+        ? Math.round((sig.confidence || 0) * 100) + '% · ' + (sig.signal || '')
+        : '—';
+    }
+    if (scBadge && sig) {
+      scBadge.textContent = sig.signal === 'BUY' ? '🟢 ' + sig.signal : '🔴 ' + sig.signal;
+      scBadge.style.color = sig.signal === 'BUY' ? '#00ff88' : '#ef4444';
+      scBadge.style.background = sig.signal === 'BUY' ? 'rgba(0,255,136,.12)' : 'rgba(239,68,68,.12)';
+    } else if (scBadge) {
+      scBadge.textContent = sc.running ? '🔭 сканер' : '⛔ выкл.';
+      scBadge.style.color = '#64b4ff';
+      scBadge.style.background = 'rgba(100,180,255,.12)';
+    }
+  }
+
+  async function pollAiModules() {
+    try {
+      const d = await fetch('/api/ai-modules').then(r => r.json());
+      updateAiModules(d);
+    } catch(e) {
+      console.warn('[AiModules]', e);
+    }
+  }
+
+  pollAiModules();
+  setInterval(pollAiModules, POLL_AIM);
 })();
 
 // ══ 📊 ПРОИЗВОДИТЕЛЬНОСТЬ — polling /api/performance каждые 15с ═════════════

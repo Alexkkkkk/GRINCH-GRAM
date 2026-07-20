@@ -1,10 +1,11 @@
 """
-BrainFusion v1 — единый интеллект торгового бота GRINCH/TON.
+BrainFusion v2 — единый интеллект торгового бота GRINCH/TON.
 
-Объединяет три источника сигналов в один консенсусный «организм»:
+Объединяет четыре источника сигналов в один консенсусный «организм»:
   1. AI-движок (ML ансамбль: RF/ET/GB/HGB/XGB/MLP)
   2. Технический анализ (RSI/EMA/MACD/ATR/BB)
-  3. LLM-советник (Groq — рыночный контекст + долгосрочная стратегия)
+  3. LLM-советник (мульти-провайдер — рыночный контекст + стратегия)
+  4. Market Scanner (паттерны: двойное дно, накопление, пробой сжатия)
 
 Возможности:
   • Консенсусный сигнал с весовым объединением источников
@@ -42,9 +43,10 @@ log = logging.getLogger("brain_fusion")
 
 # ─── Параметры ──────────────────────────────────────────────────────────────
 # Вес каждого источника в консенсусном сигнале
-_W_AI       = 0.70   # ML ансамбль — наибольший вес (быстро, объективно)
-_W_TA       = 0.20   # Технический анализ — традиционные фильтры
-_W_ADVISOR  = 0.10   # LLM советник — контекст и стратегия
+_W_AI       = 0.65   # ML ансамбль — наибольший вес (быстро, объективно)
+_W_TA       = 0.18   # Технический анализ — традиционные фильтры
+_W_ADVISOR  = 0.09   # LLM советник — контекст и стратегия
+_W_SCANNER  = 0.08   # Market Scanner — паттерны (двойное дно, накопление, пробой)
 
 # Порог консенсуса для «пропуска подтверждения»
 FUSION_SKIP_CONFIRM_CONF = 68.0   # все согласны ≥68% → входим сразу
@@ -324,6 +326,22 @@ class BrainFusion:
         ta_num  = _sig_to_num(self._ta.signal)     if ta_fresh  else 0.0
         adv_num = _sig_to_num(self._advisor.verdict) if adv_fresh else 0.0
 
+        # ── Market Scanner — 4-й источник сигналов ───────────────────────
+        scanner_num    = 0.0
+        scanner_fresh  = False
+        scanner_conf_n = 0.5
+        scanner_label  = None
+        try:
+            import ai_market_scanner as _sc
+            sc_sig = _sc.get_last_signal()
+            if sc_sig:
+                scanner_num    = _sig_to_num(sc_sig.get("signal", "HOLD"))
+                scanner_conf_n = float(sc_sig.get("confidence", 0.5))
+                scanner_fresh  = True
+                scanner_label  = sc_sig.get("label")
+        except Exception:
+            pass
+
         # Нормализованная уверенность (0-1) для взвешивания
         ai_conf_n  = self._ai.confidence / 100.0   if ai_fresh  else 0.5
         adv_conf_n = self._advisor.confidence       if adv_fresh else 0.5
@@ -344,11 +362,12 @@ class BrainFusion:
         dyn_w_ta  = _dyn_base_w(_W_TA,      self._ta_wins,  self._ta_total)
         dyn_w_adv = _dyn_base_w(_W_ADVISOR, self._adv_wins, self._adv_total)
 
-        # ── Взвешенный консенсус ──────────────────────────────────────────
-        w_ai  = dyn_w_ai  * ai_conf_n   if ai_fresh  else 0.0
-        w_ta  = dyn_w_ta  * ta_conf_n   if ta_fresh  else 0.0
-        w_adv = dyn_w_adv * adv_conf_n  if adv_fresh else 0.0
-        w_sum = w_ai + w_ta + w_adv
+        # ── Взвешенный консенсус (4 источника) ───────────────────────────
+        w_ai      = dyn_w_ai  * ai_conf_n      if ai_fresh      else 0.0
+        w_ta      = dyn_w_ta  * ta_conf_n      if ta_fresh      else 0.0
+        w_adv     = dyn_w_adv * adv_conf_n     if adv_fresh     else 0.0
+        w_scanner = _W_SCANNER * scanner_conf_n if scanner_fresh else 0.0
+        w_sum = w_ai + w_ta + w_adv + w_scanner
 
         if w_sum < 0.01:
             # Нет данных — нейтральный сигнал
@@ -357,7 +376,8 @@ class BrainFusion:
             fs.reasoning = "Нет актуальных сигналов"
             return fs
 
-        weighted = (w_ai * ai_num + w_ta * ta_num + w_adv * adv_num) / w_sum
+        weighted = (w_ai * ai_num + w_ta * ta_num + w_adv * adv_num
+                    + w_scanner * scanner_num) / w_sum
         # weighted: от -1 (сильный SELL) до +1 (сильный BUY)
 
         if weighted >= 0.15:
@@ -447,16 +467,20 @@ class BrainFusion:
 
         # ── Вклад источников (для лога) ───────────────────────────────────
         fs.sources = {
-            "ai":      {"signal": self._ai.signal,      "conf": round(self._ai.confidence, 1),   "fresh": ai_fresh},
-            "ta":      {"signal": self._ta.signal,      "score": self._ta.entry_score,            "fresh": ta_fresh},
-            "advisor": {"signal": self._advisor.verdict,"conf": round(self._advisor.confidence*100,1), "fresh": adv_fresh},
+            "ai":      {"signal": self._ai.signal,       "conf": round(self._ai.confidence, 1),        "fresh": ai_fresh},
+            "ta":      {"signal": self._ta.signal,       "score": self._ta.entry_score,                "fresh": ta_fresh},
+            "advisor": {"signal": self._advisor.verdict, "conf": round(self._advisor.confidence*100,1),"fresh": adv_fresh},
+            "scanner": {"signal": ("BUY" if scanner_num > 0 else "SELL" if scanner_num < 0 else "HOLD"),
+                        "conf": round(scanner_conf_n * 100, 1), "fresh": scanner_fresh,
+                        "label": scanner_label},
         }
 
         # ── Рассуждение для лога ──────────────────────────────────────────
         parts = []
-        if ai_fresh:  parts.append(f"AI={self._ai.signal}({self._ai.confidence:.0f}%)")
-        if ta_fresh:  parts.append(f"TA={self._ta.signal}(Q={self._ta.entry_quality})")
-        if adv_fresh: parts.append(f"LLM={self._advisor.verdict}({self._advisor.confidence*100:.0f}%)")
+        if ai_fresh:      parts.append(f"AI={self._ai.signal}({self._ai.confidence:.0f}%)")
+        if ta_fresh:      parts.append(f"TA={self._ta.signal}(Q={self._ta.entry_quality})")
+        if adv_fresh:     parts.append(f"LLM={self._advisor.verdict}({self._advisor.confidence*100:.0f}%)")
+        if scanner_fresh: parts.append(f"SCAN={scanner_label or 'pattern'}({scanner_conf_n*100:.0f}%)")
         mode = []
         if is_scalp:     mode.append(f"СКАЛЬП({fs.scalp_tp_pct:.1f}%TP)")
         if is_pump:      mode.append(f"ПАМП(×{fs.position_boost:.2f})")

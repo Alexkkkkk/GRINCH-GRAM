@@ -653,6 +653,20 @@ def start_background():
             _wallet_mgr.start(trader_ref=trader)
         except Exception as _wm_ex:
             print(f"[WalletManager] не запущен: {_wm_ex}")
+        # ── Market Scanner: фоновый сканер паттернов ─────────────────────
+        try:
+            import ai_market_scanner as _mscanner
+            def _get_candles_for_scanner():
+                try:
+                    ohlcv = trader.exchange.get_real_ohlcv(limit=60, currency="token",
+                                                           token="base", tf="minute",
+                                                           aggregate=15)
+                    return ohlcv if ohlcv else trader.exchange.get_ohlcv(limit=60)
+                except Exception:
+                    return []
+            _mscanner.start(_get_candles_for_scanner)
+        except Exception as _sc_ex:
+            print(f"[Scanner] не запущен: {_sc_ex}")
 
 start_background()
 
@@ -682,6 +696,7 @@ _PUBLIC_EXACT = {
     "/health",           # health-check от Bothost/Docker без авторизации
     "/api/amm/preview",  # AMM live widget — виджет на дашборде без авторизации
     "/webhook/github",   # GitHub webhook — вызывается GitHub'ом, не пользователем
+    "/api/ai-modules",   # статус AI-модулей — нужен до авторизации для дашборда
 }
 _PUBLIC_PREFIXES = ("/static/", "/dashboard/", "/api/user/")
 
@@ -1336,6 +1351,29 @@ def api_organism():
         return jsonify(_org.get_state())
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+
+@app.route("/api/ai-modules")
+def api_ai_modules():
+    """Статус всех AI-модулей: entry optimizer, TP optimizer, market scanner."""
+    result = {}
+    try:
+        import ai_entry_optimizer as _eo
+        result["entry_optimizer"] = _eo.get_status()
+    except Exception as e:
+        result["entry_optimizer"] = {"error": str(e)}
+    try:
+        import ai_tp_optimizer as _to
+        result["tp_optimizer"] = _to.get_status()
+    except Exception as e:
+        result["tp_optimizer"] = {"error": str(e)}
+    try:
+        import ai_market_scanner as _sc
+        result["market_scanner"] = _sc.get_status()
+        sig = _sc.get_last_signal()
+        result["market_scanner"]["active_signal"] = sig
+    except Exception as e:
+        result["market_scanner"] = {"error": str(e)}
+    return jsonify(result)
 
 _CANDLES_CACHE = {"ts": 0.0, "payload": None}
 _CANDLES_CACHE_TTL = 2  # сек — свечи обновляются раз в 15м, считать индикаторы на каждый опрос незачем
