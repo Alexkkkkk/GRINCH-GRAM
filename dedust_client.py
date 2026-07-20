@@ -614,9 +614,15 @@ class DedustClient:
     # ─────────────────────── защита от проскальзывания ─────────────────────
 
     # Максимальная допустимая «протухлость» цены для исполнения свопа (сек).
-    # Прайс-фид кэширует 30 сек; на исполнение допускаем до 120 сек, иначе
-    # сделка отклоняется — чтобы не торговать по устаревшей котировке.
-    _PRICE_MAX_STALE = 120
+    # GRINCH — 39-дневный мем-коин с ATR ~3-8%/свеча: 120 сек — слишком долго.
+    # За 2 минуты цена может сдвинуться на 5-10%, что делает min-out неадекватным.
+    # Снижено до 60 сек: прайс-фид обновляется каждые ~30 сек, запас ×2.
+    _PRICE_MAX_STALE = 60
+
+    # Максимальный допустимый ценовой импакт одной сделки на пул (% от резервов TON).
+    # При $42K пуле: 100 TON = ~0.15% → ОК. При больших суммах — предупреждение.
+    # Порог 3% = ~2000 TON (≈$1240): нереалистично для текущего баланса, но страхует.
+    _MAX_POOL_IMPACT_PCT = 3.0
 
     @classmethod
     def _external_prices(cls) -> tuple:
@@ -700,6 +706,16 @@ class DedustClient:
         reserves = self._pool_reserves()
         if reserves:
             rt, rg = reserves
+            # ── Pool impact guard (GRINCH/TON пул ~$42K) ─────────────────────
+            # При низкой ликвидности большая покупка значимо двигает цену.
+            # Предупреждаем, если наша сделка > _MAX_POOL_IMPACT_PCT% от пула TON.
+            impact_pct = ton_amount / rt * 100.0 if rt > 0 else 0.0
+            if impact_pct > self._MAX_POOL_IMPACT_PCT:
+                log.warning(
+                    f"[DeDust] ⚠️ Высокий pool impact: {ton_amount:.1f} TON = "
+                    f"{impact_pct:.1f}% от резерва пула ({rt:.0f} TON). "
+                    f"Slippage может превысить {Config.SLIPPAGE_PCT:.0f}%."
+                )
             expected_grinch = self._cpmm_out(ton_amount, rt, rg)
         else:
             ton_per_grinch = price_feed.get_grinch_ton_price(max_stale=self._PRICE_MAX_STALE)

@@ -2199,9 +2199,14 @@ class AIEngine:
         # BB squeeze: ширина ниже 20% квантиля → сжатие перед взрывом
         df["bb_squeeze"] = (df["bb_w"] < df["bb_w"].rolling(50).quantile(0.2)).astype(int)
 
-        # ── ATR ───────────────────────────────────────────────────────────
+        # ── ATR (Wilder's smoothing, com=13 ≡ alpha=1/14) ────────────────
+        # rolling(14).mean() — это простое SMA, а не метод Уайлдера.
+        # Wilder (1978) использует EMA с alpha=1/N; в pandas: ewm(com=N-1).
+        # Исправлено для согласованности со strategy.py (ewm(com=13)).
+        # Разница: SMA реагирует острее на недавний всплеск ATR; Wilder —
+        # плавнее, ближе к тому, что показывают TradingView и DeDust-chart.
         tr = pd.concat([h - l, (h - c.shift()).abs(), (l - c.shift()).abs()], axis=1).max(axis=1)
-        df["atr"]     = tr.rolling(14).mean()
+        df["atr"]     = tr.ewm(com=13, adjust=False).mean()   # Wilder's ATR
         df["atr_pct"] = df["atr"] / (c + 1e-10)
 
         # ── Stochastic ────────────────────────────────────────────────────

@@ -697,6 +697,7 @@ _PUBLIC_EXACT = {
     "/api/amm/preview",  # AMM live widget — виджет на дашборде без авторизации
     "/webhook/github",   # GitHub webhook — вызывается GitHub'ом, не пользователем
     "/api/ai-modules",   # статус AI-модулей — нужен до авторизации для дашборда
+    "/api/performance",  # read-only торговая статистика — нужна виджетам без авторизации
 }
 _PUBLIC_PREFIXES = ("/static/", "/dashboard/", "/api/user/")
 

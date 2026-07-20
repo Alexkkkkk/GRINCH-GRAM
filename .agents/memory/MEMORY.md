@@ -60,3 +60,4 @@
 - [Checkpoint backup captures gitignored secrets](checkpoint-backup-secrets.md) — a locally-generated private key in a .gitignore'd dir can still land in an internal Replit backup branch; rotate if it does.
 - [Living Organism AI](living-organism.md) — organism.py singleton; 7 bio-systems; JS IIFE must declare its own `const _el = id => document.getElementById(id)` since _el defined in another IIFE scope; /api/organism endpoint; all hooks wrapped in try/except so failure never crashes trader.
 - [Circuit Breaker & Performance System](circuit-breaker-perf.md) — daily auto-pause (CIRCUIT_BREAKER_DAILY_LOSS_PCT=15%), _record_trade_pnl() extended stats, BrainFusion dynamic weights by source accuracy, /api/performance endpoint.
+- [GRINCH market tuning](grinch-market-tuning.md) — 5 bugs fixed Jul 2026: HA recursive, ATR Wilder's, perf auth, stale price 60s, pool impact guard. VPS=port 80 (not 3000).

@@ -112,9 +112,19 @@ def compute_indicators(ohlcv):
     senkou_b = (df["high"].rolling(52).max() + df["low"].rolling(52).min()) / 2
     df["above_cloud"] = (df["close"] > senkou_a) & (df["close"] > senkou_b)
 
-    # ── Heiken Ashi ────────────────────────────────────────────────────────
-    ha_close = (df["open"] + df["high"] + df["low"] + df["close"]) / 4
-    ha_open  = (df["open"].shift(1) + df["close"].shift(1)) / 2
+    # ── Heiken Ashi (рекурсивный алгоритм Ниши) ──────────────────────────
+    # ha_open[i] = (ha_open[i-1] + ha_close[i-1]) / 2  — НЕ raw open/close!
+    # Использование raw open.shift(1) — распространённая ошибка: даёт другой
+    # (нерекурсивный) вариант, который отличается от канонических HA-свечей
+    # и ухудшает качество сигнала на трендовых участках GRINCH-рынка.
+    ha_close_arr = ((df["open"] + df["high"] + df["low"] + df["close"]) / 4).values
+    n = len(ha_close_arr)
+    ha_open_arr = np.empty(n, dtype=float)
+    ha_open_arr[0] = (df["open"].iloc[0] + df["close"].iloc[0]) / 2  # seed
+    for i in range(1, n):
+        ha_open_arr[i] = (ha_open_arr[i - 1] + ha_close_arr[i - 1]) / 2
+    ha_close = pd.Series(ha_close_arr, index=df.index)
+    ha_open  = pd.Series(ha_open_arr,  index=df.index)
     df["ha_body"]  = ha_close - ha_open   # >0 бычья, <0 медвежья
     df["ha_trend"] = np.sign(df["ha_body"])
 
