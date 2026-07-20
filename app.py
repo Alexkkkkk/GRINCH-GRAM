@@ -211,6 +211,20 @@ def _apply_saved_config():
         # Гарантия: ONLY_PROFIT_EXIT всегда True, независимо от исхода загрузки
         Config.ONLY_PROFIT_EXIT = True
 
+        # BUG-FIX гарантия: трейл-пороги не могут опуститься ниже ATR-откалиброванных
+        # минимумов. Защита от старых значений в DB (до пофикса).
+        # Логика max(): если пользователь поставил ВЫШЕ — сохраняем; если DB вернула
+        # старое значение меньше порога шума — зажимаем снизу до безопасного минимума.
+        # ATR_1h ≈ 1.39% → 3×ATR=4.17% → TRAIL_STAGE2 ≥ 5×ATR=6.93% (+запас → 7.5%)
+        Config.TRAIL_STAGE2_PCT         = max(Config.TRAIL_STAGE2_PCT,         7.5)
+        Config.TRAIL_STAGE3_PCT         = max(Config.TRAIL_STAGE3_PCT,         5.5)
+        Config.TRAIL_STAGE4_PCT         = max(Config.TRAIL_STAGE4_PCT,         4.5)
+        # ATR_15m ≈ 3.745% → SHORT_TRAIL и SMART_TP_TIGHT ≥ 2×ATR=7.49%
+        Config.SHORT_TRAIL_PCT          = max(Config.SHORT_TRAIL_PCT,          9.0)
+        Config.SMART_TP_TIGHT_TRAIL_PCT = max(Config.SMART_TP_TIGHT_TRAIL_PCT, 5.0)
+        # SCALP_MAX_ATR_PCT ≥ ATR_15m=3.745% иначе скальп вечно выключен
+        Config.SCALP_MAX_ATR_PCT        = max(Config.SCALP_MAX_ATR_PCT,        5.5)
+
 
 _apply_saved_config()
 _startup_log.info("saved config applied")
