@@ -172,12 +172,17 @@ def _apply_saved_config():
                     Config.FEE_ROUND_TRIP = Config.FEE_PCT * 2
                 applied += 1
 
-        # DEAD_HOURS_UTC — хранится как строка "0,22,23", восстанавливаем как список int
+        # DEAD_HOURS_UTC — может быть строкой "0,22,23" или списком [0,22,23]
         if (raw_dh := saved.get("DEAD_HOURS_UTC")) is not None:
             try:
-                Config.DEAD_HOURS_UTC = [
-                    int(h) for h in str(raw_dh).split(",") if h.strip().lstrip("-").isdigit()
-                ]
+                if isinstance(raw_dh, list):
+                    Config.DEAD_HOURS_UTC = [int(h) for h in raw_dh]
+                else:
+                    # строка вида "0,22,23" — убираем скобки на случай сериализации списка
+                    _dh_str = str(raw_dh).strip().strip("[]")
+                    Config.DEAD_HOURS_UTC = [
+                        int(h.strip()) for h in _dh_str.split(",") if h.strip().lstrip("-").isdigit()
+                    ]
                 applied += 1
             except Exception as _dh_err:
                 _startup_log.warning(f"[Config] ⚠️ Не удалось восстановить DEAD_HOURS_UTC: {_dh_err}")
