@@ -208,8 +208,12 @@ def _apply_saved_config():
     except Exception as e:
         _startup_log.warning(f"[Config] ⚠️ Не удалось загрузить сохранённые настройки: {e}")
     finally:
-        # Гарантия: ONLY_PROFIT_EXIT всегда True, независимо от исхода загрузки
-        Config.ONLY_PROFIT_EXIT = True
+        # Гарантия: все защиты «только в плюс» всегда включены при старте,
+        # независимо от того, что лежит в DB (например, после тестового свопа
+        # «вернуть настройки назад» мог сохранить их отключёнными).
+        Config.ONLY_PROFIT_EXIT       = True   # никогда не продаём в убыток
+        Config.PROFIT_PROTECT_ENABLED = True   # защита прибыли (откат от пика)
+        Config.PROFIT_PROTECT_AI_SELL = True   # AI SELL тоже триггерит защиту
 
         # BUG-FIX гарантия: трейл-пороги не могут опуститься ниже ATR-откалиброванных
         # минимумов. Защита от старых значений в DB (до пофикса).
