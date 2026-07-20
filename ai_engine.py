@@ -1135,7 +1135,7 @@ class AIEngine:
             except Exception as e:
                 log.warning(f"[AI] _refit_all error (продолжаю с прежними моделями): {e}")
             finally:
-                _gc()  # освобождаем RAM от старых объектов моделей после рефита
+                _release_memory()  # освобождаем RAM от старых объектов моделей после рефита
 
         if not self._trained:
             return self._empty_result()
