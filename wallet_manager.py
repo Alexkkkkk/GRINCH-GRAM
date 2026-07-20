@@ -34,6 +34,10 @@ class WalletManager:
         # достоверное значение. Если новое чтение < 20% от предыдущего,
         # используем кеш и логируем предупреждение (диагностика Bug #2).
         self._last_stable_stake: float | None = None
+        # Последний достоверный TON-баланс — для отсева глючных TON=0 ответов API
+        # (см. balance-cache-corruption.md). Только для защиты _poll_body,
+        # не используется в торговых вычислениях.
+        self._last_good_ton: float = 0.0
 
     # ─── запуск ────────────────────────────────────────────────────────────────
 
@@ -96,6 +100,22 @@ class WalletManager:
 
         ton_bal    = float(bal.get("TON",    0) or 0)
         grinch_bal = float(bal.get("GRINCH", 0) or 0)
+
+        # ── Защита от «битого» ответа API: TON=0 при ненулевом GRINCH ──────────
+        # Кошелёк с открытой позицией всегда держит газовый резерв TON;
+        # TON=0 + GRINCH>0 — это почти всегда глюк TonCenter/TonAPI, а не
+        # реальное состояние. Пропускаем такой снапшот целиком, чтобы он не
+        # попал в историю и не превратился в провал на графике.
+        # (см. balance-cache-corruption.md)
+        if ton_bal == 0.0 and grinch_bal > 0 and self._last_good_ton > 0.5:
+            log.warning(
+                "[WalletManager] ⚠️ TON=0 при GRINCH=%.0f (был %.4f TON) — "
+                "подозрение на глюк API, снапшот пропущен",
+                grinch_bal, self._last_good_ton,
+            )
+            return
+        if ton_bal > 0:
+            self._last_good_ton = ton_bal
 
         # 2. Цены
         ton_usd    = float(price_feed.get("TON")              or 0)
@@ -258,17 +278,32 @@ class WalletManager:
         with self._lock:
             return dict(self._snap)
 
+    @staticmethod
+    def _filter_corrupt_snaps(rows: list) -> list:
+        """Убирает снапшоты с TON=0+GRINCH>0 — глюки API, не реальное состояние."""
+        out = []
+        for r in rows:
+            ton_b    = r.get("ton_balance", 0) or 0
+            grinch_b = r.get("grinch_balance", 0) or 0
+            if ton_b == 0.0 and grinch_b > 0:
+                continue   # битая точка — пропускаем
+            out.append(r)
+        return out
+
     def get_history(self, limit: int = 200) -> list:
         """История снимков из БД (или памяти при недоступности БД)."""
         import db_store
         try:
-            rows = db_store.wallet_snapshots_get_recent(limit)
+            # Запрашиваем чуть больше лимита — часть точек может быть
+            # отфильтрована как битые (TON=0+GRINCH>0), чтобы на выходе
+            # всё равно было достаточно валидных точек.
+            rows = db_store.wallet_snapshots_get_recent(limit + 20)
             if rows:
-                return rows
+                return self._filter_corrupt_snaps(rows)[-limit:]
         except Exception:
             pass
         with self._lock:
-            return list(self._history[-limit:])
+            return self._filter_corrupt_snaps(list(self._history))[-limit:]
 
     def get_full_status(self) -> dict:
         """Полный статус кошелька: снимок + позиция + потенциал + история (50 точек)."""
