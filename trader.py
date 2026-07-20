@@ -519,13 +519,14 @@ class Trader:
     @staticmethod
     def _load_trading_enabled() -> bool:
         """Загружает последнее состояние кнопки торговли из DB/settings (с JSON fallback).
-        Возвращает False если сохранённого состояния нет (первый запуск / деплой)."""
+        Возвращает True если сохранённого состояния нет (первый запуск / деплой) —
+        бот стартует с включённой торговлей, не требует ручного нажатия."""
         try:
             from settings_store import get_section
             val = get_section("trader_state").get("trading_enabled")
-            return str(val).lower() == "true" if val is not None else False
+            return str(val).lower() == "true" if val is not None else True
         except Exception:
-            return False
+            return True
 
     def _save_trading_enabled(self, state: bool) -> None:
         """Сохраняет состояние кнопки торговли в DB + JSON (settings_store) для пережития

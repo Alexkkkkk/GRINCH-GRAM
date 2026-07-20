@@ -88,6 +88,11 @@ def _apply_saved_config():
                     "REVERSAL_AI_MIN", "SCALP_MIN_AI_CONF", "SCALP_TP_PCT",
                     "SHORT_MIN_AI_CONF", "SMART_MONEY_BLOCK",
                     "FAST_REENTRY_MIN_CONF", "DCA_REENTRY_COOLDOWN_SEC",
+                    # Trail-параметры (ранее отсутствовали — не персистировались в DB)
+                    "SCALP_MAX_ATR_PCT", "SHORT_TRAIL_PCT",
+                    "TRAIL_STAGE2_AT", "TRAIL_STAGE2_PCT",
+                    "TRAIL_STAGE3_AT", "TRAIL_STAGE3_PCT",
+                    "TRAIL_STAGE4_AT", "TRAIL_STAGE4_PCT",
                 ]
                 defaults = {}
                 for _a in _attrs:
@@ -165,6 +170,15 @@ def _apply_saved_config():
             # ATR-множители динамических целей
             ("ATR_TP_MULT",                 float),
             ("ATR_SL_MULT",                 float),
+            # Trail-параметры (ранее отсутствовали в restore-loop)
+            ("SCALP_MAX_ATR_PCT",  float),
+            ("SHORT_TRAIL_PCT",    float),
+            ("TRAIL_STAGE2_AT",    float),
+            ("TRAIL_STAGE2_PCT",   float),
+            ("TRAIL_STAGE3_AT",    float),
+            ("TRAIL_STAGE3_PCT",   float),
+            ("TRAIL_STAGE4_AT",    float),
+            ("TRAIL_STAGE4_PCT",   float),
         ]:
             if (v := saved.get(attr)) is not None:
                 _safe_set(attr, v, cast)
@@ -2414,6 +2428,16 @@ def api_config_set():
     if (v := num("atr_tp_mult", 0.5, 10.0)) is not None: Config.ATR_TP_MULT = v
     if (v := num("atr_sl_mult", 0.5, 10.0)) is not None: Config.ATR_SL_MULT = v
 
+    # Trail-параметры (ранее отсутствовали в API — не персистировались)
+    if (v := num("scalp_max_atr_pct",  0.1, 30))  is not None: Config.SCALP_MAX_ATR_PCT = v
+    if (v := num("short_trail_pct",    0.5, 50))  is not None: Config.SHORT_TRAIL_PCT    = v
+    if (v := num("trail_stage2_at",    1,   100)) is not None: Config.TRAIL_STAGE2_AT    = v
+    if (v := num("trail_stage2_pct",   0.5, 50))  is not None: Config.TRAIL_STAGE2_PCT   = v
+    if (v := num("trail_stage3_at",    1,   100)) is not None: Config.TRAIL_STAGE3_AT    = v
+    if (v := num("trail_stage3_pct",   0.5, 50))  is not None: Config.TRAIL_STAGE3_PCT   = v
+    if (v := num("trail_stage4_at",    1,   100)) is not None: Config.TRAIL_STAGE4_AT    = v
+    if (v := num("trail_stage4_pct",   0.5, 50))  is not None: Config.TRAIL_STAGE4_PCT   = v
+
     # Детектор крупных продаж
     if "large_sell_dca_enabled" in data:
         Config.LARGE_SELL_DCA_ENABLED = bool(data["large_sell_dca_enabled"])
@@ -2527,6 +2551,15 @@ def api_config_set():
             "CONFLUENCE_RSI_MAX":       Config.CONFLUENCE_RSI_MAX,
             "CONFLUENCE_VOL_MIN_RATIO": Config.CONFLUENCE_VOL_MIN_RATIO,
             "EV_THRESHOLD":             Config.EV_THRESHOLD,
+            # Trail-параметры (ранее отсутствовали — теперь персистируются)
+            "SCALP_MAX_ATR_PCT": Config.SCALP_MAX_ATR_PCT,
+            "SHORT_TRAIL_PCT":   Config.SHORT_TRAIL_PCT,
+            "TRAIL_STAGE2_AT":   Config.TRAIL_STAGE2_AT,
+            "TRAIL_STAGE2_PCT":  Config.TRAIL_STAGE2_PCT,
+            "TRAIL_STAGE3_AT":   Config.TRAIL_STAGE3_AT,
+            "TRAIL_STAGE3_PCT":  Config.TRAIL_STAGE3_PCT,
+            "TRAIL_STAGE4_AT":   Config.TRAIL_STAGE4_AT,
+            "TRAIL_STAGE4_PCT":  Config.TRAIL_STAGE4_PCT,
             # Временной фильтр
             "DEAD_HOURS_UTC":       ",".join(str(h) for h in Config.DEAD_HOURS_UTC),
             "DEAD_HOURS_DROP_MULT": Config.DEAD_HOURS_DROP_MULT,
