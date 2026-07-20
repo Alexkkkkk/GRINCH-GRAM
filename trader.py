@@ -3860,12 +3860,14 @@ class Trader:
                                 return False
                     except Exception:
                         pass
-                # AMM preflight: стоимость этой конкретной позиции
+                # AMM preflight: стоимость этой конкретной позиции.
+                # force=True → min_net_ton=0 (принимаем убыток, но всё равно продаём).
                 _stake_ton   = float(trade.get("stake_ton", 0) or 0)
-                _min_net_ton = _stake_ton + Config.BUY_GAS_TON
+                _min_net_ton = 0.0 if force else (_stake_ton + Config.BUY_GAS_TON)
                 self.log(
                     f"💸 Продаём {grinch_amount:.6f} GRINCH на DeDust "
-                    f"(причина: {reason}, AMM min_net ≥ {_min_net_ton:.3f} TON)...", "INFO"
+                    f"(причина: {reason}, AMM min_net ≥ {_min_net_ton:.3f} TON"
+                    f"{', FORCE' if force else ''})...", "INFO"
                 )
                 sell_ok = False
                 try:
