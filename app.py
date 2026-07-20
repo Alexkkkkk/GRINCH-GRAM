@@ -985,17 +985,18 @@ def api_admin_fix_open_trades():
     """
     from config import Config as _Cfg
     fixed = []
-    for t in (trader.open_trades or []):
-        ep = float(t.get("entry_price") or 0)
-        tp = float(t.get("take_profit") or 0)
-        st = float(t.get("stake_ton") or 0)
-        if ep > 0 and tp / ep > 10:
-            mg = _Cfg.required_gross_pct_with_gas(st if st > 0 else None)
-            tp_pct = max(_Cfg.TAKE_PROFIT_PCT, mg)
-            new_tp = round(ep * (1 + tp_pct / 100), 8)
-            t["take_profit"] = new_tp
-            fixed.append({"id": str(t.get("id", ""))[:12],
-                           "old_tp": tp, "new_tp": new_tp})
+    with trader._ot_lock:
+        for t in (trader.open_trades or []):
+            ep = float(t.get("entry_price") or 0)
+            tp = float(t.get("take_profit") or 0)
+            st = float(t.get("stake_ton") or 0)
+            if ep > 0 and tp / ep > 10:
+                mg = _Cfg.required_gross_pct_with_gas(st if st > 0 else None)
+                tp_pct = max(_Cfg.TAKE_PROFIT_PCT, mg)
+                new_tp = round(ep * (1 + tp_pct / 100), 8)
+                t["take_profit"] = new_tp
+                fixed.append({"id": str(t.get("id", ""))[:12],
+                               "old_tp": tp, "new_tp": new_tp})
     if fixed:
         try:
             trader.exp.save_open_trades(trader._combined_open_trades())
@@ -1256,8 +1257,9 @@ def api_amm_preview():
         from config import Config as _Cfg
         dc = trader.exchange._dedust  # DeDustClient instance
 
-        # 1. GRINCH из открытых позиций
-        open_trades  = trader.open_trades or []
+        # 1. GRINCH из открытых позиций (снимок под локом — защита от race с tick)
+        with trader._ot_lock:
+            open_trades = list(trader.open_trades) if trader.open_trades else []
         grinch_amount = sum(t.get("amount", 0) or 0 for t in open_trades)
         total_stake   = sum(t.get("stake_ton", 0) or 0 for t in open_trades)
         n_entries     = max(1, len(open_trades)) if open_trades else 1
