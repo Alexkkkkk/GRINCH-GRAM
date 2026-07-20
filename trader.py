@@ -1554,18 +1554,14 @@ class Trader:
         """Открывает одну DCA позицию на DCA_STAKE_TON (+ compound-бонус если накоплен)."""
         stake_ton = Config.DCA_STAKE_TON
         # ── Компаундирование: прибавляем реинвест-бонус к первой покупке цикла ──
+        _compound_applied = False
         if (Config.DCA_COMPOUND_ENABLED
                 and self.dca_compound_bonus_ton > 0
                 and self.dca_entries_count == 0):
             stake_ton = stake_ton + self.dca_compound_bonus_ton
-            self.log(
-                f"🔄 Компаунд: базовая ставка {Config.DCA_STAKE_TON:.1f} TON "
-                f"+ бонус {self.dca_compound_bonus_ton:.2f} TON "
-                f"= {stake_ton:.2f} TON (реинвест накоплен за прошлые циклы)",
-                "INFO"
-            )
+            _compound_applied = True
 
-        # Проверяем баланс
+        # Проверяем баланс ДО лога компаунда — чтобы не спамить при ошибках
         bal     = self.exchange.get_balance() or {}
         ton_bal = bal.get("TON", 0) or 0
         buy_gas = 0.30
@@ -1587,6 +1583,15 @@ class Trader:
                 "WARN"
             )
             stake_ton = spendable
+
+        # Логируем компаунд только после успешной проверки баланса
+        if _compound_applied:
+            self.log(
+                f"🔄 Компаунд: базовая ставка {Config.DCA_STAKE_TON:.1f} TON "
+                f"+ бонус {self.dca_compound_bonus_ton:.2f} TON "
+                f"= {stake_ton:.2f} TON (реинвест накоплен за прошлые циклы)",
+                "INFO"
+            )
 
         # ton_stake передаётся напрямую в place_order (DeDust-путь) —
         # мутировать Config.TRADE_AMOUNT небезопасно (race condition с дашбордом).

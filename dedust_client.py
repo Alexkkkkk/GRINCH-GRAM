@@ -668,13 +668,17 @@ class DedustClient:
                 f"https://tonapi.io/v2/accounts/{pool}",
                 headers={"Accept": "application/json"}, timeout=self._RESERVES_TIMEOUT,
             )
-            ton_reserve = (r1.json().get("balance", 0) or 0) / TON
+            r1.raise_for_status()
+            r1_data = r1.json() if r1.headers.get("content-type", "").startswith("application/json") else {}
+            ton_reserve = (r1_data.get("balance", 0) or 0) / TON
             r2 = _HTTP.get(
                 f"https://tonapi.io/v2/accounts/{pool}/jettons",
                 headers={"Accept": "application/json"}, timeout=self._RESERVES_TIMEOUT,
             )
+            r2.raise_for_status()
+            r2_data = r2.json() if r2.headers.get("content-type", "").startswith("application/json") else {}
             grinch_reserve = None
-            for b in r2.json().get("balances", []):
+            for b in r2_data.get("balances", []):
                 jetton  = b.get("jetton", {}) or {}
                 jaddr   = jetton.get("address", "")
                 jsymbol = (jetton.get("symbol", "") or "").upper()

@@ -303,22 +303,28 @@ class ExchangeClient:
                 result = self._dedust.sell(amount, min_net_ton=min_net_ton)
 
             if not result.get("ok"):
-                print(f"[DeDust] Ошибка ордера: {result.get('error')}")
+                err_msg = result.get("error", "нет ответа от DeDust")
+                print(f"[DeDust] Ошибка ордера ({side}): {err_msg}")
                 if side == "sell":
                     # Для SELL — возвращаем структурированный dict, чтобы вызывающий
                     # код мог проверить amm_blocked=True и не делать бессмысленный retry.
-                    # Caller-ы sell проверяют `sell_result.get("error")`, а не `if not`.
                     return {
-                        "error":         result.get("error"),
+                        "error":         err_msg,
                         "amm_blocked":   result.get("amm_blocked", False),
                         "expected_ton":  result.get("expected_ton"),
                         "net_ton":       result.get("net_ton"),
                         "min_net_ton":   result.get("min_net_ton"),
                         "shortfall_ton": result.get("shortfall_ton"),
                     }
-                # Для BUY — оставляем None (исторический контракт).
-                # Caller-ы buy проверяют `if not order`.
-                return None
+                # BUY: возвращаем dict с реальной ошибкой (ранее было None —
+                # это скрывало причину сбоя, показывая только "нет ответа").
+                # Caller-ы проверяют `if not order or order.get("error")` — совместимо.
+                return {
+                    "error":      err_msg,
+                    "broadcast":  result.get("broadcast", False),
+                    "need_ton":   result.get("need_ton"),
+                    "have_ton":   result.get("have_ton"),
+                }
 
             return {
                 "id":       f"dedust_{int(time.time())}",
