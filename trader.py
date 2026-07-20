@@ -1338,7 +1338,7 @@ class Trader:
                         try:
                             _ai_state = self.last_ai or {}
                             _tp_res = _tp_opt.predict_tp(
-                                regime       = str(_ai_state.get("regime", "UNKNOWN") or "UNKNOWN"),
+                                regime       = ((_ai_state.get("regime") or {}).get("name") or "UNKNOWN"),
                                 pump_score   = float(_ai_state.get("pump_score", 0) or 0),
                                 momentum     = str(_ai_state.get("momentum", "CALM") or "CALM"),
                                 rsi          = float(_ai_state.get("rsi", 50) or 50),
@@ -1346,7 +1346,7 @@ class Trader:
                                 sm_score     = float(_ai_state.get("sm_score", 0) or 0),
                                 volume_ratio = float(_ai_state.get("volume_ratio", 1) or 1),
                                 dca_entries  = int(self.dca_entries_count or 1),
-                                hours_in_trade = (
+                                hours_in_trade = max(0.0,
                                     (time.time() - (self._last_dca_entry_ts or time.time())) / 3600
                                 ),
                                 confidence   = float(_ai_state.get("confidence", 50) or 50) / 100,
@@ -1441,7 +1441,7 @@ class Trader:
                                             rsi            = float(_ai_state.get("rsi", 50) or 50),
                                             volume_ratio   = float(_ai_state.get("volume_ratio", 1) or 1),
                                             momentum       = str(_ai_state.get("momentum", "CALM") or "CALM"),
-                                            regime         = str(_ai_state.get("regime", "UNKNOWN") or "UNKNOWN"),
+                                            regime         = ((_ai_state.get("regime") or {}).get("name") or "UNKNOWN"),
                                             sm_score       = float(_ai_state.get("sm_score", 0) or 0),
                                             atr_pct        = float(_ai_state.get("atr_pct", 2) or 2),
                                             pump_score     = float(_ai_state.get("pump_score", 0) or 0),
@@ -1501,7 +1501,7 @@ class Trader:
                         rsi          = float(_ai_state.get("rsi", 50) or 50),
                         volume_ratio = float(_ai_state.get("volume_ratio", 1) or 1),
                         momentum     = str(_ai_state.get("momentum", "CALM") or "CALM"),
-                        regime       = str(_ai_state.get("regime", "UNKNOWN") or "UNKNOWN"),
+                        regime       = ((_ai_state.get("regime") or {}).get("name") or "UNKNOWN"),
                         sm_score     = float(_ai_state.get("sm_score", 0) or 0),
                         atr_pct      = float(_ai_state.get("atr_pct", 2) or 2),
                         pump_score   = float(_ai_state.get("pump_score", 0) or 0),
@@ -2028,25 +2028,33 @@ class Trader:
         # ── AI-модули: обратная связь для онлайн-обучения ────────────────
         try:
             _ai_snap = self.last_ai or {}
-            # EntryOpt: был ли вход хорошим? (вошли и получили прибыль)
+            # Извлекаем имя режима — last_ai["regime"] это dict {"name":...}
+            _regime_name = ((_ai_snap.get("regime") or {}).get("name") or "UNKNOWN")
+            # EntryOpt: был ли вход хорошим? (цикл закрыт с прибылью)
             if _entry_opt is not None:
                 _entry_was_good = total_pnl > 0
-                # features от последнего входа (сохранены в сделке если есть)
+                # Усреднённый drop из всех DCA-входов цикла как прокси
+                _avg_drop = 0.0
+                try:
+                    if _dca_entries_snap > 1:
+                        _avg_drop = Config.DCA_DROP_TRIGGER_PCT * (_dca_entries_snap - 1) / 2
+                except Exception:
+                    pass
                 _eo_feats = _entry_opt._build_features(
-                    drop_pct     = 0.0,
+                    drop_pct     = _avg_drop,
                     rsi          = float(_ai_snap.get("rsi", 50) or 50),
                     volume_ratio = float(_ai_snap.get("volume_ratio", 1) or 1),
                     momentum     = str(_ai_snap.get("momentum", "CALM") or "CALM"),
-                    regime       = str(_ai_snap.get("regime", "UNKNOWN") or "UNKNOWN"),
+                    regime       = _regime_name,
                     sm_score     = float(_ai_snap.get("sm_score", 0) or 0),
                     atr_pct      = float(_ai_snap.get("atr_pct", 2) or 2),
                     pump_score   = float(_ai_snap.get("pump_score", 0) or 0),
                 )
                 _entry_opt.record_outcome(_eo_feats, _entry_was_good)
-            # TPOpt: фактический % прибыли портфеля
+            # TPOpt: фактический % прибыли портфеля → обучаем модель
             if _tp_opt is not None:
                 _tp_feats = _tp_opt._build_features(
-                    regime       = str(_ai_snap.get("regime", "UNKNOWN") or "UNKNOWN"),
+                    regime       = _regime_name,
                     pump_score   = float(_ai_snap.get("pump_score", 0) or 0),
                     momentum     = str(_ai_snap.get("momentum", "CALM") or "CALM"),
                     rsi          = float(_ai_snap.get("rsi", 50) or 50),
@@ -2054,7 +2062,7 @@ class Trader:
                     sm_score     = float(_ai_snap.get("sm_score", 0) or 0),
                     volume_ratio = float(_ai_snap.get("volume_ratio", 1) or 1),
                     dca_entries  = int(_dca_entries_snap or 1),
-                    hours_in_trade = (
+                    hours_in_trade = max(0.0,
                         (time.time() - (self._last_dca_entry_ts or time.time())) / 3600
                     ),
                     confidence   = float(_ai_snap.get("confidence", 50) or 50) / 100,
