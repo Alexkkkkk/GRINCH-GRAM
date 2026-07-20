@@ -185,45 +185,6 @@ def _apply_saved_config():
             _safe_set("DEAD_HOURS_DROP_MULT", v, float)
             applied += 1
 
-        # ── Стратегическая миграция v2 (2026-07-17) ──────────────────────────────
-        # Принудительно обновляет параметры на основе реального анализа рынка GRINCH:
-        # • avg дневной range = 35.9%  → цель 30% вместо 25%
-        # • p90 15min range = 6.5%     → pullback 6% и protect 8% вместо 4%/6%
-        # • каскад Ур.2 = 65%          → ловим ракеты (макс день 92.6%)
-        # • 23:xx не мёртвый ($678/ч)  → убираем из dead hours
-        # Миграция срабатывает однажды: перезаписывает только старые значения.
-        _STRATEGY_V2_UPDATES = {
-            "DCA_TARGET_PROFIT_PCT":     (25.0, 30.0),   # старое → новое
-            "DCA_PULLBACK_WAIT_PCT":     (4.0,  6.0),
-            "DCA_CASCADE_LEVEL1_PCT":    (30.0, 40.0),
-            "DCA_CASCADE_LEVEL2_PCT":    (35.0, 65.0),
-            "PROFIT_PROTECT_DROP_PCT":   (6.0,  8.0),
-            "DCA_SMART_REENTRY_PULLBACK_PCT": (4.0, 5.0),
-        }
-        _migrated = []
-        for _k, (_old, _new) in _STRATEGY_V2_UPDATES.items():
-            try:
-                _cur = float(saved.get(_k, _old) or _old)
-                if abs(_cur - _old) < 0.01:   # значение ещё старое
-                    setattr(Config, _k, _new)
-                    _migrated.append(f"{_k}: {_old}→{_new}")
-            except Exception:
-                pass
-        # Исправляем dead_hours: убираем 23 если он там есть
-        _dh = getattr(Config, "DEAD_HOURS_UTC", [])
-        if 23 in _dh:
-            Config.DEAD_HOURS_UTC = [h for h in _dh if h != 23]
-            _migrated.append("DEAD_HOURS_UTC: убрали 23 (объём $678/ч)")
-        # Сохраняем обновлённые значения в DB
-        if _migrated:
-            try:
-                _mig_data = {k: getattr(Config, k) for k, _ in _STRATEGY_V2_UPDATES.items()}
-                _mig_data["DEAD_HOURS_UTC"] = ",".join(str(h) for h in Config.DEAD_HOURS_UTC)
-                update_section("config", _mig_data)
-                _startup_log.info(f"[Config] 🔧 Стратегия v2 применена: {', '.join(_migrated)}")
-            except Exception as _me:
-                _startup_log.warning(f"[Config] ⚠️ Миграция v2 не сохранена в DB: {_me}")
-
         _startup_log.info(f"[Config] ✅ Восстановлено {applied} сохранённых настроек из settings_store")
     except Exception as e:
         _startup_log.warning(f"[Config] ⚠️ Не удалось загрузить сохранённые настройки: {e}")
