@@ -1447,7 +1447,10 @@ def api_trade_close():
     tid = data.get("id")
     if tid is None or tid == "":
         return jsonify({"ok": False, "error": "не указан id позиции"}), 400
-    result = trader.close_trade(tid)
+    # force=true — принудительное закрытие тестовой/ошибочной позиции;
+    # обходит ONLY_PROFIT_EXIT, но исполняет реальный своп на блокчейне.
+    force = bool(data.get("force", False))
+    result = trader.close_trade(tid, force=force)
     return jsonify(result), (200 if result.get("ok") else 400)
 
 @app.route("/api/ai/decisions")

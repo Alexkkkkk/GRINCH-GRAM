@@ -3650,8 +3650,12 @@ class Trader:
             return True
         return False
 
-    def close_trade(self, trade_id):
-        """Ручное закрытие ОДНОЙ позиции по её id (рыночная продажа сейчас)."""
+    def close_trade(self, trade_id, force: bool = False):
+        """Ручное закрытие ОДНОЙ позиции по её id (рыночная продажа сейчас).
+
+        force=True — принудительное закрытие тестовой / ошибочной позиции;
+        обходит проверку ONLY_PROFIT_EXIT, но всё равно исполняет реальный своп.
+        """
         trade = next((t for t in self.open_trades
                       if str(t.get("id")) == str(trade_id)), None)
         if not trade:
@@ -3663,7 +3667,8 @@ class Trader:
             price = trade.get("entry_price")
         # Режим «только в плюс»: даже РУЧНОЕ закрытие не продаёт в минус.
         # Порог включает газ обоих свопов — настоящая гарантия реальной прибыли.
-        if Config.ONLY_PROFIT_EXIT:
+        # Исключение: force=True (закрытие тестовой/ошибочной позиции вручную).
+        if Config.ONLY_PROFIT_EXIT and not force:
             entry         = trade.get("entry_price") or 0
             stake_ton     = trade.get("stake_ton") or None
             pnl_pct       = (price - entry) / entry * 100 if entry else 0.0
@@ -3677,7 +3682,11 @@ class Trader:
                 return {"ok": False, "error": (
                     f"Продажа в минус отключена: прибыль {pnl_pct:+.1f}% ниже "
                     f"минимума +{net_floor_pct:.1f}% (с учётом газа). Ждём роста цены.")}
-        self.log(f"🖐 Ручное закрытие позиции {trade_id} @ {price}", "INFO")
+        if force:
+            self.log(f"⚡ ПРИНУДИТЕЛЬНОЕ закрытие позиции {trade_id} @ {price} "
+                     f"(force=True, ONLY_PROFIT_EXIT обойдён)", "WARNING")
+        else:
+            self.log(f"🖐 Ручное закрытие позиции {trade_id} @ {price}", "INFO")
         ok = self._close_trade(trade, price, "manual")
         return {"ok": True} if ok else {
             "ok": False, "error": "Продажа не исполнена — попробуйте ещё раз позже"}
