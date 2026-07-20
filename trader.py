@@ -1937,6 +1937,11 @@ class Trader:
                 self.stats["total_trades"] = self.stats.get("total_trades", 0) + 1
                 if pnl_ton > 0:
                     self.stats["winning_trades"] += 1
+            # Circuit breaker / win-streak stats — обязательно для каждой позиции цикла
+            try:
+                self._record_trade_pnl(pnl_ton)
+            except Exception as _rp_e:
+                self.log(f"⚠️ _record_trade_pnl (dca sell-all): {_rp_e}", "WARN")
             # AI feedback
             try:
                 ai_snap  = self.last_ai or {}
@@ -1976,10 +1981,13 @@ class Trader:
 
         # Снимаем dca_entries ПЕРЕД сбросом (иначе советник получит 0)
         _dca_entries_snap = self.dca_entries_count
-        self.open_trades         = []
-        self.dca_entries_count   = 0
-        self.dca_total_stake     = 0.0
-        self.dca_cascade_half_sold = False   # сбрасываем каскад-флаг на новый цикл
+        self.open_trades            = []
+        self.dca_entries_count      = 0
+        self.dca_total_stake        = 0.0
+        self.dca_cascade_half_sold  = False   # сбрасываем каскад-флаг на новый цикл
+        # Сбрасываем HWM — иначе profit_protection не сработает на новом цикле
+        # (требует total_value > portfolio_high_water_ton, который уже выше прежнего пика).
+        self.portfolio_high_water_ton = 0.0
 
         # ── AI Советник: ОДИН триггер на закрытие DCA-цикла ──────────
         try:
@@ -3440,6 +3448,11 @@ class Trader:
             self.stats["total_trades"] = self.stats.get("total_trades", 0) + 1
             if pnl_ton > 0:
                 self.stats["winning_trades"] += 1
+        # Circuit breaker / win-streak stats — те же что и для обычных сделок
+        try:
+            self._record_trade_pnl(pnl_ton)
+        except Exception as _rp_e:
+            self.log(f"⚠️ _record_trade_pnl (short): {_rp_e}", "WARN")
         try:
             self.exp.save_open_trades(self._combined_open_trades())
             self.exp.record_trade(dict(trade), self.stats, self.ai)

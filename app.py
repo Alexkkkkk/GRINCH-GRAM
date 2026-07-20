@@ -1716,6 +1716,10 @@ def api_advisor_toggle_auto():
 
 @app.route("/api/advisor/config", methods=["GET", "POST"])
 def api_advisor_config():
+    if request.method == "POST":
+        err = _require_login()
+        if err:
+            return err
     from ai_advisor import set_config, AUTO_INTERVAL_MIN, AUTO_TRADES_TRIGGER
     if request.method == "POST":
         data = request.json or {}
@@ -1734,6 +1738,9 @@ def api_advisor_log():
 @app.route("/api/advisor/apikey", methods=["POST"])
 def api_advisor_apikey():
     """Обратная совместимость: сохраняет ключ Groq (старый эндпоинт)."""
+    err = _require_login()
+    if err:
+        return err
     from ai_advisor import reload_key
     data = request.json or {}
     key  = str(data.get("key", "")).strip()
