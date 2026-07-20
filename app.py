@@ -1377,7 +1377,7 @@ def api_ai_modules():
     return jsonify(result)
 
 _CANDLES_CACHE = {"ts": 0.0, "payload": None}
-_CANDLES_CACHE_TTL = 2  # сек — свечи обновляются раз в 15м, считать индикаторы на каждый опрос незачем
+_CANDLES_CACHE_TTL = 30  # сек — свечи 15м, пересчёт чаще 30с бессмысленен
 
 @app.route("/api/candles")
 def api_candles():
@@ -1929,9 +1929,16 @@ def api_wallet_history():
         return jsonify({"ok": False, "error": str(e)}), 500
 
 
+_WALLET_ANALYTICS_CACHE: dict = {"ts": 0.0, "payload": None}
+_WALLET_ANALYTICS_TTL = 15  # сек — содержит P&L открытой позиции, обновлять раз в 15с достаточно
+
 @app.route("/api/wallet/analytics")
 def api_wallet_analytics():
     """Аналитика GRINCH-позиции: сколько монет, по какой цене куплено, P&L по целям."""
+    _now = time.time()
+    if _WALLET_ANALYTICS_CACHE["payload"] is not None and \
+            (_now - _WALLET_ANALYTICS_CACHE["ts"]) < _WALLET_ANALYTICS_TTL:
+        return jsonify(_WALLET_ANALYTICS_CACHE["payload"])
     try:
         import db_store
         status = _wallet_mgr.get_full_status()
@@ -1976,7 +1983,7 @@ def api_wallet_analytics():
             if be_list:
                 breakeven_ton = be_list[-1]
 
-        return jsonify({
+        _payload = {
             "ok":    True,
             "snapshot": snap,
             "position": {
@@ -2001,7 +2008,10 @@ def api_wallet_analytics():
                 "net_pnl_ton":          net_pnl_ton,
             },
             "recent_trades": grinch_trades[:20],
-        })
+        }
+        _WALLET_ANALYTICS_CACHE["payload"] = _payload
+        _WALLET_ANALYTICS_CACHE["ts"] = time.time()
+        return jsonify(_payload)
     except Exception as e:
         return jsonify({"ok": False, "error": str(e)}), 500
 
@@ -2108,13 +2118,22 @@ def api_experience():
     return jsonify(experience_manager.get_report())
 
 
+_TRADES_ANALYTICS_CACHE: dict = {"ts": 0.0, "payload": None}
+_TRADES_ANALYTICS_TTL = 60  # сек — агрегаты 2000 сделок, обновлять раз в минуту достаточно
+
 @app.route("/api/analytics/trades")
 def api_analytics_trades():
     """
     Полная аналитика закрытых сделок из PostgreSQL.
     Возвращает агрегаты по режиму рынка, RSI, умным деньгам, уверенности AI —
     для самообучения и понимания, при каких условиях бот торгует в плюс.
+    Результат кэшируется на 60 сек — агрегация 2000 записей дорогая.
     """
+    _now = time.time()
+    if _TRADES_ANALYTICS_CACHE["payload"] is not None and \
+            (_now - _TRADES_ANALYTICS_CACHE["ts"]) < _TRADES_ANALYTICS_TTL:
+        return jsonify(_TRADES_ANALYTICS_CACHE["payload"])
+
     import db_store
     trades = db_store.trades_get_all(limit=2000)
     if not trades:
@@ -2186,7 +2205,10 @@ def api_analytics_trades():
         "by_ai_confidence": conf_buckets,
         "by_smart_money": sm_stats,
     }
-    return jsonify({"ok": True, "count": total, "trades": trades[-50:], "summary": summary})
+    payload = {"ok": True, "count": total, "trades": trades[-50:], "summary": summary}
+    _TRADES_ANALYTICS_CACHE["payload"] = payload
+    _TRADES_ANALYTICS_CACHE["ts"] = time.time()
+    return jsonify(payload)
 
 
 @app.route("/api/liquidator/sell", methods=["POST"])

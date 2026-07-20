@@ -2297,7 +2297,11 @@ setInterval(pollLiquidityGuard, 8000);
 
   fetchAndDraw();
   setInterval(fetchAndDraw, 15000);
-  window.addEventListener("resize", fetchAndDraw);
+  let _eqResizeTimer;
+  window.addEventListener("resize", () => {
+    clearTimeout(_eqResizeTimer);
+    _eqResizeTimer = setTimeout(fetchAndDraw, 150);
+  });
 })();
 
 // Изменить порог

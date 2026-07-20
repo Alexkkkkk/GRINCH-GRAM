@@ -425,7 +425,7 @@ class AnalyticsBuffer:
         ]
 
         # ── Итоговый блок ─────────────────────────────────────────────────────
-        return {
+        result = {
             "token":          GRINCH_TOKEN_ADDR,
             "dedust_url":     GRINCH_DEDUST_URL,
             "window_ticks":   n,
