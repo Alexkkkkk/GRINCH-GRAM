@@ -3687,7 +3687,7 @@ class Trader:
                      f"(force=True, ONLY_PROFIT_EXIT обойдён)", "WARNING")
         else:
             self.log(f"🖐 Ручное закрытие позиции {trade_id} @ {price}", "INFO")
-        ok = self._close_trade(trade, price, "manual")
+        ok = self._close_trade(trade, price, "manual", force=force)
         return {"ok": True} if ok else {
             "ok": False, "error": "Продажа не исполнена — попробуйте ещё раз позже"}
 
@@ -3794,19 +3794,20 @@ class Trader:
         except Exception:
             pass
 
-    def _close_trade(self, trade, price, reason):
+    def _close_trade(self, trade, price, reason, force: bool = False):
         """Сериализует закрытие (лок) и защищает от двойной продажи позиции."""
         with self._close_lock:
             if trade.get("id") not in {t.get("id") for t in self.open_trades}:
                 return False   # уже закрыта другим потоком
-            return self._close_trade_locked(trade, price, reason)
+            return self._close_trade_locked(trade, price, reason, force=force)
 
-    def _close_trade_locked(self, trade, price, reason):
+    def _close_trade_locked(self, trade, price, reason, force: bool = False):
         """
         Закрывает позицию:
         1. Исполняет реальную продажу GRINCH на блокчейне (DeDust режим)
         2. Рассчитывает виртуальный P&L
         3. Обновляет статистику и AI feedback
+        force=True — обходит все ONLY_PROFIT_EXIT / ЖЕЛЕЗНЫЙ ЗАМОК проверки.
         """
         # ── 1. РЕАЛЬНАЯ продажа GRINCH через DeDust ─────────────────────
         if self.exchange.mode == "dedust":
@@ -3841,7 +3842,8 @@ class Trader:
                 # Даже если все верхние проверки пройдены, делаем финальную
                 # верификацию по РЕАЛЬНОЙ on-chain цене (TON/GRINCH).
                 # Продажа в минус по TON абсолютно невозможна.
-                if Config.ONLY_PROFIT_EXIT:
+                # Исключение: force=True (закрытие тестовой/ошибочной позиции).
+                if Config.ONLY_PROFIT_EXIT and not force:
                     try:
                         from price_feed import price_feed as _pf2
                         cur_ton = _pf2.get_grinch_ton_price() or 0.0
