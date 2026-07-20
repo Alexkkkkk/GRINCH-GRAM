@@ -43,9 +43,9 @@ class _TimeoutSession(requests.Session):
 SESSION = _TimeoutSession()
 
 _retry_kwargs = dict(
-    total=1,
-    backoff_factor=0.2,
-    status_forcelist=(502, 503, 504),
+    total=3,
+    backoff_factor=0.5,
+    status_forcelist=(429, 502, 503, 504),
     allowed_methods=frozenset(["GET", "POST"]),
 )
 

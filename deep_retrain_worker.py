@@ -33,13 +33,18 @@ MIN_EXAMPLES  = 30
 
 
 def _split(X, y, w):
-    n      = len(X)
-    n_test = max(1, int(n * TEST_FRACTION))
-    idx    = np.arange(n)
-    np.random.RandomState(42).shuffle(idx)
-    test_idx, train_idx = idx[:n_test], idx[n_test:]
-    return (X[train_idx], y[train_idx], w[train_idx],
-            X[test_idx],  y[test_idx],  w[test_idx])
+    """Хронологическое разбиение train/test без перемешивания.
+
+    Для финансовых временных рядов shuffle перед split — look-ahead bias:
+    модель обучается на "будущих" данных, а потом тестируется на "прошлых".
+    Правильный подход: последние TEST_FRACTION% записей идут в test-set,
+    всё остальное — в train. Данные уже отсортированы по времени (БД).
+    """
+    n         = len(X)
+    n_test    = max(1, int(n * TEST_FRACTION))
+    train_end = n - n_test
+    return (X[:train_end], y[:train_end], w[:train_end],
+            X[train_end:], y[train_end:], w[train_end:])
 
 
 def _result(kind, n=0):
