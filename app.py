@@ -215,19 +215,19 @@ def _apply_saved_config():
         Config.PROFIT_PROTECT_ENABLED = True   # защита прибыли (откат от пика)
         Config.PROFIT_PROTECT_AI_SELL = True   # AI SELL тоже триггерит защиту
 
-        # BUG-FIX гарантия: трейл-пороги не могут опуститься ниже ATR-откалиброванных
-        # минимумов. Защита от старых значений в DB (до пофикса).
-        # Логика max(): если пользователь поставил ВЫШЕ — сохраняем; если DB вернула
-        # старое значение меньше порога шума — зажимаем снизу до безопасного минимума.
-        # ATR_1h ≈ 1.39% → 3×ATR=4.17% → TRAIL_STAGE2 ≥ 5×ATR=6.93% (+запас → 7.5%)
-        Config.TRAIL_STAGE2_PCT         = max(Config.TRAIL_STAGE2_PCT,         7.5)
-        Config.TRAIL_STAGE3_PCT         = max(Config.TRAIL_STAGE3_PCT,         5.5)
-        Config.TRAIL_STAGE4_PCT         = max(Config.TRAIL_STAGE4_PCT,         4.5)
-        # ATR_15m ≈ 3.745% → SHORT_TRAIL и SMART_TP_TIGHT ≥ 2×ATR=7.49%
+        # BUG-FIX гарантия: трейл-пороги не опускаются ниже ATR-откалиброванных минимумов.
+        # Защищает от старых значений в DB. Логика max(): выше → сохраняем; ниже порога → зажимаем.
+        # Калибровка 20.07.2026: ATR(15m)=2.225%, ATR(1h)хар.≈4-5%, памп до +50% за свечу.
+        # Этапы расширены: Stage2=10% (2×ATR_1h), Stage3=7.5%, Stage4=6.0%
+        Config.TRAIL_STAGE2_PCT         = max(Config.TRAIL_STAGE2_PCT,        10.0)
+        Config.TRAIL_STAGE3_PCT         = max(Config.TRAIL_STAGE3_PCT,         7.5)
+        Config.TRAIL_STAGE4_PCT         = max(Config.TRAIL_STAGE4_PCT,         6.0)
+        # ATR(15m)=2.225% → SHORT_TRAIL ≥ 4×ATR=8.9% → 9%; SMART_TP_TIGHT ≥ 7%
         Config.SHORT_TRAIL_PCT          = max(Config.SHORT_TRAIL_PCT,          9.0)
-        Config.SMART_TP_TIGHT_TRAIL_PCT = max(Config.SMART_TP_TIGHT_TRAIL_PCT, 5.0)
-        # SCALP_MAX_ATR_PCT ≥ ATR_15m=3.745% иначе скальп вечно выключен
-        Config.SCALP_MAX_ATR_PCT        = max(Config.SCALP_MAX_ATR_PCT,        5.5)
+        Config.SMART_TP_TIGHT_TRAIL_PCT = max(Config.SMART_TP_TIGHT_TRAIL_PCT, 7.0)
+        # SCALP_MAX_ATR_PCT: ATR(15m)=2.225% < 3.0% → скальп уже включён без guard,
+        # но держим 3.0 как минимум — запас на случай роста волатильности.
+        Config.SCALP_MAX_ATR_PCT        = max(Config.SCALP_MAX_ATR_PCT,        3.0)
 
 
 _apply_saved_config()
