@@ -497,6 +497,58 @@ class DedustClient:
             log.debug(f"[DeDust] grinch balance SDK: {e}")
         return 0
 
+    async def _ensure_wallet_deployed(self, wallet, provider) -> bool:
+        """Проверяет и при необходимости деплоит кошелёк WalletV5R1 на блокчейне.
+
+        Возвращает True если кошелёк активен (или успешно задеплоен),
+        False если деплой не удался или кошелёк заморожен.
+
+        Вызывать ПЕРЕД wallet.transfer() — иначе seqno-вызов падает с exit_code=-256
+        для uninit-кошелька (нет кода на чейне).
+        """
+        try:
+            state = await provider.get_account_state(wallet.address)
+            state_type = getattr(getattr(state, "state", None), "type_", None)
+            if state_type == "active":
+                return True  # уже задеплоен
+
+            # uninit или frozen — пробуем задеплоить
+            log.warning(
+                f"[DeDust] 🚀 Кошелёк {wallet.address} не инициализирован "
+                f"(state={state_type}). Отправляем deploy транзакцию..."
+            )
+            try:
+                await wallet.deploy_via_external()
+            except Exception as deploy_err:
+                # deploy_via_external может отсутствовать в старых версиях
+                try:
+                    await wallet.send_init_external()
+                except Exception as init_err:
+                    log.error(
+                        f"[DeDust] deploy failed: deploy_via_external={deploy_err} "
+                        f"send_init_external={init_err}"
+                    )
+                    return False
+
+            # Ждём подтверждения деплоя на чейне (до 45 сек)
+            log.info("[DeDust] ⏳ Ожидаем активации кошелька на блокчейне...")
+            for _ in range(9):
+                await asyncio.sleep(5)
+                try:
+                    st2 = await provider.get_account_state(wallet.address)
+                    if getattr(getattr(st2, "state", None), "type_", None) == "active":
+                        log.info("[DeDust] ✅ Кошелёк задеплоен и активен!")
+                        return True
+                except Exception:
+                    pass
+
+            log.error("[DeDust] ❌ Кошелёк не стал активным за 45 сек после деплоя")
+            return False
+
+        except Exception as e:
+            log.warning(f"[DeDust] _ensure_wallet_deployed ошибка: {e}")
+            return False
+
     async def _wait_for_settlement(self, provider, addr, *, direction: str,
                                    baseline_nano: int, min_delta_nano: int,
                                    timeout: int = 75, interval: int = 7):
@@ -859,6 +911,21 @@ class DedustClient:
             # укладываются в ~0.2 TON; берём 0.3 TON с запасом.
             gas_nano    = int(0.3 * TON)
 
+            # ── Preflight: деплой кошелька если uninit ───────────────────────
+            # WalletV5R1 может быть uninit если на адрес уже пришли TON,
+            # но первый исходящий tx (deploy) ещё не был отправлен.
+            # В этом случае get_seqno() падает с exit_code=-256.
+            if not await self._ensure_wallet_deployed(wallet, provider):
+                return {
+                    "ok": False,
+                    "side": "buy",
+                    "error": (
+                        "Кошелёк не инициализирован на блокчейне — "
+                        "автодеплой не удался. Отправьте 0.05 TON самому себе "
+                        "из TonKeeper/mytonwallet чтобы активировать кошелёк."
+                    ),
+                }
+
             # ── Preflight: хватает ли TON на сумму свопа + газ? ──────────────
             # Покупка отправляет amount_nano (на своп) + gas_nano (газ/комиссии).
             # Если на кошельке меньше — НЕ отправляем операцию вовсе, чтобы не
@@ -1028,6 +1095,18 @@ class DedustClient:
             # Буфер 0.05 TON не нужен: sell ВОЗВРАЩАЕТ TON из резервов пула.
             gas_nano = int(0.25 * TON)
             fwd_nano = int(0.18 * TON)
+
+            # ── Preflight: деплой кошелька если uninit ───────────────────────
+            if not await self._ensure_wallet_deployed(wallet, provider):
+                return {
+                    "ok": False,
+                    "side": "sell",
+                    "error": (
+                        "Кошелёк не инициализирован на блокчейне — "
+                        "автодеплой не удался. Отправьте 0.05 TON самому себе "
+                        "из TonKeeper/mytonwallet чтобы активировать кошелёк."
+                    ),
+                }
 
             # ── Preflight: хватает ли TON на газ? ──────────────────────────
             state = await provider.get_account_state(wallet.address)
