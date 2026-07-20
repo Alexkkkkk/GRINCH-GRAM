@@ -99,3 +99,11 @@ scikit-learn==1.5.0
 sqlalchemy==2.0.51
 ta==0.11.0
 xgboost
+aiohttp
+flask
+flask-socketio
+numpy
+pandas
+psycopg2-binary
+requests
+scikit-learn
