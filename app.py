@@ -1464,6 +1464,14 @@ def api_trading_disable():
     trader.disable_trading()
     return jsonify({"ok": True, "trading_enabled": False})
 
+@app.route("/api/dca/reset_pullback", methods=["POST"])
+def api_dca_reset_pullback():
+    """Сбросить ожидание отката DCA — бот сразу начнёт искать вход."""
+    trader.dca_wait_pullback = False
+    trader.dca_peak_price    = 0.0
+    trader._save_volatile_state()
+    return jsonify({"ok": True, "dca_wait_pullback": False, "dca_peak_price": 0.0})
+
 @app.route("/api/trade/delete", methods=["POST"])
 def api_trade_delete():
     data = request.get_json(silent=True) or {}
