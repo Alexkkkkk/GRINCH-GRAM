@@ -175,6 +175,8 @@ class Trader:
         # ── Долговременная память + само-управление ИИ ───────────────────
         self.exp = experience_manager
         self.exp.restore_trader(self)
+        # ── Расширенная статистика (best/worst/streak/daily) из БД ───────
+        self._restore_stats_from_db()
         # ── Живой организм: восстанавливаем из статистики ────────────────
         try:
             if _organism is not None:
@@ -559,6 +561,73 @@ class Trader:
             })
         except Exception:
             pass
+
+    def _restore_stats_from_db(self) -> None:
+        """Восстанавливает расширенную статистику из истории сделок в БД.
+
+        experience_manager восстанавливает только total_trades/winning_trades/total_pnl.
+        Поля best_trade_ton, worst_trade_ton, win_streak, max_win_streak, daily_pnl
+        хранились только в памяти — пересчитываем из bot_trades при каждом старте.
+        """
+        try:
+            import db_store as _dbs
+            from datetime import timezone as _tz
+            rows = _dbs.trades_get_recent(500)
+            if not rows:
+                return
+
+            closed = sorted(
+                [r for r in rows if r.get("pnl") is not None and r.get("closed_at")],
+                key=lambda r: str(r.get("closed_at", "")),
+            )
+            if not closed:
+                return
+
+            pnls  = [float(r["pnl"]) for r in closed]
+            best  = max(pnls)
+            worst = min(pnls)
+
+            # max_win_streak — сканируем все сделки
+            max_streak = cur_run = 0
+            for p in pnls:
+                if p > 0:
+                    cur_run += 1
+                    max_streak = max(max_streak, cur_run)
+                else:
+                    cur_run = 0
+
+            # текущий win_streak — считаем с конца
+            cur_streak = 0
+            for p in reversed(pnls):
+                if p > 0:
+                    cur_streak += 1
+                else:
+                    break
+
+            # daily_pnl — только сделки закрытые сегодня UTC
+            today_str = datetime.now(_tz.utc).strftime("%Y-%m-%d")
+            daily = round(sum(
+                float(r["pnl"])
+                for r in closed
+                if str(r.get("closed_at", "")).startswith(today_str)
+            ), 6)
+
+            with self._close_lock:
+                self.stats["best_trade_ton"]  = best
+                self.stats["worst_trade_ton"] = worst
+                self.stats["win_streak"]      = cur_streak
+                self.stats["max_win_streak"]  = max_streak
+                self.stats["daily_pnl"]       = daily
+
+            self.log(
+                f"📊 Расширенная статистика восстановлена из БД: "
+                f"best={best:+.4f} worst={worst:+.4f} "
+                f"streak={cur_streak} max_streak={max_streak} "
+                f"daily={daily:+.4f} TON ({len(closed)} сд.)",
+                "INFO",
+            )
+        except Exception as _e:
+            self.log(f"⚠️ _restore_stats_from_db: {_e}", "WARN")
 
     def _restore_volatile_state(self) -> None:
         """Восстанавливает летучие поля из trader_state при старте бота."""
