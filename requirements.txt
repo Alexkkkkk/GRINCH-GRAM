@@ -72,3 +72,10 @@ scikit-learn==1.5.0
 sqlalchemy==2.0.51
 ta==0.11.0
 xgboost
+flask
+flask-compress
+flask-socketio
+numpy
+pandas
+python-dotenv
+requests
