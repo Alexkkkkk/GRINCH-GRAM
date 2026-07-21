@@ -1814,6 +1814,11 @@ class Trader:
         buy_gas  = Config.BUY_GAS_TON
         sell_gas = Config.SELL_GAS_TON
 
+        # Сохраняем stake проданной доли ДО изменения позиций (нужно для pnl_pct)
+        _stake_sold = round(
+            sum(t.get("stake_ton", 0) or 0 for t in self.open_trades) * sell_fraction, 4
+        )
+
         # Уменьшаем amount/stake_ton во всех открытых позициях пропорционально
         # (под общим локом — см. _ot_lock: без него wallet_manager мог прочитать
         # позицию между обновлением amount и stake_ton и получить рваные данные).
@@ -1867,9 +1872,11 @@ class Trader:
                 "id":           f"cascade1_{int(time.time())}",
                 "side":         "sell_partial",
                 "amount":       sell_amount,
+                "stake_ton":    _stake_sold,
                 "entry_price":  None,
                 "exit_price":   price_usd,
                 "pnl":          partial_pnl,
+                "pnl_pct":      round(partial_pnl / _stake_sold * 100, 2) if _stake_sold else 0.0,
                 "opened_at":    None,
                 "closed_at":    now_iso,
                 "close_reason": f"dca_cascade_level1_{portfolio_pct:.1f}pct",
@@ -1992,6 +1999,10 @@ class Trader:
             else:
                 pnl_ton = 0.0
             trade["pnl"]          = pnl_ton
+            trade["pnl_pct"]      = round(pnl_ton / stake_ton * 100, 2) if stake_ton else 0.0
+            trade["fee"]          = round(
+                amount * grinch_ton * fee + sell_gas * (amount / max(_grinch_in_loop, 1.0)), 6
+            ) if grinch_ton > 0 else 0.0
             trade["exit_price"]   = price_usd
             trade["closed_at"]    = datetime.utcnow().isoformat()
             trade["close_reason"] = f"dca_target_{portfolio_pct:.1f}pct"
