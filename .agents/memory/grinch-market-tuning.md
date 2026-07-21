@@ -1,63 +1,59 @@
 ---
 name: GRINCH market tuning
-description: Bugs fixed and optimizations applied for GRINCH/TON DeDust market (Jul 2026)
+description: Market calibration params for GRINCH/TON DeDust (updated each analysis session)
 ---
 
-## GRINCH Token Facts (Jul 20, 2026, updated 20.07 ~18:00 UTC)
+## GRINCH Token Facts (updated 21.07.2026, 100×15m + 100×1h candles)
 - Contract: EQA6G0uVERDZTkLNa0drWBna1F5TSbogy7UXEWU5ERHz4uJL ✅ in config
 - Pool: EQDpVwTQr53cwgaT_VCFsmrleg5fBvStTjMrvyvprF_ROC9Z (1% fee CPMM) ✅ in config
-- Liquidity: ~$42K, Volume 24h: ~$27K, MCap: $852K
-- ATR(15m) = **4.67%** (was 2.225% — nearly 2× higher; use 4.67% for calibrations)
-- ATR(1h) expected ≈ 9-10% (√4 × ATR_15m)
-- Range 25h = 39.2% (min $0.000676, max $0.000941)
-- 103 buys / 89 sells per 24h → slight buy bias, thin order book
-- Key whale: UQBEHbcA… bought 4056 TON (5 tx) — largest active accumulator
+- GeckoTerminal uses THIS pool address (NOT EQDpVwTQrSsB… — that gives 404)
+- Liquidity: ~$43.5K, Volume 24h: ~$10.6K, MCap: $819K
+- Price: ~$0.000818
+- ATR(14, 15m) = **3.24%** (was 4.67% on 20.07 — came down with lower vol)
+- ATR(14, 1h)  = **4.87%**
+- Range 53h = 43.8% ($0.000682 – $0.000982)
+- Top pump: +23.6% in single 15m bar; 6 bars >5%, 2 bars >10% per 53h
+- Avg vol/bar: $335; avg ret 15m: +0.24%, StdDev 3.94%
+- Buy/sell 24h: 56/50 = 1.12 (slight bulls); 1h: 2/5 = 0.40 (sellers short-term)
 
-## ATR Recalibration (20.07.2026 ~18:00 UTC)
-All parameters recalibrated from ATR(15m)=2.225% → 4.67%:
-- SMART_TP_TIGHT_TRAIL_PCT: 7.0% → **10.0%** (1×ATR_1h)
-- TRAIL_STAGE2_PCT: 10.0% → **17.0%** (2×ATR_1h≈18%, compromise 17%)
-- TRAIL_STAGE3_PCT: 7.5% → **12.0%** (1.5×ATR_1h≈13.5%, compromise 12%)
-- TRAILING_STOP_PCT: 9.0% → **11.0%** (survive 1h-candle noise)
-- DCA_DROP_TRIGGER_PCT: 8% → **10%** (above 1h ATR noise)
-- DCA_PULLBACK_WAIT_PCT: 10% → **13%** (33% of 25h range)
-- DCA_SMART_REENTRY_PULLBACK_PCT: 4% → **7%** (p75 new ATR_15m)
-- DCA_ADAPTIVE_FAST_MOVE_PCT: 4% → **6%** (1.3×ATR_15m)
-- PROFIT_PROTECT_DROP_PCT: 5.0% → **8.0%** (p50 1h TR new)
-- SCALP_TRAIL_PCT: 4.0% → **7.0%** (0.75×ATR_1h)
-- SCALP_MAX_ATR_PCT: 5.5% → **8.0%** (scalp active when ATR<8%)
-- FAST_REENTRY_PULLBACK_PCT: 4.0% → **7.0%** (real pullback after TP)
-**Why:** Previous calibration used ATR(15m)=2.225% which was ~2× lower than live data.
-With tighter stops the bot was getting whipsawed by normal 1h-candle noise.
+## ATR Calibration History
+| Date       | ATR(15m) | ATR(1h) | Notes |
+|------------|----------|---------|-------|
+| 20.07.2026 | 4.67%    | ~9-10%  | Spike day, high vol |
+| 21.07.2026 | **3.24%**| **4.87%** | Normal vol day, updated params |
+
+## Key Derived Limits (21.07.2026)
+- **4×ATR(15m) = 13.0%** → minimum TRAILING_STOP_PCT (below = noise stop-outs!)
+- **2×ATR(1h)  = 9.7%**  → minimum trail at each stage; SHORT_TRAIL_PCT floor
+- **3×ATR(1h)  = 14.6%** → minimum TP target (covers noise + DEX fee)
+
+## Code Parameters Updated 21.07.2026
+- TRAILING_STOP_PCT: 11% → **13%** (critical: 11% was BELOW 4×ATR noise floor!)
+- SHORT_TRAIL_PCT: 9% → **10%** (2×ATR(1h)=9.7%)
+- PROFIT_PROTECT_DROP_PCT: 8% → **9%** (≈p75 of 1h ATR)
+- PROFIT_BIAS_PCT (ai_engine): 0.025 → **0.030** (≥1×ATR(15m)=3.24%)
+- config.py/ai_advisor.py/ai_engine.py comments updated with fresh ATR values
+
+**Why:** Every time vol regime shifts, ATR-derived trail params must be rechecked.
+If TRAILING_STOP_PCT < 4×ATR(15m), normal candle noise will trigger stop-outs.
+
+## Real OHLCV Fix (21.07.2026)
+- trader.py: replaced get_ohlcv() (returns _fake_ohlcv in DeDust mode) with get_real_ohlcv(tf="minute", aggregate=15) at all 5 call sites
+- Fallback chain: get_real_ohlcv(15m) or get_real_ohlcv(1h) or []
+- AI now trains on real GeckoTerminal 15m candles; ai_conf went from 0.0 to real values
+
+## VPS Deploy Method (verified 21.07.2026)
+- Push to GitHub via SSH deploy key (key added to repo, remote = git@github.com:...)
+- SCP individual changed files → root@2.27.25.126:/opt/bot/
+- docker compose restart → check health → docker logs --tail=30
+- VPS cron deploy.sh runs every 3 min (git reset to origin/main + rebuild)
+- Port: HOST:80 → CONTAINER:3000
 
 ## Bugs Fixed (Jul 20, 2026)
+### Heiken Ashi — non-recursive (strategy.py)
+**Fixed:** Proper recursive loop for ha_open.
+**Why:** Non-recursive HA degrades trend signal quality on GRINCH momentum moves.
 
-### 1. Heiken Ashi — non-recursive (strategy.py)
-**Was:** `ha_open = (df["open"].shift(1) + df["close"].shift(1)) / 2`
-**Fixed:** Proper recursive loop: `ha_open[i] = (ha_open[i-1] + ha_close[i-1]) / 2`
-**Why:** Non-recursive HA uses raw OHLC, producing different candles than canonical Nishi HA. Degrades trend signal quality on GRINCH's high-momentum moves.
-
-### 2. ATR Wilder's smoothing (ai_engine.py)
-**Was:** `tr.rolling(14).mean()` (simple moving average)
-**Fixed:** `tr.ewm(com=13, adjust=False).mean()` (Wilder's EMA, α=1/14)
-**Why:** Simple rolling(14) over-reacts to recent ATR spikes. Wilder's smoothing matches TradingView/DexScreener and strategy.py. Consistent training features.
-
-### 3. /api/performance auth bypass (app.py)
-**Was:** Not in `_PUBLIC_EXACT` → returned 401 "Требуется вход"
-**Fixed:** Added to `_PUBLIC_EXACT` set
-**Why:** Read-only stats endpoint needed by dashboard widgets without login
-
-### 4. _PRICE_MAX_STALE too long (dedust_client.py)
-**Was:** 120 seconds
-**Fixed:** 60 seconds
-**Why:** GRINCH meme coin moves 3-8%/candle; 2-minute stale price makes min-out calculations unreliable. Price feed refreshes every ~30s, so 60s = 2× buffer is enough.
-
-### 5. Pool impact guard (dedust_client.py)
-**Added:** Warning when single trade > 3% of TON pool reserve (~1,800+ TON at current pool)
-**Why:** Low-liquidity $42K pool can cause significant slippage on large single swaps.
-
-## VPS Deploy Method
-- GitHub → via Replit gitPush callback (NOT shell git)
-- VPS: SCP individual files + `docker compose up -d --build`
-- Port: HOST:80 → CONTAINER:3000 (NOT localhost:3000 on VPS host!)
-- Verify inside container: `docker exec bot-bot-1 grep -c ...`
+### ATR Wilder's smoothing (ai_engine.py)
+**Fixed:** tr.ewm(com=13, adjust=False) instead of tr.rolling(14).mean()
+**Why:** Matches TradingView/DexScreener; consistent training features.
