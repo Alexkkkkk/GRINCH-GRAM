@@ -84,6 +84,8 @@ class WalletTracker:
         self._seen = set()
         # последние сделки (для сигнала и отображения)
         self.events = []
+        self._on_chain_balances: dict = {}
+        self._last_balance_poll: float = 0.0
         self._load()
 
     # ----------------------------------------------------------------- запуск
@@ -106,6 +108,9 @@ class WalletTracker:
         while self._running and not self._stop_event.is_set():
             try:
                 self._poll_once()
+                _wp_interval = getattr(Config, "WHALE_BALANCE_POLL_SEC", 300)
+                if time.time() - self._last_balance_poll >= _wp_interval:
+                    self._poll_whale_balances()
                 self.last_error = None
                 self._backoff = self.POLL_SEC
                 self._stop_event.wait(timeout=self.POLL_SEC)
@@ -228,6 +233,66 @@ class WalletTracker:
             if (w["buys"] + w["sells"]) >= self.SMART_MIN_TRADES and self._realized_pnl(w) > 0:
                 out.add(addr)
         return out
+
+    def _poll_whale_balances(self):
+        """Проверяет on-chain GRINCH-баланс топ-N кошельков (tonapi.io)."""
+        try:
+            jetton_addr = Config.GRINCH_TOKEN_ADDRESS
+            top_n = getattr(Config, "WHALE_TOP_N", 25)
+            min_g = getattr(Config, "WHALE_MIN_GRINCH", 100000)
+            if not jetton_addr:
+                return
+            with self._lock:
+                wallets_copy = dict(self.wallets)
+            ranked = sorted(
+                wallets_copy.items(),
+                key=lambda x: x[1].get("grinch_bought", 0) + x[1].get("grinch_sold", 0),
+                reverse=True,
+            )[:top_n]
+            new_bal = {}
+            for addr, _ in ranked:
+                if not addr or addr == "—":
+                    continue
+                try:
+                    url = "https://tonapi.io/v2/accounts/" + addr + "/jettons/" + jetton_addr
+                    r = _HTTP.get(url, timeout=8)
+                    if r.status_code in (404, 422):
+                        new_bal[addr] = 0.0
+                        continue
+                    r.raise_for_status()
+                    raw = r.json().get("balance", "0") or "0"
+                    new_bal[addr] = int(raw) / 1e9
+                except Exception:
+                    pass
+            with self._lock:
+                self._on_chain_balances = new_bal
+                self._last_balance_poll = time.time()
+            whales = sum(1 for v in new_bal.values() if v >= min_g)
+            logger.debug("[WalletTracker] on-chain: %d кошельков, %d китов", len(new_bal), whales)
+        except Exception as e:
+            logger.debug("[WalletTracker] _poll_whale_balances: %s", e)
+
+    def get_whale_hold_score(self) -> dict:
+        """whale_hold_score [-1..+1]: >0 киты держат, <0 вышли."""
+        with self._lock:
+            balances = dict(self._on_chain_balances)
+            last_poll = self._last_balance_poll
+        if not balances or time.time() - last_poll > 600:
+            return {"whale_hold_score": 0.0, "whale_count": 0,
+                    "whale_grinch_total": 0.0, "whale_data_age_sec": 9999}
+        min_g = getattr(Config, "WHALE_MIN_GRINCH", 100000)
+        whale_addrs = [a for a, v in balances.items() if v >= min_g]
+        whale_g = sum(balances[a] for a in whale_addrs)
+        total_g = sum(balances.values())
+        max_p = max(balances.values()) * len(balances) if balances else 1
+        score = max(-1.0, min(1.0, (whale_g / max_p) * 2 - 1))
+        return {
+            "whale_hold_score": round(score, 3),
+            "whale_count": len(whale_addrs),
+            "whale_grinch_total": round(whale_g / 1e6, 3),
+            "total_tracked_grinch": round(total_g / 1e6, 3),
+            "whale_data_age_sec": round(time.time() - last_poll),
+        }
 
     def get_signal(self):
         """

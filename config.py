@@ -140,7 +140,7 @@ class Config:
     # GRINCH Jul 2026 (обновлено 20.07): ATR(15m)=2.225%, ATR(1h)хар.≈4-5%
     # Тугой трейл Smart-TP не может быть < 2×ATR_1h ≈ 8-10% — иначе выбивается шумом.
     # Ставим 7%: держит в памп-движении, но фиксирует до разворота.
-    SMART_TP_TIGHT_TRAIL_PCT = float(os.getenv("SMART_TP_TIGHT_TRAIL_PCT", "7.0"))  # обновлено: 2×ATR_1h≈8-10% → 7% компромисс
+    SMART_TP_TIGHT_TRAIL_PCT = float(os.getenv("SMART_TP_TIGHT_TRAIL_PCT", "10.0"))  # обновлено: 2×ATR_1h≈8-10% → 7% компромисс
 
     # ── Прогрессивный трейлинг-стоп, откалиброван под GRINCH ────────────
     # GRINCH реальные данные 20.07.2026 (актуально):
@@ -160,12 +160,12 @@ class Config:
     #     в более ранних фазах памп-движения, не давая выбить шумом.
     TRAIL_BREAKEVEN_AT  = float(os.getenv("TRAIL_BREAKEVEN_AT",  "6.0"))   # безубыток после перекрытия 2% комиссии
     TRAIL_STAGE2_AT     = float(os.getenv("TRAIL_STAGE2_AT",    "12.0"))   # достижимо за 2-3 свечи 1h в памп
-    TRAIL_STAGE2_PCT    = float(os.getenv("TRAIL_STAGE2_PCT",   "10.0"))   # ОБНОВЛЕНО: 2×ATR(1h)хар.=8-10% — выдерживает откат в памп
+    TRAIL_STAGE2_PCT    = float(os.getenv("TRAIL_STAGE2_PCT",   "17.0"))   # ОБНОВЛЕНО: 2×ATR(1h)хар.=8-10% — выдерживает откат в памп
     TRAIL_STAGE3_AT     = float(os.getenv("TRAIL_STAGE3_AT",    "18.0"))   # диапазон 45% → этап 3 достижим в ~40% торговых дней
-    TRAIL_STAGE3_PCT    = float(os.getenv("TRAIL_STAGE3_PCT",    "7.5"))   # ОБНОВЛЕНО: 1.5×ATR(1h)хар. — более широкий трейл для удержания
+    TRAIL_STAGE3_PCT    = float(os.getenv("TRAIL_STAGE3_PCT",    "12.0"))   # ОБНОВЛЕНО: 1.5×ATR(1h)хар. — более широкий трейл для удержания
     TRAIL_STAGE4_AT     = float(os.getenv("TRAIL_STAGE4_AT",    "26.0"))   # диапазон 45% → ловим памп выше 26%
     TRAIL_STAGE4_PCT    = float(os.getenv("TRAIL_STAGE4_PCT",    "6.0"))   # ОБНОВЛЕНО: было 4.5% — выбивался шумом финальных свечей
-    TRAILING_STOP_PCT   = float(os.getenv("TRAILING_STOP_PCT",   "9.0"))   # 4×ATR(15m)=8.9% — держит против шума 15m свечей
+    TRAILING_STOP_PCT   = float(os.getenv("TRAILING_STOP_PCT",   "11.0"))   # 4×ATR(15m)=8.9% — держит против шума 15m свечей
     # ── Адаптивный трейлинг по силе тренда (даём прибыли разрастись) ────────
     # В сильном восходящем тренде стоп идёт ШИРЕ (winner runs), в боковике/
     # слабости — ТУЖЕ (быстрее фиксируем). Нижний пол прибыли НЕ затрагивается.
@@ -271,9 +271,9 @@ class Config:
     # Продать ВСЁ когда общая стоимость GRINCH выросла на N% относительно суммарных затрат
     DCA_TARGET_PROFIT_PCT = float(os.getenv("DCA_TARGET_PROFIT_PCT", "22"))   # реал. диапазон 24ч≈45% → цель ~49% диапазона; консервативно
     # Докупать ещё когда цена упала N% от цены ПОСЛЕДНЕЙ покупки
-    DCA_DROP_TRIGGER_PCT  = float(os.getenv("DCA_DROP_TRIGGER_PCT", "8"))   # TR(1h) p50=4.4% p75=7.3% → 8% = уверенное движение (выше p75)
+    DCA_DROP_TRIGGER_PCT  = float(os.getenv("DCA_DROP_TRIGGER_PCT", "10"))   # TR(1h) p50=4.4% p75=7.3% → 8% = уверенное движение (выше p75)
     # После продажи: ждать падения цены на N% от пика перед следующей покупкой
-    DCA_PULLBACK_WAIT_PCT = float(os.getenv("DCA_PULLBACK_WAIT_PCT", "10"))  # диапазон 45% → 10% = 22% диапазона (защита от покупки на хаях)
+    DCA_PULLBACK_WAIT_PCT = float(os.getenv("DCA_PULLBACK_WAIT_PCT", "13"))  # диапазон 45% → 10% = 22% диапазона (защита от покупки на хаях)
     # Максимальное количество DCA-входов за один цикл (защита от бесконечного усреднения)
     DCA_MAX_ENTRIES     = int(os.getenv("DCA_MAX_ENTRIES", "10"))
 
@@ -309,7 +309,7 @@ class Config:
     # ── Умный реentri: после ТП входим быстрее если AI бычий ────────────────
     # Вместо ожидания -25% отката: при AI-уверенности ≥ порога достаточно -8%.
     DCA_SMART_REENTRY_ENABLED    = bool(int(os.getenv("DCA_SMART_REENTRY_ENABLED",    "1")))
-    DCA_SMART_REENTRY_PULLBACK_PCT = float(os.getenv("DCA_SMART_REENTRY_PULLBACK_PCT", "4"))   # p75 ATR=3.4% → 4% быстрее ловит отскок
+    DCA_SMART_REENTRY_PULLBACK_PCT = float(os.getenv("DCA_SMART_REENTRY_PULLBACK_PCT", "7"))   # p75 ATR=3.4% → 4% быстрее ловит отскок
     DCA_SMART_REENTRY_MIN_AI_CONF  = float(os.getenv("DCA_SMART_REENTRY_MIN_AI_CONF",  "50")) # супер агрессия: больше реентри
     # Минимальная пауза между DCA-докупками (секунды) — защита от переторговли.
     # При низких порогах входа (drop 9%, conf 55%) без паузы бот может войти 3+ раз
@@ -329,7 +329,7 @@ class Config:
     # летит вверх. В этом режиме порог докупки снижается до FAST_DROP_PCT
     # (вместо стандартных 12%) чтобы не пропустить откат во время ракеты.
     DCA_ADAPTIVE_TRIGGER_ENABLED  = bool(int(os.getenv("DCA_ADAPTIVE_TRIGGER_ENABLED",  "1")))
-    DCA_ADAPTIVE_FAST_MOVE_PCT    = float(os.getenv("DCA_ADAPTIVE_FAST_MOVE_PCT",    "4"))  # ATR_1h=2.31% → 4% = 1.7×ATR; значимое движение за тик
+    DCA_ADAPTIVE_FAST_MOVE_PCT    = float(os.getenv("DCA_ADAPTIVE_FAST_MOVE_PCT",    "6"))  # ATR_1h=2.31% → 4% = 1.7×ATR; значимое движение за тик
     DCA_ADAPTIVE_FAST_DROP_PCT    = float(os.getenv("DCA_ADAPTIVE_FAST_DROP_PCT",    "4"))  # TR(1h) p50=4.4% → 4% = откат в норм. волатильности (оптимально)
 
     # ── Защита прибыли: если портфель +N TON И рынок падает → продаём всё ───
@@ -340,7 +340,7 @@ class Config:
     # Защита «только в плюс»: выход по рынку, но никогда в убыток (ONLY_PROFIT_EXIT).
     PROFIT_PROTECT_ENABLED  = bool(int(os.getenv("PROFIT_PROTECT_ENABLED",  "1")))
     PROFIT_PROTECT_TON      = float(os.getenv("PROFIT_PROTECT_TON",         "3.0"))   # мин. 3 TON прибыли для активации
-    PROFIT_PROTECT_DROP_PCT = float(os.getenv("PROFIT_PROTECT_DROP_PCT",    "5.0"))   # TR(1h) p50=4.4% p75=7.3% → 5% = портфельный разворот (между p50-p75 по 1h свечам)
+    PROFIT_PROTECT_DROP_PCT = float(os.getenv("PROFIT_PROTECT_DROP_PCT",    "8.0"))   # TR(1h) p50=4.4% p75=7.3% → 5% = портфельный разворот (между p50-p75 по 1h свечам)
     PROFIT_PROTECT_AI_SELL  = bool(int(os.getenv("PROFIT_PROTECT_AI_SELL",  "1")))    # также при AI SELL
 
     # ── Минимальная АБСОЛЮТНАЯ прибыль в TON — ниже этого не закрываем сделку ──
@@ -433,6 +433,11 @@ class Config:
     # волна накопления), бот входит быстрее — без ожидания 2-го подтверждения.
     SMART_EARLY_WINDOW_SEC = int(os.getenv("SMART_EARLY_WINDOW_SEC", "600"))  # окно «прямо сейчас» (10 мин)
     SMART_EARLY_MIN_TON    = float(os.getenv("SMART_EARLY_MIN_TON", "10"))    # мин. покупки умных за окно
+
+    # -- On-chain whale balance analysis (tonapi.io free) --
+    WHALE_BALANCE_POLL_SEC  = int(os.getenv("WHALE_BALANCE_POLL_SEC",  "300"))
+    WHALE_TOP_N             = int(os.getenv("WHALE_TOP_N",              "25"))
+    WHALE_MIN_GRINCH        = float(os.getenv("WHALE_MIN_GRINCH",  "100000"))
     # ── Скальпинг-режим: быстрые сделки 5-8% в RANGING/SQUEEZE рынке ──────
     # Когда AI обнаруживает боковик и ATR < порога — используем меньшие цели.
     # ТОЛЬКО В ПЛЮС: скальп TP ≥ 2×DEX_fees + газ (~5% gross → ~3% нетто).
@@ -440,9 +445,9 @@ class Config:
     SCALPING_ENABLED        = bool(int(os.getenv("SCALPING_ENABLED",       "1")))
     SCALP_TARGET_NET_PCT    = float(os.getenv("SCALP_TARGET_NET_PCT",      "3.0"))   # снижено с 4% — быстрее фиксируем прибыль
     SCALP_TP_PCT            = float(os.getenv("SCALP_TP_PCT",              "5.0"))   # gross (3% нетто + 2% DEX)
-    SCALP_TRAIL_PCT         = float(os.getenv("SCALP_TRAIL_PCT",           "4.0"))   # trail в боковике; ATR_1h=2.31% → 4% = 1.73×ATR выживает 1h свечу
+    SCALP_TRAIL_PCT         = float(os.getenv("SCALP_TRAIL_PCT",           "7.0"))   # trail в боковике; ATR_1h=2.31% → 4% = 1.73×ATR выживает 1h свечу
     SCALP_MIN_AI_CONF       = float(os.getenv("SCALP_MIN_AI_CONF",         "52.0"))  # снижено с 55% — больше скальп-входов
-    SCALP_MAX_ATR_PCT       = float(os.getenv("SCALP_MAX_ATR_PCT",         "5.5"))   # BUG-FIX: было 3.0% < ATR_15m=3.745% → скальп ВЕЧНО ВЫКЛЮЧЕН; 5.5% = активен в норм. условиях
+    SCALP_MAX_ATR_PCT       = float(os.getenv("SCALP_MAX_ATR_PCT",         "8.0"))   # BUG-FIX: было 3.0% < ATR_15m=3.745% → скальп ВЕЧНО ВЫКЛЮЧЕН; 5.5% = активен в норм. условиях
 
     # ── BrainFusion: единый мозг (AI + TA + советник) ───────────────────
     # Когда все три источника согласны с ≥78% → входим без ожидания тика
@@ -455,7 +460,7 @@ class Config:
     # Fusion бычий + прибыль была → не ждём полного отката DCA_PULLBACK_WAIT
     # Используется только если AI BUY ≥ FAST_REENTRY_MIN_CONF
     FAST_REENTRY_ENABLED        = bool(int(os.getenv("FAST_REENTRY_ENABLED",    "1")))
-    FAST_REENTRY_PULLBACK_PCT   = float(os.getenv("FAST_REENTRY_PULLBACK_PCT",  "4.0"))  # снижено с 5% — заходим на меньшем откате
+    FAST_REENTRY_PULLBACK_PCT   = float(os.getenv("FAST_REENTRY_PULLBACK_PCT",  "7.0"))  # снижено с 5% — заходим на меньшем откате
     FAST_REENTRY_MIN_CONF       = float(os.getenv("FAST_REENTRY_MIN_CONF",      "55.0")) # снижено с 60% — быстрее реентри
 
     # ── Онлайн-инъекция ордер-флоу в AI: DEX buy/sell ratio ─────────────
