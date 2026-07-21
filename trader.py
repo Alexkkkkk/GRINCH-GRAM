@@ -4122,6 +4122,23 @@ class Trader:
             })
         except Exception:
             pass
+
+        # ── DCA: после любого закрытия последней позиции — ждать откат ──────
+        # Автоматические пути (TP, каскад, profit_protect) уже ставят
+        # wait_pullback=True явно в своих ветках.
+        # Ручное закрытие (reason="manual") этот путь пропускало → бот мог
+        # войти заново сразу, без ожидания отката цены.
+        if Config.DCA_MODE and not self.open_trades:
+            if not self.dca_wait_pullback:
+                self.dca_wait_pullback = True
+                self.dca_peak_price    = price
+                self._save_volatile_state()
+                self.log(
+                    f"⏳ DCA wait_pullback: ждём откат -{Config.DCA_PULLBACK_WAIT_PCT:.0f}% "
+                    f"от пика ${price:.6f} после закрытия ({reason})",
+                    "INFO",
+                )
+
         return True
 
     # ──────────────────────────────────────────
