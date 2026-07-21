@@ -718,7 +718,7 @@ class Trader:
             # LOW_MEMORY_MODE (Bothost и т.п.): меньше свечей → меньше признаков
             # и меньше пиковая память при обучении 3 моделей на старте.
             _pretrain_limit = 150 if os.getenv("LOW_MEMORY_MODE", "1") == "1" else 300
-            ohlcv = self.exchange.get_ohlcv(limit=_pretrain_limit)
+            ohlcv = self.exchange.get_real_ohlcv(limit=_pretrain_limit, tf="minute", aggregate=15)
             self.ai.pretrain(ohlcv, on_progress=self._emit_progress)
         except Exception as e:
             self.log(f"⚠️ Ошибка предобучения: {e}", "WARN")
@@ -1164,7 +1164,7 @@ class Trader:
     def _get_analysis_snapshot(self):
         """Быстрый снимок анализа без блокировки."""
         try:
-            ohlcv = self.exchange.get_ohlcv(limit=60)
+            ohlcv = self.exchange.get_real_ohlcv(limit=60, tf="minute", aggregate=15)
             from strategy import analyze
             return analyze(ohlcv)
         except Exception:
@@ -2381,7 +2381,7 @@ class Trader:
         - тики в bot_ticks имели реальные regime/signal/conf данные
         Все ошибки подавляются — не должен влиять на основной цикл."""
         try:
-            ohlcv = self.exchange.get_ohlcv(limit=100)
+            ohlcv = self.exchange.get_real_ohlcv(limit=100, tf="minute", aggregate=15)
             if not ohlcv:
                 return
             result = analyze(ohlcv)
@@ -2454,7 +2454,9 @@ class Trader:
         except Exception as _lse:
             self.log(f"⚠️ Profit/LargeSell check (AI mode): {_lse}", "WARN")
 
-        ohlcv  = self.exchange.get_ohlcv(limit=100)
+        ohlcv  = self.exchange.get_real_ohlcv(limit=100, tf="minute", aggregate=15)
+        if not ohlcv:
+            return
         result = analyze(ohlcv)
         self.last_analysis = result   # кэш для get_status() — не пересчитываем каждые 2с
         ai     = self.ai.analyze(ohlcv)
@@ -4261,7 +4263,7 @@ class Trader:
     def get_status(self):
         # Используем last_analysis из последнего торгового тика (обновляется каждые 15с).
         # Fallback: считаем напрямую только при первом обращении до первого тика.
-        ohlcv    = self.exchange.get_ohlcv(limit=100)
+        ohlcv    = self.exchange.get_real_ohlcv(limit=100, tf="minute", aggregate=15)
         analysis = self.last_analysis if self.last_analysis else analyze(ohlcv)
         # Единый источник «текущей цены» для всего UI: спотовая цена DexScreener
         # (price_feed.get), та же, что использует авто-ликвидатор и карточка монеты.
