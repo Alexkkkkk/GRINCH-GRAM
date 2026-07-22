@@ -356,6 +356,15 @@ class Config:
     LARGE_SELL_MIN_TON      = float(os.getenv("LARGE_SELL_MIN_TON",         "150.0"))   # супер агрессия: реагируем на меньшие продажи
     LARGE_SELL_COOLDOWN_SEC = int(os.getenv("LARGE_SELL_COOLDOWN_SEC",      "300"))     # пауза между сигналами
 
+    # ── ALL-IN на дне: покупка на весь доступный баланс при экстремальной ────
+    # перепроданности (RSI≤ALLIN_RSI_MAX + score≥ALLIN_BOTTOM_CONF из 100).
+    # По умолчанию выключено — включить через дашборд или переменную окружения.
+    # Кулдаун между срабатываниями: 4 часа (хардкод в bottom_detector.py).
+    ALLIN_ON_BOTTOM    = bool(int(os.getenv("ALLIN_ON_BOTTOM",    "0")))    # 0/1 — вкл/выкл
+    ALLIN_BOTTOM_CONF  = float(os.getenv("ALLIN_BOTTOM_CONF",    "65"))    # мин. score для all-in
+    ALLIN_RSI_MAX      = float(os.getenv("ALLIN_RSI_MAX",        "32"))    # RSI не выше этого
+    ALLIN_MIN_FREE_TON = float(os.getenv("ALLIN_MIN_FREE_TON",   "50"))    # мин. TON чтобы смысл был
+
     # ── Кулдаун после убыточного закрытия ────────────────────────────────────
     # После SL-выхода бот выжидает N секунд прежде чем входить снова.
     # Защищает от повторного входа в нисходящий тренд сразу после выбивания стопа.

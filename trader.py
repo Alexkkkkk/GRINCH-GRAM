@@ -1659,6 +1659,47 @@ class Trader:
             )
             stake_ton = spendable
 
+        # ── Bottom Detector: если дно — all-in на весь доступный баланс ──────
+        if (getattr(Config, "ALLIN_ON_BOTTOM", False)
+                and spendable >= getattr(Config, "ALLIN_MIN_FREE_TON", 50.0)):
+            try:
+                from bottom_detector import bottom_detector as _bd
+                _la = self.last_analysis or {}
+                _ai = self.last_ai or {}
+                _pump_d = _ai.get("pump_detector") or _ai.get("pump") or {}
+                _bd_result = _bd.analyze(
+                    rsi            = float(_la.get("rsi",        50) or 50),
+                    stoch_rsi      = float(_la.get("stoch_rsi", 0.5) or 0.5),
+                    bb_pct         = float(_la.get("bb_pct",     50) or 50),
+                    vol_ratio      = float(_la.get("vol_ratio",   1) or 1),
+                    macd_hist      = float(_la.get("macd_hist",   0) or 0),
+                    macd_hist_prev = float(getattr(self, "_prev_macd_hist",
+                                                   _la.get("macd_hist", 0) or 0)),
+                    willr          = float(_la.get("willr",     -50) or -50),
+                    ai_signal      = str(_ai.get("ai_signal", "HOLD") or "HOLD"),
+                    ai_conf        = float(_ai.get("confidence",  0) or 0),
+                    pump_score     = float(_pump_d.get("score",   0) or 0),
+                )
+                _score = _bd_result.get("score", 0)
+                if _bd_result.get("all_in"):
+                    _old = stake_ton
+                    stake_ton = spendable
+                    self.log(
+                        f"🔥 BOTTOM ALL-IN: score={_score:.0f}/100 | "
+                        f"{_bd_result.get('reason', '')} | "
+                        f"ставка {_old:.1f} → {stake_ton:.2f} TON (весь баланс)",
+                        "INFO",
+                    )
+                elif _score >= 40:
+                    self.log(
+                        f"📊 BottomScore={_score:.0f}/100 "
+                        f"(нужно {Config.ALLIN_BOTTOM_CONF:.0f} для all-in) | "
+                        f"{_bd_result.get('reason', '')}",
+                        "DEBUG",
+                    )
+            except Exception as _bd_ex:
+                self.log(f"⚠️ BottomDetector: {_bd_ex}", "DEBUG")
+
         # Логируем компаунд только после успешной проверки баланса
         if _compound_applied:
             self.log(
@@ -2483,6 +2524,8 @@ class Trader:
             self.log(f"⚠️ Profit/LargeSell check (AI mode): {_lse}", "WARN")
 
         ohlcv  = (self.exchange.get_real_ohlcv(limit=100, tf="minute", aggregate=15) or [])
+        # Сохраняем предыдущий MACD_hist ДО обновления last_analysis (нужен BottomDetector)
+        self._prev_macd_hist = float((self.last_analysis or {}).get("macd_hist", 0) or 0)
         result = analyze(ohlcv)
         self.last_analysis = result   # кэш для get_status() — не пересчитываем каждые 2с
 

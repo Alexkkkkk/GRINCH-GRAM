@@ -179,6 +179,11 @@ def _apply_saved_config():
             ("TRAIL_STAGE3_PCT",   float),
             ("TRAIL_STAGE4_AT",    float),
             ("TRAIL_STAGE4_PCT",   float),
+            # ALL-IN на дне
+            ("ALLIN_ON_BOTTOM",    _bool),
+            ("ALLIN_BOTTOM_CONF",  float),
+            ("ALLIN_RSI_MAX",      float),
+            ("ALLIN_MIN_FREE_TON", float),
         ]:
             if (v := saved.get(attr)) is not None:
                 _safe_set(attr, v, cast)
@@ -2343,6 +2348,11 @@ def api_config_get():
         "confluence_rsi_max":       Config.CONFLUENCE_RSI_MAX,
         "confluence_vol_min_ratio": Config.CONFLUENCE_VOL_MIN_RATIO,
         "ev_threshold":             Config.EV_THRESHOLD,
+        # ALL-IN на дне
+        "allin_on_bottom":    Config.ALLIN_ON_BOTTOM,
+        "allin_bottom_conf":  Config.ALLIN_BOTTOM_CONF,
+        "allin_rsi_max":      Config.ALLIN_RSI_MAX,
+        "allin_min_free_ton": Config.ALLIN_MIN_FREE_TON,
         # Временной фильтр
         "dead_hours_utc":          Config.DEAD_HOURS_UTC,
         "dead_hours_drop_mult":    Config.DEAD_HOURS_DROP_MULT,
@@ -2488,6 +2498,13 @@ def api_config_set():
     if (v := num("confluence_vol_min_ratio", 0,  10))    is not None: Config.CONFLUENCE_VOL_MIN_RATIO = v
     if (v := num("ev_threshold",            -100, 100))  is not None: Config.EV_THRESHOLD             = v
 
+    # ALL-IN на дне: покупка всего баланса при экстремальной перепроданности
+    if "allin_on_bottom" in data:
+        Config.ALLIN_ON_BOTTOM = bool(data["allin_on_bottom"])
+    if (v := num("allin_bottom_conf",   10, 100))   is not None: Config.ALLIN_BOTTOM_CONF  = v
+    if (v := num("allin_rsi_max",        5,  50))   is not None: Config.ALLIN_RSI_MAX       = v
+    if (v := num("allin_min_free_ton",   1, 10000)) is not None: Config.ALLIN_MIN_FREE_TON  = v
+
     # Временной фильтр: мёртвые часы
     if "dead_hours_utc" in data:
         _dh_raw = data["dead_hours_utc"]
@@ -2586,6 +2603,11 @@ def api_config_set():
             "TRAIL_STAGE3_PCT":  Config.TRAIL_STAGE3_PCT,
             "TRAIL_STAGE4_AT":   Config.TRAIL_STAGE4_AT,
             "TRAIL_STAGE4_PCT":  Config.TRAIL_STAGE4_PCT,
+            # ALL-IN на дне
+            "ALLIN_ON_BOTTOM":    Config.ALLIN_ON_BOTTOM,
+            "ALLIN_BOTTOM_CONF":  Config.ALLIN_BOTTOM_CONF,
+            "ALLIN_RSI_MAX":      Config.ALLIN_RSI_MAX,
+            "ALLIN_MIN_FREE_TON": Config.ALLIN_MIN_FREE_TON,
             # Временной фильтр
             "DEAD_HOURS_UTC":       ",".join(str(h) for h in Config.DEAD_HOURS_UTC),
             "DEAD_HOURS_DROP_MULT": Config.DEAD_HOURS_DROP_MULT,
