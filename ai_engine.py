@@ -1082,13 +1082,107 @@ class AIEngine:
     # Публичный анализ (каждый тик)
     # ─────────────────────────────────────────────────────────────────────────
 
-    def analyze(self, ohlcv: list) -> dict:
+    def analyze(self, ohlcv: list, wallet_state: dict = None) -> dict:
         with self._lock:
-            return self._analyze_locked(ohlcv)
+            return self._analyze_locked(ohlcv, wallet_state)
 
-    def _analyze_locked(self, ohlcv: list) -> dict:
+    # ─────────────────────────────────────────────────────────────────────────
+    # Wallet-aware корректировка уверенности (применяется поверх ML-результата)
+    # Логика: ML предсказывает направление цены; баланс/экспозиция — риск-менеджмент.
+    # Кэш хранит base-результат (без wallet), корректировка применяется каждый тик.
+    # ─────────────────────────────────────────────────────────────────────────
+    def _apply_wallet_adjustments(self, base: dict, wallet_state: dict) -> dict:
+        """Применяет корректировки уверенности на основе состояния кошелька.
+
+        Аргументы wallet_state:
+          exposure_pct  — % портфеля в GRINCH (0-100)
+          pnl_pct       — нереализованный PnL% текущей позиции
+          has_position  — bool: есть открытая позиция
+          ton_ratio     — TON / total_equity (0-1)
+        """
+        if not wallet_state:
+            return base
+
+        exposure  = float(wallet_state.get("exposure_pct", 0.0))
+        pnl       = float(wallet_state.get("pnl_pct", 0.0))
+        has_pos   = bool(wallet_state.get("has_position", False))
+        ton_ratio = float(wallet_state.get("ton_ratio", 1.0))
+
+        result    = dict(base)
+        ai_signal = result.get("ai_signal", "HOLD")
+        confidence= float(result.get("confidence", 0.0))
+        buy_adj   = 0.0
+        sell_adj  = 0.0
+        reasons   = []
+
+        # ── BUY-штраф: чем больше экспозиция в GRINCH, тем меньше нужно докупать ──
+        if exposure >= 90:
+            buy_adj -= 25.0
+            reasons.append(f"exposure={exposure:.0f}%≥90 → BUY-25")
+        elif exposure >= 75:
+            buy_adj -= 12.0
+            reasons.append(f"exposure={exposure:.0f}%≥75 → BUY-12")
+        elif exposure >= 55:
+            buy_adj -= 6.0
+            reasons.append(f"exposure={exposure:.0f}%≥55 → BUY-6")
+
+        # ── BUY-буст: нет позиции, много TON → хороший момент для входа ──
+        if not has_pos and ton_ratio >= 0.90:
+            buy_adj += 5.0
+            reasons.append(f"no_pos+TON={ton_ratio:.0%} → BUY+5")
+
+        # ── SELL-буст: сидим в прибыли → стоит рассмотреть фиксацию ──
+        if has_pos and pnl >= 20:
+            sell_adj += 15.0
+            reasons.append(f"pnl={pnl:.1f}%≥20 → SELL+15")
+        elif has_pos and pnl >= 12:
+            sell_adj += 8.0
+            reasons.append(f"pnl={pnl:.1f}%≥12 → SELL+8")
+        elif has_pos and pnl >= 7:
+            sell_adj += 4.0
+            reasons.append(f"pnl={pnl:.1f}%≥7 → SELL+4")
+
+        if not reasons:
+            return base  # нет корректировок — возвращаем base без копирования
+
+        # Применяем корректировки к confidence
+        if ai_signal == "BUY" and buy_adj != 0.0:
+            new_conf = round(max(1.0, min(99.0, confidence + buy_adj)), 1)
+            result["confidence"] = new_conf
+            # Если скорректированная уверенность упала ниже порога → HOLD
+            if new_conf < BUY_THRESHOLD * 100:
+                result["ai_signal"] = "HOLD"
+                reasons.append("BUY→HOLD (exposure too high)")
+            log.debug(
+                f"[AI Wallet] BUY adj={buy_adj:+.0f}% "
+                f"conf {confidence}%→{new_conf}% exposure={exposure:.0f}%"
+            )
+        elif ai_signal in ("HOLD", "SELL") and sell_adj != 0.0:
+            new_conf = round(max(1.0, min(99.0, confidence + sell_adj)), 1)
+            result["confidence"] = new_conf
+            if ai_signal == "HOLD" and new_conf >= SELL_THRESHOLD * 100:
+                result["ai_signal"] = "SELL"
+                reasons.append("HOLD→SELL (profit take)")
+            log.debug(
+                f"[AI Wallet] SELL adj={sell_adj:+.0f}% "
+                f"conf {confidence}%→{new_conf}% pnl={pnl:.1f}%"
+            )
+
+        result["wallet_adj"] = {
+            "exposure_pct": exposure,
+            "pnl_pct":      pnl,
+            "has_position": has_pos,
+            "buy_adj":      buy_adj,
+            "sell_adj":     sell_adj,
+            "reasons":      reasons,
+        }
+        return result
+
+    def _analyze_locked(self, ohlcv: list, wallet_state: dict = None) -> dict:
         # ── Кэш: если свечи не изменились с прошлого вызова — не гоняем
-        # 7 ML-моделей и 80+ признаков заново (тик 15с, свечи обновляются реже) ──
+        # 7 ML-моделей и 80+ признаков заново (тик 15с, свечи обновляются реже).
+        # Кэш хранит BASE-результат (без wallet-корректировок).
+        # Wallet-корректировки применяются поверх кэша каждый тик.
         if ohlcv:
             last_bar = ohlcv[-1]
             candle_key = (len(ohlcv), last_bar[0], last_bar[4])
@@ -1100,7 +1194,7 @@ class AIEngine:
                 and self._new_confirms < 5
             ):
                 self._cache_hits += 1
-                return self._last_result
+                return self._apply_wallet_adjustments(self._last_result, wallet_state)
             self._cache_misses += 1
         else:
             candle_key = None
@@ -1483,12 +1577,13 @@ class AIEngine:
             "specialist_adj": _specialist_adj,
         }
 
-        # ── Сохраняем в кэш: следующий тик с теми же свечами получит
-        # готовый результат мгновенно, без повторного прогона моделей ──
+        # ── Сохраняем BASE-результат в кэш (без wallet-корректировок).
+        # Следующий тик с теми же свечами получит base мгновенно,
+        # а wallet-корректировки применятся поверх по текущему балансу. ──
         self._last_candle_key = candle_key
         self._last_result     = result
         self._last_result_ts  = time.time()
-        return result
+        return self._apply_wallet_adjustments(result, wallet_state)
 
     # ─────────────────────────────────────────────────────────────────────────
     # Обратная связь от трейдера (вызывается когда сделка закрывается)

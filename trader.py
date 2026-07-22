@@ -2391,7 +2391,30 @@ class Trader:
                 return
             result = analyze(ohlcv)
             self.last_analysis = result
-            ai = self.ai.analyze(ohlcv)
+            # Wallet-state для фонового heartbeat-анализа
+            _ws_hb = None
+            try:
+                from price_feed import price_feed as _pf_hb
+                _gton_hb = _pf_hb.get_grinch_ton_price() or 0.0
+                _bal_hb  = getattr(self, "_last_balance_cache", {}) or {}
+                _ton_hb  = float(_bal_hb.get("TON",    0) or 0)
+                _grn_hb  = float(_bal_hb.get("GRINCH", 0) or 0)
+                _tot_hb  = _ton_hb + _grn_hb * _gton_hb
+                _exp_hb  = (_grn_hb * _gton_hb / _tot_hb * 100) if _tot_hb > 0.1 else 0.0
+                _pnl_hb  = 0.0
+                if self.open_trades and _gton_hb > 0:
+                    _ep0_hb = self.open_trades[0].get("entry_price_ton", 0)
+                    if _ep0_hb > 0:
+                        _pnl_hb = (_gton_hb - _ep0_hb) / _ep0_hb * 100.0
+                _ws_hb = {
+                    "exposure_pct": round(min(100.0, max(0.0, _exp_hb)), 1),
+                    "pnl_pct":      round(_pnl_hb, 2),
+                    "has_position": _grn_hb > 100,
+                    "ton_ratio":    round(max(0.0, 1.0 - _exp_hb / 100), 3),
+                }
+            except Exception:
+                pass
+            ai = self.ai.analyze(ohlcv, wallet_state=_ws_hb)
             self.last_ai = ai
             # Обновляем BrainFusion без торговых решений
             try:
@@ -2462,7 +2485,31 @@ class Trader:
         ohlcv  = (self.exchange.get_real_ohlcv(limit=100, tf="minute", aggregate=15) or [])
         result = analyze(ohlcv)
         self.last_analysis = result   # кэш для get_status() — не пересчитываем каждые 2с
-        ai     = self.ai.analyze(ohlcv)
+
+        # ── Wallet-aware AI: строим состояние портфеля для ML-корректировок ──
+        _ws_ai = None
+        try:
+            from price_feed import price_feed as _pf_ws
+            _gton_ws = _pf_ws.get_grinch_ton_price() or 0.0
+            _bal_ws  = getattr(self, "_last_balance_cache", {}) or {}
+            _ton_ws  = float(_bal_ws.get("TON",    0) or 0)
+            _grn_ws  = float(_bal_ws.get("GRINCH", 0) or 0)
+            _tot_ws  = _ton_ws + _grn_ws * _gton_ws
+            _exp_ws  = (_grn_ws * _gton_ws / _tot_ws * 100) if _tot_ws > 0.1 else 0.0
+            _pnl_ws  = 0.0
+            if self.open_trades and _gton_ws > 0:
+                _ep0_ws = self.open_trades[0].get("entry_price_ton", 0)
+                if _ep0_ws > 0:
+                    _pnl_ws = (_gton_ws - _ep0_ws) / _ep0_ws * 100.0
+            _ws_ai = {
+                "exposure_pct": round(min(100.0, max(0.0, _exp_ws)), 1),
+                "pnl_pct":      round(_pnl_ws, 2),
+                "has_position": _grn_ws > 100,
+                "ton_ratio":    round(max(0.0, 1.0 - _exp_ws / 100), 3),
+            }
+        except Exception:
+            pass
+        ai     = self.ai.analyze(ohlcv, wallet_state=_ws_ai)
         self.last_ai = ai
         # ── Живой организм: обновляем все 7 биосистем ────────────────────
         try:
