@@ -386,10 +386,23 @@ class GrinchLiquidator:
                     self._ref_time      = None
                 # Обновим баланс через 60 сек
                 self._last_bal_check = time.time() - BAL_CHECK_INTERVAL + 60
-                # Закрываем ghost-позицию в трейдере (если GRINCH был в открытой позиции)
+                # Закрываем ghost-позицию в трейдере (если GRINCH был в открытой позиции).
+                # Трейдер-синглтон живёт в app.py, не в trader.py — используем sys.modules
+                # чтобы избежать ошибки "cannot import name 'trader' from 'trader'".
                 try:
-                    from trader import trader as _trader
-                    _trader.acknowledge_liquidator_sell(current_price)
+                    import sys as _sys
+                    _app_mod = _sys.modules.get("app") or _sys.modules.get("__main__")
+                    _tr = getattr(_app_mod, "trader", None)
+                    if _tr is not None:
+                        _tr.acknowledge_liquidator_sell(current_price)
+                    else:
+                        # Fallback: напрямую очищаем открытые позиции в DB
+                        import db_store as _ds
+                        with _ds._pool.getconn() as _conn:
+                            _conn.cursor().execute("DELETE FROM bot_open_trades")
+                            _conn.commit()
+                            _ds._pool.putconn(_conn)
+                        self._log("Позиция очищена через DB (app ещё не загружен)", "INFO")
                 except Exception as _te:
                     self._log(f"⚠️ Не удалось оповестить трейдер о продаже ликвидатором: {_te}", "WARN")
                 return {"ok": True, "grinch_sold": grinch_amount, "price": current_price}
