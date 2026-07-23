@@ -60,13 +60,25 @@ def send_alert(text: str) -> dict:
         return {"ok": False, "error": str(e)}
 
 
+_pretrain_start_ts: float = 0.0  # когда впервые увидели running=True + last_tick_ts==0
+
 def _compute_state():
     """Определить текущее состояние торгового цикла (та же логика, что в /health)."""
+    global _pretrain_start_ts
     from app import trader
     if not trader.running:
+        _pretrain_start_ts = 0.0
         return "ok"
     if trader.last_tick_ts == 0:
-        return "ok"  # предобучение
+        # Предобучение в процессе — следим, не завис ли он
+        now = time.time()
+        if _pretrain_start_ts == 0.0:
+            _pretrain_start_ts = now
+        elif (now - _pretrain_start_ts) > 600:  # >10 мин = предобучение зависло
+            return "degraded"
+        return "ok"
+    else:
+        _pretrain_start_ts = 0.0  # обучение завершено, сбрасываем таймер
     age = time.time() - trader.last_tick_ts
     if age > _STALL_THRESHOLD_SEC:
         return "unhealthy"
@@ -284,6 +296,17 @@ def start_hourly_report(data_dir: str = "/app/data"):
     # персистентный volume /app/data, не в кодовую директорию.
     if os.path.normpath(data_dir) == "/app":
         data_dir = "/app/data"
+    # Если указанный каталог не существует или недоступен для записи
+    # (например, на Replit, где /app — read-only), используем локальный каталог logs/.
+    try:
+        os.makedirs(data_dir, exist_ok=True)
+        test_f = os.path.join(data_dir, ".write_test")
+        with open(test_f, "w") as _tf:
+            _tf.write("ok")
+        os.unlink(test_f)
+    except Exception:
+        data_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "logs")
+        os.makedirs(data_dir, exist_ok=True)
     _REPORT_FILE = os.path.join(data_dir, "hourly_report.log")
     _hourly_stop.clear()
     threading.Thread(target=_hourly_loop, daemon=True,

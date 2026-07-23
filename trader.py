@@ -3923,12 +3923,13 @@ class Trader:
     def delete_trade(self, trade_id):
         """Удалить позицию из списка БЕЗ продажи на блокчейне (только из памяти/БД)."""
         with self._close_lock:
-            trade = next((t for t in self.open_trades
-                          if str(t.get("id")) == str(trade_id)), None)
-            if not trade:
-                return {"ok": False, "error": "Позиция не найдена или уже удалена"}
-            self.open_trades = [t for t in self.open_trades
-                                if str(t.get("id")) != str(trade_id)]
+            with self._ot_lock:
+                trade = next((t for t in self.open_trades
+                              if str(t.get("id")) == str(trade_id)), None)
+                if not trade:
+                    return {"ok": False, "error": "Позиция не найдена или уже удалена"}
+                self.open_trades = [t for t in self.open_trades
+                                    if str(t.get("id")) != str(trade_id)]
             self.trades = [t for t in self.trades
                            if str(t.get("id")) != str(trade_id)]
         self.log(f"🗑 Позиция {trade_id} удалена вручную (без продажи)", "WARNING")
@@ -3951,9 +3952,10 @@ class Trader:
         ghost-запись, чтобы дашборд не показывал несуществующую позицию.
         """
         with self._close_lock:
-            if not self.open_trades:
-                return
-            long_trades = [t for t in self.open_trades if t.get("side") != "short"]
+            with self._ot_lock:
+                if not self.open_trades:
+                    return
+                long_trades = [t for t in self.open_trades if t.get("side") != "short"]
             if not long_trades:
                 return
             now_iso = datetime.utcnow().isoformat()

@@ -627,12 +627,26 @@ class BrainFusion:
             ta_sig  = self._ta.signal
             adv_sig = self._advisor.verdict
 
+            # Скользящее окно точности: при total > 100 применяем коэффициент затухания,
+            # чтобы старые результаты не доминировали вечно.
+            # Эффективное окно ≈ 100 последних сделок.
+            _ACCURACY_WINDOW = 100
+
+            def _decay_source(wins: float, total: float) -> tuple:
+                if total >= _ACCURACY_WINDOW:
+                    ratio = _ACCURACY_WINDOW / (total + 1)
+                    wins  = wins  * ratio
+                    total = total * ratio
+                return wins, total
+
             if ai_sig in ("BUY", "SELL"):
+                self._ai_wins, self._ai_total = _decay_source(self._ai_wins, self._ai_total)
                 self._ai_total += 1
                 if (ai_sig == "BUY" and is_win) or (ai_sig == "SELL" and not is_win):
                     self._ai_wins += 1
 
             if ta_sig in ("BUY", "SELL"):
+                self._ta_wins, self._ta_total = _decay_source(self._ta_wins, self._ta_total)
                 self._ta_total += 1
                 if (ta_sig == "BUY" and is_win) or (ta_sig == "SELL" and not is_win):
                     self._ta_wins += 1
@@ -640,6 +654,7 @@ class BrainFusion:
             adv_is_buy = adv_sig in ("ПОКУПАТЬ", "BUY")
             adv_is_sell = adv_sig in ("ПРОДАВАТЬ", "SELL")
             if adv_is_buy or adv_is_sell:
+                self._adv_wins, self._adv_total = _decay_source(self._adv_wins, self._adv_total)
                 self._adv_total += 1
                 if (adv_is_buy and is_win) or (adv_is_sell and not is_win):
                     self._adv_wins += 1

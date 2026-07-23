@@ -397,7 +397,15 @@ class DedustClient:
 
         str(pytoniq_core.Address) возвращает 'Address<EQ...>' — этот формат
         TonCenter v3 не принимает (422). Метод извлекает чистый адрес.
+        Если addr является объектом Address, использует to_str() напрямую,
+        чтобы не зависеть от формата __str__.
         """
+        try:
+            import pytoniq_core as _ptc
+            if isinstance(addr, _ptc.Address):
+                return addr.to_str(is_user_friendly=True, is_bounceable=False)
+        except Exception:
+            pass
         s = str(addr)
         if s.startswith("Address<") and s.endswith(">"):
             return s[8:-1]

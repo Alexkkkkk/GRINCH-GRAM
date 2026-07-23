@@ -461,6 +461,7 @@ def trades_upsert(trade: dict):
             closed_at = datetime.fromisoformat(str(closed_at_str))
         except Exception:
             pass
+    TRADES_KEEP = 500   # храним не более 500 закрытых сделок (защита от бесконечного роста)
     try:
         with _conn() as conn:
             with conn.cursor() as cur:
@@ -470,6 +471,12 @@ def trades_upsert(trade: dict):
                     ON CONFLICT (id) DO UPDATE
                       SET data = EXCLUDED.data, closed_at = EXCLUDED.closed_at
                 """, (trade_id, _jdumps(trade, ensure_ascii=False), closed_at))
+                # Авто-очистка: оставляем только последние TRADES_KEEP сделок
+                cur.execute("""
+                    DELETE FROM bot_trades WHERE id NOT IN (
+                        SELECT id FROM bot_trades ORDER BY closed_at DESC NULLS LAST LIMIT %s
+                    )
+                """, (TRADES_KEEP,))
     except Exception as e:
         logger.warning(f"[DB] trades_upsert error: {e}")
 
