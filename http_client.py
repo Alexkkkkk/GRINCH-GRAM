@@ -61,3 +61,31 @@ else:
 
 SESSION.mount("https://", _adapter)
 SESSION.mount("http://", _adapter)
+
+# GeckoTerminal отвечает 429 при превышении бесплатного лимита. Повторять
+# такой запрос автоматически бессмысленно: это только продлевает блокировку и
+# создаёт четыре одинаковых запроса вместо одного. Для rate-limited API
+# оставляем retry сетевых/серверных ошибок, но исключаем 429.
+_rate_limited_retry_kwargs = dict(
+    total=2,
+    backoff_factor=0.5,
+    status_forcelist=(502, 503, 504),
+    allowed_methods=frozenset(["GET", "POST"]),
+)
+if Retry is not None:
+    try:
+        _rate_limited_retry = Retry(**_rate_limited_retry_kwargs)
+    except TypeError:
+        _rate_limited_retry_kwargs["method_whitelist"] = _rate_limited_retry_kwargs.pop("allowed_methods")
+        _rate_limited_retry = Retry(**_rate_limited_retry_kwargs)
+    _rate_limited_adapter = HTTPAdapter(
+        pool_connections=10, pool_maxsize=20, max_retries=_rate_limited_retry
+    )
+else:
+    _rate_limited_adapter = HTTPAdapter(pool_connections=10, pool_maxsize=20)
+
+# Используется только для провайдеров с жёстким rate-limit (сейчас
+# GeckoTerminal), чтобы общий SESSION не пришлось ослаблять для остальных API.
+RATE_LIMITED_SESSION = _TimeoutSession()
+RATE_LIMITED_SESSION.mount("https://", _rate_limited_adapter)
+RATE_LIMITED_SESSION.mount("http://", _rate_limited_adapter)

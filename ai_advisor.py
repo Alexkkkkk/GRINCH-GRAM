@@ -734,7 +734,78 @@ def _get_provider_client(provider_id: str, cfg: dict):
 # ──────────────────────────────────────────────────────────────────────────
 # Снимок состояния бота
 # ──────────────────────────────────────────────────────────────────────────
-def _build_snapshot(user_message: str = "") -> dict:
+def _compact_advisor_snapshot(snap: dict) -> dict:
+    """Сжимает снапшот до безопасного размера для Groq TPM.
+
+    Полный снапшот полезен для локальной диагностики, но SYSTEM_PROMPT уже
+    занимает значительную часть лимита Groq. Раньше первый запрос отправлялся
+    полным и стабильно получал 413, после чего только второй запрос проходил с
+    урезанными данными. Компактный вариант сохраняет торговые показатели и
+    убирает только повторяющиеся/тяжёлые истории.
+    """
+    compact = dict(snap or {})
+
+    if isinstance(compact.get("analytics_buffer"), dict):
+        ab = dict(compact["analytics_buffer"])
+        for key in ("recent_ticks", "trade_history", "tick_details"):
+            ab.pop(key, None)
+        if isinstance(ab.get("price"), dict):
+            price = dict(ab["price"])
+            price.pop("mini_candles", None)
+            ab["price"] = price
+        compact["analytics_buffer"] = ab
+
+    if isinstance(compact.get("recent_trades"), list):
+        compact["recent_trades"] = compact["recent_trades"][-3:]
+
+    # Эти секции дублируют сведения из market/portfolio и могут быть большими.
+    # Сначала убираем только тяжёлые детали; базовый рынок и позиция остаются.
+    if isinstance(compact.get("brain_fusion"), dict):
+        bf = compact["brain_fusion"]
+        compact["brain_fusion"] = {
+            key: bf[key]
+            for key in ("signal", "confidence", "regime", "weights", "sources")
+            if key in bf
+        }
+    if isinstance(compact.get("market_hub"), dict):
+        hub = compact["market_hub"]
+        compact["market_hub"] = {
+            key: hub[key]
+            for key in (
+                "fear_greed_value", "fear_greed_label", "btc_change24h",
+                "ton_cex_change24h", "bybit_funding_rate_pct",
+                "grinch_trend_rank", "sources",
+            )
+            if key in hub
+        }
+    if isinstance(compact.get("dex"), dict):
+        dex = compact["dex"]
+        compact["dex"] = {
+            key: dex[key]
+            for key in (
+                "market_stage", "liquidity_usd", "change_h1_pct",
+                "change_h24_pct", "ratio_h1", "ratio_h24",
+                "buys_h24", "sells_h24", "recent_flow_usd",
+            )
+            if key in dex
+        }
+
+    # Последний предохранитель: если внешние модули добавили неожиданно
+    # объёмную секцию, убираем её целиком вместо повторного 413.
+    try:
+        encoded_len = len(json.dumps(compact, ensure_ascii=False, separators=(",", ":")))
+        if encoded_len > 24000:
+            compact.pop("market_hub", None)
+        if len(json.dumps(compact, ensure_ascii=False, separators=(",", ":"))) > 20000:
+            compact.pop("brain_fusion", None)
+        if len(json.dumps(compact, ensure_ascii=False, separators=(",", ":"))) > 16000:
+            compact.pop("analytics_buffer", None)
+    except (TypeError, ValueError):
+        pass
+    return compact
+
+
+def _build_snapshot(user_message: str = "", compact: bool = False) -> dict:
     snap: dict = {"timestamp": datetime.utcnow().strftime("%Y-%m-%d %H:%M UTC")}
 
     # Config
@@ -1108,7 +1179,7 @@ def _build_snapshot(user_message: str = "") -> dict:
     if user_message:
         snap["user_question"] = user_message
 
-    return snap
+    return _compact_advisor_snapshot(snap) if compact else snap
 
 
 # ──────────────────────────────────────────────────────────────────────────
@@ -1439,7 +1510,9 @@ def run_advisor(auto_apply: bool = None, user_message: str = "",
         _running = True
 
     try:
-        snap          = _build_snapshot(user_message)
+        # Для Groq сразу используем компактный payload: полный снапшот
+        # превышает TPM и раньше вызывал гарантированный 413 + повтор.
+        snap          = _build_snapshot(user_message, compact=(provider_id == "groq"))
         snap["trigger"] = trigger
         snap_str      = json.dumps(snap, ensure_ascii=False, indent=2)
 
@@ -1546,12 +1619,7 @@ def run_advisor(auto_apply: bool = None, user_message: str = "",
         if "413" in ex_str or "request entity too large" in ex_str.lower():
             try:
                 logger.warning(f"[Advisor] 413 detected ({provider_cfg['name']}) — повтор с урезанным снапшотом…")
-                lite = _build_snapshot(user_message)
-                ab = lite.get("analytics_buffer")
-                if isinstance(ab, dict):
-                    ab.pop("recent_ticks", None)
-                    ab.pop("trade_history", None)
-                    ab.pop("tick_details", None)
+                lite = _compact_advisor_snapshot(_build_snapshot(user_message))
                 lite.pop("dex", None)
                 lite_str = json.dumps(lite, ensure_ascii=False, separators=(",", ":"))
                 lite_resp = client.chat.completions.create(

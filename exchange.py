@@ -4,7 +4,7 @@ import random
 import threading
 import time
 from config import Config
-from http_client import SESSION as _HTTP_EX
+from http_client import SESSION as _HTTP_EX, RATE_LIMITED_SESSION as _HTTP_RATE_LIMITED
 from datetime import datetime
 from price_feed import price_feed
 
@@ -134,8 +134,9 @@ class ExchangeClient:
     #   {"ts": время успеха, "bars": свечи, "fail_ts": время последней ошибки}
     _ohlcv_cache = {}
     _ohlcv_lock     = threading.Lock()
-    _OHLCV_TTL      = 45   # сек — GeckoTerminal даёт 429 при TTL<30с; 45с = баланс свежести и лимита
-    _OHLCV_BACKOFF  = 8    # сек — после ошибки ждём меньше, чтобы не пропустить сигнал
+    _OHLCV_TTL      = 45   # сек — GeckoTerminal даёт 429 при TTL<30с
+    _OHLCV_BACKOFF  = 8    # сек — обычная ошибка внешнего API
+    _OHLCV_429_BACKOFF = 60  # сек — после 429 не штурмуем бесплатный лимит
 
     def get_real_ohlcv(self, limit=100, currency="usd", token="base", tf="hour", aggregate=1):
         """Реальные свечи пула GRINCH/GRAM (Toncoin) с GeckoTerminal.
@@ -170,6 +171,9 @@ class ExchangeClient:
             if bars and (now - entry.get("ts", 0)) < self._OHLCV_TTL:
                 return bars[-limit:]
             # Недавняя ошибка — не штурмуем API, отдаём устаревшие данные (если есть)
+            retry_at = entry.get("retry_at", 0)
+            if retry_at and now < retry_at:
+                return bars[-limit:] if bars else None
             if (now - entry.get("fail_ts", 0)) < self._OHLCV_BACKOFF:
                 return bars[-limit:] if bars else None
 
@@ -181,10 +185,21 @@ class ExchangeClient:
                 )
                 # SESSION переиспользует keep-alive соединение к GeckoTerminal —
                 # нет повторного TCP/TLS handshake, каждый вызов на ~100–300 ms быстрее.
-                r = _HTTP_EX.get(url, timeout=8, headers={
+                # Для GeckoTerminal отключаем автоматические повторы 429:
+                # бесплатный API считает каждый повтор новым запросом.
+                r = _HTTP_RATE_LIMITED.get(url, timeout=8, headers={
                     "Accept": "application/json",
                     "User-Agent": "Mozilla/5.0 (compatible; GrinchGram/1.0)",
                 })
+                if r.status_code == 429:
+                    entry["fail_ts"] = now
+                    entry["retry_at"] = now + self._OHLCV_429_BACKOFF
+                    ExchangeClient._ohlcv_cache[key] = entry
+                    print(
+                        "[Exchange] GeckoTerminal 429 — "
+                        f"повтор через {self._OHLCV_429_BACKOFF}с"
+                    )
+                    return bars[-limit:] if bars else None
                 r.raise_for_status()
                 data = r.json()
                 raw = data["data"]["attributes"]["ohlcv_list"]  # newest-first, ts в секундах
@@ -194,13 +209,14 @@ class ExchangeClient:
                 ]
                 if not fresh:
                     return bars[-limit:] if bars else None
-                new_entry = {"ts": now, "bars": fresh, "fail_ts": 0}
+                new_entry = {"ts": now, "bars": fresh, "fail_ts": 0, "retry_at": 0}
                 ExchangeClient._ohlcv_cache[key] = new_entry
                 self._save_disk_ohlcv(key, new_entry)
                 return fresh[-limit:]
             except Exception as e:
                 print(f"[Exchange] get_real_ohlcv error: {e}")
                 entry["fail_ts"] = now
+                entry["retry_at"] = 0
                 ExchangeClient._ohlcv_cache[key] = entry
                 return bars[-limit:] if bars else None
 
