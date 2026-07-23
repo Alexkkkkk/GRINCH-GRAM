@@ -1845,12 +1845,31 @@ class Trader:
             if not sell_result or sell_result.get("error"):
                 err = (sell_result or {}).get("error", "нет ответа")
                 blocked = (sell_result or {}).get("amm_blocked", False)
-                level = "WARN"
                 if blocked:
-                    self.log(f"🛡️ Каскад: продажа заблокирована AMM preflight — {err}", level)
+                    self.log(f"🛡️ Каскад: продажа заблокирована AMM preflight — {err}", "WARN")
+                    return False
+                # ── Та же логика восстановления что и в _dca_sell_all:
+                # "balance=0" на retry = первый своп дошёл, подтверждение потерялось.
+                _zero_err = ("равен 0" in err or "нечего продавать" in err)
+                if _zero_err:
+                    try:
+                        _rb = self.exchange.get_balance() or {}
+                        _real_grinch = float(_rb.get("GRINCH", 0) or 0)
+                    except Exception:
+                        _real_grinch = sell_amount
+                    if _real_grinch < 1.0:
+                        self.log(
+                            f"✅ Каскад Ур.1: on-chain GRINCH={_real_grinch:.4f} — "
+                            f"своп прошёл, регистрируем закрытие.",
+                            "WARN",
+                        )
+                        sell_result = {"ok": True, "id": "recovered_after_retry"}
+                    else:
+                        self.log(f"⚠️ Каскад: продажа Ур.1 не исполнена после retry — {err}", "WARN")
+                        return False
                 else:
-                    self.log(f"⚠️ Каскад: продажа Ур.1 не исполнена после retry — {err}", level)
-                return False
+                    self.log(f"⚠️ Каскад: продажа Ур.1 не исполнена после retry — {err}", "WARN")
+                    return False
             self.log(
                 f"✅ Каскад Ур.1: продажа исполнена | id={sell_result.get('id', '—')}",
                 "INFO"
@@ -2010,9 +2029,34 @@ class Trader:
                 err = (sell_result or {}).get("error", "нет ответа")
                 if (sell_result or {}).get("amm_blocked"):
                     self.log(f"🛡️ DCA: продажа заблокирована AMM preflight — {err}", "WARN")
+                    return False
+                # ── Сверяем on-chain: "balance=0" при retry означает, что
+                # первый своп дошёл до блокчейна, но подтверждение потерялось.
+                # Если GRINCH на кошельке действительно 0 → считаем продажу успешной.
+                _zero_err = ("равен 0" in err or "нечего продавать" in err)
+                if _zero_err:
+                    try:
+                        _rb = self.exchange.get_balance() or {}
+                        _real_grinch = float(_rb.get("GRINCH", 0) or 0)
+                    except Exception:
+                        _real_grinch = sell_amount  # не смогли проверить — не рискуем
+                    if _real_grinch < 1.0:
+                        self.log(
+                            f"✅ DCA: on-chain GRINCH={_real_grinch:.4f} — "
+                            f"своп прошёл, регистрируем закрытие позиций.",
+                            "WARN",
+                        )
+                        sell_result = {"ok": True, "id": "recovered_after_retry"}
+                    else:
+                        self.log(
+                            f"⚠️ DCA: продажа не исполнена после retry — {err}. "
+                            f"Позиции остаются (GRINCH на кошельке: {_real_grinch:.2f}).",
+                            "WARN",
+                        )
+                        return False
                 else:
                     self.log(f"⚠️ DCA: продажа не исполнена после retry — {err}. Позиции остаются.", "WARN")
-                return False
+                    return False
             self.log(
                 f"✅ DCA: продажа GRINCH → TON исполнена | "
                 f"id={sell_result.get('id', '—')}",
