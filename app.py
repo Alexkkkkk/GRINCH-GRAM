@@ -1477,6 +1477,35 @@ def api_dca_reset_pullback():
     trader._save_volatile_state()
     return jsonify({"ok": True, "dca_wait_pullback": False, "dca_peak_price": 0.0})
 
+@app.route("/api/dca/reset_state", methods=["POST"])
+def api_dca_reset_state():
+    """Полный сброс DCA-счётчиков (только если нет открытых позиций).
+    Используется для восстановления после ghost-позиций, когда GRINCH продан
+    на блокчейне, но счётчики остались в памяти."""
+    if trader.open_trades:
+        return jsonify({
+            "ok": False,
+            "error": f"Есть {len(trader.open_trades)} открытых позиций — сначала закройте их"
+        }), 400
+    trader.dca_entries_count     = 0
+    trader.dca_total_stake       = 0.0
+    trader.dca_wait_pullback     = False
+    trader.dca_peak_price        = 0.0
+    trader.dca_last_buy_price    = 0.0
+    trader.dca_cascade_half_sold = False
+    trader.portfolio_high_water_ton = 0.0
+    try:
+        trader._save_volatile_state()
+    except Exception:
+        pass
+    trader.log("🔄 DCA-состояние сброшено вручную (ghost-recovery)", "INFO")
+    return jsonify({
+        "ok": True,
+        "dca_entries_count": 0,
+        "dca_total_stake": 0.0,
+        "dca_wait_pullback": False,
+    })
+
 @app.route("/api/trade/delete", methods=["POST"])
 def api_trade_delete():
     data = request.get_json(silent=True) or {}
