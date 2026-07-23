@@ -1135,11 +1135,18 @@ class DedustClient:
                 grinch_jw_address = _CoreAddr(jw_addr_str)
                 log.info(f"[DeDust] GRINCH jetton wallet: {jw_addr_str}")
             else:
-                # Оба API не ответили → SDK fallback (адрес может быть неверным!)
-                grinch_root   = JettonRoot.create_from_address(Config.GRINCH_TOKEN_ADDRESS)
-                grinch_wallet = await grinch_root.get_wallet(wallet.address, provider)
-                grinch_jw_address = grinch_wallet.address
-                log.warning(f"[DeDust] GRINCH jetton wallet (SDK FALLBACK): {grinch_jw_address}")
+                # H1: Оба API не ответили → прерываем продажу (SDK fallback даёт неверный
+                # адрес для GRINCH и мог привести к безвозвратной потере токенов).
+                log.error("[DeDust] SELL ABORTED: не удалось получить адрес GRINCH jetton-кошелька "
+                          "ни через TonCenter, ни через TonAPI. Продажа отменена для защиты токенов.")
+                return {
+                    "ok": False,
+                    "side": "sell",
+                    "error": (
+                        "Не удалось получить адрес GRINCH jetton-кошелька (TonCenter и TonAPI недоступны). "
+                        "Продажа отменена — GRINCH в безопасности. Повторите позже."
+                    ),
+                }
 
             # ── Точный GRINCH-баланс on-chain ДО свопа ──────────────────────
             # КРИТИЧНО: используем on-chain нано-баланс, а НЕ float grinch_amount!

@@ -784,6 +784,7 @@ class Trader:
             self.log(f"Восстановление опыта ИИ: {e}", "WARN")
 
         _last_db_sync = 0.0
+        _consec_errors = 0  # M3: счётчик последовательных ошибок для backoff
         while self.running:
             try:
                 self._tick()
@@ -802,10 +803,18 @@ class Trader:
                     self._last_volatile_save_ts = now
                 self.last_tick_ts = time.time()
                 self.last_tick_ok = True
+                _consec_errors = 0  # M3: сброс счётчика после успешного тика
             except Exception as e:
-                self.log(f"Ошибка в цикле: {e}", "ERROR")
+                _consec_errors += 1
+                self.log(f"Ошибка в цикле ({_consec_errors}): {e}", "ERROR")
                 self.last_tick_ts = time.time()
                 self.last_tick_ok = False
+                # M3: экспоненциальный backoff при повторяющихся ошибках
+                # 1 ошибка → 0 доп. задержки, 2 → 4с, 3 → 8с, 4+ → 16с (макс)
+                if _consec_errors >= 2:
+                    _backoff = min(4 * (2 ** (_consec_errors - 2)), 16)
+                    self.log(f"⏳ Backoff {_backoff}с ({_consec_errors} ошибок подряд)", "WARN")
+                    self._loop_stop_event.wait(timeout=_backoff)
             # На маломощных хостах (LOW_MEMORY_MODE) периодически отдаём ОС
             # память, освобождённую GC (glibc malloc иначе держит её в аренах).
             if os.getenv("LOW_MEMORY_MODE", "1") == "1":

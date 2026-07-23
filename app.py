@@ -871,7 +871,7 @@ def health():
     if trader.last_tick_ts == 0:
         # Ещё идёт предобучение AI перед первым тиком — это ожидаемо, не ошибка
         return jsonify({"status": "ok", "trader": "starting", "rss_mb": rss_mb}), 200
-    if age > 90:
+    if age > 180:
         return jsonify({
             "status": "unhealthy",
             "reason": "trading loop stalled",
