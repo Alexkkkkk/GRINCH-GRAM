@@ -18,6 +18,7 @@ GitHub push через HTTPS не работает (нет токена). Deploy
 - GitHub Webhook → `POST /webhook/github` на боте → пишет trigger-файл в `/var/lib/docker/volumes/bot_bot_data/_data/.deploy_trigger`
 - `quantumbrain-watcher.service` (systemd, active) мониторит trigger-файл каждые 5с → запускает `deploy.sh` на хосте
 - GitHub webhook нужно настроить вручную: `http://2.27.25.126/webhook/github` (Settings → Webhooks в репо)
+- После каждого push обязательно сверять `git rev-parse HEAD` на VPS и `/health`: watcher может задержать применение, тогда безопасно запустить штатный `/opt/bot/deploy.sh` вручную.
 
 **Почему docker cp недостаточен:** изменения в container writable layer живут только до следующего `docker compose up -d --build` (rebuild из /opt/bot). Всегда после docker cp нужно также обновить файл в /opt/bot — тогда rebuild подхватит правильную версию.
 
