@@ -1,3 +1,5 @@
+- [Health check threshold](health-check-threshold.md) — /health stalled threshold = 180s (not 90s); ticks legitimately take 60-120s due to TonCenter; M3 backoff added to _loop.
+- [wallet_tracker _seen LRU dict](wallet-tracker-lru-seen.md) — _seen must be dict not set; trim removes oldest keys (front), not random half; db_store.wallets_load returns dict.
 - [Open-trades startup self-heal](open-trades-self-heal.md) — 3 checks at init: auto-clear if GRINCH=0, scale amount+stake_ton if mismatch >1%, clamp winning_trades≤total_trades.
 - [BrainFusion integration](brain-fusion-integration.md) — central consensus brain; use RLock not Lock (get_state calls get_wallet_analysis recursively); wrap import in try/except stub; coerce ai_conf to float in should_skip_confirmation; restore Config params in BOTH pending-buy and immediate-open paths.
 - [Gunicorn background threads](gunicorn-background-threads.md) — start pollers at module import (not __main__), or they silently never run in the deployed app.
