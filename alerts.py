@@ -211,13 +211,23 @@ def _build_report() -> str:
             pass
 
         # ── Health ──────────────────────────────────────────────────────
+        # Не делаем HTTP-запрос к localhost:3000 из самого контейнера:
+        # во время краткого gunicorn-рестарта он даёт ложную ошибку
+        # "connection refused", хотя торговый поток продолжает работать.
+        # Состояние берём из того же объекта trader, который использует /health.
         try:
-            from http_client import SESSION
-            r = SESSION.get("http://localhost:3000/health", timeout=5)
-            h = r.json()
+            from app import trader
+            age = time.time() - trader.last_tick_ts if trader.last_tick_ts else 0
+            if not trader.running:
+                health_status = "ok"
+            elif trader.last_tick_ts == 0:
+                health_status = "starting"
+            elif age > _STALL_THRESHOLD_SEC or trader.last_tick_ok is False:
+                health_status = "degraded"
+            else:
+                health_status = "ok"
             lines.append(
-                f"🏥 Health: {h.get('status')}  |  tick_age={h.get('seconds_since_last_tick',0):.1f}s"
-                f"  |  rss={h.get('rss_mb',0):.1f}MB"
+                f"🏥 Health: {health_status}  |  tick_age={age:.1f}s"
             )
         except Exception as _e:
             lines.append(f"🏥 Health: недоступен ({_e})")
@@ -269,6 +279,11 @@ def start_hourly_report(data_dir: str = "/app/data"):
             return
         _hourly_started = True
     import os
+    # В некоторых старых compose-конфигурациях DATA_DIR ошибочно был равен
+    # "/app", а корень контейнера read-only. Всегда пишем runtime-отчёт в
+    # персистентный volume /app/data, не в кодовую директорию.
+    if os.path.normpath(data_dir) == "/app":
+        data_dir = "/app/data"
     _REPORT_FILE = os.path.join(data_dir, "hourly_report.log")
     _hourly_stop.clear()
     threading.Thread(target=_hourly_loop, daemon=True,
