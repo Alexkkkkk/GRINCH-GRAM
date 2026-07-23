@@ -113,6 +113,52 @@ class ExperienceManager:
             "ai_avg_win_pct":         0.0,      # средний % прибыли в выигрышных сделках
         }
 
+    @staticmethod
+    def _reconcile_stats_from_trades(trades, existing=None) -> dict:
+        """Build the durable counters from the journal, not from a stale snapshot.
+
+        ``bot_trades``/``experience.json`` are the source of truth for completed
+        trades.  The old implementation persisted the journal and the counters
+        independently, so a crash between those writes could leave the dashboard
+        one trade behind.
+        """
+        stats = dict(existing or {})
+        closed = [
+            t for t in (trades or [])
+            if isinstance(t, dict)
+            and (t.get("status") == "closed" or t.get("closed_at") or t.get("exit_time"))
+        ]
+        if not closed:
+            return stats
+
+        pnls = []
+        for trade in closed:
+            try:
+                pnls.append(float(trade.get("pnl") or 0.0))
+            except (TypeError, ValueError):
+                pnls.append(0.0)
+
+        wins = sum(1 for pnl in pnls if pnl > 0)
+        current_streak = 0
+        max_streak = 0
+        for pnl in pnls:
+            if pnl > 0:
+                current_streak += 1
+                max_streak = max(max_streak, current_streak)
+            else:
+                current_streak = 0
+
+        stats.update({
+            "total_trades": len(closed),
+            "winning_trades": wins,
+            "total_pnl": round(sum(pnls), 6),
+            "best_trade_ton": round(max(pnls), 6),
+            "worst_trade_ton": round(min(pnls), 6),
+            "win_streak": current_streak,
+            "max_win_streak": max_streak,
+        })
+        return stats
+
     # ── Чтение / запись ──────────────────────────────────────────────────────
     def _load(self):
         db = _db()
@@ -136,22 +182,21 @@ class ExperienceManager:
                     if control_raw: self.data["control"]     = control_raw if isinstance(control_raw, dict) else json.loads(control_raw)
                     if stats_raw:
                         _s = stats_raw if isinstance(stats_raw, dict) else json.loads(stats_raw)
-                        # Санитайз при загрузке: winning_trades ≤ total_trades (атомарно,
-                        # до того как любой фоновый поток успеет прочитать self.data["stats"])
-                        _wt = int(_s.get("winning_trades", 0) or 0)
-                        _tt = int(_s.get("total_trades", 0) or 0)
-                        if _wt > _tt:
-                            _s = dict(_s)
-                            _s["winning_trades"] = _tt
-                            logger.warning(
-                                f"[Experience] 🔧 _load: winning_trades ({_wt}) > total_trades ({_tt})"
-                                f" — исправлено до {_tt} при загрузке из DB"
-                            )
                         self.data["stats"] = _s
                     if ai_raw:      self.data["ai"]          = ai_raw if isinstance(ai_raw, dict) else json.loads(ai_raw)
                     ctrl = self._default_control()
                     ctrl.update(self.data.get("control") or {})
                     self.data["control"] = ctrl
+                    reconciled = self._reconcile_stats_from_trades(
+                        self.data.get("trades") or [], self.data.get("stats") or {}
+                    )
+                    if reconciled != (self.data.get("stats") or {}):
+                        self.data["stats"] = reconciled
+                        self._save_locked()
+                        logger.info(
+                            "[Experience] 🔧 Агрегаты статистики пересчитаны по журналу: "
+                            f"{reconciled.get('total_trades', 0)} сделок"
+                        )
                     print(f"[Experience] загружено из DB: {len(self.data['trades'])} сделок, "
                           f"{len(self.data['equity'])} точек капитала")
                     loaded_from_db = True
@@ -180,6 +225,9 @@ class ExperienceManager:
                 ctrl = self._default_control()
                 ctrl.update(self.data.get("control") or {})
                 self.data["control"] = ctrl
+                self.data["stats"] = self._reconcile_stats_from_trades(
+                    self.data.get("trades") or [], self.data.get("stats") or {}
+                )
                 print(f"[Experience] загружено из JSON: {len(self.data['trades'])} сделок, "
                       f"{len(self.data['equity'])} точек капитала")
                 # Миграция JSON → DB (однократно)
@@ -222,6 +270,12 @@ class ExperienceManager:
             logger.warning(f"[Experience] migrate_to_db error: {e}")
 
     def _save_locked(self):
+        # Пересчитываем до записи JSON, чтобы DB и fallback-файл получали один
+        # и тот же снимок, даже если процесс остановится сразу после записи.
+        stats = self._reconcile_stats_from_trades(
+            self.data.get("trades") or [], self.data.get("stats") or {}
+        )
+        self.data["stats"] = stats
         # JSON (локальный backup)
         try:
             tmp = self.path + ".tmp"
@@ -235,17 +289,6 @@ class ExperienceManager:
         if db:
             try:
                 ctrl  = self.data.get("control") or {}
-                stats = self.data.get("stats") or {}
-                # Инвариант: winning_trades ≤ total_trades (иначе winrate >100%)
-                # Проверяем здесь потому что _save_locked вызывается из analyze_and_adapt
-                # ДО того как санитайзер в trader.__init__ успевает исправить значение.
-                if stats:
-                    _tt = int(stats.get("total_trades", 0) or 0)
-                    _wt = int(stats.get("winning_trades", 0) or 0)
-                    if _wt > _tt:
-                        stats = dict(stats)
-                        stats["winning_trades"] = _tt
-                        self.data["stats"] = stats
                 if ctrl:  db.ai_state_set("control", ctrl)
                 if stats: db.ai_state_set("stats", stats)
             except Exception as e:
@@ -505,34 +548,29 @@ class ExperienceManager:
             self.data["trades"].append(trade_rec)
             if len(self.data["trades"]) > MAX_TRADES_KEPT:
                 self.data["trades"] = self.data["trades"][-MAX_TRADES_KEPT:]
-            if stats:
-                _s = dict(stats)
-                # Инвариант: winning_trades ≤ total_trades (защита от race condition
-                # когда запись_trade вызывается с устаревшими/некорректными stats)
-                _wt2 = int(_s.get("winning_trades", 0) or 0)
-                _tt2 = int(_s.get("total_trades", 0) or 0)
-                if _wt2 > _tt2:
-                    _s["winning_trades"] = _tt2
-                    logger.warning(
-                        f"[Experience] record_trade sanitize: winning({_wt2})>total({_tt2})"
-                        f" — winning исправлено до {_tt2}"
-                    )
-                self.data["stats"] = _s
+            self.data["stats"] = self._reconcile_stats_from_trades(
+                self.data["trades"], stats
+            )
             if ai is not None:
                 try:
                     self.data["ai"] = ai.export_experience()
                 except Exception as e:  # noqa: BLE001
                     print(f"[Experience] export_experience error: {e}")
-            self._save_locked()
-            # DB: уписываем сделку + AI-опыт
+            # Сначала фиксируем саму сделку в журнале БД. Затем _save_locked()
+            # запишет JSON и агрегаты; так аварийная остановка не оставит
+            # счётчики впереди журнала сделок.
             db = _db()
             if db:
                 try:
                     db.trades_upsert(trade_rec)
-                    if self.data.get("ai"):
-                        db.ai_state_set("ai_export", self.data["ai"])
                 except Exception as e:
                     logger.warning(f"[Experience] DB record_trade error: {e}")
+            self._save_locked()
+            if db and self.data.get("ai"):
+                try:
+                    db.ai_state_set("ai_export", self.data["ai"])
+                except Exception as e:
+                    logger.warning(f"[Experience] DB AI export error: {e}")
 
     # ── Запись капитала (кривая баланса) ─────────────────────────────────────
     def record_balance(self, balance: dict, grinch_price_usd: float, force: bool = False):

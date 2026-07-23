@@ -64,5 +64,4 @@ curl -sf http://localhost/health && echo " ✅ Бот работает" || echo 
 
 echo ""
 echo "=== Patch завершён ==="
-echo "Для фикса TP в памяти выполни:"
-echo "  curl -X POST http://localhost/api/admin/fix_open_trades -b cookies.txt"
+echo "Проверка и исправление открытых позиций выполняются через защищённую админ-сессию."
