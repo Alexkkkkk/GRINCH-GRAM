@@ -1162,7 +1162,8 @@ def wallets_load() -> tuple[dict, list, set, float]:
                 meta = {row["key"]: row["value"] for row in cur.fetchall()}
 
         events    = json.loads(meta.get("events", "[]"))
-        seen      = set(json.loads(meta.get("seen", "[]")))
+        # Возвращаем dict вместо set — сохраняет порядок вставки для LRU-дедупликации
+        seen      = {k: 1 for k in json.loads(meta.get("seen", "[]"))}
         last_poll = float(meta.get("last_poll", "0") or 0)
         return wallets, events, seen, last_poll
     except Exception as e:

@@ -80,8 +80,9 @@ class WalletTracker:
         self.last_error  = None
         # адрес -> агрегат
         self.wallets = {}
-        # дедупликация увиденных сделок
-        self._seen = set()
+        # дедупликация увиденных сделок (dict как LRU-set: порядок вставки сохранён,
+        # при обрезке удаляются самые старые — не случайные, как было с set())
+        self._seen: dict = {}
         # последние сделки (для сигнала и отображения)
         self.events = []
         self._on_chain_balances: dict = {}
@@ -172,9 +173,12 @@ class WalletTracker:
 
     def _record(self, tx, addr, kind, ton_amt, grinch_amt, price, ts, usd_vol=0.0):
         with self._lock:
-            self._seen.add(tx)
+            self._seen[tx] = 1  # dict-LRU: insertion order preserved
             if len(self._seen) > self.MAX_SEEN:
-                self._seen = set(list(self._seen)[self.MAX_SEEN // 2:])
+                # Удаляем MAX_SEEN//2 самых СТАРЫХ записей (в порядке вставки)
+                oldest = list(self._seen.keys())[:self.MAX_SEEN // 2]
+                for k in oldest:
+                    del self._seen[k]
 
             w = self.wallets.get(addr)
             if w is None:
@@ -471,7 +475,8 @@ class WalletTracker:
                 if wallets or events:
                     self.wallets   = wallets
                     self.events    = events
-                    self._seen     = seen
+                    # seen из DB может быть set или dict — нормализуем в dict-LRU
+                    self._seen     = seen if isinstance(seen, dict) else {k: 1 for k in seen}
                     self.last_poll = last_poll
                     loaded_from_db = True
                     logger.info(f"[WalletTracker] Загружено из DB: {len(wallets)} кошельков")
@@ -487,7 +492,7 @@ class WalletTracker:
                     data = json.load(fh)
                 self.wallets   = data.get("wallets", {}) or {}
                 self.events    = data.get("events", []) or []
-                self._seen     = set(data.get("seen", []) or [])
+                self._seen     = {k: 1 for k in (data.get("seen", []) or [])}
                 self.last_poll = data.get("last_poll", 0.0) or 0.0
                 logger.info(f"[WalletTracker] Загружено из JSON: {len(self.wallets)} кошельков")
                 # Миграция в DB
@@ -503,7 +508,7 @@ class WalletTracker:
                     except Exception as e:
                         logger.warning(f"[WalletTracker] migrate_to_db error: {e}")
             except Exception:
-                self.wallets, self.events, self._seen = {}, [], set()
+                self.wallets, self.events, self._seen = {}, [], {}
 
     def _save(self):
         with self._lock:
