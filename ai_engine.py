@@ -2243,18 +2243,25 @@ class AIEngine:
         return base_ens
 
     def _align_proba(self, proba: np.ndarray, classes) -> np.ndarray:
-        """Выравнивает вектор вероятностей к индексам [P(-1), P(0), P(1)]."""
-        out = np.array([1/3, 1/3, 1/3])
+        """Выравнивает вектор вероятностей к индексам [P(-1), P(0), P(1)].
+
+        M7-fix: начинаем с нулей, а НЕ с 1/3. Если модель обучена только на
+        BUY+HOLD (без SELL), 1/3 по умолчанию давало ложные SELL-сигналы.
+        После заполнения нормируем → незнакомые классы остаются 0.
+        """
+        out = np.zeros(3)   # [P(SELL), P(HOLD), P(BUY)]
         cls_list = list(classes)
         mapping  = {-1: 0, 0: 1, 1: 2}
         for j, c in enumerate(cls_list):
             idx = mapping.get(int(c))
             if idx is not None and j < len(proba):
                 out[idx] = proba[j]
-        # Нормируем
+        # Нормируем (сумма может быть < 1 если классов меньше трёх)
         s = out.sum()
         if s > 0:
             out /= s
+        else:
+            out = np.array([0.0, 1.0, 0.0])   # fallback: HOLD
         return out
 
     # ─────────────────────────────────────────────────────────────────────────
@@ -2405,8 +2412,12 @@ class AIEngine:
                 else:
                     y_ = c.values[i-win+1:i+1]
                     x_ = np.arange(win, dtype=float)
-                    m  = np.polyfit(x_, y_, 1)[0]
-                    slopes.append(m / (c.values[i] + 1e-10))
+                    # M6-fix: константные y_ дают inf/NaN в polyfit
+                    if np.ptp(y_) < 1e-12:
+                        slopes.append(0.0)
+                    else:
+                        m = np.polyfit(x_, y_, 1)[0]
+                        slopes.append(m / (c.values[i] + 1e-10))
             df[f"slope_{win}"] = slopes
 
         # ── Позиция цены: близость к хаю/лою ─────────────────────────────

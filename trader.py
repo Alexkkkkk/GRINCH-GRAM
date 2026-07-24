@@ -940,8 +940,10 @@ class Trader:
         merged["merged_count"]    = len(long_trades)
 
         # Оставляем SHORT-позиции, заменяем все LONG на одну объединённую
-        shorts = [t for t in self.open_trades if t.get("side") != "buy"]
-        self.open_trades = shorts + [merged]
+        # M1-fix: всегда держим _ot_lock при переприсвоении open_trades
+        with self._ot_lock:
+            shorts = [t for t in self.open_trades if t.get("side") != "buy"]
+            self.open_trades = shorts + [merged]
 
         # Обновляем запись в полном журнале сделок
         for t in self.trades:
@@ -1771,7 +1773,10 @@ class Trader:
                 "entry_bo_score":  0.0,
                 "entry_mom_signal": "CALM",
             }
-            self.open_trades.append(trade)
+            # M2-fix: _ot_lock при append чтобы другие потоки не видели
+            # частично обновлённый список
+            with self._ot_lock:
+                self.open_trades.append(trade)
             self.trades.append(trade)
             # total_trades теперь считается только в момент закрытия (там же,
             # где вызывается record_trade) — единая точка учёта, чтобы счётчик
@@ -3401,7 +3406,9 @@ class Trader:
             "entry_mom_signal": str((ai_snap_entry.get("momentum") or {}).get("signal") or "CALM"),
             "entry_mom_score":  _sf((ai_snap_entry.get("momentum") or {}).get("score")),
         }
-        self.open_trades.append(trade)
+        # M2-fix: _ot_lock при append
+        with self._ot_lock:
+            self.open_trades.append(trade)
         self.trades.append(dict(trade))
         # total_trades теперь считается только в момент закрытия (там же,
         # где вызывается record_trade) — единая точка учёта, чтобы счётчик
