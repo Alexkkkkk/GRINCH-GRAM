@@ -741,12 +741,21 @@ class DedustClient:
         if cached and (now - cached_ts) < self._RESERVES_CACHE_TTL:
             return cached
 
+        # ── 429-backoff: не долбить TonAPI пока действует пауза ──────────────
+        backoff_until = getattr(self, "_pool_reserves_backoff_until", 0.0)
+        if now < backoff_until:
+            return cached  # вернуть последний удачный курс без запроса
+
         pool = Config.GRINCH_POOL_ADDRESS
         try:
             r1 = _HTTP.get(
                 f"https://tonapi.io/v2/accounts/{pool}",
                 headers={"Accept": "application/json"}, timeout=self._RESERVES_TIMEOUT,
             )
+            if r1.status_code == 429:
+                self._pool_reserves_backoff_until = now + 120.0  # пауза 2 минуты
+                log.warning("dedust_client: 429 от TonAPI (pool/balance) — пауза 120с")
+                return cached
             r1.raise_for_status()
             r1_data = r1.json() if r1.headers.get("content-type", "").startswith("application/json") else {}
             ton_reserve = (r1_data.get("balance", 0) or 0) / TON
@@ -754,6 +763,10 @@ class DedustClient:
                 f"https://tonapi.io/v2/accounts/{pool}/jettons",
                 headers={"Accept": "application/json"}, timeout=self._RESERVES_TIMEOUT,
             )
+            if r2.status_code == 429:
+                self._pool_reserves_backoff_until = now + 120.0
+                log.warning("dedust_client: 429 от TonAPI (pool/jettons) — пауза 120с")
+                return cached
             r2.raise_for_status()
             r2_data = r2.json() if r2.headers.get("content-type", "").startswith("application/json") else {}
             grinch_reserve = None
@@ -769,10 +782,11 @@ class DedustClient:
                 reserves = (ton_reserve, grinch_reserve)
                 self._pool_reserves_cache = reserves
                 self._pool_reserves_cache_ts = now
+                self._pool_reserves_backoff_until = 0.0  # сброс backoff при успехе
                 return reserves
         except Exception as e:  # noqa: BLE001
             log.warning(f"Не удалось прочитать резервы пула: {e}")
-        # Ошибка/429 не затирает последний удачный курс: краткий fallback
+        # Ошибка не затирает последний удачный курс: краткий fallback
         # позволяет дождаться восстановления TonAPI без повторного шторма.
         return cached
 

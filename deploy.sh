@@ -6,6 +6,9 @@
 # ─────────────────────────────────────────────────────────────────────────────
 set -euo pipefail
 
+# ── Вспомогательная функция (объявляем ПЕРВОЙ — используется везде ниже) ──────
+TS() { date '+%F %T'; }
+
 BOT_DIR="/opt/bot"
 LOG="$BOT_DIR/deploy.log"
 LOCK="$BOT_DIR/.deploy.lock"
@@ -35,8 +38,6 @@ fi
 if [ -f "$LOG" ] && [ "$(wc -l < "$LOG")" -gt "$MAX_LOG_LINES" ]; then
     tail -n 500 "$LOG" > "$LOG.tmp" && mv "$LOG.tmp" "$LOG"
 fi
-
-TS() { date '+%F %T'; }
 
 # ── Lock — защита от параллельных запусков ────────────────────────────────────
 if [ -f "$LOCK" ]; then

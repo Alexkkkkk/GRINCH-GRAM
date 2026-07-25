@@ -1681,10 +1681,15 @@ def run_advisor(auto_apply: bool = None, user_message: str = "",
 
 
 def _record_rate_limit(err_text: str) -> None:
-    """Парсит текст ошибки Groq (429 rate_limit_exceeded) и сохраняет лимит/сброс."""
+    """Парсит текст ошибки Groq (429 rate_limit_exceeded) и сохраняет лимит/сброс.
+
+    Различает TPD (tokens per day) и TPM (tokens per minute):
+    - TPM: ждём только указанное время («try again in Xs»)
+    - TPD: дневной лимит; игнорируем короткий «try again» от Groq,
+      ставим паузу до завтрашнего 03:00 UTC чтобы не тратить остаток.
+    """
     global _rate_limit
     if "rate_limit" not in err_text and "429" not in err_text:
-        # Не лимит — если предыдущая ошибка лимита устарела (>1ч), не трогаем её.
         return
     try:
         limit_m  = re.search(r"Limit\s+(\d+)", err_text)
@@ -1697,9 +1702,23 @@ def _record_rate_limit(err_text: str) -> None:
             for val, unit in parts:
                 val = float(val)
                 reset_s += val * (3600 if unit == "h" else 60 if unit == "m" else 1)
+
+        # ── Если дневной TPD лимит — ставим паузу до 03:00 UTC следующего дня ──
+        is_tpd = "tokens per day" in err_text or "tpd" in err_text.lower()
+        if is_tpd:
+            import datetime as _dt
+            now_utc   = _dt.datetime.utcnow()
+            tomorrow  = now_utc.date() + _dt.timedelta(days=1)
+            reset_utc = _dt.datetime.combine(tomorrow, _dt.time(3, 0, 0))
+            reset_s   = (reset_utc - now_utc).total_seconds()
+            logger.warning(
+                f"[Advisor] ⚠️ Groq TPD исчерпан — пауза до {reset_utc.strftime('%Y-%m-%d %H:%M')} UTC"
+            )
+
         with _lock:
             _rate_limit = {
                 "limited":     True,
+                "is_tpd":      is_tpd,
                 "limit":       int(limit_m.group(1)) if limit_m else None,
                 "used":        int(used_m.group(1))  if used_m  else None,
                 "requested":   int(req_m.group(1))   if req_m   else None,
