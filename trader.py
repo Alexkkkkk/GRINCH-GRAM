@@ -285,7 +285,8 @@ class Trader:
             if book_grinch > 0 and real_grinch < 1.0:
                 # Кошелёк пустой, а в БД висит открытая позиция —
                 # значит продажа прошла, но запись не была очищена.
-                self.open_trades = []
+                with self._ot_lock:
+                    self.open_trades = []
                 self.log(
                     f"🔧 Сверка баланса: кошелёк пуст ({real_grinch:.6f} GRINCH), "
                     f"но в БД открытая позиция {book_grinch:.2f} — позиция автоматически закрыта",
@@ -1138,6 +1139,8 @@ class Trader:
 
     def force_buy(self, amount_ton=None):
         """Ручная покупка — обходит сигнальную логику, открывает по текущей цене."""
+        if not self.trading_enabled:
+            return {"ok": False, "error": "Торговля выключена вручную"}
         try:
             from price_feed import price_feed
             price = price_feed.get("GRINCH") or 0
@@ -1781,6 +1784,9 @@ class Trader:
             with self._ot_lock:
                 self.open_trades.append(trade)
             self.trades.append(trade)
+            # Обрезаем историю до 500 записей чтобы не копить RAM бесконечно
+            if len(self.trades) > 500:
+                self.trades = self.trades[-500:]
             # total_trades теперь считается только в момент закрытия (там же,
             # где вызывается record_trade) — единая точка учёта, чтобы счётчик
             # никогда не расходился с журналом сделок bot_trades.
@@ -4006,7 +4012,8 @@ class Trader:
                     self.stats["winning_trades"] = self.stats.get("winning_trades", 0) + 1
                 self.stats["total_trades"] = self.stats.get("total_trades", 0) + 1
             # Удаляем лонги из открытых
-            self.open_trades = [t for t in self.open_trades if t.get("side") == "short"]
+            with self._ot_lock:
+                self.open_trades = [t for t in self.open_trades if t.get("side") == "short"]
             self.dca_entries_count = 0
             self.dca_total_stake   = 0.0
         self.log(
@@ -4183,7 +4190,8 @@ class Trader:
         except Exception:
             pass
 
-        self.open_trades = [t for t in self.open_trades if t["id"] != trade["id"]]
+        with self._ot_lock:
+            self.open_trades = [t for t in self.open_trades if t["id"] != trade["id"]]
         for t in self.trades:
             if t["id"] == trade["id"]:
                 t.update(trade)
