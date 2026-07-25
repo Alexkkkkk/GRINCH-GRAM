@@ -4183,6 +4183,17 @@ class Trader:
                         from price_feed import price_feed as _pf2
                         cur_ton = _pf2.get_grinch_ton_price() or 0.0
                         entry_ton = trade.get("entry_price_ton") or 0.0
+                        # Восстанавливаем entry_price_ton из stake/amount для старых позиций
+                        # где поле не было записано — иначе замок пропускался.
+                        if entry_ton <= 0:
+                            _st = float(trade.get("stake_ton", 0) or 0)
+                            _am = float(trade.get("amount", 0) or 0)
+                            if _st > 0 and _am > 0:
+                                entry_ton = _st / _am
+                                self.log(
+                                    f"🔧 entry_price_ton восстановлен: {entry_ton:.8f} TON "
+                                    f"(stake {_st:.3f} / amount {_am:.3f})", "INFO"
+                                )
                         if cur_ton > 0 and entry_ton > 0:
                             min_sell_ton = entry_ton * (1.0 + Config.FEE_ROUND_TRIP / 100.0)
                             if cur_ton < min_sell_ton:
@@ -4193,6 +4204,16 @@ class Trader:
                                     "WARN"
                                 )
                                 return False
+                        elif cur_ton > 0 and entry_ton <= 0:
+                            # entry_price_ton совсем не восстановить — блокируем продажу
+                            # принудительно: лучше подождать, чем продать в минус.
+                            self.log(
+                                f"🛡️ ЖЕЛЕЗНЫЙ ЗАМОК: не удалось восстановить цену входа "
+                                f"(entry_price_ton=0, stake={trade.get('stake_ton')}, "
+                                f"amount={trade.get('amount')}) — продажа отклонена. Держим.",
+                                "WARN"
+                            )
+                            return False
                     except Exception:
                         pass
                 # AMM preflight: стоимость этой конкретной позиции.

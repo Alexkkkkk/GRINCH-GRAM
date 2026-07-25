@@ -416,20 +416,67 @@ class GrinchLiquidator:
             return {"ok": False, "error": str(e)}
 
     def force_sell_now(self) -> dict:
-        """Немедленная продажа (вызывается вручную через кнопку в UI)."""
+        """Немедленная продажа (вызывается вручную через кнопку в UI).
+
+        Уважает ONLY_PROFIT_EXIT: даже ручная продажа не исполняется, если
+        текущая цена ниже безубыточности (опорная × (1 + required_gross_pct%)).
+        Логика идентична _check_and_maybe_sell(), так убыточная продажа
+        абсолютно невозможна ни в авто-, ни в ручном режиме.
+        """
         with self._lock:
             grinch = self._grinch_bal
+            ref    = self._ref_price
 
         if grinch < MIN_GRINCH_TO_SELL:
             # Попробуем получить актуальный баланс
             self._refresh_balance()
             with self._lock:
                 grinch = self._grinch_bal
+                ref    = self._ref_price
 
         if grinch < MIN_GRINCH_TO_SELL:
             return {"ok": False, "error": f"GRINCH баланс {grinch:.4f} < мин. {MIN_GRINCH_TO_SELL}"}
 
         current = price_feed.get("GRINCH") or 0.0
+        if current <= 0:
+            return {"ok": False, "error": "Нет цены GRINCH — продажа отклонена"}
+
+        # ── ONLY_PROFIT_EXIT: проверяем безубыточность перед ручной продажей ──
+        # Используем ту же логику что и авто-режим (_check_and_maybe_sell).
+        if ref is not None and ref > 0:
+            min_break_even = ref * (1 + Config.required_gross_pct() / 100)
+            if current < min_break_even:
+                gap_pct = (min_break_even - current) / current * 100
+                msg = (
+                    f"🔒 ONLY_PROFIT_EXIT: ручная продажа отклонена — "
+                    f"цена ${current:.8f} < безубыток ${min_break_even:.8f} "
+                    f"(нужно ещё +{gap_pct:.2f}%). Держим."
+                )
+                self._log(msg, "WARN")
+                return {"ok": False, "error": msg}
+        else:
+            # Опорная цена неизвестна — берём текущую как ref и требуем рост
+            # хотя бы на required_gross_pct%, чтобы не продать в ноль по комиссиям.
+            self._log(
+                "⚠️ force_sell_now: опорная цена неизвестна — "
+                "устанавливаем текущую как ref, продажа в этот раз отклонена. "
+                "Повторите через тик когда ref будет зафиксирована.",
+                "WARN"
+            )
+            with self._lock:
+                if self._ref_price is None:
+                    self._ref_price = current
+                    self._ref_time  = datetime.utcnow().isoformat()
+            return {
+                "ok": False,
+                "error": (
+                    f"Опорная цена не была зафиксирована. "
+                    f"Установлена: ${current:.8f}. "
+                    f"Продажа возможна при цене ≥ "
+                    f"${current * (1 + Config.required_gross_pct() / 100):.8f}."
+                )
+            }
+
         self._log(f"🔴 РУЧНАЯ продажа {grinch:.4f} GRINCH @ ${current:.8f}")
         # Возвращаем РЕАЛЬНЫЙ результат свопа (ok только при подтверждённом
         # списании GRINCH on-chain), а не безусловный успех.
