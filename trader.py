@@ -2651,6 +2651,14 @@ class Trader:
 
         # ── DCA режим: полностью заменяет AI-логику ─────────────────
         if Config.DCA_MODE:
+            # Обновляем last_ai и last_analysis в DCA-режиме — ОБЯЗАТЕЛЬНО:
+            # без этого смарт-реентри, AI sell block, TPOpt, EntryOpt работают
+            # с пустым last_ai={} и никогда не видят реальных сигналов.
+            # get_real_ohlcv кэшируется 45с → реальный API-запрос раз в 45с, не каждый тик.
+            try:
+                self._run_market_analysis_only()
+            except Exception:
+                pass
             try:
                 self._tick_dca()
             except Exception as e:
