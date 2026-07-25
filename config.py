@@ -495,9 +495,16 @@ try:
     from settings_store import get_section as _get_section
 
     _persisted = _get_section("config")
-    for _key, _val in _persisted.items():
-        # Нормализуем ключ: сначала точное совпадение, потом UPPERCASE-вариант.
-        # Это позволяет применять старые lowercase-ключи из settings.json/DB.
+    # Строим множество UPPERCASE-ключей, которые уже есть в сохранённых настройках.
+    # Если такой ключ присутствует — его lowercase-дубликат пропускается (uppercase побеждает).
+    _upper_keys_present = {k for k in _persisted if k == k.upper()}
+    # Сначала обрабатываем lowercase-ключи (без uppercase-аналога), потом UPPERCASE —
+    # чтобы они гарантированно перезаписали любой случайный lowercase с тем же значением.
+    _sorted_items = sorted(_persisted.items(), key=lambda kv: (kv[0] == kv[0].upper(), kv[0]))
+    for _key, _val in _sorted_items:
+        # Пропускаем lowercase, если UPPERCASE-аналог уже есть в настройках
+        if _key != _key.upper() and _key.upper() in _upper_keys_present:
+            continue
         _canon = _key if hasattr(Config, _key) else _key.upper()
         if not hasattr(Config, _canon):
             continue
