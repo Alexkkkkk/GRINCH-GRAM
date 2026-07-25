@@ -13,6 +13,24 @@ MAX_LOG_LINES=1000
 
 cd "$BOT_DIR"
 
+# ── Алерт переполнения диска (>85% → немедленная очистка кэша) ───────────────
+DISK_PCT=$(df / --output=pcent | tail -1 | tr -d ' %')
+if [ "$DISK_PCT" -ge 85 ]; then
+    echo "[$(TS)] 🚨 ДИСК ${DISK_PCT}% — экстренная очистка build cache!" >> "$LOG"
+    docker builder prune -f >> "$LOG" 2>&1
+    docker image prune -f   >> "$LOG" 2>&1
+    DISK_PCT_AFTER=$(df / --output=pcent | tail -1 | tr -d ' %')
+    echo "[$(TS)] 💾 Диск после очистки: ${DISK_PCT_AFTER}%" >> "$LOG"
+    # Telegram-уведомление об опасном диске
+    TG_T=$(grep TELEGRAM_BOT_TOKEN "$BOT_DIR/.env" 2>/dev/null | cut -d= -f2 | tr -d '"' | tr -d ' ')
+    TG_C=$(grep TELEGRAM_CHAT_ID  "$BOT_DIR/.env" 2>/dev/null | cut -d= -f2 | tr -d '"' | tr -d ' ')
+    if [ -n "$TG_T" ] && [ -n "$TG_C" ]; then
+        curl -sf "https://api.telegram.org/bot$TG_T/sendMessage" \
+             -d "chat_id=$TG_C&text=🚨+VPS+диск+был+${DISK_PCT}%25.+Очищен+кэш+Docker,+стало+${DISK_PCT_AFTER}%25" \
+             > /dev/null 2>&1 || true
+    fi
+fi
+
 # ── Ротация лога (не даём расти бесконечно) ──────────────────────────────────
 if [ -f "$LOG" ] && [ "$(wc -l < "$LOG")" -gt "$MAX_LOG_LINES" ]; then
     tail -n 500 "$LOG" > "$LOG.tmp" && mv "$LOG.tmp" "$LOG"
