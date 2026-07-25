@@ -721,8 +721,10 @@ class Trader:
             # Используем реальные свечи GeckoTerminal (15-мин) вместо fake_ohlcv,
             # которую возвращает get_ohlcv() в DeDust-режиме — иначе ML-модели
             # обучаются на синтетике и выдают ai_conf=0.0 на каждом тике.
-            ohlcv = (self.exchange.get_real_ohlcv(limit=_pretrain_limit, tf="minute", aggregate=15)
-                     or self.exchange.get_real_ohlcv(limit=_pretrain_limit, tf="hour", aggregate=1)
+            ohlcv = (self.exchange.get_real_ohlcv(limit=_pretrain_limit, currency="token",
+                                                  token="base", tf="minute", aggregate=15)
+                     or self.exchange.get_real_ohlcv(limit=_pretrain_limit, currency="token",
+                                                      token="base", tf="hour", aggregate=1)
                      or [])
             self.ai.pretrain(ohlcv, on_progress=self._emit_progress)
         except Exception as e:
@@ -1180,7 +1182,8 @@ class Trader:
     def _get_analysis_snapshot(self):
         """Быстрый снимок анализа без блокировки."""
         try:
-            ohlcv = (self.exchange.get_real_ohlcv(limit=60, tf="minute", aggregate=15) or [])
+            ohlcv = (self.exchange.get_real_ohlcv(limit=60, currency="token",
+                                                  token="base", tf="minute", aggregate=15) or [])
             from strategy import analyze
             return analyze(ohlcv)
         except Exception:
@@ -2485,7 +2488,8 @@ class Trader:
         - тики в bot_ticks имели реальные regime/signal/conf данные
         Все ошибки подавляются — не должен влиять на основной цикл."""
         try:
-            ohlcv = (self.exchange.get_real_ohlcv(limit=100, tf="minute", aggregate=15) or [])
+            ohlcv = (self.exchange.get_real_ohlcv(limit=100, currency="token",
+                                                  token="base", tf="minute", aggregate=15) or [])
             if not ohlcv:
                 return
             result = analyze(ohlcv)
@@ -2581,7 +2585,8 @@ class Trader:
         except Exception as _lse:
             self.log(f"⚠️ Profit/LargeSell check (AI mode): {_lse}", "WARN")
 
-        ohlcv  = (self.exchange.get_real_ohlcv(limit=100, tf="minute", aggregate=15) or [])
+        ohlcv  = (self.exchange.get_real_ohlcv(limit=100, currency="token",
+                                                token="base", tf="minute", aggregate=15) or [])
         # Сохраняем предыдущий MACD_hist ДО обновления last_analysis (нужен BottomDetector)
         self._prev_macd_hist = float((self.last_analysis or {}).get("macd_hist", 0) or 0)
         result = analyze(ohlcv)
@@ -4418,7 +4423,8 @@ class Trader:
     def get_status(self):
         # Используем last_analysis из последнего торгового тика (обновляется каждые 15с).
         # Fallback: считаем напрямую только при первом обращении до первого тика.
-        ohlcv    = (self.exchange.get_real_ohlcv(limit=100, tf="minute", aggregate=15) or [])
+        ohlcv    = (self.exchange.get_real_ohlcv(limit=100, currency="token",
+                                                  token="base", tf="minute", aggregate=15) or [])
         analysis = self.last_analysis if self.last_analysis else analyze(ohlcv)
         # Единый источник «текущей цены» для всего UI: спотовая цена DexScreener
         # (price_feed.get), та же, что использует авто-ликвидатор и карточка монеты.

@@ -275,13 +275,25 @@ class DedustClient:
         """Создаёт LiteBalancer с retry — pytoniq иногда падает с KeyError в listener."""
         last_exc = None
         for attempt in range(3):
+            provider = None
             try:
                 provider = LiteBalancer.from_mainnet_config(trust_level=1, timeout=15)
                 await provider.start_up()
                 return provider
             except Exception as e:
                 last_exc = e
-                log.warning(f"[DeDust] _make_provider попытка {attempt+1}/3 провалилась: {e}")
+                if isinstance(e, KeyError):
+                    log.warning(
+                        f"[DeDust] LiteClient KeyError на попытке {attempt+1}/3 — "
+                        "перезапускаем провайдер"
+                    )
+                else:
+                    log.warning(f"[DeDust] _make_provider попытка {attempt+1}/3 провалилась: {e}")
+                if provider is not None:
+                    try:
+                        await provider.close_all()
+                    except Exception:
+                        pass
                 import asyncio as _aio
                 await _aio.sleep(1)
         raise last_exc
@@ -701,6 +713,7 @@ class DedustClient:
     # Комиссия пула GRINCH/TON на DeDust нестандартная — 1% (CPMM v2).
     _POOL_FEE = 0.01
     _RESERVES_TIMEOUT = 8
+    _RESERVES_CACHE_TTL = 45.0
 
     @staticmethod
     def _same_addr(a: str, b: str) -> bool:
@@ -722,6 +735,12 @@ class DedustClient:
 
         Возвращает (ton_reserve, grinch_reserve) в обычных единицах или None.
         """
+        now = time.time()
+        cached = getattr(self, "_pool_reserves_cache", None)
+        cached_ts = getattr(self, "_pool_reserves_cache_ts", 0.0)
+        if cached and (now - cached_ts) < self._RESERVES_CACHE_TTL:
+            return cached
+
         pool = Config.GRINCH_POOL_ADDRESS
         try:
             r1 = _HTTP.get(
@@ -747,10 +766,15 @@ class DedustClient:
                     grinch_reserve = float(b.get("balance", 0)) / TON
                     break
             if ton_reserve > 0 and grinch_reserve and grinch_reserve > 0:
-                return ton_reserve, grinch_reserve
+                reserves = (ton_reserve, grinch_reserve)
+                self._pool_reserves_cache = reserves
+                self._pool_reserves_cache_ts = now
+                return reserves
         except Exception as e:  # noqa: BLE001
             log.warning(f"Не удалось прочитать резервы пула: {e}")
-        return None
+        # Ошибка/429 не затирает последний удачный курс: краткий fallback
+        # позволяет дождаться восстановления TonAPI без повторного шторма.
+        return cached
 
     def _cpmm_out(self, amount_in: float, reserve_in: float, reserve_out: float) -> float:
         """Точный выход свопа по формуле постоянного произведения (с комиссией 1%)."""
