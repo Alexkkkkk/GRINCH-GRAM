@@ -84,3 +84,18 @@ fi
 
 echo "[$(TS)] 🏁 Деплой завершён" >> "$LOG"
 echo "═══════════════════════════════════════════════" >> "$LOG"
+
+# ── Еженедельная очистка Docker (воскресенье, 03:00–04:59) ───────────────────
+DOW=$(date '+%u')   # 1=Пн … 7=Вс
+HOUR=$(date '+%H')
+if [ "$DOW" = "7" ] && [ "$HOUR" -ge 3 ] && [ "$HOUR" -lt 5 ]; then
+    PRUNE_FLAG="$BOT_DIR/.last_docker_prune"
+    TODAY=$(date '+%Y-%m-%d')
+    if [ "$(cat "$PRUNE_FLAG" 2>/dev/null)" != "$TODAY" ]; then
+        echo "[$(TS)] 🧹 Еженедельная очистка Docker build cache..." >> "$LOG"
+        docker builder prune -f  >> "$LOG" 2>&1
+        docker image prune -f    >> "$LOG" 2>&1
+        echo "$TODAY" > "$PRUNE_FLAG"
+        echo "[$(TS)] ✅ Очистка завершена" >> "$LOG"
+    fi
+fi
