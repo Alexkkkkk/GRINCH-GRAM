@@ -2125,7 +2125,12 @@ class AIEngine:
                 tmp.fit(X_tr, y_tr)   # без sample_weight — нам нужна честная точность
                 acc = float(np.mean(tmp.predict(X_te) == y_te))
                 new_accs[slot.name] = acc
-                wf_weight = max(0.15, acc ** 2)
+                # Если точность хуже случайного (< 48%) — эффективно отключаем модель
+                if acc < 0.48:
+                    wf_weight = 0.01
+                    log.debug(f"[AI WF] {slot.name} acc={acc:.0%} < 48% — отключён")
+                else:
+                    wf_weight = max(0.15, acc ** 2)
                 slot.weight = 0.60 * slot.weight + 0.40 * wf_weight
             except Exception as e:
                 log.debug(f"[AI WF] {slot.name}: {e}")
@@ -2260,6 +2265,8 @@ class AIEngine:
         _slot_up_vals = []   # для вычисления disagreement в _analyze_locked
         for slot in self._slots:
             try:
+                if slot.weight < 0.05:   # отключён walk-forward (acc < 48%) — пропускаем
+                    continue
                 proba   = slot.predict_proba(X)[0]   # shape=(n_classes,)
                 aligned = self._align_proba(proba, slot.classes_)
                 proba_sum += aligned * slot.weight

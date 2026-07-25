@@ -1237,9 +1237,17 @@ def _apply_recommendations(recs: list) -> list[str]:
 
         # ── Config параметры ──────────────────────────────────────────
         if param == "take_profit_pct":
+            # Демпфирование: макс ±15% от текущего за один прогон советника
+            _cur_tp2 = float(getattr(Config, "TAKE_PROFIT_PCT", val))
+            _d_tp2   = _cur_tp2 * 0.15
+            val      = round(max(_cur_tp2 - _d_tp2, min(_cur_tp2 + _d_tp2, val)), 1)
             Config.TAKE_PROFIT_PCT = val
             config_upd["take_profit_pct"] = str(val)
         elif param == "dca_target_profit_pct":
+            # Демпфирование: макс ±15% от текущего за один прогон
+            _cur_tp = float(getattr(Config, "DCA_TARGET_PROFIT_PCT", val))
+            _d_tp   = _cur_tp * 0.15
+            val     = round(max(_cur_tp - _d_tp, min(_cur_tp + _d_tp, val)), 1)
             Config.DCA_TARGET_PROFIT_PCT = val
             config_upd["dca_target_profit_pct"] = str(val)
         elif param == "dca_drop_trigger_pct":
@@ -1252,6 +1260,9 @@ def _apply_recommendations(recs: list) -> list[str]:
             Config.PROFIT_PROTECT_DROP_PCT = val
             config_upd["profit_protect_drop_pct"] = str(val)
         elif param == "min_ai_confidence":
+            # Демпфирование: макс ±5 пунктов за прогон (уверенность — чувствительный параметр)
+            _cur_mc = float(getattr(Config, "MIN_AI_CONFIDENCE", val))
+            val     = round(max(_cur_mc - 5.0, min(_cur_mc + 5.0, val)), 1)
             Config.MIN_AI_CONFIDENCE = val
             config_upd["min_ai_confidence"] = str(val)
         elif param == "trailing_stop_pct":
@@ -1276,6 +1287,10 @@ def _apply_recommendations(recs: list) -> list[str]:
             Config.AI_SIZE_MULT = val
             config_upd["ai_size_mult"] = str(val)
         elif param == "dca_stake_ton":
+            # Демпфирование: макс ±20% от текущего за один прогон советника
+            _cur_s = float(getattr(Config, "DCA_STAKE_TON", val))
+            _d_s   = _cur_s * 0.20
+            val    = round(max(_cur_s - _d_s, min(_cur_s + _d_s, val)), 1)
             Config.DCA_STAKE_TON = val
             config_upd["dca_stake_ton"] = str(val)
         elif param == "trade_amount":

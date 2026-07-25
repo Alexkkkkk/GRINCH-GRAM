@@ -2394,6 +2394,7 @@ class Trader:
             import liquidity_guard as _lg
 
             ai      = self.last_ai or {}
+            _ta     = self.last_analysis or {}          # TA: rsi/macd/bb/stoch_rsi
             regime  = ai.get("regime") or {}
             bo      = ai.get("breakout") or {}
             mom     = ai.get("momentum") or {}
@@ -2443,13 +2444,13 @@ class Trader:
             _ab.push_tick({
                 "price_usd":      price_usd,
                 "price_ton":      price_ton,
-                "rsi":            float(ai.get("rsi") or last_dec.get("rsi") or 50),
+                "rsi":            float(ai.get("rsi") or _ta.get("rsi") or last_dec.get("rsi") or 50),
                 "adx":            float(regime.get("adx") or 0),
                 "atr_pct":        float(regime.get("atr_pct") or 0),
-                "bb_pct":         float(ai.get("bb_pct") or 0),
-                "vol_ratio":      float(ai.get("vol_ratio") or 1.0),
-                "macd_hist":      float(ai.get("macd_hist") or 0),
-                "stoch_rsi":      float(ai.get("stoch_rsi") or 0.5),
+                "bb_pct":         float(ai.get("bb_pct") or _ta.get("bb_pct") or 0),
+                "vol_ratio":      float(ai.get("vol_ratio") or _ta.get("vol_ratio") or 1.0),
+                "macd_hist":      float(ai.get("macd_hist") or _ta.get("macd_hist") or 0),
+                "stoch_rsi":      float(ai.get("stoch_rsi") or _ta.get("stoch_rsi") or 0.5),
                 "regime":         regime.get("name") or last_dec.get("regime") or "?",
                 "ai_signal":      ai.get("ai_signal") or last_dec.get("ai_sig") or "HOLD",
                 "ai_conf":        float(ai.get("confidence") or last_dec.get("conf") or 0),
