@@ -1593,16 +1593,38 @@ class AIEngine:
     # Обратная связь от трейдера (вызывается когда сделка закрывается)
     # ─────────────────────────────────────────────────────────────────────────
 
-    def feedback(self, outcome: str, pnl: float, regime: str = "UNKNOWN", conf: float = 0.0):
+    def feedback(
+        self,
+        outcome: str,
+        pnl: float,
+        regime: str = "UNKNOWN",
+        conf: float = 0.0,
+        features=None,
+    ):
         """
         outcome: "win" | "loss"
         pnl:     P&L в TON (может быть отрицательным)
         regime:  рыночный режим при входе (UPTREND / DOWNTREND / ...)
         conf:    уверенность AI при входе (%)
+        features: необязательный снимок признаков именно этой сделки.
+            Нужен для DCA, где несколько входов закрываются одной операцией.
         """
-        if self._last_buy_features is None:
-            return
         with self._lock:
+            # DCA-позиции могут быть объединены в одну и закрыты одним
+            # sell-all. В таком случае общий _last_buy_features уже не
+            # позволяет однозначно связать результат с каждым входом.
+            context_features = (
+                np.asarray(features, dtype=float).copy()
+                if features is not None
+                else (
+                    self._last_buy_features.copy()
+                    if self._last_buy_features is not None
+                    else None
+                )
+            )
+            if context_features is None:
+                return
+
             label   = 1 if outcome == "win" else -1
             is_win  = (outcome == "win")
 
@@ -1617,7 +1639,7 @@ class AIEngine:
 
             weight = CONFIRM_WEIGHT * (1.0 + pnl_norm * 1.5) * conf_factor
 
-            self._confirmed_X.append(self._last_buy_features.copy())
+            self._confirmed_X.append(context_features)
             self._confirmed_y.append(label)
             self._confirmed_w.append(weight)
             # Полная история — НАВСЕГДА, в БД (не урезается). Оперативный буфер
@@ -1625,7 +1647,7 @@ class AIEngine:
             # раз в 2 дня _deep_retrain() подтягивает всю историю из БД обратно.
             try:
                 import db_store
-                db_store.ai_example_insert(self._last_buy_features.tolist(), label, weight)
+                db_store.ai_example_insert(context_features.tolist(), label, weight)
             except Exception as e:
                 log.debug(f"[AI] ai_example_insert error: {e}")
             # LOW_MEMORY_MODE: без кепа этот буфер растёт вечно (годы работы
@@ -1636,7 +1658,10 @@ class AIEngine:
                 del self._confirmed_X[:excess]
                 del self._confirmed_y[:excess]
                 del self._confirmed_w[:excess]
-            self._last_buy_features = None
+            # При явном features контекст принадлежит вызывающей DCA-сделке,
+            # поэтому не очищаем общий pending-контекст другой сделки.
+            if features is None:
+                self._last_buy_features = None
             self._new_confirms += 1
 
             # Kelly history

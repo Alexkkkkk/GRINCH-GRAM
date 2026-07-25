@@ -939,6 +939,22 @@ class Trader:
         merged["trail_pct"]       = Config.TRAILING_STOP_PCT
         merged["opened_at"]       = min((t.get("opened_at") or "") for t in long_trades) or newest["opened_at"]
         merged["ai_confidence"]   = max(t.get("ai_confidence", 0) for t in long_trades)
+        # Сохраняем контекст каждого DCA-входа. После объединения одна
+        # виртуальная позиция закрывается одним sell-all, но AI должен
+        # получить отдельный результат по каждому реальному входу.
+        _entry_contexts = []
+        for _t in long_trades:
+            _contexts = _t.get("entry_ai_contexts")
+            if _contexts:
+                _entry_contexts.extend(_contexts)
+            elif _t.get("entry_ai_features"):
+                _entry_contexts.append({
+                    "features": _t["entry_ai_features"],
+                    "regime": _t.get("entry_regime") or "DCA",
+                    "confidence": float(_t.get("ai_confidence", 0) or 0),
+                })
+        if _entry_contexts:
+            merged["entry_ai_contexts"] = _entry_contexts
         merged["merged"]          = True
         merged["merged_count"]    = len(long_trades)
 
@@ -1749,6 +1765,33 @@ class Trader:
 
             _ai_now  = self.last_ai or {}
             _ta_now  = self.last_analysis or {}
+            # Захватываем признаки до добавления позиции и до возможного
+            # объединения DCA-позиций. Каждый вход получает свой immutable
+            # снимок, даже если AI-сигналом был HOLD.
+            _entry_ai_features = None
+            try:
+                _ohlcv_ctx = self.exchange.get_real_ohlcv(
+                    limit=100, currency="token", token="base",
+                    tf="minute", aggregate=15
+                )
+                if _ohlcv_ctx and self.ai.capture_buy_context(_ohlcv_ctx):
+                    with self.ai._lock:
+                        if self.ai._last_buy_features is not None:
+                            _entry_ai_features = [
+                                float(v) for v in self.ai._last_buy_features
+                            ]
+                            # Контекст уже скопирован в trade и больше не
+                            # должен случайно попасть в следующую обычную
+                            # AI-сделку через общий pending-слот.
+                            self.ai._last_buy_features = None
+            except Exception:
+                pass
+            _entry_ai_context = {
+                "features": _entry_ai_features,
+                "regime": ((_ai_now.get("regime") or {}).get("name") or "DCA"),
+                "confidence": float(_ai_now.get("confidence", 0) or 0),
+                "stake_ton": float(stake_ton),
+            } if _entry_ai_features else None
             trade = {
                 "id":              order["id"],
                 "symbol":          Config.SYMBOL,
@@ -1783,6 +1826,9 @@ class Trader:
                 "entry_bo_score":  0.0,
                 "entry_mom_signal": str(_ai_now.get("momentum", "CALM") or "CALM"),
             }
+            if _entry_ai_context:
+                trade["entry_ai_features"] = _entry_ai_features
+                trade["entry_ai_contexts"] = [_entry_ai_context]
             # M2-fix: _ot_lock при append чтобы другие потоки не видели
             # частично обновлённый список
             with self._ot_lock:
@@ -1813,19 +1859,6 @@ class Trader:
                 pass
 
             self._emit_signal("BUY", price_usd, self.last_ai)
-
-            # Захватываем признаки текущей свечи для петли самообучения AI.
-            # Без этого feedback() после закрытия DCA-позиции ничего не делал
-            # (self.ai._last_buy_features был None если сигнал был HOLD, не BUY).
-            try:
-                _ohlcv_ctx = self.exchange.get_real_ohlcv(
-                    limit=100, currency="token", token="base",
-                    tf="minute", aggregate=15
-                )
-                if _ohlcv_ctx:
-                    self.ai.capture_buy_context(_ohlcv_ctx)
-            except Exception:
-                pass
 
             self.log(
                 f"✅ DCA вход #{self.dca_entries_count}: "
@@ -2160,11 +2193,42 @@ class Trader:
                 self.log(f"⚠️ _record_trade_pnl (dca sell-all): {_rp_e}", "WARN")
             # AI feedback
             try:
-                ai_snap  = self.last_ai or {}
-                reg_name = (ai_snap.get("regime") or {}).get("name", "UNKNOWN")
-                ai_conf  = float(ai_snap.get("confidence", 0) or 0)
-                self.ai.feedback(outcome=trade["outcome"], pnl=float(pnl_ton),
-                                 regime=reg_name, conf=ai_conf)
+                _contexts = trade.get("entry_ai_contexts") or []
+                _valid_contexts = [
+                    _ctx for _ctx in _contexts
+                    if isinstance(_ctx, dict) and _ctx.get("features")
+                ]
+                if _valid_contexts:
+                    _context_stake = sum(
+                        max(float(_ctx.get("stake_ton", 0) or 0), 0.0)
+                        for _ctx in _valid_contexts
+                    )
+                    for _ctx in _valid_contexts:
+                        _stake_share = (
+                            max(float(_ctx.get("stake_ton", 0) or 0), 0.0)
+                            / _context_stake
+                            if _context_stake > 0
+                            else 1.0 / len(_valid_contexts)
+                        )
+                        self.ai.feedback(
+                            outcome=trade["outcome"],
+                            pnl=float(pnl_ton) * _stake_share,
+                            regime=str(_ctx.get("regime") or "DCA"),
+                            conf=float(_ctx.get("confidence", 0) or 0),
+                            features=_ctx["features"],
+                        )
+                else:
+                    # Совместимость со старыми открытыми позициями без
+                    # сохранённого контекста.
+                    ai_snap  = self.last_ai or {}
+                    reg_name = (ai_snap.get("regime") or {}).get("name", "UNKNOWN")
+                    ai_conf  = float(ai_snap.get("confidence", 0) or 0)
+                    self.ai.feedback(
+                        outcome=trade["outcome"],
+                        pnl=float(pnl_ton),
+                        regime=reg_name,
+                        conf=ai_conf,
+                    )
             except Exception as e:
                 self.log(f"⚠️ AI feedback (DCA sell-all): {e}", "WARN")
             # Сохраняем в историю
