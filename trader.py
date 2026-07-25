@@ -1747,6 +1747,8 @@ class Trader:
             sl = 0.0
             tp = price_usd * 100  # практически бесконечный TP (выход только через _dca_sell_all)
 
+            _ai_now  = self.last_ai or {}
+            _ta_now  = self.last_analysis or {}
             trade = {
                 "id":              order["id"],
                 "symbol":          Config.SYMBOL,
@@ -1762,22 +1764,24 @@ class Trader:
                 "opened_at":       datetime.utcnow().isoformat(),
                 "pnl":             0.0,
                 "status":          "open",
-                "ai_confidence":   0.0,
+                # AI-контекст на момент входа (раньше был захардкожен нулями —
+                # из-за этого feedback() не получал данные и AI не самообучался)
+                "ai_confidence":   float(_ai_now.get("confidence", 0) or 0),
                 "dca_entry":       True,
                 "dca_index":       self.dca_entries_count + 1,
                 "breakeven_price": price_usd,
                 "min_gross_pct":   Config.required_gross_pct_with_gas(stake_ton),
-                "entry_regime":    "DCA",
-                "entry_rsi":       0.0,
-                "entry_atr_pct":   0.0,
+                "entry_regime":    ((_ai_now.get("regime") or {}).get("name") or "DCA"),
+                "entry_rsi":       float(_ta_now.get("rsi", 0) or 0),
+                "entry_atr_pct":   float((_ai_now.get("regime") or {}).get("atr_pct", 0) or 0),
                 "entry_anomaly":   False,
-                "entry_sm_score":  0.0,
+                "entry_sm_score":  float(_ai_now.get("sm_score", 0) or 0),
                 "entry_sm_label":  "",
                 "entry_sm_buys_1h": 0,
                 "entry_sm_sells_1h": 0,
                 "entry_bo_signal": "FLAT",
                 "entry_bo_score":  0.0,
-                "entry_mom_signal": "CALM",
+                "entry_mom_signal": str(_ai_now.get("momentum", "CALM") or "CALM"),
             }
             # M2-fix: _ot_lock при append чтобы другие потоки не видели
             # частично обновлённый список
@@ -1809,6 +1813,19 @@ class Trader:
                 pass
 
             self._emit_signal("BUY", price_usd, self.last_ai)
+
+            # Захватываем признаки текущей свечи для петли самообучения AI.
+            # Без этого feedback() после закрытия DCA-позиции ничего не делал
+            # (self.ai._last_buy_features был None если сигнал был HOLD, не BUY).
+            try:
+                _ohlcv_ctx = self.exchange.get_real_ohlcv(
+                    limit=100, currency="token", token="base",
+                    tf="minute", aggregate=15
+                )
+                if _ohlcv_ctx:
+                    self.ai.capture_buy_context(_ohlcv_ctx)
+            except Exception:
+                pass
 
             self.log(
                 f"✅ DCA вход #{self.dca_entries_count}: "

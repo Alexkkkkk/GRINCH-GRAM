@@ -177,7 +177,7 @@ LOOK_AHEADS       = [3, 5, 8, 13]      # мульти-горизонт для 15
 ATR_LABEL_MULT    = 0.7                 # порог = 0.7 × ATR_pct (качественнее, меньше шума)
 CONFIRM_WEIGHT    = 8.0                # вес реальной сделки ×8 — баланс между опытом и историей (15→8: меньше оверфиттинга на малых выборках)
 REPLAY_SIZE       = 200 if LOW_MEMORY_MODE else 800   # ещё меньше на маломощных хостах (Bothost)
-CONFIRMED_CAP     = 250 if LOW_MEMORY_MODE else None   # кап на буфер подтверждённых сделок (иначе растёт вечно)
+CONFIRMED_CAP     = 250 if LOW_MEMORY_MODE else 2000   # кап на буфер в RAM; полная история хранится в БД (ai_examples)
 ACCURACY_WINDOW   = 100                # длиннее окно = стабильнее веса моделей
 META_MIN_SAMPLES  = 8                  # мета-слой активируется раньше (с 8 сделок)
 RETRAIN_EVERY     = 8 if LOW_MEMORY_MODE else 4        # реже переобучение → реже пиковая нагрузка на RAM
@@ -1064,7 +1064,7 @@ class AIEngine:
 
         emit("validate", 91, "🔎 Валидация ансамбля на последних данных...")
         try:
-            last     = X[[-1]]
+            last     = df[self._feature_names].iloc[[-1]].values   # реальная последняя свеча, не X[[-1]] (обрезан на 13 баров)
             ensemble = self._ensemble_proba(last)
             classes_list = [-1, 0, 1]
             best_idx = int(np.argmax(ensemble))
@@ -1341,7 +1341,7 @@ class AIEngine:
         max_prob = max(prob_up, prob_down, prob_hold)
         if max_prob == prob_up and prob_up >= BUY_THRESHOLD:
             ai_signal = "BUY"
-            self._last_buy_features = X[-1].copy()
+            self._last_buy_features = df[self._feature_names].iloc[-1].values.copy()
         elif max_prob == prob_down and prob_down >= SELL_THRESHOLD:
             ai_signal = "SELL"
         else:
@@ -1537,7 +1537,7 @@ class AIEngine:
                 f">= порог {_eff_buy_thr*100:.0f}% (режим={regime_name})"
             )
             ai_signal = "BUY"
-            self._last_buy_features = X[-1].copy()
+            self._last_buy_features = df[self._feature_names].iloc[-1].values.copy()
 
         # ── v4.4: Decay уверенности при устаревшей модели ────────────────
         # Модель, не обновлявшаяся > 2 часов в изменившемся рынке, ненадёжна.
@@ -1693,6 +1693,24 @@ class AIEngine:
             f"→ {len(self._confirmed_X)} подтверждённых примеров "
             f"(вес={weight:.1f})"
         )
+
+    def capture_buy_context(self, ohlcv: list) -> bool:
+        """Принудительно захватывает признаки текущей последней свечи как
+        контекст входа в позицию. Вызывается при DCA-покупке, чтобы
+        feedback() сработал даже если AI-сигнал был HOLD (не BUY).
+        Возвращает True если захват удался."""
+        try:
+            with self._lock:
+                if not self._feature_names:
+                    return False
+                df = self._build_features(ohlcv)
+                if df is None or len(df) < 40:
+                    return False
+                self._last_buy_features = df[self._feature_names].iloc[-1].values.copy()
+                return True
+        except Exception as e:
+            log.debug(f"[AI] capture_buy_context error: {e}")
+            return False
 
     # ─────────────────────────────────────────────────────────────────────────
     # Персистентность опыта (переживает перезапуск)
