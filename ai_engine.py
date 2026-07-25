@@ -2075,7 +2075,9 @@ class AIEngine:
         }
         for name, mask in masks.items():
             X_s, y_s, w_s = X_arr[mask], y_arr[mask], w_arr[mask]
-            if len(X_s) < 20 or len(np.unique(y_s)) < 2:
+            # Порог снижен 20→10: GRINCH часто в RANGING, тренд-специалист
+            # не мог обучиться при нехватке UPTREND/SQUEEZE свечей (trend=— всегда)
+            if len(X_s) < 10 or len(np.unique(y_s)) < 2:
                 continue
             try:
                 from sklearn.ensemble import RandomForestClassifier

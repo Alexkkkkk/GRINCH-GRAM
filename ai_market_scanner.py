@@ -283,7 +283,8 @@ def _scan_once(sm_score: float = 0.0):
 
     with _lock:
         # _last_scan_ts обновляем под локом — get_status() читает его
-        globals()["_last_scan_ts"] = time.time()
+        # globals() убран: global _last_signal, _last_scan_ts уже объявлен выше
+        _last_scan_ts = time.time()
 
     if best and best["confidence"] >= PATTERN_CONF_THRESH:
         signal = {
@@ -295,14 +296,13 @@ def _scan_once(sm_score: float = 0.0):
             "detected_at": time.time(),
         }
         with _lock:
-            globals()["_last_signal"] = signal
+            _last_signal = signal
         log.info(f"[Scanner] ✨ {best['label']} conf={best['confidence']:.0%} — {best.get('note','')}")
     else:
         # Сбрасываем устаревший сигнал под тем же локом
         with _lock:
-            sig = globals().get("_last_signal")
-            if sig and time.time() - sig.get("detected_at", 0) > SIGNAL_TTL_SEC:
-                globals()["_last_signal"] = None
+            if _last_signal and time.time() - _last_signal.get("detected_at", 0) > SIGNAL_TTL_SEC:
+                _last_signal = None
 
 
 def _worker():

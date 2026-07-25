@@ -166,6 +166,12 @@ class BrainFusion:
         self._scalp_streak:  int = 0
         self._scalp_profit:  float = 0.0  # накопленная прибыль скальп-серии (TON)
 
+        # ── Снимок сигналов на момент ВХОДА в позицию ───────────────────────
+        # on_trade_closed() должен оценивать точность источников по сигналам
+        # на момент ОТКРЫТИЯ, а не закрытия сделки (на закрытии всё HOLD).
+        # Обновляется в log_decision() при каждом открытии.
+        self._entry_snapshot: dict = {}   # {"ai_sig": ..., "ta_sig": ..., "adv_sig": ...}
+
         # Восстанавливаем самообучение (fusion_wins/total, скальп-серия, журнал
         # решений) из БД — раньше эта статистика полностью терялась при каждом
         # рестарте процесса и "мозг" каждый раз заново набирал точность с нуля.
@@ -626,9 +632,13 @@ class BrainFusion:
 
             # ── Динамические веса: записываем точность каждого источника ────────
             # Правило: BUY + прибыль = верно; SELL/HOLD + убыток тоже = верно.
-            ai_sig  = self._ai.signal
-            ta_sig  = self._ta.signal
-            adv_sig = self._advisor.verdict
+            # ВАЖНО: используем сигналы на момент ВХОДА (entry_snapshot), а не
+            # текущие — на закрытии рынок почти всегда показывает HOLD, из-за
+            # чего ta_total и adv_total никогда не обновляются без этого фикса.
+            snap    = self._entry_snapshot
+            ai_sig  = snap.get("ai_sig",  self._ai.signal)
+            ta_sig  = snap.get("ta_sig",  self._ta.signal)
+            adv_sig = snap.get("adv_sig", self._advisor.verdict)
 
             # Скользящее окно точности: при total > 100 применяем коэффициент затухания,
             # чтобы старые результаты не доминировали вечно.
@@ -680,8 +690,15 @@ class BrainFusion:
             self._save_state()
 
     def log_decision(self, decision: dict):
-        """Сохраняет решение в кольцевой буфер."""
+        """Сохраняет решение в кольцевой буфер.
+        Попутно фиксирует снимок сигналов на момент входа (для on_trade_closed)."""
         with self._lock:
+            # ── Фиксируем сигналы ВХОДА — on_trade_closed использует именно их ─
+            self._entry_snapshot = {
+                "ai_sig":  self._ai.signal,
+                "ta_sig":  self._ta.signal,
+                "adv_sig": self._advisor.verdict,
+            }
             self._decision_log.append({**decision, "t": time.time()})
             if len(self._decision_log) > 50:
                 self._decision_log.pop(0)

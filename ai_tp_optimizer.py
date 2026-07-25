@@ -108,7 +108,8 @@ def record_trade_result(features: list, actual_peak_pct: float):
     достигнут в сделке (от цены входа до high_water_mark).
     """
     global _samples
-    if actual_peak_pct <= 0:
+    import math
+    if actual_peak_pct <= 0 or math.isnan(actual_peak_pct) or math.isinf(actual_peak_pct):
         return
     with _lock:
         _samples.append((features, min(actual_peak_pct, TP_MAX_PCT)))
