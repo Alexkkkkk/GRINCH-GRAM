@@ -425,11 +425,9 @@ class Config:
     # Factory.get_pool возвращает канонический адрес дефолтной комиссии, который
     # on-chain НЕ существует — поэтому свопы нужно слать прямо в этот пул.
     GRINCH_POOL_ADDRESS = os.getenv("GRINCH_POOL_ADDRESS", "EQDpVwTQr53cwgaT_VCFsmrleg5fBvStTjMrvyvprF_ROC9Z")
-    # Мнемоника TON-кошелька (24 слова через пробел) — хранить только в секретах!
-    TON_MNEMONIC = os.getenv("TON_MNEMONIC", "")
-    # API-ключ TonCenter (опционально) — снимает rate-limit 429 на бесплатном плане.
-    # Получить: https://toncenter.com/  (бесплатный tier даёт 10 rps вместо 1 rps)
-    TONCENTER_API_KEY = os.getenv("TONCENTER_API_KEY", "")
+    # ⚠️ TON_MNEMONIC и TONCENTER_API_KEY намеренно НЕ хранятся как атрибуты Config,
+    # чтобы не утекать при print(vars(Config)) / логировании / debug-выводе.
+    # Читайте их напрямую через os.getenv("TON_MNEMONIC") / os.getenv("TONCENTER_API_KEY").
 
     # ── Сигнал «умных денег» (мониторинг кошельков пула) ──────────────────
     # Бот наблюдает за всеми кошельками в пуле GRINCH и учится у прибыльных.
@@ -498,8 +496,12 @@ try:
 
     _persisted = _get_section("config")
     for _key, _val in _persisted.items():
-        if not hasattr(Config, _key):
+        # Нормализуем ключ: сначала точное совпадение, потом UPPERCASE-вариант.
+        # Это позволяет применять старые lowercase-ключи из settings.json/DB.
+        _canon = _key if hasattr(Config, _key) else _key.upper()
+        if not hasattr(Config, _canon):
             continue
+        _key = _canon  # работаем с каноническим именем
         # Приводим к типу дефолта, чтобы повреждённый settings.json не сломал логику
         _default = getattr(Config, _key)
         try:

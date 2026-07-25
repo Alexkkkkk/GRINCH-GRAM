@@ -22,7 +22,7 @@ from price_feed import price_feed
 
 def _tc_headers() -> dict:
     """Возвращает заголовки для TonCenter API (X-API-Key, если задан)."""
-    key = Config.TONCENTER_API_KEY
+    key = os.getenv("TONCENTER_API_KEY", "")
     return {"X-API-Key": key} if key else {}
 
 log = logging.getLogger(__name__)
@@ -206,7 +206,7 @@ class DedustClient:
         self._error: Optional[str] = None
         self._last_price: Optional[float] = None
 
-        mnemonic_raw = mnemonic_override or Config.TON_MNEMONIC
+        mnemonic_raw = mnemonic_override or os.getenv("TON_MNEMONIC", "")
         if not mnemonic_raw:
             self._error = "TON_MNEMONIC не задан — DeDust-режим недоступен"
             log.warning(self._error)

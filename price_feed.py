@@ -1,3 +1,4 @@
+import os
 import time
 import threading
 import requests
@@ -7,7 +8,7 @@ from config import Config
 
 def _tc_headers() -> dict:
     """Заголовки для TonCenter API (X-API-Key, если задан в TONCENTER_API_KEY)."""
-    key = Config.TONCENTER_API_KEY
+    key = os.getenv("TONCENTER_API_KEY", "")
     return {"X-API-Key": key} if key else {}
 
 # Соответствие тикера → ID в CoinGecko (бесплатный API без ключа)
