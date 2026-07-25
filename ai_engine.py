@@ -82,15 +82,15 @@ else:
     except Exception:
         _HAS_LGB = False
 
-    # v4.6: 7-я модель ансамбля. CatBoost — современный градиентный бустинг
-    # с встроенной обработкой категориальных фич и ordered boosting (меньше
-    # переобучения на малых выборках, чем у XGB/LGB). Требует libgomp (есть
-    # на проде — Debian; на NixOS-деве может отсутствовать, поэтому опционален).
+    # v4.6: CatBoost — ОТКЛЮЧЁН (audit 25.07.2026: walk-forward acc=40%, хуже
+    # случайного; weight=0.16 при общем ансамбле ~0.38 — портит голосование).
+    # Включить обратно: убрать строку _HAS_CATBOOST = False ниже.
     try:
         from catboost import CatBoostClassifier
         _HAS_CATBOOST = True
     except Exception:
         _HAS_CATBOOST = False
+    _HAS_CATBOOST = False   # audit 25.07.2026: acc=40% < 50% → disabled
 
 log = logging.getLogger(__name__)
 

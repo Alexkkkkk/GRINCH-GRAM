@@ -1786,12 +1786,14 @@ class Trader:
                             self.ai._last_buy_features = None
             except Exception:
                 pass
+            # Контекст строится всегда — даже без features, чтобы regime и
+            # confidence попадали в AI feedback() при закрытии позиции.
             _entry_ai_context = {
-                "features": _entry_ai_features,
+                "features": _entry_ai_features,   # None если захват не удался
                 "regime": ((_ai_now.get("regime") or {}).get("name") or "DCA"),
                 "confidence": float(_ai_now.get("confidence", 0) or 0),
                 "stake_ton": float(stake_ton),
-            } if _entry_ai_features else None
+            }
             trade = {
                 "id":              order["id"],
                 "symbol":          Config.SYMBOL,
@@ -1809,6 +1811,7 @@ class Trader:
                 "status":          "open",
                 # AI-контекст на момент входа (раньше был захардкожен нулями —
                 # из-за этого feedback() не получал данные и AI не самообучался)
+                "ai_signal":       str(_ai_now.get("ai_signal", "HOLD") or "HOLD"),
                 "ai_confidence":   float(_ai_now.get("confidence", 0) or 0),
                 "dca_entry":       True,
                 "dca_index":       self.dca_entries_count + 1,
@@ -1826,9 +1829,9 @@ class Trader:
                 "entry_bo_score":  0.0,
                 "entry_mom_signal": str(_ai_now.get("momentum", "CALM") or "CALM"),
             }
-            if _entry_ai_context:
+            trade["entry_ai_contexts"] = [_entry_ai_context]
+            if _entry_ai_features:
                 trade["entry_ai_features"] = _entry_ai_features
-                trade["entry_ai_contexts"] = [_entry_ai_context]
             # M2-fix: _ot_lock при append чтобы другие потоки не видели
             # частично обновлённый список
             with self._ot_lock:
