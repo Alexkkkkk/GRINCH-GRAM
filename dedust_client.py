@@ -588,6 +588,13 @@ class DedustClient:
             except Exception as e:
                 log.debug(f"[DeDust] settlement poll error: {e}")
                 continue
+            # Защита от ложного "своп подтверждён": если все три провайдера вернули 0,
+            # но baseline > 0 — это API-сбой, а не реальное нулевание баланса.
+            # Без этой проверки direction="decrease" давал True при любом API-отказе,
+            # заставляя бот считать продажу исполненной когда она отскочила.
+            if cur == 0 and baseline_nano > min_delta_nano:
+                log.debug("[DeDust] settlement: cur=0 при baseline>0 — API-сбой, пропускаем итерацию")
+                continue
             if direction == "increase" and (cur - baseline_nano) >= min_delta_nano:
                 return cur
             if direction == "decrease" and (baseline_nano - cur) >= min_delta_nano:

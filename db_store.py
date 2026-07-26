@@ -471,10 +471,14 @@ def trades_upsert(trade: dict):
                     ON CONFLICT (id) DO UPDATE
                       SET data = EXCLUDED.data, closed_at = EXCLUDED.closed_at
                 """, (trade_id, _jdumps(trade, ensure_ascii=False), closed_at))
-                # Авто-очистка: оставляем только последние TRADES_KEEP сделок
+                # Авто-очистка: оставляем только последние TRADES_KEEP сделок.
+                # Вторичная сортировка по id — стабильный тай-брейкер при одинаковом
+                # closed_at (batch-закрытие нескольких позиций за один тик).
                 cur.execute("""
                     DELETE FROM bot_trades WHERE id NOT IN (
-                        SELECT id FROM bot_trades ORDER BY closed_at DESC NULLS LAST LIMIT %s
+                        SELECT id FROM bot_trades
+                        ORDER BY closed_at DESC NULLS LAST, id DESC
+                        LIMIT %s
                     )
                 """, (TRADES_KEEP,))
     except Exception as e:

@@ -167,6 +167,13 @@ class Trader:
         # Health-check: время и статус последнего успешного тика торгового цикла
         self.last_tick_ts = 0.0
         self.last_tick_ok = None
+        # ── EntryOptimizer: снимок входа для честного обучения ──────────────
+        # Фичи на момент РЕАЛЬНОГО входа — record_outcome использует их,
+        # а не пересчитанный прокси (avg_drop = константа × (n-1)/2).
+        self._last_eo_feats: list = []
+        # wait_floor: EntryOpt сказал «жди ещё X%» — не спрашиваем снова,
+        # пока drop не достигнет этого уровня. Сбрасывается при входе.
+        self._eo_wait_floor_pct: float = 0.0
 
         # Кеш баланса: не долбим блокчейн при каждом /api/status (TTL 180 сек)
         self._balance_cache     = {}
@@ -1522,7 +1529,9 @@ class Trader:
                         else f"стандартный {drop_trigger:.0f}%"
                     )
                     _dca_cooldown_left = Config.DCA_REENTRY_COOLDOWN_SEC - (time.time() - self._last_dca_entry_ts)
-                    if drop_from_last_pct >= drop_trigger:
+                    # Если EntryOpt ранее сказал «жди ещё X%» — выполняем это условие
+                    # прежде чем снова спрашивать модель или делать докупку.
+                    if drop_from_last_pct >= drop_trigger and drop_from_last_pct >= self._eo_wait_floor_pct:
                         if self.dca_entries_count < Config.DCA_MAX_ENTRIES and _dca_cooldown_left <= 0:
                             # Guard: не докупаем в "падающий нож" если AI уверен в SELL
                             _ai_sell_conf = float((self.last_ai or {}).get("confidence", 0) or 0)
@@ -1557,13 +1566,21 @@ class Trader:
                                     except Exception as _eo_ex:
                                         self.log(f"⚠️ EntryOpt error: {_eo_ex}", "DEBUG")
                                 if not _entry_decision.get("enter", True):
+                                    _wait_extra = _entry_decision.get("wait_drop_pct", 0.0) or 0.0
+                                    # Устанавливаем порог: следующая докупка только при
+                                    # drop_from_last_pct >= текущий_drop + рекомендация
+                                    self._eo_wait_floor_pct = drop_from_last_pct + _wait_extra
                                     self.log(
                                         f"🧠 EntryOpt: ждём дна "
-                                        f"(–{_entry_decision.get('wait_drop_pct', 0):.1f}% ещё) "
+                                        f"(–{_wait_extra:.1f}% ещё, порог={self._eo_wait_floor_pct:.1f}%) "
                                         f"— {_entry_decision.get('reason', '')}",
                                         "INFO"
                                     )
                                 else:
+                                    # Сохраняем РЕАЛЬНЫЕ фичи входа — record_outcome
+                                    # использует их вместо теоретического прокси
+                                    self._last_eo_feats = _entry_decision.get("features", [])
+                                    self._eo_wait_floor_pct = 0.0  # сброс порога ожидания
                                     self.log(
                                         f"📉 DCA ДОКУПКА: цена упала {drop_from_last_pct:.1f}% "
                                         f"(триггер: {_trigger_tag}) | "
@@ -1625,6 +1642,13 @@ class Trader:
                     pass
             if not _first_entry_ok:
                 return
+            # Сохраняем фичи первого входа для честного обучения EntryOpt
+            try:
+                if _entry_opt is not None and _eo.get("features"):
+                    self._last_eo_feats = _eo["features"]
+                    self._eo_wait_floor_pct = 0.0
+            except Exception:
+                pass
             self.log(
                 f"🚀 DCA: нет позиций — открываем первый вход "
                 f"({Config.DCA_STAKE_TON:.0f} TON @ ${price_usd:.8f})",
@@ -2324,24 +2348,33 @@ class Trader:
             # EntryOpt: был ли вход хорошим? (цикл закрыт с прибылью)
             if _entry_opt is not None:
                 _entry_was_good = total_pnl > 0
-                # Усреднённый drop из всех DCA-входов цикла как прокси
-                _avg_drop = 0.0
-                try:
-                    if _dca_entries_snap > 1:
-                        _avg_drop = Config.DCA_DROP_TRIGGER_PCT * (_dca_entries_snap - 1) / 2
-                except Exception:
-                    pass
-                _eo_feats = _entry_opt._build_features(
-                    drop_pct     = _avg_drop,
-                    rsi          = float(_ai_snap.get("rsi", 50) or 50),
-                    volume_ratio = float(_ai_snap.get("volume_ratio", 1) or 1),
-                    momentum     = str(_ai_snap.get("momentum", "CALM") or "CALM"),
-                    regime       = _regime_name,
-                    sm_score     = float(_ai_snap.get("sm_score", 0) or 0),
-                    atr_pct      = float(_ai_snap.get("atr_pct", 2) or 2),
-                    pump_score   = float(_ai_snap.get("pump_score", 0) or 0),
-                )
+                # Task #5 fix: используем РЕАЛЬНЫЕ фичи момента входа,
+                # сохранённые в _last_eo_feats при вызове _dca_buy().
+                # Ранее здесь пересчитывался теоретический прокси avg_drop =
+                # DCA_DROP_TRIGGER_PCT × (n-1)/2, который никогда не совпадал
+                # с реальным рыночным состоянием на момент входа.
+                if self._last_eo_feats:
+                    _eo_feats = self._last_eo_feats
+                else:
+                    # Fallback: пересчёт если фичи не были сохранены
+                    _avg_drop = 0.0
+                    try:
+                        if _dca_entries_snap > 1:
+                            _avg_drop = Config.DCA_DROP_TRIGGER_PCT * (_dca_entries_snap - 1) / 2
+                    except Exception:
+                        pass
+                    _eo_feats = _entry_opt._build_features(
+                        drop_pct     = _avg_drop,
+                        rsi          = float(_ai_snap.get("rsi", 50) or 50),
+                        volume_ratio = float(_ai_snap.get("volume_ratio", 1) or 1),
+                        momentum     = str(_ai_snap.get("momentum", "CALM") or "CALM"),
+                        regime       = _regime_name,
+                        sm_score     = float(_ai_snap.get("sm_score", 0) or 0),
+                        atr_pct      = float(_ai_snap.get("atr_pct", 2) or 2),
+                        pump_score   = float(_ai_snap.get("pump_score", 0) or 0),
+                    )
                 _entry_opt.record_outcome(_eo_feats, _entry_was_good)
+                self._last_eo_feats = []   # сбрасываем после использования
             # TPOpt: фактический % прибыли портфеля → обучаем модель
             if _tp_opt is not None:
                 _tp_feats = _tp_opt._build_features(
