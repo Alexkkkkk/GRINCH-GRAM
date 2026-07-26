@@ -11,3 +11,10 @@ description: The live VPS bot's checkout has uncommitted local edits and its cro
 **Why this matters:** the Replit repo and GitHub `origin/main` are NOT a reliable source of truth for "what the live bot is actually running." Assuming they are and force-pushing or resetting VPS's `/opt/bot` to `origin/main` would silently discard real production hotfixes.
 
 **How to apply:** to change VPS behavior, always SSH in and check `git status --short` / `git diff --stat` in `/opt/bot` first. Apply edits directly to the VPS's working tree (mirroring whatever change was made in Replit), then `docker compose up -d --build` there — do NOT `git pull`/`git reset --hard` on the VPS until the SSH deploy key permission issue is fixed AND the local diffs are reconciled (committed) with the user's explicit go-ahead.
+
+## Recovery constraint (2026-07-26)
+- A GitHub push cannot repair VPS SSH when the host's deploy fetch is already broken or port 22 is unavailable. Restore one management path from the provider console first, then reconcile `/opt/bot` before relying on GitOps again.
+
+**Why:** the web app and webhook may remain healthy while the host-side cron/watcher cannot fetch or execute the pushed fix, leaving SSH unavailable.
+
+**How to apply:** treat provider console access as mandatory for SSH-outage recovery; do not keep retrying passwords or assume a successful GitHub push changed the live VPS.
