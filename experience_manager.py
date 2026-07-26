@@ -657,19 +657,8 @@ class ExperienceManager:
             drawdown = max(0.0, drawdown)
 
             # ── Per-regime win rate tracking ──────────────────────────────
-            regime_stats = ctrl.get("regime_stats") or {}
-            for t in trades[-20:]:   # обновляем по последним 20 сделкам
-                reg = (t.get("regime") or t.get("entry_regime") or "UNKNOWN").upper()
-                if reg not in REGIME_KEYS:
-                    reg = "TRANSITION"
-                rs = regime_stats.setdefault(reg, {"wins": 0, "total": 0, "net": 0.0})
-                if t.get("pnl") is not None:
-                    rs["total"] += 1
-                    if (t.get("pnl") or 0) > 0:
-                        rs["wins"] += 1
-                    rs["net"] = round(rs.get("net", 0.0) + (t.get("pnl") or 0), 4)
-            # Дедупликация: берём только уникальные combo из последних 20 сделок
-            # (повторный анализ завышает счётчики) — перестраиваем с нуля каждый раз
+            # Перестраиваем с нуля каждый раз по последним 50 сделкам, чтобы
+            # избежать задвоения счётчиков при повторных анализах.
             regime_stats = {}
             for t in trades[-50:]:
                 reg = (t.get("regime") or t.get("entry_regime") or "UNKNOWN").upper()

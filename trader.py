@@ -2189,11 +2189,11 @@ class Trader:
                 self.stats["total_trades"] = self.stats.get("total_trades", 0) + 1
                 if pnl_ton > 0:
                     self.stats["winning_trades"] += 1
-            # Circuit breaker / win-streak stats — обязательно для каждой позиции цикла
-            try:
-                self._record_trade_pnl(pnl_ton)
-            except Exception as _rp_e:
-                self.log(f"⚠️ _record_trade_pnl (dca sell-all): {_rp_e}", "WARN")
+                # Circuit breaker / win-streak stats — внутри лока (по доке _record_trade_pnl)
+                try:
+                    self._record_trade_pnl(pnl_ton)
+                except Exception as _rp_e:
+                    self.log(f"⚠️ _record_trade_pnl (dca sell-all): {_rp_e}", "WARN")
             # AI feedback
             try:
                 _contexts = trade.get("entry_ai_contexts") or []
@@ -3793,11 +3793,11 @@ class Trader:
             self.stats["total_trades"] = self.stats.get("total_trades", 0) + 1
             if pnl_ton > 0:
                 self.stats["winning_trades"] += 1
-        # Circuit breaker / win-streak stats — те же что и для обычных сделок
-        try:
-            self._record_trade_pnl(pnl_ton)
-        except Exception as _rp_e:
-            self.log(f"⚠️ _record_trade_pnl (short): {_rp_e}", "WARN")
+            # Circuit breaker / win-streak stats — внутри лока (по доке _record_trade_pnl)
+            try:
+                self._record_trade_pnl(pnl_ton)
+            except Exception as _rp_e:
+                self.log(f"⚠️ _record_trade_pnl (short): {_rp_e}", "WARN")
         try:
             self.exp.save_open_trades(self._combined_open_trades())
             self.exp.record_trade(dict(trade), self.stats, self.ai)

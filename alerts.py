@@ -177,7 +177,7 @@ def _build_report() -> str:
         winning = int(stats.get("winning_trades") or 0)
         pnl     = float(stats.get("total_pnl") or 0)
         winrate = round(winning / total * 100, 1) if total else 0
-        lines.append(f"📈 Сделок: {total}  |  Побед: {winning} ({winrate}%)  |  PnL: +{pnl:.4f} TON")
+        lines.append(f"📈 Сделок: {total}  |  Побед: {winning} ({winrate}%)  |  PnL: {pnl:+.4f} TON")
 
         # ── Открытые позиции ────────────────────────────────────────────
         ots = open_trades_get() or []
