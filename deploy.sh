@@ -107,12 +107,31 @@ EOF
 fi
 if [ "$_ssh_changed" = "1" ]; then
     if sshd -t 2>/dev/null; then
-        systemctl reload sshd 2>/dev/null || service ssh reload 2>/dev/null || true
+        # На Ubuntu имя systemd-сервиса обычно ssh, а не sshd. Если reload
+        # не сработал или служба уже остановлена, обязательно пробуем restart.
+        if systemctl reload ssh 2>/dev/null || systemctl reload sshd 2>/dev/null ||
+           service ssh reload 2>/dev/null; then
+            :
+        else
+            systemctl restart ssh 2>/dev/null || systemctl restart sshd 2>/dev/null ||
+                service ssh restart 2>/dev/null || true
+        fi
         echo "[$(TS)] ✅ SSH: root/password-аутентификация восстановлена + sshd перезагружен" >> "$LOG"
     else
         echo "[$(TS)] ⚠️  SSH: sshd -t не прошёл, откатываем" >> "$LOG"
         rm -f "${_SSH_OVERRIDE:-}" 2>/dev/null || true
     fi
+fi
+
+# Аварийное восстановление: предыдущий reload мог завершиться остановкой
+# службы. Не трогаем работающий sshd, но запускаем его, если он не active.
+_ssh_active=0
+systemctl is-active --quiet ssh 2>/dev/null && _ssh_active=1
+systemctl is-active --quiet sshd 2>/dev/null && _ssh_active=1
+if [ "$_ssh_active" = "0" ] && sshd -t 2>/dev/null; then
+    systemctl restart ssh 2>/dev/null || systemctl restart sshd 2>/dev/null ||
+        service ssh restart 2>/dev/null || true
+    echo "[$(TS)] 🔄 SSH: служба была остановлена — выполнен restart" >> "$LOG"
 fi
 
 # ── Проверяем наличие новых коммитов ─────────────────────────────────────────
