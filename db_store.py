@@ -322,12 +322,13 @@ def _conn():
     if not _available or _pool is None:
         _try_rebuild_pool()   # синхронно; торговый цикл — фоновый поток, блок ок
 
-    if not _available or _pool is None:
-        raise RuntimeError("DB not available")
-
-    # Захватываем ссылку на пул ДО getconn(), чтобы putconn() всегда шёл
-    # в тот же объект пула — даже если _try_rebuild_pool() заменит _pool.
-    pool_ref = _pool
+    # H3-fix: захватываем ссылку на пул под _pool_lock, чтобы исключить
+    # состояние гонки между чтением _pool и его заменой в _try_rebuild_pool().
+    with _pool_lock:
+        if not _available or _pool is None:
+            raise RuntimeError("DB not available")
+        # pool_ref фиксируется под локом — putconn() всегда идёт в тот же объект
+        pool_ref = _pool
     conn = pool_ref.getconn()
 
     # Если соединение помечено закрытым — вернуть в pool_ref и взять свежее

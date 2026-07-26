@@ -132,6 +132,8 @@ class UserTradingManager:
             u["balance_ton"] = round(u["balance_ton"] + amount_ton, 6)
             self._log(u, f"💰 Депозит {amount_ton:.4f} TON зачислен (баланс: {u['balance_ton']:.4f} TON)", "INFO")
 
+        # H6-fix: атомарный инкремент в БД (не overwrite из памяти) защищает от
+        # потери обновления при параллельных депозитах одного пользователя.
         if app:
             try:
                 from models import UserWallet
@@ -139,7 +141,7 @@ class UserTradingManager:
                 with app.app_context():
                     uw = UserWallet.query.filter_by(token=token).first()
                     if uw:
-                        uw.virtual_ton_balance = u["balance_ton"]
+                        uw.virtual_ton_balance = (uw.virtual_ton_balance or 0.0) + amount_ton
                         uw.total_deposited = (uw.total_deposited or 0) + amount_ton
                         uw.last_deposit_at = datetime.utcnow()
                         db.session.commit()

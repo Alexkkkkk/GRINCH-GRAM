@@ -281,6 +281,8 @@ class ExperienceManager:
             tmp = self.path + ".tmp"
             with open(tmp, "w", encoding="utf-8") as f:
                 _jdump(self.data, f, ensure_ascii=False)
+                f.flush()
+                os.fsync(f.fileno())   # L3-fix: гарантируем запись на диск перед атомарной заменой
             os.replace(tmp, self.path)
         except Exception as e:
             print(f"[Experience] ошибка записи {self.path}: {e}")
@@ -545,6 +547,7 @@ class ExperienceManager:
             trade_rec.setdefault("reason",      trade.get("close_reason"))
             trade_rec.setdefault("opened_at",   trade.get("opened_at"))
             trade_rec.setdefault("closed_at",   trade.get("closed_at"))
+            trade_rec.setdefault("trade_type",  trade.get("trade_type", "long"))   # C3-fix: short-позиции восстанавливаются правильно после рестарта
             self.data["trades"].append(trade_rec)
             if len(self.data["trades"]) > MAX_TRADES_KEPT:
                 self.data["trades"] = self.data["trades"][-MAX_TRADES_KEPT:]

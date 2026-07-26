@@ -79,7 +79,7 @@ def _evaluate(liq: float):
             _buys_paused = False
             _pause_reason = ""
             _consecutive_low_count = 0
-            _peak_liq = liq  # новый пик отсчитываем от текущего восстановленного уровня
+            _peak_liq = max(_peak_liq, liq)  # M9-fix: не снижаем пик при частичном восстановлении
 
 
 def _poll_loop():
