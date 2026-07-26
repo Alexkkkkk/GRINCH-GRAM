@@ -34,8 +34,11 @@ _MIN_RESEND_GAP = 300      # не слать повторно то же незд
 
 def _get_creds():
     sec = settings_store.get_section("alerts")
-    token   = (sec.get("telegram_bot_token") or "").strip()
-    chat_id = (sec.get("telegram_chat_id") or "").strip()
+    # Fallback to environment variables if settings_store has no value.
+    # This covers the common case where TELEGRAM_BOT_TOKEN is set in .env
+    # but has not yet been synced into the DB / settings.json via the dashboard.
+    token   = (sec.get("telegram_bot_token") or os.getenv("TELEGRAM_BOT_TOKEN") or "").strip()
+    chat_id = (sec.get("telegram_chat_id")   or os.getenv("TELEGRAM_CHAT_ID")   or "").strip()
     enabled = bool(sec.get("enabled", True)) and bool(token) and bool(chat_id)
     return token, chat_id, enabled
 
