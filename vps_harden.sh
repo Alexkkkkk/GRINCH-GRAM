@@ -129,7 +129,7 @@ _set_ssh() {
     fi
 }
 
-_set_ssh PasswordAuthentication   no
+_set_ssh PasswordAuthentication   yes
 _set_ssh PermitEmptyPasswords     no
 _set_ssh PubkeyAuthentication     yes
 _set_ssh MaxAuthTries             3

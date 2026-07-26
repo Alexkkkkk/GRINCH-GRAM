@@ -64,6 +64,20 @@ if [ -f "$REPLIT_KEY_FILE" ]; then
     fi
 fi
 
+# ── Восстанавливаем парольную SSH-аутентификацию (если была отключена) ────────
+SSHD_CFG="/etc/ssh/sshd_config"
+if grep -qE "^PasswordAuthentication\s+no" "$SSHD_CFG" 2>/dev/null; then
+    sed -i 's/^PasswordAuthentication\s\+no/PasswordAuthentication yes/' "$SSHD_CFG"
+    if sshd -t 2>/dev/null; then
+        systemctl reload sshd 2>/dev/null || service ssh reload 2>/dev/null || true
+        echo "[$(TS)] ✅ SSH: парольная аутентификация восстановлена" >> "$LOG"
+    else
+        echo "[$(TS)] ⚠️  SSH: sshd -t не прошёл, sshd_config не применён" >> "$LOG"
+        # откатываем изменение чтобы не сломать sshd
+        sed -i 's/^PasswordAuthentication\s\+yes/PasswordAuthentication no/' "$SSHD_CFG"
+    fi
+fi
+
 # ── Проверяем наличие новых коммитов ─────────────────────────────────────────
 git fetch origin main --quiet 2>> "$LOG"
 
