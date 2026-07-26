@@ -218,6 +218,29 @@ def _build_report() -> str:
         except Exception as _e:
             lines.append(f"⚠️  DCA/tick: {_e}")
 
+        # ── TON gas balance ─────────────────────────────────────────────
+        try:
+            from wallet_manager import wallet_manager as _wm
+            _wsnap = _wm.get_snapshot() if _wm else {}
+            _ton = float(_wsnap.get("ton_balance") or 0)
+            if _ton < 0.5:
+                lines.append(f"🔴 TON БАЛАНС: {_ton:.4f} TON — КРИТИЧЕСКИ МАЛО! Продажа невозможна без газа!")
+                token, chat_id, _ = _get_creds()
+                if token and chat_id:
+                    # внеплановый срочный алерт
+                    send_alert(
+                        f"🔴 <b>КРИТИЧНО: TON кошелёк почти пуст!</b>\n"
+                        f"Баланс: <b>{_ton:.4f} TON</b>\n"
+                        f"Для продажи GRINCH нужно ≥0.25 TON газа.\n"
+                        f"Пополните кошелёк немедленно!"
+                    )
+            elif _ton < 2.0:
+                lines.append(f"⚠️  TON баланс: {_ton:.4f} TON — мало газа (нужно ≥2 TON для безопасной торговли)")
+            else:
+                lines.append(f"💰 TON баланс: {_ton:.4f} TON")
+        except Exception as _we:
+            lines.append(f"💰 TON баланс: н/д ({_we})")
+
         # ── RAM ─────────────────────────────────────────────────────────
         try:
             rss_mb = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1024

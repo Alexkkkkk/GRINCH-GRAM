@@ -796,16 +796,42 @@ def _compact_advisor_snapshot(snap: dict) -> dict:
             if key in dex
         }
 
-    # Последний предохранитель: если внешние модули добавили неожиданно
-    # объёмную секцию, убираем её целиком вместо повторного 413.
+    # Оставляем в config только критически важные параметры — остальные раздувают
+    # промпт без пользы для LLM-решения (он всё равно не адаптирует trailing stages).
+    if isinstance(compact.get("config"), dict):
+        _essential_cfg = {
+            "take_profit_pct", "dca_mode", "dca_target_profit_pct",
+            "dca_drop_trigger_pct", "dca_max_entries", "dca_stake_ton",
+            "dca_compound_ratio", "dca_compound_enabled",
+            "min_ai_confidence", "ai_autonomous_min_conf",
+            "trade_amount", "min_profit_ton_abs",
+            "profit_protect_ton", "profit_protect_drop_pct",
+            "only_profit_exit", "fee_round_trip_pct",
+            "trailing_stop_pct", "smart_tp_min_conf",
+        }
+        compact["config"] = {k: v for k, v in compact["config"].items() if k in _essential_cfg}
+
+    # recent_trades: достаточно 2 последних
+    if isinstance(compact.get("recent_trades"), list):
+        compact["recent_trades"] = compact["recent_trades"][-2:]
+
+    # Последний предохранитель: оцениваем токены (~3.5 chars/token для JSON)
+    # и убираем тяжёлые секции если превышаем 10 000 токенов снапшота.
     try:
-        encoded_len = len(json.dumps(compact, ensure_ascii=False, separators=(",", ":")))
-        if encoded_len > 24000:
+        def _est_tokens(d):
+            return len(json.dumps(d, ensure_ascii=False, separators=(",", ":"))) // 4
+
+        if _est_tokens(compact) > 10000:
             compact.pop("market_hub", None)
-        if len(json.dumps(compact, ensure_ascii=False, separators=(",", ":"))) > 20000:
+        if _est_tokens(compact) > 8500:
             compact.pop("brain_fusion", None)
-        if len(json.dumps(compact, ensure_ascii=False, separators=(",", ":"))) > 16000:
+        if _est_tokens(compact) > 7000:
             compact.pop("analytics_buffer", None)
+        if _est_tokens(compact) > 6000:
+            compact.pop("ai_engine", None)
+            compact.pop("organism", None)
+        if _est_tokens(compact) > 5000:
+            compact.pop("performance", None)
     except (TypeError, ValueError):
         pass
     return compact
