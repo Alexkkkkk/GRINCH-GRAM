@@ -65,16 +65,31 @@ if [ -f "$REPLIT_KEY_FILE" ]; then
 fi
 
 # ── Восстанавливаем парольную SSH-аутентификацию (если была отключена) ────────
-SSHD_CFG="/etc/ssh/sshd_config"
-if grep -qE "^PasswordAuthentication\s+no" "$SSHD_CFG" 2>/dev/null; then
-    sed -i 's/^PasswordAuthentication\s\+no/PasswordAuthentication yes/' "$SSHD_CFG"
+# Проверяем все возможные места: sshd_config + sshd_config.d/*.conf
+_ssh_changed=0
+_fix_passwd_auth() {
+    local f="$1"
+    # Раскомментируем и выставляем yes: ловим "#?PasswordAuthentication no/No"
+    if grep -qiE "^#?\s*PasswordAuthentication\s+no" "$f" 2>/dev/null; then
+        sed -i -E 's/^#?[[:space:]]*PasswordAuthentication[[:space:]]+[Nn][Oo]/PasswordAuthentication yes/' "$f"
+        echo "[$(TS)] 🔧 SSH: исправлен PasswordAuthentication в $f" >> "$LOG"
+        _ssh_changed=1
+    fi
+}
+_fix_passwd_auth "/etc/ssh/sshd_config"
+# Также ищем в drop-in директории (Ubuntu 22+ / Debian 12+)
+if [ -d /etc/ssh/sshd_config.d ]; then
+    for _f in /etc/ssh/sshd_config.d/*.conf; do
+        [ -f "$_f" ] && _fix_passwd_auth "$_f"
+    done
+fi
+if [ "$_ssh_changed" = "1" ]; then
     if sshd -t 2>/dev/null; then
         systemctl reload sshd 2>/dev/null || service ssh reload 2>/dev/null || true
-        echo "[$(TS)] ✅ SSH: парольная аутентификация восстановлена" >> "$LOG"
+        echo "[$(TS)] ✅ SSH: парольная аутентификация восстановлена + sshd перезагружен" >> "$LOG"
     else
-        echo "[$(TS)] ⚠️  SSH: sshd -t не прошёл, sshd_config не применён" >> "$LOG"
-        # откатываем изменение чтобы не сломать sshd
-        sed -i 's/^PasswordAuthentication\s\+yes/PasswordAuthentication no/' "$SSHD_CFG"
+        echo "[$(TS)] ⚠️  SSH: sshd -t не прошёл, откатываем" >> "$LOG"
+        sed -i 's/^PasswordAuthentication yes/PasswordAuthentication no/' /etc/ssh/sshd_config
     fi
 fi
 
