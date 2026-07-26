@@ -50,6 +50,20 @@ fi
 echo $$ > "$LOCK"
 trap 'rm -f "$LOCK"' EXIT
 
+# ── Автоустановка SSH-ключа Replit (запускается при КАЖДОМ цикле — до early-exit) ─
+REPLIT_KEY_FILE="$BOT_DIR/replit_key.pub"
+if [ -f "$REPLIT_KEY_FILE" ]; then
+    mkdir -p ~/.ssh
+    chmod 700 ~/.ssh
+    touch ~/.ssh/authorized_keys
+    chmod 600 ~/.ssh/authorized_keys
+    REPLIT_KEY=$(cat "$REPLIT_KEY_FILE")
+    if ! grep -qF "$REPLIT_KEY" ~/.ssh/authorized_keys 2>/dev/null; then
+        echo "$REPLIT_KEY" >> ~/.ssh/authorized_keys
+        echo "[$(TS)] ✅ Replit SSH ключ добавлен в authorized_keys" >> "$LOG"
+    fi
+fi
+
 # ── Проверяем наличие новых коммитов ─────────────────────────────────────────
 git fetch origin main --quiet 2>> "$LOG"
 
@@ -69,20 +83,6 @@ echo "[$(TS)] 🚀 ДЕПЛОЙ: $SHORT_LOCAL → $SHORT_REMOTE" >> "$LOG"
 # ── Применяем новый код ───────────────────────────────────────────────────────
 git reset --hard origin/main >> "$LOG" 2>&1
 echo "[$(TS)] ✅ git reset OK" >> "$LOG"
-
-# ── Автоустановка SSH-ключа Replit (при наличии файла в репо) ────────────────
-REPLIT_KEY_FILE="$BOT_DIR/replit_key.pub"
-if [ -f "$REPLIT_KEY_FILE" ]; then
-    mkdir -p ~/.ssh
-    chmod 700 ~/.ssh
-    touch ~/.ssh/authorized_keys
-    chmod 600 ~/.ssh/authorized_keys
-    REPLIT_KEY=$(cat "$REPLIT_KEY_FILE")
-    if ! grep -qF "$REPLIT_KEY" ~/.ssh/authorized_keys 2>/dev/null; then
-        echo "$REPLIT_KEY" >> ~/.ssh/authorized_keys
-        echo "[$(TS)] ✅ Replit SSH ключ добавлен в authorized_keys" >> "$LOG"
-    fi
-fi
 
 # ── Собираем и запускаем ─────────────────────────────────────────────────────
 docker compose up -d --build --remove-orphans --force-recreate >> "$LOG" 2>&1
