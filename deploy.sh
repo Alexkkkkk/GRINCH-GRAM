@@ -74,11 +74,15 @@ _fix_ssh_auth() {
     [ -f "$f" ] || return 0
 
     # Меняем явно заданные значения, включая prohibit-password для root.
-    if grep -qiE "^[[:space:]]*#?[[:space:]]*PasswordAuthentication[[:space:]]+" "$f" 2>/dev/null; then
+    # Не помечаем конфигурацию изменённой, если нужное активное значение
+    # уже установлено: cron запускает этот скрипт каждые 3 минуты.
+    if grep -qiE "^[[:space:]]*#?[[:space:]]*PasswordAuthentication[[:space:]]+" "$f" 2>/dev/null &&
+       ! grep -qE "^[[:space:]]*PasswordAuthentication[[:space:]]+yes[[:space:]]*$" "$f" 2>/dev/null; then
         sed -i -E 's/^[[:space:]]*#?[[:space:]]*PasswordAuthentication[[:space:]]+.*/PasswordAuthentication yes/' "$f"
         _ssh_changed=1
     fi
-    if grep -qiE "^[[:space:]]*#?[[:space:]]*PermitRootLogin[[:space:]]+" "$f" 2>/dev/null; then
+    if grep -qiE "^[[:space:]]*#?[[:space:]]*PermitRootLogin[[:space:]]+" "$f" 2>/dev/null &&
+       ! grep -qE "^[[:space:]]*PermitRootLogin[[:space:]]+yes[[:space:]]*$" "$f" 2>/dev/null; then
         sed -i -E 's/^[[:space:]]*#?[[:space:]]*PermitRootLogin[[:space:]]+.*/PermitRootLogin yes/' "$f"
         _ssh_changed=1
     fi
