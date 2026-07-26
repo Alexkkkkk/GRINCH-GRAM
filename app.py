@@ -37,6 +37,14 @@ _startup_log.info("stdlib OK")
 from config import Config
 _startup_log.info("config OK")
 
+# ── Модуль защиты от атак ─────────────────────────────────────────────────
+try:
+    import security as _security
+    _startup_log.info("security module OK")
+except Exception as _sec_err:
+    _security = None
+    _startup_log.warning("security module failed to load: %s", _sec_err)
+
 
 # ── Загружаем сохранённые настройки дашборда поверх env-дефолтов ─────────────
 def _apply_saved_config():
@@ -298,6 +306,9 @@ def _add_static_cache_headers(resp):
     # на каждый запрос страницы (браузер и так проверит по ETag при заходе).
     if request.path.startswith("/static/"):
         resp.headers.setdefault("Cache-Control", "public, max-age=3600")
+    # Security headers (X-Frame-Options, X-Content-Type-Options и др.)
+    if _security:
+        resp = _security.add_security_headers(resp)
     return resp
 if Compress is not None:
     app.config["COMPRESS_MIMETYPES"] = [
@@ -748,6 +759,15 @@ def _is_public_path(path):
 
 
 @app.before_request
+def _security_check():
+    """Rate-limit + IP-бан + scanner-detection. Первый before_request."""
+    if _security:
+        result = _security.check_request()
+        if result is not None:
+            return result
+
+
+@app.before_request
 def _ensure_csrf_token():
     """Генерируем CSRF-токен в сессии при первом запросе."""
     import secrets as _s
@@ -805,15 +825,27 @@ def login():
         return redirect(request.args.get("next") or url_for("index"))
     error = None
     if request.method == "POST":
+        # Брутфорс-защита: проверяем лимит попыток для этого IP
+        _ip = _security.get_client_ip() if _security else (request.remote_addr or "")
+        if _security and not _security.check_login_allowed(_ip):
+            error = "Слишком много попыток входа. Попробуйте позже."
+            return render_template("login.html", error=error,
+                                   next=request.args.get("next", "")), 429
+
         username = (request.form.get("username") or "").strip()
         password = request.form.get("password") or ""
         if (_auth_configured()
                 and hmac.compare_digest(username, ADMIN_USERNAME)
                 and hmac.compare_digest(password, ADMIN_PASSWORD)):
+            if _security:
+                _security.record_login_success(_ip)
             session.permanent = True
             session["logged_in"] = True
             session["user"] = username
             return redirect(request.args.get("next") or url_for("index"))
+        # Неудачная попытка
+        if _security:
+            _security.record_login_fail(_ip)
         error = "Неверный логин или пароль"
     return render_template("login.html", error=error,
                            next=request.args.get("next", ""))
@@ -1203,6 +1235,40 @@ def api_performance():
         "max_drawdown_ton":   max_drawdown_ton,
         "source_accuracy":    source_accuracy,
     }), 200
+
+
+@app.route("/api/security/stats")
+def api_security_stats():
+    """Статистика модуля защиты: заблокированные IP, rate-limit, брутфорс."""
+    if not _security:
+        return jsonify({"ok": False, "error": "security module not loaded"}), 503
+    return jsonify({"ok": True, **_security.get_stats()})
+
+
+@app.route("/api/security/ban", methods=["POST"])
+def api_security_ban():
+    """Ручной перманентный бан IP. Тело: {"ip": "1.2.3.4"}"""
+    if not _security:
+        return jsonify({"ok": False, "error": "security module not loaded"}), 503
+    data = request.get_json(silent=True) or {}
+    ip = (data.get("ip") or "").strip()
+    if not ip:
+        return jsonify({"ok": False, "error": "ip required"}), 400
+    _security.ban_ip(ip)
+    return jsonify({"ok": True, "banned": ip})
+
+
+@app.route("/api/security/unban", methods=["POST"])
+def api_security_unban():
+    """Снять бан с IP. Тело: {"ip": "1.2.3.4"}"""
+    if not _security:
+        return jsonify({"ok": False, "error": "security module not loaded"}), 503
+    data = request.get_json(silent=True) or {}
+    ip = (data.get("ip") or "").strip()
+    if not ip:
+        return jsonify({"ok": False, "error": "ip required"}), 400
+    _security.unban_ip(ip)
+    return jsonify({"ok": True, "unbanned": ip})
 
 
 _GIT_LAST_UPDATE_CACHE = {"value": None}
