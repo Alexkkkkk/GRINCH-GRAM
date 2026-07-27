@@ -1696,6 +1696,10 @@ class Trader:
         # Проверяем баланс ДО лога компаунда — чтобы не спамить при ошибках
         bal     = self.exchange.get_balance() or {}
         ton_bal = bal.get("TON", 0) or 0
+        # Preflight-резерв газа: dedust_client прикладывает ~0.30-0.35 TON к транзакции
+        # покупки (из которых ~0.25 TON возвращается рефандом пула ПОСЛЕ свопа).
+        # Для preflight-проверки ДОСТУПНОГО баланса используем 0.30 TON (максимум временного
+        # оттока), а НЕ Config.BUY_GAS_TON=0.103 (это чистые сгоревшие потери, приходит позже).
         buy_gas = 0.30
         reserve = Config.GAS_RESERVE_TON
         spendable = ton_bal - buy_gas - reserve
