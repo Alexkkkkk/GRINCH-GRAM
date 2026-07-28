@@ -679,7 +679,13 @@ class Trader:
             # этот блок не перезапишет их в False — мы сохраняем более сильное значение.
             # Ключевой сценарий: после DCA sell-all (open_trades=[]) restore-блок
             # выше пропускается, но здесь мы правильно восстанавливаем True.
-            if _bool("dca_wait_pullback"):
+            #
+            # BUG-FIX 2: НЕ восстанавливаем wait_pullback=True если нет открытых позиций.
+            # Если кошелёк опустел (внешняя продажа, ручное вмешательство, auto-close при
+            # старте), saved wait_pullback=True с устаревшим пиком застрянет навсегда —
+            # бот с 400+ TON будет ждать 7% отката который никогда не наступит.
+            # Решение: восстанавливать True только если есть живые open_trades.
+            if _bool("dca_wait_pullback") and self.open_trades:
                 self.dca_wait_pullback = True
                 _saved_peak = _float("dca_peak_price")
                 if _saved_peak > 0 and _saved_peak > self.dca_peak_price:
