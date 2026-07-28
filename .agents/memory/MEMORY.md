@@ -51,6 +51,7 @@
 - [AI Engine v4.2 upgrades](ai-engine-v4-2.md) — 2GB сервер: LOW_MEMORY_MODE=0, regime_enc фича, адаптивные пороги, EV-блок имеет приоритет над адаптивными порогами.
 - [Post-Pump Distribution v4.5](post-pump-distribution.md) — новый режим POST_PUMP (-3 в regime_enc); 4 новые фичи (ath_dist_20/dump_velocity/vol_collapse/post_pump_dump); штраф BUY до -28%; GRINCHPumpDetector возвращает DISTRIBUTION/DUMP_PATTERN с отриц. conf_boost; vol_r НЕ существует до line~2211 в _build_features — использовать _vol_r_pp временный расчёт.
 - [AI-модули — тройка оптимизаторов](ai-modules-triad.md) — EntryOpt+TPOpt+Scanner: пусты при старте, обучаются на реальных сделках; динамический TP не ниже Config; scanner = 4-й источник BrainFusion.
+- [VPS SSH Access](vps-ssh-access.md) — пароль root в секрете VPS_SSH_KEY (не ключ!); sshpass -p "$VPS_SSH_KEY" ssh root@2.27.25.126; контейнер bot-bot-1; код в /opt/bot.
 
 - [Gunicorn preload reload gotcha](gunicorn-preload-reload.md) — SIGHUP to --preload gunicorn never picks up new code; needs real process restart; re-verify /api/config settings survived after any VPS restart.
 - [Docker cp deploy — verify after restart](docker-cp-deploy-verify.md) — a docker cp+restart hotfix once silently reverted; always re-check md5sum inside the container AFTER restart completes, not just right after cp.
