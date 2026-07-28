@@ -12,52 +12,53 @@ description: Текущая незавершённая работа — что �
 
 ---
 
-## ✅ Завершено (сессия 28.07.2026)
+## ✅ Завершено (сессия 28.07.2026 — аудит дашборда)
 
-### Фиксы аудита дашборда VPS
-
-**Файлы изменены на VPS + синхронизированы в Replit:**
+### Фиксы аудита
 
 | Файл | Что исправлено |
-|------|---------------|
-| `db_store.py` | `equity_get_all` — ORDER BY ts **DESC** (было ASC — показывало старые данные 15-17 июля вместо свежих) |
-| `app.py` | `/api/equity` — теперь читает из БД через `equity_get_all`, experience_manager только как fallback |
+|------|----------------|
+| `db_store.py` | `equity_get_all` — ORDER BY ts **DESC** (было ASC — показывало старые данные) |
+| `app.py` | `/api/equity` — читает из БД через `equity_get_all`, experience_manager только fallback |
 | `wallet_manager.py` | `get_full_status` — DB-fallback когда `_snap` пустой при cold start |
-| `security.py` | Whitelist `127.0.0.1` / `::1` / `localhost` — наши же API-тесты из контейнера не банились |
+| `security.py` | Whitelist `127.0.0.1` / `::1` — наши API-тесты не банились |
+| `ai_advisor.py` | **Авто-фолбэк провайдеров**: при quota/auth ошибке блокирует провайдера на 6ч и переключается на следующий (OpenAI quota → Groq). `_failed_providers` dict + `PROVIDER_BLACKLIST_SECS`. Retry в `run_advisor()`. |
 
-**Статус:** все 4 фикса в контейнере `bot-bot-1`, контейнер healthy.
+**Все файлы синхронизированы VPS → Replit workspace.**
 
 ---
 
-## 🔄 В работе / Требует проверки
+## ✅ Проверено — не баги
 
-### 1. `/api/coin/trades` возвращает пустой ответ
-- Прошлая сессия заметила это но не успела разобраться
-- **Файлы:** `app.py` (роут `/api/coin/trades` или аналог), `coin_info.py`
-- **Проверить:** существует ли роут, почему пустой ответ
+- `/api/coin/trades` — работает корректно, возвращает сделки (пул `GRINCH_POOL_ADDRESS` задан в config)
+- `entry_ai_contexts` — сохраняется при каждом DCA-входе, features есть
+- `bot_ai_examples` (4 записи) — нормально: старые сделки закрывались без features (до добавления фичи). Накапливается с каждой новой закрытой сделкой автоматически
 
-### 2. `bot_ai_examples` — только 4 строки
-- AI не обучается на реальных сделках (deep retrain пропускается)
-- **Файлы:** `ai_engine.py`, `experience_manager.py`, `db_store.py`
-- **Проверить:** почему мало примеров, как накапливаются данные для обучения
+---
 
-### 3. Советник Groq — нужно убрать OpenAI из auto-fallback
-- OpenAI quota exceeded, переключились на Groq, но OpenAI всё ещё в fallback-цепочке
-- **Файлы:** `ai_advisor.py`
+## 🔄 Открытые вопросы
 
-### 4. Replit workflow не запускается (numpy не установлен)
-- Зависимости не установлены в Replit окружении
-- **Статус:** пользователь использует Replit только как редактор, не критично
+### 1. Советник OpenAI — ключ в /app/data/openai_key.txt
+- Ключ сохранён в DATA_DIR на VPS, quota exceeded
+- Новый фикс (blacklist) автоматически пропустит его и использует Groq
+- Но при рестарте контейнера `_failed_providers` сбрасывается → первый запрос к советнику после рестарта попробует OpenAI и упадёт (потом autoblacklist включится)
+- **Опциональный улучшенный фикс**: удалить `/app/data/openai_key.txt` через дашборд или добавить персистентный blacklist в settings.json
+
+### 2. `bot_ai_examples` растёт медленно
+- 4 примера → нужно 50+ для deep retrain
+- AI не обучается на реальных сделках до накопления
+- Пройдёт само по мере закрытия сделок
 
 ---
 
 ## 📋 Контекст проекта
 
-- **Боевой бот:** VPS 2.27.25.126, контейнер `bot-bot-1`, порт 3000
-- **Код на VPS:** `/opt/bot/` (git + cron deploy из origin/main)
+- **Боевой бот:** VPS 2.27.25.126, контейнер `bot-bot-1`, порт 3000 (nginx на 80)
+- **Код на VPS:** `/opt/bot/`
 - **SSH:** `sshpass -p "$VPS_SSH_KEY" ssh -o StrictHostKeyChecking=no root@2.27.25.126`
-- **Деплой изменений:** `scp файл root@2.27.25.126:/opt/bot/файл` → `docker compose up -d --build`
+- **Деплой:** `scp файл root@2.27.25.126:/opt/bot/файл` → `cd /opt/bot && docker compose up -d --build`
 - **Открытая позиция:** 882k GRINCH, -9%, ждёт +13% до цели
+- **Провайдеры AI советника (приоритет):** OpenAI(1) → DeepSeek(2) → xAI(3) → Anthropic(4) → Groq(5)
 
 ---
 

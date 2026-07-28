@@ -181,7 +181,12 @@ def _get_best_provider() -> Tuple[str, dict]:
             return _selected_provider, PROVIDER_CONFIGS[_selected_provider]
         logger.warning(f"[Advisor] Выбранный провайдер {_selected_provider} не имеет ключа, авто-фолбэк")
 
+    _now = time.time()
     for pid, cfg in candidates:
+        # Пропускаем провайдеров с недавними ошибками квоты/авторизации
+        if _now - _failed_providers.get(pid, 0) < PROVIDER_BLACKLIST_SECS:
+            logger.debug("[Advisor] skip %s (blacklist)", pid)
+            continue
         if _read_provider_key(pid):
             return pid, cfg
 
@@ -401,6 +406,8 @@ _last_auto_run_ts:     float = 0.0
 _next_auto_run_ts:     float = 0.0
 _adaptation_log:       deque = deque(maxlen=50)
 _rate_limit:           Optional[dict] = None   # инфо о лимите токенов Groq (если получен 429)
+_failed_providers:     dict = {}              # provider_id -> timestamp провала (блокировка 6ч)
+PROVIDER_BLACKLIST_SECS = 6 * 3600
 
 # ── Фоновый поток автономии ────────────────────────────────────────────────
 _bg_thread: Optional[threading.Thread] = None
@@ -1591,10 +1598,53 @@ def run_advisor(auto_apply: bool = None, user_message: str = "",
             max_tokens=max_toks,
         )
 
-        resp    = client.chat.completions.create(**create_kwargs)
+        # Авто-фолбэк: при quota/auth — блокируем провайдера и пробуем следующий
+        try:
+            resp = client.chat.completions.create(**create_kwargs)
+        except Exception as _api_err:
+            _err_s = str(_api_err).lower()
+            _is_quota = any(k in _err_s for k in (
+                "quota", "auth", "401", "insufficient", "exceeded",
+                "billing", "invalid_api_key", "permission", "deactivated",
+            ))
+            if _is_quota:
+                logger.warning(
+                    "[Advisor] %s недоступен (%s), авто-фолбэк...",
+                    provider_cfg["name"], type(_api_err).__name__,
+                )
+                _failed_providers[provider_id] = time.time()
+                _fb_id, _fb_cfg, _fb_client = None, None, None
+                for _pid, _pcfg in sorted(PROVIDER_CONFIGS.items(), key=lambda x: x[1]["priority"]):
+                    if _pid == provider_id:
+                        continue
+                    if time.time() - _failed_providers.get(_pid, 0) < PROVIDER_BLACKLIST_SECS:
+                        continue
+                    if _read_provider_key(_pid):
+                        _fb_client = _get_provider_client(_pid, _pcfg)
+                        if _fb_client:
+                            _fb_id, _fb_cfg = _pid, _pcfg
+                            break
+                if _fb_id:
+                    provider_id, provider_cfg, client = _fb_id, _fb_cfg, _fb_client
+                    _fb_snap = _build_snapshot(user_message, compact=(provider_id == "groq"))
+                    _fb_snap["trigger"] = trigger
+                    messages[1]["content"] = (
+                        "Текущее состояние бота:\n```json\n"
+                        + json.dumps(_fb_snap, ensure_ascii=False, indent=2)
+                        + "\n```" + cot_hint
+                    )
+                    create_kwargs["model"]       = provider_cfg["model"]
+                    create_kwargs["max_tokens"]  = provider_cfg.get("max_tokens", 1500)
+                    create_kwargs["temperature"] = provider_cfg.get("temperature", 0.2)
+                    logger.info("[Advisor] Fallback -> %s", provider_cfg["name"])
+                    resp = client.chat.completions.create(**create_kwargs)
+                else:
+                    raise
+            else:
+                raise
         elapsed = round(time.time() - t0, 1)
         raw     = resp.choices[0].message.content or ""
-        logger.info(f"[Advisor] ✅ {provider_cfg['name']} ответ за {elapsed}s")
+        logger.info("[Advisor] ✅ %s ответ за %ss", provider_cfg["name"], elapsed)
 
         parsed  = _parse_response(raw)
         applied = []
