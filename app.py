@@ -2219,6 +2219,35 @@ def api_ton_price():
         pass
     return jsonify({"price": 2.44})
 
+
+@app.route("/api/wallet")
+def api_wallet():
+    """Legacy-эндпоинт: адрес кошелька + последние транзакции.
+    Вызывается из refreshTon() в index.html для заполнения ton-addr / ton-deposits."""
+    try:
+        data = ton.get_data()
+        transactions = [
+            {
+                "value_ton":    dep.get("amount", 0),
+                "comment":      dep.get("comment", ""),
+                "message_text": dep.get("comment", ""),
+                "timestamp":    dep.get("time", 0),
+                "ts":           dep.get("time_str", ""),
+                "from":         dep.get("from", ""),
+                "hash":         dep.get("hash", ""),
+            }
+            for dep in (data.get("deposits") or [])
+        ]
+        return jsonify({
+            "ok":           True,
+            "address":      data.get("address", ""),
+            "balance":      data.get("balance", 0),
+            "transactions": transactions,
+        })
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e), "address": "", "transactions": []}), 500
+
+
 @app.route("/api/coin")
 def api_coin():
     base = Config.SYMBOL.split("/")[0].upper()
