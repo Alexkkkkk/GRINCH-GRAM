@@ -746,6 +746,7 @@ _PUBLIC_EXACT = {
     "/webhook/github",   # GitHub webhook — вызывается GitHub'ом, не пользователем
     "/api/ai-modules",   # статус AI-модулей — нужен до авторизации для дашборда
     "/api/performance",  # read-only торговая статистика — нужна виджетам без авторизации
+    "/api/ai/history",   # статистика обучения AI — только чтение, не содержит sensitive данных
 }
 _PUBLIC_PREFIXES = ("/static/", "/dashboard/", "/api/user/")
 
