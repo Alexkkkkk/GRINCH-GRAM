@@ -182,6 +182,15 @@ def _get_best_provider() -> Tuple[str, dict]:
         logger.warning(f"[Advisor] Выбранный провайдер {_selected_provider} не имеет ключа, авто-фолбэк")
 
     _now = time.time()
+    _expired = [p for p, ts in _failed_providers.items() if _now - ts >= PROVIDER_BLACKLIST_SECS]
+    for _p in _expired:
+        del _failed_providers[_p]
+        # Удаляем истёкшую запись из БД
+        try:
+            from settings_store import update_section as _us
+            _us("failed_providers", {_p: "0"})
+        except Exception:
+            pass
     for pid, cfg in candidates:
         # Пропускаем провайдеров с недавними ошибками квоты/авторизации
         if _now - _failed_providers.get(pid, 0) < PROVIDER_BLACKLIST_SECS:
@@ -205,6 +214,23 @@ def _load_provider_keys():
             _selected_provider = adv["selected_provider"]
     except Exception:
         pass
+    # Восстанавливаем _failed_providers из БД (переживает рестарт контейнера)
+    try:
+        from settings_store import get_section as _gs
+        _stored = _gs("failed_providers") or {}
+        _now = time.time()
+        for _pid, _ts in _stored.items():
+            try:
+                _ts_f = float(_ts)
+            except (TypeError, ValueError):
+                continue
+            # Загружаем только ещё актуальные блокировки
+            if _now - _ts_f < PROVIDER_BLACKLIST_SECS:
+                _failed_providers[_pid] = _ts_f
+                _remain = int((PROVIDER_BLACKLIST_SECS - (_now - _ts_f)) / 3600)
+                logger.info("[Advisor] Восстановлена блокировка %s (ещё ~%dч)", _pid, _remain)
+    except Exception as _e:
+        logger.debug("[Advisor] _load failed_providers: %s", _e)
 
 # ── Параметры автономии ────────────────────────────────────────────────────
 AUTO_INTERVAL_MIN    = 150  # минимум 150 мин: защищает бесплатный Groq TPD-лимит
@@ -1612,7 +1638,14 @@ def run_advisor(auto_apply: bool = None, user_message: str = "",
                     "[Advisor] %s недоступен (%s), авто-фолбэк...",
                     provider_cfg["name"], type(_api_err).__name__,
                 )
-                _failed_providers[provider_id] = time.time()
+                _fail_ts = time.time()
+                _failed_providers[provider_id] = _fail_ts
+                # Персистим блокировку в БД — переживёт рестарт контейнера
+                try:
+                    from settings_store import update_section as _us
+                    _us("failed_providers", {provider_id: str(_fail_ts)})
+                except Exception as _pe:
+                    logger.debug("[Advisor] persist failed_providers: %s", _pe)
                 _fb_id, _fb_cfg, _fb_client = None, None, None
                 for _pid, _pcfg in sorted(PROVIDER_CONFIGS.items(), key=lambda x: x[1]["priority"]):
                     if _pid == provider_id:
