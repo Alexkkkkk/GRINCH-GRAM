@@ -656,6 +656,12 @@ class ExperienceManager:
             # — просадка от пика капитала —
             peak = ctrl.get("peak_equity", 0) or 0
             cur_eq = equity[-1]["equity_ton"] if equity else peak
+            # M8-fix: если peak==0 но cur_eq>0 (первый запуск или сброс),
+            # инициализируем peak текущим капиталом, чтобы DD_PAUSE мог
+            # сработать при последующей просадке (иначе drawdown всегда 0%).
+            if peak <= 0 and cur_eq > 0:
+                peak = cur_eq
+                ctrl["peak_equity"] = round(peak, 6)
             drawdown = ((peak - cur_eq) / peak * 100) if peak > 0 else 0.0
             drawdown = max(0.0, drawdown)
 

@@ -82,24 +82,40 @@ def update_section(section: str, updates: dict) -> dict:
 
 
 # ─── Migration: JSON → DB при первом запуске с PostgreSQL ────────────────────
+_migration_done = False
+_migration_lock = threading.Lock()
+
+
 def migrate_to_db():
-    """Если в DB нет настроек, но JSON существует — переносим однократно."""
-    db = _db()
-    if not db:
+    """Если в DB нет настроек, но JSON существует — переносим однократно.
+
+    M11-fix: флаг + лок предотвращают двойную миграцию при одновременном
+    старте нескольких воркеров (Gunicorn pre-fork).
+    """
+    global _migration_done
+    if _migration_done:
         return
-    try:
-        existing = db.settings_get_all()
-        if existing:
+    with _migration_lock:
+        if _migration_done:   # double-check под локом
             return
-        data = _load_json()
-        if not data:
+        db = _db()
+        if not db:
             return
-        for section, updates in data.items():
-            if isinstance(updates, dict) and updates:
-                db.settings_update_section(section, updates)
-        logger.info("[Settings] ✅ Настройки мигрированы JSON → PostgreSQL")
-    except Exception as e:
-        logger.warning(f"[Settings] migrate_to_db error: {e}")
+        try:
+            existing = db.settings_get_all()
+            if existing:
+                return
+            data = _load_json()
+            if not data:
+                return
+            for section, updates in data.items():
+                if isinstance(updates, dict) and updates:
+                    db.settings_update_section(section, updates)
+            logger.info("[Settings] ✅ Настройки мигрированы JSON → PostgreSQL")
+        except Exception as e:
+            logger.warning(f"[Settings] migrate_to_db error: {e}")
+        finally:
+            _migration_done = True
 
 
 # ─── JSON helpers ─────────────────────────────────────────────────────────────

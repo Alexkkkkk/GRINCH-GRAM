@@ -42,6 +42,9 @@ _BAL_CACHE_TS: float     = 0.0         # timestamp последнего успе
 _BAL_CACHE_TTL: float    = 150.0       # секунды
 _BAL_CACHE_LOCK          = threading.Lock()
 _BAL_BACKOFF_UNTIL: float = 0.0        # не стучать раньше этого timestamp при 429
+# C4-fix: сериализуем HTTP-запросы к API баланса — только один поток
+# одновременно делает fetch. Остальные ждут его результата (double-checked).
+_BAL_FETCH_LOCK          = threading.Lock()
 
 
 def get_shared_balance(force: bool = False) -> dict:
@@ -58,12 +61,30 @@ def get_shared_balance(force: bool = False) -> dict:
         with _BAL_CACHE_LOCK:
             return dict(_BAL_CACHE) if _BAL_CACHE else {}
 
-    # Если кеш свежий — возвращаем без запроса
+    # Если кеш свежий — возвращаем без запроса (быстрый путь без fetch-lock)
     with _BAL_CACHE_LOCK:
         if not force and _BAL_CACHE and (now - _BAL_CACHE_TS) < _BAL_CACHE_TTL:
             return dict(_BAL_CACHE)
 
-    # Нужно обновить — делаем HTTP запросы
+    # C4-fix: сериализуем fetch — только один поток стучит в API.
+    # Остальные блокируются на _BAL_FETCH_LOCK и после разблокировки
+    # находят свежий кеш во втором (double-checked) чтении.
+    with _BAL_FETCH_LOCK:
+        # Двойная проверка: пока мы ждали lock — другой поток уже обновил кеш
+        now = time.time()
+        with _BAL_CACHE_LOCK:
+            if not force and _BAL_CACHE and (now - _BAL_CACHE_TS) < _BAL_CACHE_TTL:
+                return dict(_BAL_CACHE)
+
+        # Нужно обновить — делаем HTTP запросы
+        return _fetch_balance_and_update(force, now)
+
+
+def _fetch_balance_and_update(force: bool, now: float) -> dict:
+    """Внутренняя функция: делает HTTP-запросы и обновляет кеш.
+    Вызывается только из get_shared_balance под _BAL_FETCH_LOCK.
+    """
+    global _BAL_CACHE, _BAL_CACHE_TS, _BAL_BACKOFF_UNTIL
     wallet = Config.TON_WALLET
     token  = Config.GRINCH_TOKEN_ADDRESS
 
@@ -140,17 +161,9 @@ def get_shared_balance(force: bool = False) -> dict:
         with _BAL_CACHE_LOCK:
             _BAL_BACKOFF_UNTIL = now + 90.0
             log.warning("[Balance] 429 от TonCenter/TonAPI — пауза 90с, возвращаем кеш")
-            # Холодный старт: кеша ещё нет — возвращаем {} (не {TON:0,GRINCH:0}),
-            # чтобы вызывающий код не спутал "нет данных" с "баланс реально нулевой"
-            # (иначе торговая логика может принять решение на фиктивном нуле).
             return dict(_BAL_CACHE) if _BAL_CACHE else {}
 
-    # Защита от «битого» ответа API: TON=0 при том, что раньше баланс был
-    # заметно положительным почти всегда означает сбой чтения TonCenter/TonAPI
-    # (кошелёк с открытой GRINCH-позицией всегда держит газовый резерв и
-    # никогда не бывает ровно 0 TON), а не реальное состояние кошелька.
-    # Раньше такие битые снимки попадали в кеш и в историю equity — график
-    # капитала «проваливался» до нуля и сразу же возвращался обратно.
+    # Защита от «битого» ответа API: TON=0 при ненулевом кеше = сбой API
     with _BAL_CACHE_LOCK:
         _prev_ton = _BAL_CACHE.get("TON")
     if ton_val == 0.0 and _prev_ton and _prev_ton > 0.05:
@@ -171,10 +184,7 @@ def get_shared_balance(force: bool = False) -> dict:
             _BAL_CACHE_TS = now
         return dict(new_cache)
 
-    # Ничего не получили, но и 429 не было — возвращаем старый кеш.
-    # Холодный старт (кеша ещё нет): возвращаем {}, а НЕ {TON:0, GRINCH:0} —
-    # фиктивный нулевой баланс на старте процесса мог быть принят вызывающим
-    # кодом за реальное состояние кошелька и повлиять на торговое решение.
+    # Ничего не получили — возвращаем старый кеш (или {} при холодном старте)
     with _BAL_CACHE_LOCK:
         return dict(_BAL_CACHE) if _BAL_CACHE else {}
 
@@ -1164,8 +1174,9 @@ class DedustClient:
             # ── Preflight: хватает ли TON на газ? ──────────────────────────
             state = await provider.get_account_state(wallet.address)
             ton_nano = getattr(state, "balance", 0) or 0
-            # Минимум: gas_nano + 0.01 TON на сетевую комиссию wallet.transfer
-            needed_nano = gas_nano + int(0.01 * TON)
+            # L4-fix: gas_nano уже включает все расходы; extra 0.01 TON создавал
+            # ложную блокировку при пограничном балансе → убираем двойной счёт.
+            needed_nano = gas_nano
             if ton_nano < needed_nano:
                 return {
                     "ok": False,

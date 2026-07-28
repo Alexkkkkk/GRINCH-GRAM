@@ -2824,10 +2824,11 @@ class Trader:
         #   A (≥7 очков) — элитный вход: 1 подтверждение, откат -0.3%
         #   B (≥3 очков) — стандарт:    2 подтверждения, откат -0.8%
         #   C (<3 очков) — слабый:      3 подтверждения, откат -1.5%
+        # L2-fix: параметры грейдов A/C берутся из Config (не хардкодированы)
         _grade_params = {
-            "A": {"confirm": 1, "pullback": 0.3},
-            "B": {"confirm": 2, "pullback": Config.SMART_BUY_PULLBACK_PCT},
-            "C": {"confirm": 3, "pullback": 1.5},
+            "A": {"confirm": Config.SMART_BUY_GRADE_A_CONFIRM, "pullback": Config.SMART_BUY_GRADE_A_PULLBACK},
+            "B": {"confirm": 2,                                 "pullback": Config.SMART_BUY_PULLBACK_PCT},
+            "C": {"confirm": Config.SMART_BUY_GRADE_C_CONFIRM, "pullback": Config.SMART_BUY_GRADE_C_PULLBACK},
         }
         _gp = _grade_params.get(entry_quality, _grade_params["B"])
         confirm_needed = _gp["confirm"]

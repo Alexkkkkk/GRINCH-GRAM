@@ -117,7 +117,10 @@ class Organism:
                 self.age          = total
                 self._trade_wins  = wins
                 self._trade_total = total
-                if total >= 3:
+                # M10-fix: порог восстановления выровнен с runtime-порогом (≥5).
+                # Раньше restore использовал total>=3, а runtime-обновление total>=5 —
+                # confidence вёл себя по-разному после рестарта.
+                if total >= 5:
                     wr = wins / total
                     self.confidence = round(wr, 3)
                     self.fear       = round(max(0.0, 0.35 - wr * 0.35), 3)
