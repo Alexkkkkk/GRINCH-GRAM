@@ -29,7 +29,7 @@ RATE_STATIC_MAX       = 400      # /static/ — клиент грузит мно
 LOGIN_MAX_ATTEMPTS    = 10       # неудачных попыток входа
 LOGIN_LOCKOUT_SEC     = 900      # 15 мин блокировки после превышения
 
-AUTO_BAN_THRESHOLD    = 600      # запросов/окно → временный бан
+AUTO_BAN_THRESHOLD    = 200      # запросов/окно → временный бан
 BAN_DURATION_SEC      = 6 * 3600 # 6 часов
 
 _DATA_DIR        = os.environ.get("DATA_DIR", "data")
@@ -41,6 +41,7 @@ _ip_requests  = defaultdict(deque)   # ip → deque(timestamps)
 _login_fails  = defaultdict(list)    # ip → [fail_timestamp, ...]
 _auto_banned  = {}                    # ip → unban_timestamp
 _perm_banned  = set()                 # постоянные баны (из файла)
+_ratelimit_log_ts = {}               # ip → last_log_timestamp (throttle спама)
 
 # ── User-Agent фрагменты известных сканеров ────────────────────────────────
 _BAD_UA_FRAGMENTS = [
@@ -178,7 +179,12 @@ def check_request():
             limit = RATE_GENERAL_MAX
 
         if count > limit:
-            log.info("[Security] ⚠️  Rate limit %s — %d/%d req", ip, count, limit)
+            # Throttle: логируем не чаще 1 раза в 60 секунд на IP,
+            # иначе один сканер генерирует 150-200 лог-записей в минуту.
+            _last_log = _ratelimit_log_ts.get(ip, 0)
+            if now - _last_log >= 60:
+                log.info("[Security] ⚠️  Rate limit %s — %d/%d req (следующая запись через 60с)", ip, count, limit)
+                _ratelimit_log_ts[ip] = now
             from flask import make_response
             resp = make_response(jsonify({"error": "Too Many Requests",
                                           "retry_after": RATE_WINDOW_SEC}), 429)

@@ -299,6 +299,15 @@ class Trader:
                     f"но в БД открытая позиция {book_grinch:.2f} — позиция автоматически закрыта",
                     "WARN",
                 )
+                # BUG-FIX: сбрасываем wait_pullback, чтобы _restore_volatile_state()
+                # не восстановил True с устаревшим пиком из предыдущей сессии.
+                # Без этого бот с пустым кошельком ждёт 7% откат бесконечно.
+                self.dca_wait_pullback = False
+                self.dca_peak_price    = 0.0
+                try:
+                    self._save_volatile_state()
+                except Exception:
+                    pass
                 try:
                     self.exp.save_open_trades([])
                 except Exception:
