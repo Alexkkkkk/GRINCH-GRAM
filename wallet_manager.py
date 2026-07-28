@@ -308,6 +308,17 @@ class WalletManager:
     def get_full_status(self) -> dict:
         """Полный статус кошелька: снимок + позиция + потенциал + история (50 точек)."""
         snap    = self.get_snapshot()
+        # Fallback: если in-memory snap пуст (первые секунды после старта),
+        # берём последний снапшот из PostgreSQL чтобы дашборд не показывал —
+        if not snap or not snap.get("ton_balance"):
+            try:
+                import db_store as _ds
+                _db_snap = _ds.wallet_snapshots_get_recent(1)
+                if _db_snap:
+                    snap = _db_snap[-1]
+                    log.debug("[WalletManager] get_full_status: snap from DB (cold start)")
+            except Exception as _e:
+                log.debug("[WalletManager] DB snap fallback: %s", _e)
         history = self.get_history(50)
 
         grinch_bal  = snap.get("grinch_balance", 0) or 0

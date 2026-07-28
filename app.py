@@ -2279,10 +2279,14 @@ def api_liquidity_guard_status():
 
 @app.route("/api/equity")
 def api_equity():
-    """История изменения баланса кошелька (equity curve)."""
-    from experience_manager import experience_manager
-    with experience_manager._lock:
-        pts = list(experience_manager.data.get("equity", []))
+    """История изменения баланса кошелька (equity curve) — из PostgreSQL."""
+    import db_store as _ds
+    pts = _ds.equity_get_all(limit=3000)
+    # Fallback: если БД недоступна, читаем из памяти experience_manager
+    if not pts:
+        from experience_manager import experience_manager
+        with experience_manager._lock:
+            pts = list(experience_manager.data.get("equity", []))
     return jsonify({"points": pts})
 
 @app.route("/api/experience")

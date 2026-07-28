@@ -136,6 +136,11 @@ def check_request():
     path = _req.path or "/"
     now  = time.time()
 
+
+    # Localhost / container-internal requests — no rate limiting
+    if ip in ("127.0.0.1", "::1", "localhost"):
+        return None
+
     with _lock:
         # ── 1. Чёрный список ────────────────────────────────────────────
         if _is_banned(ip):

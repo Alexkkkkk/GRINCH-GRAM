@@ -594,7 +594,7 @@ def equity_get_all(limit: int = 3000) -> list:
             with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
                 cur.execute(
                     "SELECT ts, ton, grinch, grinch_usd, equity_ton FROM bot_equity"
-                    " ORDER BY ts ASC LIMIT %s",
+                    " ORDER BY ts DESC LIMIT %s",
                     (limit,)
                 )
                 result = []
@@ -606,6 +606,7 @@ def equity_get_all(limit: int = 3000) -> list:
                         "grinch_usd": row["grinch_usd"],
                         "equity_ton": row["equity_ton"],
                     })
+                result.reverse()  # вернуть хронологический порядок (старые→новые)
                 return result
     except Exception as e:
         logger.warning(f"[DB] equity_get_all error: {e}")
