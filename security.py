@@ -22,14 +22,14 @@ log = logging.getLogger("security")
 
 # ── Настройки ──────────────────────────────────────────────────────────────
 RATE_WINDOW_SEC       = 60       # длина скользящего окна (секунд)
-RATE_GENERAL_MAX      = 150      # запросов/окно для обычных путей
-RATE_API_MAX          = 80       # запросов/окно для /api/*
-RATE_STATIC_MAX       = 400      # /static/ — клиент грузит много ресурсов
+RATE_GENERAL_MAX      = 300      # запросов/окно для обычных путей
+RATE_API_MAX          = 300      # запросов/окно для /api/* (дашборд ~120-150 req/min)
+RATE_STATIC_MAX       = 600      # /static/ — клиент грузит много ресурсов
 
 LOGIN_MAX_ATTEMPTS    = 10       # неудачных попыток входа
 LOGIN_LOCKOUT_SEC     = 900      # 15 мин блокировки после превышения
 
-AUTO_BAN_THRESHOLD    = 200      # запросов/окно → временный бан
+AUTO_BAN_THRESHOLD    = 500      # запросов/окно → временный бан
 BAN_DURATION_SEC      = 6 * 3600 # 6 часов
 
 _DATA_DIR        = os.environ.get("DATA_DIR", "data")

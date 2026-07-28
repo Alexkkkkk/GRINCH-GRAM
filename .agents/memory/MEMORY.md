@@ -65,3 +65,4 @@
 - [Living Organism AI](living-organism.md) — organism.py singleton; 7 bio-systems; JS IIFE must declare its own `const _el = id => document.getElementById(id)` since _el defined in another IIFE scope; /api/organism endpoint; all hooks wrapped in try/except so failure never crashes trader.
 - [Circuit Breaker & Performance System](circuit-breaker-perf.md) — daily auto-pause (CIRCUIT_BREAKER_DAILY_LOSS_PCT=15%), _record_trade_pnl() extended stats, BrainFusion dynamic weights by source accuracy, /api/performance endpoint.
 - [GRINCH market tuning](grinch-market-tuning.md) — ATR recalibrated 20.07 evening: 2.225%→4.67%(15m), 12 params updated; on-chain whale balance added to wallet_tracker. VPS=port 80.
+- [Security rate-limit thresholds](security-rate-limit.md) — RATE_API_MAX≥300/AUTO_BAN≥500 или дашборд баннит самого владельца (120-150 req/min на вкладку).
