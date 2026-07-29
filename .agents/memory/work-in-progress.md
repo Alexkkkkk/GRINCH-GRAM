@@ -12,77 +12,40 @@ description: Текущая незавершённая работа — что �
 
 ---
 
-## ✅ Завершено (сессия 28.07.2026 — аудит дашборда)
+## ✅ Завершено (сессия 29.07.2026 — полный аудит и исправления)
 
-| Файл | Что исправлено |
-|------|----------------|
-| `db_store.py` | `equity_get_all` — ORDER BY ts **DESC** |
-| `app.py` | `/api/equity` — читает из БД, experience_manager только fallback |
-| `wallet_manager.py` | `get_full_status` — DB-fallback при cold start |
-| `security.py` | Whitelist `127.0.0.1` / `::1` |
-| `ai_advisor.py` | Авто-фолбэк провайдеров: при quota/auth блокирует на 6ч, переключается на следующий |
-
----
-
-## ✅ Завершено (сессия 29.07.2026 — rate-limit + DCA карточка)
-
-| Файл | Что исправлено |
-|------|----------------|
-| `app.py` | `/api/ai/history` добавлен в `_PUBLIC_EXACT` — был 401 без логина на мобильном |
-| `security.py` | RATE_API_MAX 80→300, RATE_GENERAL_MAX 150→300, RATE_STATIC_MAX 400→600, AUTO_BAN_THRESHOLD 200→500 |
-| `trader.py` | `get_status()` self-heal: если open_trades есть но dca_entries_count=0 — пересчитывает из open_trades |
-| `static/js/app.js` | Фаза DCA: если `last_buy_price > 0` но entries_count=0 — не падать в "Ожидание входа", показывать "Ожидание отката" |
+| Что исправлено | Результат |
+|----------------|-----------|
+| SYMBOL | "GRINCH/TON" ✅ (уже был правильным) |
+| TAKE_PROFIT_PCT | 22.0 ✅ (уже был правильным) |
+| MAX_OPEN_TRADES | 1 ✅ (уже был правильным) |
+| Все провайдеры советника | failed_providers очищены |
+| dca_compound_bonus_ton | Сброшен 43.22 → 0.0 (DB + JSON + in-memory) |
+| DEAD_HOURS_UTC | Урезан "0,3,8,12,14" → "0,3" (убраны дневные часы) |
+| DCA_MAX_ENTRIES | Снижен 10 → 3 (макс. экспозиция ≤360 TON при балансе ~450) |
+| wallet_snapshots ORDER | Уже верный (reversed(rows) на строке 961) |
+| patch2.py / patch_market_tune.py | Не существуют на VPS |
+| requirements.txt дубли | Уже чистый |
+| .env права доступа | chmod 600 подтверждён |
+| SSH-пароль VPS | Обновлён в секрете VPS_SSH_KEY |
 
 ---
 
-## ✅ Завершено (сессия 29.07.2026 — советник + whitelist)
-
-| Задача | Статус |
-|--------|--------|
-| Персистентный фолбэк советника (Groq AuthError / OpenAI quota) | ✅ Сделано |
-| Whitelist IP владельца — защита от авто-бана | ✅ Сделано |
-
----
-
-## ✅ Завершено (сессия 29.07.2026 — стабилизация вкладки Кошелёк)
-
-| Файл | Что исправлено |
-|------|----------------|
-| `static/js/app.js` | `_updatePortfolioTracker` пропускает обновление элементов, если открыта вкладка «Кошелёк» — устранён конфликт двух циклов обновления |
-| `static/js/app.js` | Удалён старый `initEquityChart()` IIFE — уничтожал Chart.js-инстанс каждые 15 сек |
-
----
-
-## ✅ Завершено (сессия 29.07.2026 — восстановление SSH)
-
-| Задача | Статус |
-|--------|--------|
-| SSH к VPS (пароль root сменён) | ✅ Восстановлено — новый пароль в секрете VPS_SSH_KEY |
-
----
-
-## ❌ Не сделано — открытые задачи (из аудита 29.07.2026)
+## ❌ Открытые задачи
 
 | # | Приоритет | Задача |
 |---|-----------|--------|
-| 1 | 🔴 | SYMBOL: "GRINCH/USDT" → "GRINCH/TON" в settings.json на VPS |
-| 2 | 🔴 | TAKE_PROFIT_PCT: 7.0 → 22.0, убрать дубль take_profit_pct: "9.3" |
-| 3 | 🔴 | MAX_OPEN_TRADES: 10 → 1 |
-| 4 | 🔴 | Groq заблокирован — разблокировать или настроить фолбэк |
-| 5 | 🔴 | TELEGRAM_CHAT_ID пустой — заполнить |
-| 6 | 🟡 | wallet_snapshots ORDER: DESC → ASC |
-| 7 | 🟡 | Сбросить/заморозить dca_compound_bonus_ton (43 TON накоплено в убыточной позиции) |
-| 8 | 🟡 | Удалить patch2.py, patch_market_tune.py |
-| 9 | 🟡 | Убрать дубликаты из requirements.txt |
-| 10 | 🟠 | ADMIN_PASSWORD вынести из docker env в .env с правами 600 |
+| 1 | 🔴 | **Groq API Key невалидный** — оба ключа дают 401. Нужен новый ключ с console.groq.com → API Keys → Create. После получения: `sed -i 's|^GROQ_API_KEY=.*|GROQ_API_KEY=gsk_NEW|' /opt/bot/.env` + `docker compose restart bot` |
+| 2 | 🟡 | **TELEGRAM_CHAT_ID пустой** — алерты не доходят. Написать /start боту @userinfobot → получить ID → записать через дашборд или settings_store |
 
 ---
 
-## 🔄 Текущее состояние бота (29.07.2026)
+## 🔄 Текущее состояние бота (29.07.2026 ~07:46 UTC)
 
+- **Контейнер:** bot-bot-1 healthy
 - **Открытая позиция:** 882k GRINCH, -5.5%, нужен рост +11.87% до $0.00083151
-- **DCA:** ждёт отката 15% (текущий откат 4.3%)
-- **Контейнер:** bot-bot-1 healthy, поднят ~3 мин назад
+- **DCA:** ждёт отката 15% (текущий 4.3%)
+- **Советник Groq:** заблокирован (ключ невалиден), торговля идёт без LLM-советника
 - **Bot stats:** 22 сделки, 20 побед (90.9%), PnL +147.99 TON
 
 ---
@@ -90,8 +53,7 @@ description: Текущая незавершённая работа — что �
 ## 📋 Контекст проекта
 
 - **Боевой бот:** VPS 2.27.25.126, контейнер `bot-bot-1`, порт 3000 (nginx на 80)
-- **Код на VPS:** `/opt/bot/`
+- **Код на VPS:** `/opt/bot/` + `.env` (права 600)
 - **SSH:** `sshpass -p "$VPS_SSH_KEY" ssh -o StrictHostKeyChecking=no root@2.27.25.126`
-- **Деплой:** `sshpass -p "$VPS_SSH_KEY" scp файл root@2.27.25.126:/opt/bot/файл` → `docker cp /opt/bot/файл bot-bot-1:/usr/src/app/файл`
-- **Провайдеры AI советника (приоритет):** OpenAI(1) → DeepSeek(2) → xAI(3) → Anthropic(4) → Groq(5)
+- **Деплой:** scp → docker cp → или `docker compose restart bot`
 - **Replit используется как редактор** — превью не нужно, всё деплоится на VPS
