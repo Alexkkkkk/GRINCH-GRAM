@@ -3088,9 +3088,23 @@ def api_grid_build():
         if not price_ton:
             return jsonify({'ok': False, 'error': 'Нет цены GRINCH/TON'}), 400
 
+        # grinch_balance: явный параметр > кошелёк > DCA позиция (весь GRINCH может быть в DCA)
+        if 'grinch_balance' in data:
+            grinch_bal = float(data['grinch_balance'])
+        else:
+            grinch_bal = float(bal.get('grinch', 0))
+            if grinch_bal < 1000:
+                # Весь GRINCH в DCA — берём сумму открытых позиций
+                try:
+                    from db_store import db_store as _ds
+                    _trades = _ds.trades_load_open()
+                    grinch_bal = sum(float(t.get('amount', 0)) for t in _trades.values())
+                except Exception:
+                    pass
+
         result = get_grid_trader().build_grid(
             current_price_ton = price_ton,
-            grinch_balance    = float(bal.get('grinch', 0)),
+            grinch_balance    = grinch_bal,
             ton_balance       = float(bal.get('ton', 0)),
             step_pct          = float(data.get('step_pct', GridConfig.DEFAULT_STEP_PCT)),
             sell_levels       = int(data.get('sell_levels',  GridConfig.SELL_LEVELS_COUNT)),
