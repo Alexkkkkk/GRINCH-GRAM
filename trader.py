@@ -81,6 +81,16 @@ class Trader:
         self.training = False
         self.trades      = []
         self.open_trades = []
+        # Загружаем историю закрытых сделок из DB при старте (чтобы дашборд
+        # не показывал пустую историю после перезапуска)
+        try:
+            import db_store as _ds
+            _db_trades = _ds.trades_get_recent(100)
+            if _db_trades:
+                # trades_get_recent возвращает DESC (новые первые) — разворачиваем
+                self.trades = list(reversed(_db_trades))
+        except Exception:
+            pass
         self.logs        = []
         self.last_ai       = {}
         self.last_analysis = {}   # кэш последнего strategy.analyze() — обновляется в _tick()

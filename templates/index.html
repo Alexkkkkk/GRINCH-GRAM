@@ -611,6 +611,54 @@
         <div id="trades-history" class="trades-list" style="max-height:420px;overflow-y:auto"></div>
       </div>
 
+      <!-- Grid Trading Panel -->
+      <div class="card card-c" id="grid-panel">
+        <div class="card-title ctit" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+          🔲 Grid-сетка
+          <span id="grid-status-badge" style="font-size:10px;font-weight:700;padding:2px 9px;border-radius:10px;background:rgba(255,255,255,.07);color:var(--text2)">загрузка…</span>
+          <span id="grid-regime-badge" style="font-size:10px;padding:2px 9px;border-radius:10px;background:rgba(0,212,255,.1);color:#00d4ff;display:none"></span>
+          <span id="grid-ai-paused-badge" style="font-size:10px;font-weight:700;padding:2px 9px;border-radius:10px;background:rgba(255,107,107,.12);color:var(--red);display:none">⏸ AI-пауза</span>
+          <span style="margin-left:auto;font-size:12px;font-family:var(--mono);color:var(--green);font-weight:700" id="grid-total-profit">+0.000 TON</span>
+        </div>
+
+        <!-- Метрики -->
+        <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin-bottom:10px">
+          <div style="background:rgba(0,212,255,.06);border:1px solid rgba(0,212,255,.12);border-radius:8px;padding:7px;text-align:center">
+            <div style="font-size:9px;color:var(--text2);margin-bottom:2px">Центр</div>
+            <div id="grid-center" style="font-size:11px;font-weight:700;font-family:var(--mono);color:var(--text)">—</div>
+          </div>
+          <div style="background:rgba(0,255,136,.06);border:1px solid rgba(0,255,136,.12);border-radius:8px;padding:7px;text-align:center">
+            <div style="font-size:9px;color:var(--text2);margin-bottom:2px">Шаг</div>
+            <div id="grid-step" style="font-size:12px;font-weight:700;font-family:var(--mono);color:var(--green)">—</div>
+          </div>
+          <div style="background:rgba(160,0,255,.06);border:1px solid rgba(160,0,255,.12);border-radius:8px;padding:7px;text-align:center">
+            <div style="font-size:9px;color:var(--text2);margin-bottom:2px">SELL ожид.</div>
+            <div id="grid-sell-waiting" style="font-size:12px;font-weight:700;font-family:var(--mono);color:#c084fc">— / —</div>
+          </div>
+          <div style="background:rgba(251,191,36,.06);border:1px solid rgba(251,191,36,.12);border-radius:8px;padding:7px;text-align:center">
+            <div style="font-size:9px;color:var(--text2);margin-bottom:2px">Циклов</div>
+            <div id="grid-cycles" style="font-size:12px;font-weight:700;font-family:var(--mono);color:var(--yellow)">—</div>
+          </div>
+        </div>
+
+        <!-- SELL уровни -->
+        <div style="margin-bottom:10px">
+          <div style="font-size:10px;font-weight:700;color:var(--text-mid);margin-bottom:5px;letter-spacing:.5px">📊 SELL УРОВНИ</div>
+          <div id="grid-sell-levels" style="display:flex;flex-direction:column;gap:2px;max-height:200px;overflow-y:auto"></div>
+        </div>
+
+        <!-- GridAI-менеджер -->
+        <div style="padding:8px 10px;background:rgba(0,255,136,.04);border:1px solid rgba(0,255,136,.1);border-radius:8px">
+          <div style="display:flex;align-items:center;gap:6px;margin-bottom:5px">
+            <span style="font-size:10px;font-weight:700;color:var(--green)">🤖 GridAI-менеджер</span>
+            <span id="grid-ai-rebuild-cd" style="font-size:10px;color:var(--text2)"></span>
+          </div>
+          <div id="grid-ai-mgr-log" style="display:flex;flex-direction:column;gap:3px;max-height:110px;overflow-y:auto">
+            <div style="font-size:11px;color:var(--text2)">Решений пока нет</div>
+          </div>
+        </div>
+      </div>
+
       <!-- Feature importance -->
       <div class="card card-c">
         <div class="card-title ctit">🏆 Ключевые признаки AI <span style="font-size:10px;color:var(--text2);font-weight:400;margin-left:4px">RF · XGB · MLP</span></div>

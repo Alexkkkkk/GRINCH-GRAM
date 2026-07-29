@@ -38,6 +38,9 @@ document.addEventListener("DOMContentLoaded", () => {
 
 // Немедленно загружаем данные при старте страницы (не ждём SocketIO)
 fetch("/api/status").then(r => r.json()).then(updateUI).catch(() => {});
+// Grid: немедленно и затем каждые 30 сек
+fetchGridStatus();
+setInterval(fetchGridStatus, 30000);
 
 const socket = io({
   path: "/socket.io",
@@ -1206,6 +1209,117 @@ async function closeTrade(btn, id) {
   }
   fetch("/api/status").then(r => r.json()).then(updateUI).catch(() => {});
 }
+
+// ════════════════════════════════════════════════════
+//  Grid-сетка: статус + GridAIManager
+// ════════════════════════════════════════════════════
+
+async function fetchGridStatus() {
+  try {
+    const r = await fetch('/api/grid/status');
+    if (!r.ok) return;
+    const d = await r.json();
+    renderGridPanel(d);
+  } catch(e) {}
+}
+
+function _gtxt(id, val) {
+  const el = document.getElementById(id);
+  if (el) el.textContent = val;
+}
+
+function renderGridPanel(d) {
+  if (!d || !d.active !== false && !d.active) return;
+
+  // Статус-бейдж
+  const active = d.active;
+  const badge  = document.getElementById('grid-status-badge');
+  if (badge) {
+    badge.textContent = active ? '▶ Активна' : '⏸ Пауза';
+    badge.style.background = active ? 'rgba(0,255,136,.15)' : 'rgba(255,107,107,.12)';
+    badge.style.color = active ? 'var(--green)' : 'var(--red)';
+  }
+
+  // Режим и AI-пауза
+  const aiMgr  = d.ai_manager || {};
+  const regime = aiMgr.last_regime || '';
+  const regEl  = document.getElementById('grid-regime-badge');
+  if (regEl) {
+    if (regime && regime !== 'UNKNOWN') {
+      regEl.textContent = regime;
+      regEl.style.display = '';
+    } else {
+      regEl.style.display = 'none';
+    }
+  }
+  const pausedEl = document.getElementById('grid-ai-paused-badge');
+  if (pausedEl) pausedEl.style.display = aiMgr.paused_by_ai ? '' : 'none';
+
+  // Метрики
+  const profit = d.total_profit_ton || 0;
+  _gtxt('grid-total-profit', (profit >= 0 ? '+' : '') + profit.toFixed(3) + ' TON');
+  _gtxt('grid-center', d.center_price_ton ? d.center_price_ton.toFixed(6) + ' TON' : '—');
+  _gtxt('grid-step',   d.step_pct != null ? d.step_pct.toFixed(1) + '%' : '—');
+  _gtxt('grid-cycles', d.total_sell_cycles != null ? d.total_sell_cycles : '—');
+
+  const sells   = d.sell_levels || [];
+  const waiting = sells.filter(l => l.status === 'waiting');
+  _gtxt('grid-sell-waiting', `${waiting.length} / ${sells.length}`);
+
+  // SELL уровни
+  const lvlEl = document.getElementById('grid-sell-levels');
+  if (lvlEl) {
+    if (!sells.length) {
+      lvlEl.innerHTML = '<div style="font-size:11px;color:var(--text2);padding:4px">Нет уровней</div>';
+    } else {
+      lvlEl.innerHTML = sells.map(l => {
+        const isFilled  = l.status === 'filled';
+        const isWaiting = l.status === 'waiting';
+        const icon = isFilled ? '✅' : isWaiting ? '⏳' : '⊘';
+        const clr  = isFilled ? 'var(--green)' : isWaiting ? 'var(--text)' : 'var(--text2)';
+        const priceStr = l.price_ton ? l.price_ton.toFixed(6) : '—';
+        const amtStr   = l.amount_grinch ? (l.amount_grinch / 1000).toFixed(0) + 'k GRN' : '';
+        const profitStr = isFilled && l.profit_ton ? `<span style="color:var(--green);font-size:10px">+${l.profit_ton.toFixed(3)} TON</span>` : '';
+        return `<div style="display:flex;align-items:center;gap:8px;padding:3px 6px;background:rgba(255,255,255,.025);border-radius:4px;font-size:11px">
+          <span style="width:14px;flex-shrink:0">${icon}</span>
+          <span style="font-family:var(--mono);color:${clr};flex:1">${priceStr} TON</span>
+          <span style="color:var(--text2);font-size:10px">${amtStr}</span>
+          ${profitStr}
+        </div>`;
+      }).join('');
+    }
+  }
+
+  // GridAI-менеджер: лог решений
+  const logEl = document.getElementById('grid-ai-mgr-log');
+  const decLog = aiMgr.decision_log || [];
+  if (logEl) {
+    if (!decLog.length) {
+      logEl.innerHTML = '<div style="font-size:11px;color:var(--text2)">Решений пока нет</div>';
+    } else {
+      logEl.innerHTML = decLog.slice(0, 6).map(e => {
+        const t    = e.ts ? new Date(e.ts * 1000).toISOString().slice(11, 16) : '';
+        const decs = (e.decisions || []).join(' · ');
+        return `<div style="font-size:10px;padding:2px 0;border-bottom:1px solid rgba(255,255,255,.04);line-height:1.5">
+          <span style="color:var(--text2)">${t}</span>
+          <span style="color:#00d4ff;margin:0 5px">[${e.regime || ''}]</span>
+          <span style="color:var(--text-dim)">${escapeHtml(decs)}</span>
+        </div>`;
+      }).join('');
+    }
+  }
+
+  // Кулдаун перестройки
+  const cdEl = document.getElementById('grid-ai-rebuild-cd');
+  if (cdEl && aiMgr.rebuild_cooldown_left != null) {
+    const mins = Math.ceil(aiMgr.rebuild_cooldown_left / 60);
+    cdEl.textContent = mins > 0 ? `перестройка через ${mins} мин` : 'перестройка готова';
+  }
+}
+
+// ════════════════════════════════════════════════════
+//  История сделок
+// ════════════════════════════════════════════════════
 
 function renderHistory(trades) {
   const el     = document.getElementById("trades-history");
