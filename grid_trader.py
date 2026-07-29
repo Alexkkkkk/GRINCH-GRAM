@@ -205,7 +205,7 @@ class GridTrader:
             step_pct = max(GridConfig.MIN_STEP_PCT,
                            min(GridConfig.MAX_STEP_PCT, step_pct))
         else:
-            atr_pct, regime = self._get_regime()
+            regime, atr_pct = self._get_regime()
             if self._grid_ai:
                 step_pct = self._grid_ai.get_optimal_step(
                     atr_pct, regime,
