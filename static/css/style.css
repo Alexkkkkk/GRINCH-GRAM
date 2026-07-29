@@ -2191,6 +2191,16 @@ body::after {
   /* Forecast col: убираем на мобиле (экономит место) */
   .brain-forecast-col { display: none; }
   .brain-spark-row { grid-template-columns: 1fr; }
+
+  /* ── Trade cards: no overflow on narrow screens ── */
+  .trade-card { overflow: hidden; }
+  .trade-row  { flex-wrap: wrap; gap: 4px; }
+  /* Entry/exit price row stacks on very small screens */
+  .trade-row > span[style*="font-size:12px"] { min-width: 0; flex: 1 1 45%; }
+
+  /* Feature importance: shrink bar on mobile */
+  .fi-bar-wrap { width: 56px !important; }
+  .fi-row { gap: 5px; }
 }
 
 /* ─ Extra small: ≤400px ───────────────────────────────────── */
