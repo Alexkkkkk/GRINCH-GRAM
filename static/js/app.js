@@ -786,6 +786,13 @@ function updateAIPro(ai) {
 let _portfolioBaseline = null;
 
 function _updatePortfolioTracker(bal, analysis, stats) {
+  // Если открыта вкладка «Кошелёк» — её элементы обслуживает renderWalletFull()
+  // (данные с /api/wallet/full, обновление каждые 6 сек).
+  // _updatePortfolioTracker обновляет те же id каждые 2 сек с другим форматом
+  // → два цикла перезаписывают друг друга → "прыгание" значений.
+  const walletTab = document.getElementById('tab-wallet');
+  if (walletTab && !walletTab.classList.contains('tab-hidden')) return;
+
   const tonAmt  = Number(bal?.TON)    || 0;
   const grnAmt  = Number(bal?.GRINCH) || 0;
   const grnUsd  = Number(analysis?.price) || 0;
