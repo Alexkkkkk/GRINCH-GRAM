@@ -4641,6 +4641,31 @@ class Trader:
             _ai_conf >= Config.AI_FULL_RIGHTS_MIN_CONF
         )
         # ── DCA статус ───────────────────────────────────────────────
+        # Self-heal: если open_trades есть, но счётчики цикла = 0 (рассинхрон
+        # после рестарта или кратковременного сброса) — восстановить из позиций.
+        if Config.DCA_MODE and self.open_trades and self.dca_entries_count == 0:
+            try:
+                _sh_trades = [t for t in self.open_trades if t.get("dca_entry")]
+                if not _sh_trades:
+                    _sh_trades = [t for t in self.open_trades
+                                  if t.get("trade_type") != "short"]
+                if _sh_trades:
+                    self.dca_entries_count = max(
+                        int(t.get("dca_index") or 1) for t in _sh_trades)
+                    self.dca_total_stake = sum(
+                        float(t.get("stake_ton") or 0) for t in _sh_trades)
+                    if not self.dca_last_buy_price:
+                        _sh_sorted = sorted(
+                            _sh_trades,
+                            key=lambda t: (t.get("dca_index") or 0, t.get("opened_at") or ""))
+                        self.dca_last_buy_price = float(
+                            _sh_sorted[-1].get("entry_price") or 0)
+                    self.log(
+                        f"[get_status] DCA self-heal: entries={self.dca_entries_count} "
+                        f"stake={self.dca_total_stake:.2f} TON", "DEBUG")
+            except Exception:
+                pass
+
         dca_portfolio_pct = None
         dca_portfolio_ton = None
         if Config.DCA_MODE and self.open_trades:

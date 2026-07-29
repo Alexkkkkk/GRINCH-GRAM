@@ -320,7 +320,13 @@ function renderDcaState(st, active) {
     "buying":  "🟢 Набор позиции",
     "waiting": "📉 Ожидание отката",
   };
-  const phase = st.wait_pullback ? "waiting" : (st.entries_count > 0 ? "buying" : "idle");
+  // Если last_buy_price > 0 но entries_count ещё 0 (кратковременный рассинхрон
+  // между сбросом цикла и self-heal в следующем тике) — не показывать "Ожидание входа"
+  const phase = st.wait_pullback
+    ? "waiting"
+    : (st.entries_count > 0
+      ? "buying"
+      : (st.last_buy_price > 0 ? "waiting" : "idle"));
   if (g("dca-phase"))   g("dca-phase").textContent  = phaseMap[phase] || phase;
   if (g("dca-entries")) g("dca-entries").textContent = (st.entries_count ?? "—") + " / " + (st.max_entries ?? "—");
   if (g("dca-stake"))   g("dca-stake").textContent   = st.total_stake != null ? Number(st.total_stake).toFixed(2) + " TON" : "—";
