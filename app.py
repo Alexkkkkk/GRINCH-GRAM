@@ -716,6 +716,18 @@ def start_background():
         except Exception as _sc_ex:
             print(f"[Scanner] не запущен: {_sc_ex}")
 
+        # -- Grid Trader: AI-управляемая сеточная торговля --
+        try:
+            from grid_trader import get_grid_trader
+            _grid = get_grid_trader()
+            _dc   = getattr(trader, 'dedust', None) or getattr(trader, '_dc', None)
+            _ai   = getattr(trader, 'ai', None)
+            _grid.inject(dedust_client=_dc, ai_engine=_ai)
+            _grid.start_poller()
+            print('[Grid] Grid-trader поллер запущен')
+        except Exception as _grid_ex:
+            print('[Grid] не запущен: ' + str(_grid_ex))
+
 start_background()
 
 
@@ -3043,3 +3055,78 @@ if __name__ == "__main__":
             time.sleep(2)
     else:
         raise SystemExit(f"[startup] порт {_PORT} так и не освободился")
+
+
+# ════════════════════════════════════════════════════════════════════════════
+#  Grid Trading API
+# ════════════════════════════════════════════════════════════════════════════
+
+@app.route('/api/grid/status')
+def api_grid_status():
+    try:
+        from grid_trader import get_grid_trader
+        return jsonify(get_grid_trader().get_status())
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/grid/build', methods=['POST'])
+def api_grid_build():
+    try:
+        from grid_trader import get_grid_trader, GridConfig
+        from price_feed import price_feed
+        from dedust_client import get_shared_balance
+
+        data      = request.get_json(silent=True) or {}
+        bal       = get_shared_balance()
+        price_ton = price_feed.get_grinch_ton_price()
+        if not price_ton:
+            return jsonify({'ok': False, 'error': 'Нет цены GRINCH/TON'}), 400
+
+        result = get_grid_trader().build_grid(
+            current_price_ton = price_ton,
+            grinch_balance    = float(bal.get('grinch', 0)),
+            ton_balance       = float(bal.get('ton', 0)),
+            step_pct          = float(data.get('step_pct', GridConfig.DEFAULT_STEP_PCT)),
+            sell_levels       = int(data.get('sell_levels',  GridConfig.SELL_LEVELS_COUNT)),
+            buy_levels        = int(data.get('buy_levels',   GridConfig.BUY_LEVELS_COUNT)),
+        )
+        return jsonify(result)
+    except Exception as e:
+        return jsonify({'ok': False, 'error': str(e)}), 500
+
+
+@app.route('/api/grid/activate', methods=['POST'])
+def api_grid_activate():
+    try:
+        from grid_trader import get_grid_trader
+        return jsonify(get_grid_trader().activate())
+    except Exception as e:
+        return jsonify({'ok': False, 'error': str(e)}), 500
+
+
+@app.route('/api/grid/deactivate', methods=['POST'])
+def api_grid_deactivate():
+    try:
+        from grid_trader import get_grid_trader
+        data   = request.get_json(silent=True) or {}
+        reason = data.get('reason', 'manual')
+        return jsonify(get_grid_trader().deactivate(reason=reason))
+    except Exception as e:
+        return jsonify({'ok': False, 'error': str(e)}), 500
+
+
+@app.route('/api/grid/step', methods=['POST'])
+def api_grid_set_step():
+    try:
+        from grid_trader import get_grid_trader, GridConfig
+        data = request.get_json(silent=True) or {}
+        step = float(data.get('step_pct', GridConfig.DEFAULT_STEP_PCT))
+        step = max(GridConfig.MIN_STEP_PCT, min(GridConfig.MAX_STEP_PCT, step))
+        gt   = get_grid_trader()
+        with gt._lock:
+            gt._state.step_pct = step
+            gt._save_state()
+        return jsonify({'ok': True, 'step_pct': step})
+    except Exception as e:
+        return jsonify({'ok': False, 'error': str(e)}), 500

@@ -53,6 +53,7 @@
 - [AI-модули — тройка оптимизаторов](ai-modules-triad.md) — EntryOpt+TPOpt+Scanner: пусты при старте, обучаются на реальных сделках; динамический TP не ниже Config; scanner = 4-й источник BrainFusion.
 - [VPS SSH Access](vps-ssh-access.md) — пароль root в секрете VPS_SSH_KEY (не ключ!); sshpass -p "$VPS_SSH_KEY" ssh root@2.27.25.126; контейнер bot-bot-1; код в /opt/bot.
 - [Work In Progress](work-in-progress.md) — ЧТО ДЕЛАЛОСЬ В ПРОШЛОЙ СЕССИИ: файлы, незавершённые задачи, следующие шаги. Читать в начале каждой сессии, обновлять в конце.
+- [Grid Trading System](grid-trading.md) — grid_trader.py: recovery-grid + реинвест + AI-фильтр; API /api/grid/*; состояние в /app/data/grid_state.json; координация с DCA trader.
 
 - [Gunicorn preload reload gotcha](gunicorn-preload-reload.md) — SIGHUP to --preload gunicorn never picks up new code; needs real process restart; re-verify /api/config settings survived after any VPS restart.
 - [Docker cp deploy — verify after restart](docker-cp-deploy-verify.md) — a docker cp+restart hotfix once silently reverted; always re-check md5sum inside the container AFTER restart completes, not just right after cp.

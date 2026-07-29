@@ -12,22 +12,15 @@ description: Текущая незавершённая работа — что �
 
 ---
 
-## ✅ Завершено (сессия 29.07.2026 — полный аудит и исправления)
+## ✅ Завершено (сессия 29.07.2026 — Grid Trading)
 
-| Что исправлено | Результат |
-|----------------|-----------|
-| SYMBOL | "GRINCH/TON" ✅ (уже был правильным) |
-| TAKE_PROFIT_PCT | 22.0 ✅ (уже был правильным) |
-| MAX_OPEN_TRADES | 1 ✅ (уже был правильным) |
-| Все провайдеры советника | failed_providers очищены |
-| dca_compound_bonus_ton | Сброшен 43.22 → 0.0 (DB + JSON + in-memory) |
-| DEAD_HOURS_UTC | Урезан "0,3,8,12,14" → "0,3" (убраны дневные часы) |
-| DCA_MAX_ENTRIES | Снижен 10 → 3 (макс. экспозиция ≤360 TON при балансе ~450) |
-| wallet_snapshots ORDER | Уже верный (reversed(rows) на строке 961) |
-| patch2.py / patch_market_tune.py | Не существуют на VPS |
-| requirements.txt дубли | Уже чистый |
-| .env права доступа | chmod 600 подтверждён |
-| SSH-пароль VPS | Обновлён в секрете VPS_SSH_KEY |
+| Что сделано | Результат |
+|------------|-----------|
+| `grid_trader.py` создан | Recovery grid + reинвест + AI-фильтр + динамический шаг |
+| Grid endpoints добавлены в `app.py` | `/api/grid/status|build|activate|deactivate|step` |
+| Grid поллер запущен в `start_background()` | Логи: `[Grid] Grid-trader поллер запущен` |
+| Сетка построена и активирована | 9 SELL уровней, шаг 5%, состояние в `/app/data/grid_state.json` |
+| Файлы задеплоены на VPS | `/opt/bot/grid_trader.py`, `/opt/bot/app.py` |
 
 ---
 
@@ -35,18 +28,49 @@ description: Текущая незавершённая работа — что �
 
 | # | Приоритет | Задача |
 |---|-----------|--------|
-| 1 | 🔴 | **Groq API Key невалидный** — оба ключа дают 401. Нужен новый ключ с console.groq.com → API Keys → Create. После получения: `sed -i 's|^GROQ_API_KEY=.*|GROQ_API_KEY=gsk_NEW|' /opt/bot/.env` + `docker compose restart bot` |
-| 2 | 🟡 | **TELEGRAM_CHAT_ID пустой** — алерты не доходят. Написать /start боту @userinfobot → получить ID → записать через дашборд или settings_store |
+| 1 | 🔴 | **Groq API Key невалидный** — нужен новый ключ с console.groq.com → API Keys → Create |
+| 2 | 🟡 | **TELEGRAM_CHAT_ID пустой** — алерты не доходят |
+| 3 | 🟠 | **DCA TP конфликт с Grid** — когда grid SELL L9 (~$0.000826) сработает, проверить что DCA TP ($0.000831) не дублирует продажу |
+| 4 | 🟡 | **Grid BUY уровни пустые** — нет свободного TON (2.3 TON). Активируются автоматически по мере выполнения SELL уровней (реинвест) |
 
 ---
 
-## 🔄 Текущее состояние бота (29.07.2026 ~07:46 UTC)
+## 🔄 Grid статус (29.07.2026 ~18:30 UTC)
 
-- **Контейнер:** bot-bot-1 healthy
-- **Открытая позиция:** 882k GRINCH, -5.5%, нужен рост +11.87% до $0.00083151
-- **DCA:** ждёт отката 15% (текущий 4.3%)
-- **Советник Groq:** заблокирован (ключ невалиден), торговля идёт без LLM-советника
-- **Bot stats:** 22 сделки, 20 побед (90.9%), PnL +147.99 TON
+**Центральная цена:** 0.000380 TON/GRINCH  
+**Шаг:** 5% | **Уровни:** 9 SELL, 5 BUY (no_funds)
+
+| Уровень | TON/GRINCH | USD (×1.40) | GRINCH | Статус |
+|---------|-----------|-------------|--------|--------|
+| SELL L1 | 0.000399 | $0.000559 | 98,036 | ⏳ waiting |
+| SELL L2 | 0.000419 | $0.000587 | 98,036 | ⏳ waiting |
+| SELL L3 | 0.000440 | $0.000616 | 98,036 | ⏳ waiting |
+| SELL L4 | 0.000462 | $0.000647 | 98,036 | ⏳ waiting |
+| SELL L5 | 0.000486 | $0.000680 | 98,036 | ⏳ waiting |
+| SELL L6 | 0.000510 | $0.000714 | 98,036 | ⏳ waiting |
+| SELL L7 | 0.000535 | $0.000749 | 98,036 | ⏳ waiting |
+| SELL L8 | 0.000562 | **$0.000787** | 98,036 | ⏳ breakeven |
+| SELL L9 | 0.000590 | **$0.000826** | 98,036 | ⏳ near TP |
+
+---
+
+## 📋 Grid API
+
+```bash
+# Статус сетки
+curl http://localhost:3000/api/grid/status
+
+# Перестроить с другим шагом
+curl -X POST http://localhost:3000/api/grid/build -H 'Content-Type: application/json' \
+     -d '{"step_pct": 4.0, "sell_levels": 9}'
+
+# Включить/выключить
+curl -X POST http://localhost:3000/api/grid/activate
+curl -X POST http://localhost:3000/api/grid/deactivate
+
+# Изменить шаг на лету
+curl -X POST http://localhost:3000/api/grid/step -d '{"step_pct": 6.0}'
+```
 
 ---
 
@@ -57,3 +81,5 @@ description: Текущая незавершённая работа — что �
 - **SSH:** `sshpass -p "$VPS_SSH_KEY" ssh -o StrictHostKeyChecking=no root@2.27.25.126`
 - **Деплой:** scp → docker cp → или `docker compose restart bot`
 - **Replit используется как редактор** — превью не нужно, всё деплоится на VPS
+- **DCA позиция:** 882k GRINCH, -31%, вложено 479 TON, breakeven $0.000785
+- **Wallet:** 2.295 TON свободно (только газ)
