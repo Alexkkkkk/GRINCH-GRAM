@@ -34,7 +34,8 @@ class GridConfig:
     # Шаг по умолчанию (%)
     DEFAULT_STEP_PCT   = float(os.getenv("GRID_STEP_PCT",   "5.0"))
     # Диапазон динамического шага (%)
-    MIN_STEP_PCT       = float(os.getenv("GRID_MIN_STEP",   "2.5"))
+    # MIN_STEP_PCT = 4.0 — порог безубыточности при комиссии 2% + газ 0.3 TON на 44 TON ≈ 3.8%
+    MIN_STEP_PCT       = float(os.getenv("GRID_MIN_STEP",   "4.0"))
     MAX_STEP_PCT       = float(os.getenv("GRID_MAX_STEP",   "10.0"))
     # Количество уровней
     SELL_LEVELS_COUNT  = int(os.getenv("GRID_SELL_LEVELS",  "9"))
@@ -43,13 +44,17 @@ class GridConfig:
     MIN_ORDER_TON      = float(os.getenv("GRID_MIN_ORDER",  "15.0"))
     # Резерв TON на газ
     GAS_RESERVE_TON    = float(os.getenv("GRID_GAS_RESERVE","5.0"))
+    # Комиссия DeDust (% от суммы, одна сторона)
+    FEE_PCT            = 0.01   # 1% DeDust fee per side
+    # Газ на одну сделку (TON)
+    GAS_PER_TRADE_TON  = 0.30
     # ATR-порог для расширения/сужения шага
     ATR_WIDE_PCT       = 5.0   # ATR > 5% → шаг 8%
     ATR_NORM_PCT       = 3.0   # ATR 3-5% → шаг 5%
-    ATR_NARROW_PCT     = 2.0   # ATR 2-3% → шаг 3.5%
+    ATR_NARROW_PCT     = 2.0   # ATR 2-3% → шаг 4.0% (не ниже MIN_STEP_PCT)
     # AI-пороги (% уверенности)
     AI_SKIP_SELL_BUY_CONF  = 75.0   # пропустить продажу если AI BUY ≥ 75%
-    AI_SKIP_BUY_SELL_CONF  = 70.0   # пропустить покупку если AI SELL ≥ 70%
+    AI_SKIP_BUY_SELL_CONF  = 60.0   # пропустить покупку если AI SELL ≥ 60%
     # Период опроса цены
     TICK_INTERVAL_SEC  = int(os.getenv("GRID_TICK_SEC", "30"))
 
@@ -324,7 +329,8 @@ class GridTrader:
             }
 
     def adjust_step_by_atr(self, atr_pct: float) -> float:
-        """Динамически корректирует шаг сетки по ATR."""
+        """Динамически корректирует шаг сетки по ATR.
+        Минимум 4.0% — ниже порога безубыточности не опускаемся."""
         if atr_pct >= GridConfig.ATR_WIDE_PCT:
             step = 8.0
         elif atr_pct >= GridConfig.ATR_NORM_PCT:
@@ -332,7 +338,7 @@ class GridTrader:
         elif atr_pct >= GridConfig.ATR_NARROW_PCT:
             step = 5.0
         else:
-            step = 3.5
+            step = 4.0   # минимально прибыльный шаг (≥ 3.8% breakeven)
         step = max(GridConfig.MIN_STEP_PCT, min(GridConfig.MAX_STEP_PCT, step))
         with self._lock:
             if abs(self._state.step_pct - step) >= 0.5:
@@ -397,7 +403,7 @@ class GridTrader:
                 if price_ton < level.price_ton:
                     break   # уровни отсортированы вверх, дальше всё выше
 
-                # AI-фильтр: пропустить продажу при сильном BUY
+                # AI-фильтр: пропустить продажу при очень сильном BUY (держим позицию)
                 if ai_buy_conf >= GridConfig.AI_SKIP_SELL_BUY_CONF:
                     log.info(
                         "[Grid] ⏭ SELL L%d @ %.6f TON пропущен — AI BUY %.0f%%",
@@ -412,6 +418,20 @@ class GridTrader:
 
                 if level.amount_grinch < 100:
                     level.status = "skipped_small"
+                    continue
+
+                # ── ПРОВЕРКА ПРИБЫЛЬНОСТИ: только в плюс ─────────────────
+                profitable, profit_est = self._is_profitable_sell(level, price_ton)
+                if not profitable:
+                    log.info(
+                        "[Grid] ⚠️ SELL L%d @ %.6f пропущен — убыточно (est %.4f TON, "
+                        "нужен шаг > %.1f%%)",
+                        level.id, level.price_ton, profit_est,
+                        GridConfig.MIN_STEP_PCT,
+                    )
+                    self._state.last_action = (
+                        f"SELL L{level.id} пропущен (убыточно, est {profit_est:+.4f} TON)"
+                    )
                     continue
 
                 log.info(
@@ -434,11 +454,25 @@ class GridTrader:
                     if price_ton > level.price_ton:
                         break   # отсортированы вниз, дальше всё ниже
 
-                    # AI-фильтр: пропустить покупку при сильном SELL
+                    # AI-фильтр: пропустить покупку при SELL-сигнале
                     if ai_sell_conf >= GridConfig.AI_SKIP_BUY_SELL_CONF:
                         log.info(
                             "[Grid] ⏭ BUY L%d @ %.6f TON пропущен — AI SELL %.0f%%",
                             level.id, level.price_ton, ai_sell_conf
+                        )
+                        continue
+
+                    # ── ПРОВЕРКА ПРИБЫЛЬНОСТИ ЦИКЛА: BUY→SELL только в плюс ──
+                    profitable, profit_est = self._is_profitable_buy_cycle(level)
+                    if not profitable:
+                        log.info(
+                            "[Grid] ⚠️ BUY L%d @ %.6f пропущен — цикл убыточен "
+                            "(est %.4f TON, шаг %.1f%% < порога)",
+                            level.id, level.price_ton, profit_est,
+                            self._state.step_pct,
+                        )
+                        self._state.last_action = (
+                            f"BUY L{level.id} пропущен (цикл убыточен, est {profit_est:+.4f} TON)"
                         )
                         continue
 
@@ -570,6 +604,40 @@ class GridTrader:
             note=f"цикл от BUY @ {buy_price:.6f}",
         ))
         log.info("[Grid] 📤 Цикловый SELL @ %.6f с %.0f GRINCH", sell_price, grinch_amount)
+
+    # ── Проверки прибыльности ────────────────────────────────────────────────
+
+    def _is_profitable_sell(self, level: GridLevel, current_price: float) -> tuple:
+        """Проверяет, будет ли SELL прибыльным с учётом комиссии и газа.
+
+        Returns:
+            (is_profitable: bool, estimated_profit_ton: float)
+        """
+        received_ton = level.amount_grinch * current_price * (1 - GridConfig.FEE_PCT)
+        net_ton      = received_ton - GridConfig.GAS_PER_TRADE_TON
+        # Себестоимость по центральной цене сетки
+        cost_ton     = level.amount_grinch * self._state.center_price_ton
+        profit       = net_ton - cost_ton
+        return profit > 0, round(profit, 4)
+
+    def _is_profitable_buy_cycle(self, level: GridLevel) -> tuple:
+        """Проверяет, будет ли полный BUY→SELL цикл прибыльным.
+
+        BUY по level.price_ton → SELL на step% выше.
+        Returns:
+            (is_profitable: bool, estimated_cycle_profit_ton: float)
+        """
+        if level.price_ton <= 0 or level.amount_ton <= 0:
+            return False, 0.0
+        sell_target  = level.price_ton * (1 + self._state.step_pct / 100)
+        # Кол-во GRINCH после покупки (за вычетом комиссии)
+        grinch_out   = (level.amount_ton / level.price_ton) * (1 - GridConfig.FEE_PCT)
+        # TON от продажи (за вычетом комиссии)
+        sell_revenue = grinch_out * sell_target * (1 - GridConfig.FEE_PCT)
+        # Газ на обе стороны цикла
+        net          = sell_revenue - GridConfig.GAS_PER_TRADE_TON * 2
+        profit       = net - level.amount_ton
+        return profit > 0, round(profit, 4)
 
     # ── AI-сигнал ─────────────────────────────────────────────────────────────
 
