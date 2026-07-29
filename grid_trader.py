@@ -71,6 +71,209 @@ class GridConfig:
     AI_TUNE_EVERY_N    = 10
 
 
+# ─── AI-менеджер сетки ───────────────────────────────────────────────────────
+
+class GridAIManager:
+    """
+    Полное AI-управление сеткой GRINCH/TON.
+
+    Каждые AI_MANAGE_EVERY_N тиков (~2.5 мин при TICK=30s):
+      • Авто-активация/деактивация по режиму рынка
+      • Авто-перестройка при смене режима или исчерпании уровней
+      • Динамический выбор шага и количества уровней по ATR×policy
+      • Заморозка при сильном AI SELL-сигнале (≥80%)
+    """
+
+    # Политика для каждого режима рынка
+    REGIME_POLICY: dict = {
+        # режим         active  step_mult  levels  описание
+        "SIDEWAYS":     {"active": True,  "step_mult": 0.85, "levels": 12,
+                         "desc": "боковик — плотная сетка"},
+        "MILD_TREND":   {"active": True,  "step_mult": 1.0,  "levels": 10,
+                         "desc": "умеренный тренд"},
+        "TREND":        {"active": True,  "step_mult": 1.3,  "levels": 8,
+                         "desc": "тренд — широкий шаг"},
+        "TREND_UP":     {"active": True,  "step_mult": 1.5,  "levels": 7,
+                         "desc": "тренд вверх — меньше уровней"},
+        "PUMP":         {"active": False, "step_mult": 2.0,  "levels": 5,
+                         "desc": "памп — сетка на паузе"},
+        "POST_PUMP":    {"active": False, "step_mult": 1.5,  "levels": 6,
+                         "desc": "после пампа — пауза"},
+        "DISTRIBUTION": {"active": False, "step_mult": 1.5,  "levels": 6,
+                         "desc": "распределение — пауза"},
+        "UNKNOWN":      {"active": True,  "step_mult": 1.0,  "levels": 10,
+                         "desc": "неизвестный режим"},
+    }
+
+    # Тиков между AI-решениями
+    AI_MANAGE_EVERY_N:    int   = 5
+    # Перестроить если осталось < X% активных SELL-уровней
+    REBUILD_SELL_THRESH:  float = 0.30
+    # Не менять шаг если разница < X%
+    STEP_CHANGE_MIN_DIFF: float = 0.5
+    # Не перестраивать чаще чем раз в N секунд
+    REBUILD_COOLDOWN:     int   = 1800
+
+    def __init__(self, trader: "GridTrader"):
+        self._trader              = trader
+        self._last_regime:    str   = "UNKNOWN"
+        self._last_rebuild_ts: float = 0.0
+        self._paused_by_ai:   bool  = False
+        self._decision_log:   list  = []   # последние 20 решений
+        self._MAX_LOG:        int   = 20
+
+    # ── Главный метод — вызывается каждый тик ────────────────────────────────
+
+    def tick(self, regime: str, atr_pct: float,
+             ai_buy_conf: float, ai_sell_conf: float,
+             price_ton: float, grinch_balance: float, ton_balance: float):
+        try:
+            self._manage(regime, atr_pct, ai_buy_conf, ai_sell_conf,
+                         price_ton, grinch_balance, ton_balance)
+        except Exception as exc:
+            log.warning("[GridAI-Mgr] ошибка: %s", exc)
+
+    def _manage(self, regime, atr_pct, ai_buy_conf, ai_sell_conf,
+                price_ton, grinch_balance, ton_balance):
+        t = self._trader
+
+        with t._lock:
+            tick_n          = t._state.tick_count
+            currently_active = t._state.active
+            step_now        = t._state.step_pct
+            center          = t._state.center_price_ton
+            sell_levels     = list(t._state.sell_levels)
+
+        # Только каждые N тиков
+        if tick_n % self.AI_MANAGE_EVERY_N != 0:
+            return
+
+        policy = self.REGIME_POLICY.get(regime, self.REGIME_POLICY["UNKNOWN"])
+        decisions: list = []
+
+        # ── 1. Активация / деактивация ────────────────────────────────────
+        should_active = policy["active"]
+
+        # Сильный AI-SELL перекрывает "активен по режиму"
+        if ai_sell_conf >= 80.0 and should_active:
+            should_active = False
+            decisions.append(f"⏸ AI SELL {ai_sell_conf:.0f}% → пауза")
+
+        if should_active and not currently_active and self._paused_by_ai:
+            # Режим восстановился — включаем обратно
+            t.activate()
+            self._paused_by_ai = False
+            decisions.append(f"▶️ авто-запуск (режим вернулся: {regime})")
+        elif not should_active and currently_active:
+            reason = f"AI-Mgr: {regime} | SELL={ai_sell_conf:.0f}%"
+            t.deactivate(reason=reason)
+            self._paused_by_ai = True
+            decisions.append(f"⏸ авто-пауза ({policy['desc']})")
+
+        # ── 2. Динамический шаг по ATR×policy ────────────────────────────
+        if atr_pct > 0:
+            raw_step   = atr_pct * policy["step_mult"]
+            target_step = max(GridConfig.MIN_STEP_PCT,
+                              min(GridConfig.MAX_STEP_PCT, raw_step))
+            if abs(target_step - step_now) >= self.STEP_CHANGE_MIN_DIFF:
+                with t._lock:
+                    t._state.step_pct = target_step
+                decisions.append(
+                    f"📐 шаг {step_now:.1f}%→{target_step:.1f}% "
+                    f"(ATR={atr_pct:.1f}%×{policy['step_mult']})")
+
+        # ── 3. Авто-перестройка ───────────────────────────────────────────
+        if grinch_balance > 1000 and price_ton > 0:
+            now = time.time()
+            rebuild_reason = self._need_rebuild(
+                sell_levels, regime, now)
+
+            if rebuild_reason:
+                target_levels = policy["levels"]
+                target_step   = t._state.step_pct
+                log.info("[GridAI-Mgr] 🔨 Перестройка: %s | %d ур. шаг=%.1f%%",
+                         rebuild_reason, target_levels, target_step)
+                try:
+                    res = t.build_grid(
+                        current_price_ton=price_ton,
+                        grinch_balance=grinch_balance,
+                        ton_balance=ton_balance,
+                        step_pct=target_step,
+                        sell_levels=target_levels,
+                    )
+                    if res.get("ok") or res.get("sell_levels_total", 0) > 0:
+                        t.activate()
+                        self._last_rebuild_ts = now
+                        decisions.append(
+                            f"🔨 перестройка ({rebuild_reason}) "
+                            f"→ {res.get('sell_levels_total', 0)} ур.")
+                except Exception as exc:
+                    log.warning("[GridAI-Mgr] ошибка перестройки: %s", exc)
+
+        # ── Логируем решение ──────────────────────────────────────────────
+        self._last_regime = regime
+        if decisions:
+            entry = {
+                "ts":        time.time(),
+                "regime":    regime,
+                "atr_pct":   round(atr_pct, 2),
+                "ai_buy":    round(ai_buy_conf, 1),
+                "ai_sell":   round(ai_sell_conf, 1),
+                "decisions": decisions,
+                "desc":      policy["desc"],
+            }
+            self._decision_log.insert(0, entry)
+            self._decision_log = self._decision_log[:self._MAX_LOG]
+            log.info("[GridAI-Mgr] 🤖 %s | режим=%s ATR=%.1f%% "
+                     "BUY=%.0f%% SELL=%.0f%%",
+                     " | ".join(decisions), regime,
+                     atr_pct, ai_buy_conf, ai_sell_conf)
+
+    def _need_rebuild(self, sell_levels: list, regime: str, now: float) -> str:
+        """Возвращает причину перестройки или ''."""
+        if now - self._last_rebuild_ts < self.REBUILD_COOLDOWN:
+            return ""
+
+        active_sells  = [l for l in sell_levels
+                         if l.status not in ("skipped_ai", "error")]
+        waiting_sells = [l for l in active_sells if l.status == "waiting"]
+
+        # Все/почти все уровни исполнены
+        if active_sells and len(waiting_sells) / len(active_sells) < self.REBUILD_SELL_THRESH:
+            return f"осталось {len(waiting_sells)}/{len(active_sells)} SELL"
+
+        # Смена режима (из неопасных в другой значимый)
+        regime_changed = (
+            regime != self._last_regime
+            and self._last_regime not in ("UNKNOWN", "")
+            and regime not in ("UNKNOWN",)
+        )
+        if regime_changed:
+            # Перестраиваем только при значимой смене
+            meaningful = {"SIDEWAYS", "TREND", "TREND_UP",
+                          "PUMP", "POST_PUMP", "DISTRIBUTION"}
+            if regime in meaningful and self._last_regime in meaningful:
+                return f"смена режима {self._last_regime}→{regime}"
+
+        return ""
+
+    # ── Статус для API ────────────────────────────────────────────────────────
+
+    def get_status(self) -> dict:
+        policy = self.REGIME_POLICY.get(
+            self._last_regime, self.REGIME_POLICY["UNKNOWN"])
+        return {
+            "enabled":      True,
+            "last_regime":  self._last_regime,
+            "paused_by_ai": self._paused_by_ai,
+            "policy":       policy,
+            "decision_log": self._decision_log[:10],
+            "rebuild_cooldown_left": max(
+                0, int(self.REBUILD_COOLDOWN -
+                        (time.time() - self._last_rebuild_ts))),
+        }
+
+
 # ─── Структуры данных ─────────────────────────────────────────────────────────
 
 @dataclass
@@ -149,6 +352,7 @@ class GridTrader:
         self._dc      = None    # DeDustClient
         self._ai      = None    # AIEngine
         self._grid_ai = None    # GridAI (самообучающийся оптимизатор)
+        self._ai_manager = GridAIManager(self)   # ← полное AI-управление
         self._load_state()
         log.info("[Grid] Инициализирован v2. active=%s sell=%d buy=%d dca=%d "
                  "compound=%.2fx",
@@ -339,6 +543,7 @@ class GridTrader:
                 "last_tick":          s.last_tick_ts,
                 "last_action":        s.last_action,
                 "grid_ai":            ai_stats,
+                "ai_manager":         self._ai_manager.get_status(),
                 "sell": {
                     "total":   len(s.sell_levels),
                     "waiting": len(sell_waiting),
@@ -457,6 +662,12 @@ class GridTrader:
             tick_n = self._state.tick_count
         if tick_n % GridConfig.AI_TUNE_EVERY_N == 0 and atr_pct > 0:
             self.adjust_step_by_atr(atr_pct, regime)
+
+        # ── GridAIManager — полное AI-управление сеткой ───────────────────
+        grinch_bal, ton_bal = self._get_balances()
+        self._ai_manager.tick(
+            regime, atr_pct, ai_buy_conf, ai_sell_conf,
+            price_ton, grinch_bal, ton_bal)
 
         # ── Авто-перецентровка ────────────────────────────────────────────
         try:
@@ -963,6 +1174,21 @@ class GridTrader:
         last20 = candles[-20:]
         ranges = [(c[2] - c[3]) / c[3] * 100 for c in last20 if len(c) > 3 and c[3] > 0]
         return sum(ranges) / len(ranges) if ranges else 0.0
+
+    def _get_balances(self) -> tuple:
+        """Возвращает (grinch_balance, ton_balance). GRINCH берём из DCA-позиции если кошелёк = 0."""
+        try:
+            from dedust_client import get_shared_balance
+            bal = get_shared_balance()
+            ton_bal    = float(bal.get("ton", 0))
+            grinch_bal = float(bal.get("grinch", 0))
+            if grinch_bal < 1000:
+                from db_store import db_store as _ds
+                _trades    = _ds.trades_load_open()
+                grinch_bal = sum(float(t.get("amount", 0)) for t in _trades.values())
+            return grinch_bal, ton_bal
+        except Exception:
+            return 0.0, 0.0
 
     def _heuristic_step(self, atr_pct: float, regime: str = "UNKNOWN") -> float:
         """Эвристический шаг без GridAI."""

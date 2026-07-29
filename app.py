@@ -3135,6 +3135,22 @@ def api_grid_deactivate():
         return jsonify({'ok': False, 'error': str(e)}), 500
 
 
+@app.route('/api/grid/ai_status', methods=['GET'])
+def api_grid_ai_status():
+    try:
+        from grid_trader import get_grid_trader
+        gt = get_grid_trader()
+        status = gt.get_status()
+        return jsonify({
+            "ok": True,
+            "ai_manager": status.get("ai_manager", {}),
+            "step_pct":   status.get("step_pct"),
+            "active":     status.get("active"),
+            "regime":     status.get("ai_manager", {}).get("last_regime", "UNKNOWN"),
+        })
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)}), 500
+
 @app.route('/api/grid/step', methods=['POST'])
 def api_grid_set_step():
     try:
