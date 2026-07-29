@@ -422,7 +422,16 @@ class GridTrader:
             from price_feed import price_feed
             price_ton = price_feed.get_grinch_ton_price()
             if not price_ton or price_ton <= 0:
-                return
+                # Fallback: кросс-курс из USD-цен (если on-chain недоступен)
+                usd_g = price_feed.get('GRINCH')
+                usd_t = price_feed.get('TON')
+                if usd_g and usd_t and usd_t > 0:
+                    price_ton = usd_g / usd_t
+                    log.info("[Grid] ⚠️ Цена из USD кросс-курса: %.8f TON/GRINCH "
+                             "(on-chain недоступен)", price_ton)
+                else:
+                    log.warning("[Grid] ❌ Нет цены TON/GRINCH — пропуск тика")
+                    return
         except Exception as e:
             log.warning("[Grid] Цена: %s", e)
             return

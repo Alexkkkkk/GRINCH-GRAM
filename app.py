@@ -722,7 +722,9 @@ def start_background():
             from grid_ai import get_grid_ai
             _grid    = get_grid_trader()
             _grid_ai = get_grid_ai()
-            _dc      = getattr(trader, 'dedust', None) or getattr(trader, '_dc', None)
+            _dc      = (getattr(trader, 'dedust', None)
+                        or getattr(trader, '_dc', None)
+                        or getattr(getattr(trader, 'exchange', None), '_dedust', None))
             _ai      = getattr(trader, 'ai', None)
             _grid.inject(dedust_client=_dc, ai_engine=_ai, grid_ai=_grid_ai)
             _grid.start_poller()
