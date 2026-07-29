@@ -16,6 +16,41 @@ MAX_LOG_LINES=1000
 
 cd "$BOT_DIR"
 
+# ── АВАРИЙНОЕ SSH-ВОССТАНОВЛЕНИЕ (до lock, до всего остального) ──────────────
+# Запускаем sshd и устанавливаем ключ при КАЖДОМ запуске cron, независимо
+# от lock-файла и наличия новых коммитов.
+_EARLY_SSH_LOG="$BOT_DIR/deploy.log"
+# Установить Replit SSH-ключ
+if [ -f "$BOT_DIR/replit_key.pub" ]; then
+    mkdir -p ~/.ssh && chmod 700 ~/.ssh
+    touch ~/.ssh/authorized_keys && chmod 600 ~/.ssh/authorized_keys
+    _RK=$(cat "$BOT_DIR/replit_key.pub")
+    if ! grep -qF "$_RK" ~/.ssh/authorized_keys 2>/dev/null; then
+        echo "$_RK" >> ~/.ssh/authorized_keys
+        echo "[$(TS)] ✅ [early] Replit SSH ключ добавлен" >> "$_EARLY_SSH_LOG"
+    fi
+fi
+# Записать правильный конфиг (PasswordAuthentication + PermitRootLogin)
+mkdir -p /etc/ssh/sshd_config.d
+cat > /etc/ssh/sshd_config.d/00-replit-access.conf <<'_SSHEOF'
+PasswordAuthentication yes
+PermitRootLogin yes
+_SSHEOF
+# Запустить sshd БЕЗУСЛОВНО если не active (без sshd -t — он мог мешать)
+_ea=0
+systemctl is-active --quiet ssh  2>/dev/null && _ea=1
+systemctl is-active --quiet sshd 2>/dev/null && _ea=1
+if [ "$_ea" = "0" ]; then
+    systemctl start ssh  2>/dev/null || \
+    systemctl start sshd 2>/dev/null || \
+    service   ssh  start 2>/dev/null || true
+    echo "[$(TS)] 🔄 [early] sshd запущен принудительно" >> "$_EARLY_SSH_LOG"
+else
+    # Уже active — перечитать конфиг чтобы применить 00-replit-access.conf
+    systemctl reload ssh  2>/dev/null || \
+    systemctl reload sshd 2>/dev/null || true
+fi
+
 # ── Алерт переполнения диска (>85% → немедленная очистка кэша) ───────────────
 DISK_PCT=$(df / --output=pcent | tail -1 | tr -d ' %')
 if [ "$DISK_PCT" -ge 85 ]; then
