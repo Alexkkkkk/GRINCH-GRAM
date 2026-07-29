@@ -16,11 +16,12 @@ description: Текущая незавершённая работа — что �
 
 | Что сделано | Результат |
 |------------|-----------|
-| Grid bug fix: `atr_pct, regime` → `regime, atr_pct` | TypeError исчез, grid тикает без ошибок |
-| Grid перестроена: шаг 5% → **4%**, 9 уровней → **10 уровней** | Больше сделок на тех же движениях |
-| Grid GRINCH fix: `api_grid_build` теперь берёт GRINCH из DCA когда кошелёк = 0 | Grid работает даже когда весь GRINCH в DCA |
-| DCA параметры в `.env`: DROP 10→8%, TARGET 22→16%, PULLBACK 13→10% | Агрессивнее входы + быстрее выход при восстановлении |
-| **Fix grid _tick unpacking** `atr_pct, regime` → `regime, atr_pct` (line 645) | TypeError в `atr_pct > 0` исправлен, деплой на VPS | commit `79c1091` |
+| Grid bug fix: `atr_pct, regime` → `regime, atr_pct` | TypeError исчез |
+| Grid перестроена: шаг 5%→4%, 9→10 уровней | Больше сделок |
+| DCA параметры в `.env`: DROP 8%, TARGET 16%, PULLBACK 10% | Агрессивнее входы |
+| Grid-панель на дашборде (index.html + app.js) | Статус, уровни, GridAI-лог |
+| История сделок загружается из DB при старте (trader.py) | История не пуста после рестарта |
+| DB синхронизирована с .env (DROP/TARGET/PULLBACK) | Настройки не сбрасываются |
 
 ---
 
