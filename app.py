@@ -1544,6 +1544,18 @@ def api_dca_reset_pullback():
     trader._save_volatile_state()
     return jsonify({"ok": True, "dca_wait_pullback": False, "dca_peak_price": 0.0})
 
+@app.route("/api/dca/reset_compound", methods=["POST"])
+def api_dca_reset_compound():
+    """Сбросить накопленный DCA compound-бонус в 0 (без закрытия позиции)."""
+    old = getattr(trader, "dca_compound_bonus_ton", 0.0)
+    trader.dca_compound_bonus_ton = 0.0
+    try:
+        trader._save_volatile_state()
+    except Exception:
+        pass
+    trader.log(f"🔄 DCA compound-бонус сброшен вручную: {old:.3f} → 0 TON", "INFO")
+    return jsonify({"ok": True, "old_bonus_ton": round(old, 3), "new_bonus_ton": 0.0})
+
 @app.route("/api/dca/reset_state", methods=["POST"])
 def api_dca_reset_state():
     """Полный сброс DCA-счётчиков (только если нет открытых позиций).
