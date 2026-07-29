@@ -808,6 +808,10 @@ def _check_csrf():
     # Публичные пути и SocketIO — не проверяем
     if _is_public_path(path) or path.startswith("/socket.io") or path == "/login":
         return None
+    # Внутренние вызовы с localhost не требуют CSRF (docker exec / management scripts)
+    remote = request.remote_addr or ""
+    if remote in ("127.0.0.1", "::1"):
+        return None
     token = (
         request.headers.get("X-CSRF-Token")
         or request.form.get("csrf_token")
