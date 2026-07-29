@@ -716,15 +716,18 @@ def start_background():
         except Exception as _sc_ex:
             print(f"[Scanner] не запущен: {_sc_ex}")
 
-        # -- Grid Trader: AI-управляемая сеточная торговля --
+        # -- Grid Trader v2: compound-реинвест + DCA + GridAI --
         try:
             from grid_trader import get_grid_trader
-            _grid = get_grid_trader()
-            _dc   = getattr(trader, 'dedust', None) or getattr(trader, '_dc', None)
-            _ai   = getattr(trader, 'ai', None)
-            _grid.inject(dedust_client=_dc, ai_engine=_ai)
+            from grid_ai import get_grid_ai
+            _grid    = get_grid_trader()
+            _grid_ai = get_grid_ai()
+            _dc      = getattr(trader, 'dedust', None) or getattr(trader, '_dc', None)
+            _ai      = getattr(trader, 'ai', None)
+            _grid.inject(dedust_client=_dc, ai_engine=_ai, grid_ai=_grid_ai)
             _grid.start_poller()
-            print('[Grid] Grid-trader поллер запущен')
+            print('[Grid] Grid-trader v2 поллер запущен (GridAI примеров: %d)' %
+                  len(_grid_ai._experience))
         except Exception as _grid_ex:
             print('[Grid] не запущен: ' + str(_grid_ex))
 
