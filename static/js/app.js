@@ -1222,10 +1222,10 @@ function renderHistory(trades) {
           <span class="${pnlCls}">${pnl >= 0 ? "+" : ""}${pnl.toFixed(4)} TON</span>
         </div>
         <div class="trade-row">
-          <span style="color:#8892b0">Вход: $${t.entry_price}</span>
-          <span style="color:#8892b0">Выход: $${t.exit_price || "—"}</span>
+          <span style="color:#a8b8d8;font-size:11px">Вход: <b style="color:#ccd6f6">$${t.entry_price}</b></span>
+          <span style="color:#a8b8d8;font-size:11px">Выход: <b style="color:#ccd6f6">$${t.exit_price || "—"}</b></span>
         </div>
-        <div class="trade-row" style="color:#4a5568;font-size:10px">
+        <div class="trade-row" style="color:#8892b0;font-size:10px">
           <span>${escapeHtml(t.close_reason || "")}</span>
           <span>${t.closed_at?.slice(11,19) || ""}</span>
         </div>
