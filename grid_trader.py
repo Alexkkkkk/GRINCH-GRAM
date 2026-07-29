@@ -642,7 +642,7 @@ class GridTrader:
             return
 
         # ── Режим рынка + ATR ─────────────────────────────────────────────
-        atr_pct, regime = self._get_regime()
+        regime, atr_pct = self._get_regime()
 
         # ── AI-сигнал (BrainFusion) ───────────────────────────────────────
         ai_buy_conf, ai_sell_conf = 0.0, 0.0
