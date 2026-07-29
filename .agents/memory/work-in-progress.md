@@ -12,15 +12,15 @@ description: Текущая незавершённая работа — что �
 
 ---
 
-## ✅ Завершено (сессия 29.07.2026 — Grid v2: compound + DCA + GridAI)
+## ✅ Завершено (сессия 29.07.2026 — улучшение торговли)
 
 | Что сделано | Результат |
 |------------|-----------|
-| `grid_trader.py` создан | Recovery grid + reинвест + AI-фильтр + динамический шаг |
-| Grid endpoints добавлены в `app.py` | `/api/grid/status|build|activate|deactivate|step` |
-| Grid поллер запущен в `start_background()` | Логи: `[Grid] Grid-trader поллер запущен` |
-| Сетка построена и активирована | 9 SELL уровней, шаг 5%, состояние в `/app/data/grid_state.json` |
-| Файлы задеплоены на VPS | `/opt/bot/grid_trader.py`, `/opt/bot/app.py` |
+| Grid bug fix: `atr_pct, regime` → `regime, atr_pct` | TypeError исчез, grid тикает без ошибок |
+| Grid перестроена: шаг 5% → **4%**, 9 уровней → **10 уровней** | Больше сделок на тех же движениях |
+| Grid GRINCH fix: `api_grid_build` теперь берёт GRINCH из DCA когда кошелёк = 0 | Grid работает даже когда весь GRINCH в DCA |
+| DCA параметры в `.env`: DROP 10→8%, TARGET 22→16%, PULLBACK 13→10% | Агрессивнее входы + быстрее выход при восстановлении |
+| Все изменения закоммичены в git | commit `39ee4d2` |
 
 ---
 
@@ -28,49 +28,42 @@ description: Текущая незавершённая работа — что �
 
 | # | Приоритет | Задача |
 |---|-----------|--------|
-| 1 | 🔴 | **Groq API Key невалидный** — нужен новый ключ с console.groq.com → API Keys → Create |
-| 2 | 🟡 | **TELEGRAM_CHAT_ID пустой** — алерты не доходят |
-| 3 | 🟠 | **DCA TP конфликт с Grid** — когда grid SELL L9 (~$0.000826) сработает, проверить что DCA TP ($0.000831) не дублирует продажу |
-| 4 | 🟡 | **Grid BUY уровни пустые** — нет свободного TON (2.3 TON). Активируются автоматически по мере выполнения SELL уровней (реинвест) |
+| 1 | 🔴 | **Groq API Key невалидный** — 429 rate limit, нужен новый ключ с console.groq.com → API Keys → Create |
+| 2 | 🔴 | **OpenAI API Key исчерпан** — `insufficient_quota` (платный план). Нужно пополнить или убрать из провайдеров |
+| 3 | 🟡 | **TELEGRAM_CHAT_ID пустой** — алерты не доходят |
+| 4 | 🟠 | **Grid BUY уровни пустые** — 2.295 TON (только газ). Активируются автоматически по мере выполнения SELL уровней |
 
 ---
 
-## 🔄 Grid статус (29.07.2026 ~18:30 UTC)
+## 🔄 Grid статус (29.07.2026 ~19:18 UTC)
 
-**Центральная цена:** 0.000380 TON/GRINCH  
-**Шаг:** 5% | **Уровни:** 9 SELL, 5 BUY (no_funds)
+**Центральная цена:** 0.000437 TON/GRINCH  
+**Шаг:** 4% (было 5%) | **Уровни:** 10 SELL (все waiting), 5 BUY (no_funds)  
+**Compound:** 1.06x | **Всего прибыли от grid:** +5.27 TON
 
-| Уровень | TON/GRINCH | USD (×1.40) | GRINCH | Статус |
+| Уровень | TON/GRINCH | USD (×1.43) | GRINCH | Статус |
 |---------|-----------|-------------|--------|--------|
-| SELL L1 | 0.000399 | $0.000559 | 98,036 | ⏳ waiting |
-| SELL L2 | 0.000419 | $0.000587 | 98,036 | ⏳ waiting |
-| SELL L3 | 0.000440 | $0.000616 | 98,036 | ⏳ waiting |
-| SELL L4 | 0.000462 | $0.000647 | 98,036 | ⏳ waiting |
-| SELL L5 | 0.000486 | $0.000680 | 98,036 | ⏳ waiting |
-| SELL L6 | 0.000510 | $0.000714 | 98,036 | ⏳ waiting |
-| SELL L7 | 0.000535 | $0.000749 | 98,036 | ⏳ waiting |
-| SELL L8 | 0.000562 | **$0.000787** | 98,036 | ⏳ breakeven |
-| SELL L9 | 0.000590 | **$0.000826** | 98,036 | ⏳ near TP |
+| SELL L1 | 0.000455 | $0.000651 | 87,328 | ⏳ waiting |
+| SELL L2 | 0.000473 | $0.000677 | 87,328 | ⏳ waiting |
+| SELL L3 | 0.000492 | $0.000704 | 87,328 | ⏳ waiting |
+| SELL L4 | 0.000511 | $0.000731 | 87,328 | ⏳ waiting |
+| SELL L5 | 0.000532 | $0.000761 | 87,328 | ⏳ waiting |
+| SELL L6 | 0.000553 | $0.000791 | 87,328 | ⏳ waiting ~BE |
+| SELL L7 | 0.000575 | $0.000822 | 87,328 | ⏳ waiting ~TP |
+| SELL L8 | 0.000598 | $0.000855 | 87,328 | ⏳ waiting |
+| SELL L9 | 0.000622 | $0.000890 | 87,328 | ⏳ waiting |
+| SELL L10| 0.000647 | $0.000925 | 87,328 | ⏳ waiting |
 
 ---
 
-## 📋 Grid API
+## 📊 DCA статус (29.07.2026 ~19:18 UTC)
 
-```bash
-# Статус сетки
-curl http://localhost:3000/api/grid/status
-
-# Перестроить с другим шагом
-curl -X POST http://localhost:3000/api/grid/build -H 'Content-Type: application/json' \
-     -d '{"step_pct": 4.0, "sell_levels": 9}'
-
-# Включить/выключить
-curl -X POST http://localhost:3000/api/grid/activate
-curl -X POST http://localhost:3000/api/grid/deactivate
-
-# Изменить шаг на лету
-curl -X POST http://localhost:3000/api/grid/step -d '{"step_pct": 6.0}'
-```
+- **Позиция:** 873,281 GRINCH @ avg $0.000723 | -15.1%
+- **Вложено:** 444.90 TON | **Сейчас:** ~378 TON
+- **Breakeven:** $0.000731 (~L4 сетки)
+- **TP (новый):** 16% = $0.000839 (~L8-L9 сетки)
+- **TON свободно:** 2.295 TON (только газ)
+- **DCA DROP trigger:** 8% (было 10%)
 
 ---
 
@@ -79,7 +72,5 @@ curl -X POST http://localhost:3000/api/grid/step -d '{"step_pct": 6.0}'
 - **Боевой бот:** VPS 2.27.25.126, контейнер `bot-bot-1`, порт 3000 (nginx на 80)
 - **Код на VPS:** `/opt/bot/` + `.env` (права 600)
 - **SSH:** `sshpass -p "$VPS_SSH_KEY" ssh -o StrictHostKeyChecking=no root@2.27.25.126`
-- **Деплой:** scp → docker cp → или `docker compose restart bot`
+- **Деплой:** scp → docker cp → или `docker compose up -d bot`
 - **Replit используется как редактор** — превью не нужно, всё деплоится на VPS
-- **DCA позиция:** 882k GRINCH, -31%, вложено 479 TON, breakeven $0.000785
-- **Wallet:** 2.295 TON свободно (только газ)
