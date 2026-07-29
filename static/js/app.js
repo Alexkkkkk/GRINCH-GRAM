@@ -1215,19 +1215,21 @@ function renderHistory(trades) {
     const pnl    = t.pnl || 0;
     const cls    = pnl >= 0 ? "closed-win" : "closed-loss";
     const pnlCls = pnl >= 0 ? "pnl-pos" : "pnl-neg";
+    const ep = t.entry_price ? Number(t.entry_price).toFixed(7) : "—";
+    const xp = t.exit_price  ? Number(t.exit_price).toFixed(7)  : "—";
     return `
-      <div class="trade-card ${cls}">
+      <div class="trade-card ${cls}" style="padding:10px 12px 8px">
         <div class="trade-row">
           <span class="trade-side ${t.side}">${escapeHtml(t.side?.toUpperCase() || "")}</span>
-          <span class="${pnlCls}">${pnl >= 0 ? "+" : ""}${pnl.toFixed(4)} TON</span>
+          <span class="${pnlCls}" style="font-size:14px;font-weight:700">${pnl >= 0 ? "+" : ""}${pnl.toFixed(4)} TON</span>
         </div>
-        <div class="trade-row">
-          <span style="color:#a8b8d8;font-size:11px">Вход: <b style="color:#ccd6f6">$${t.entry_price}</b></span>
-          <span style="color:#a8b8d8;font-size:11px">Выход: <b style="color:#ccd6f6">$${t.exit_price || "—"}</b></span>
+        <div class="trade-row" style="margin-top:5px">
+          <span style="color:#a8b8d8;font-size:12px">Вход:&nbsp;<b style="color:#e2e8f0">$${ep}</b></span>
+          <span style="color:#a8b8d8;font-size:12px">Выход:&nbsp;<b style="color:#e2e8f0">$${xp}</b></span>
         </div>
-        <div class="trade-row" style="color:#8892b0;font-size:10px">
-          <span>${escapeHtml(t.close_reason || "")}</span>
-          <span>${t.closed_at?.slice(11,19) || ""}</span>
+        <div class="trade-row" style="margin-top:3px">
+          <span style="color:#7a8aaa;font-size:11px">${escapeHtml(t.close_reason || "")}</span>
+          <span style="color:#7a8aaa;font-size:11px">${t.closed_at?.slice(0,10) || ""} ${t.closed_at?.slice(11,19) || ""}</span>
         </div>
       </div>`;
   }).join("");
