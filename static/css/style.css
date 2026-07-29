@@ -1486,6 +1486,29 @@ body::after {
   border-left: 2px solid var(--red);
 }
 
+/* ════ История сделок — win/loss окраска ════ */
+.trade-card.closed-win {
+  border-left: 2px solid var(--green) !important;
+  background: rgba(0,255,136,.03) !important;
+}
+.trade-card.closed-loss {
+  border-left: 2px solid var(--red) !important;
+  background: rgba(255,45,85,.03) !important;
+}
+
+/* ════ История сделок — строка цен вход→выход ════ */
+.th-prices {
+  display: flex; align-items: center; gap: 5px;
+  margin-top: 4px; font-family: var(--mono); font-size: 11px;
+}
+.th-price-ep  { color: var(--text2); }
+.th-price-arrow { color: var(--text3); font-size: 10px; }
+.th-price-xp  { color: var(--text); }
+.th-meta {
+  margin-top: 3px; font-size: 10px !important;
+  color: var(--text3);
+}
+
 /* ════ Smoother price pulse on update ════ */
 @keyframes price-flash {
   0%   { background: rgba(0,229,255,.18); }
@@ -2192,15 +2215,10 @@ body::after {
   .brain-forecast-col { display: none; }
   .brain-spark-row { grid-template-columns: 1fr; }
 
-  /* ── Trade cards: no overflow on narrow screens ── */
-  .trade-card { overflow: hidden; }
-  .trade-row  { flex-wrap: wrap; gap: 4px; }
-  /* Entry/exit price row stacks on very small screens */
-  .trade-row > span[style*="font-size:12px"] { min-width: 0; flex: 1 1 45%; }
-
-  /* Feature importance: shrink bar on mobile */
-  .fi-bar-wrap { width: 56px !important; }
-  .fi-row { gap: 5px; }
+  /* ── Trade cards: compact mobile layout ── */
+  .trade-card { padding: 8px 10px !important; }
+  .th-prices  { font-size: 10px; }
+  .th-meta    { font-size: 10px; }
 }
 
 /* ─ Extra small: ≤400px ───────────────────────────────────── */
