@@ -12,6 +12,21 @@ description: Текущая незавершённая работа — что �
 
 ---
 
+## ✅ Завершено (сессия 30.07.2026)
+
+| Что сделано | Результат |
+|------------|-----------|
+| **DCA state в bot_ai_state** исправлен | entries=1, stake_ton=444.9014, last_buy_price=0.00049622 |
+| **open_trades** дополнена полями | dca_entries_count=1, dca_total_stake=444.9014, entry_usd=0.00149858 |
+| **control.dca_target_pct** исправлен | 15.0 → 16.0 (совпадает с Config) |
+| **trading_enabled** в bot_settings | 3 дублирующихся строки → 1 (True) |
+| **6 устаревших lowercase-ключей** удалены из bot_settings | large_sell_dca_enabled, take_profit_pct, dca_drop_trigger_pct, min_profit_ton_abs, dca_stake_ton, trailing_stop_pct |
+| **Мусорные файлы** удалены из /opt/bot | app.py.bak, sync_check.py, grid_trader.py.bak2, app.js (flat), index.html (flat), static/js/style.css |
+| **.gitignore** обновлён | `*.bak`, `*.bak2` добавлены |
+| Git commit `c648c40` | chore: cleanup stale bak files, flat copies, update gitignore |
+
+---
+
 ## ✅ Завершено (сессия 29.07.2026)
 
 | Что сделано | Результат |
@@ -33,38 +48,26 @@ description: Текущая незавершённая работа — что �
 | 2 | 🔴 | **OpenAI API Key исчерпан** — `insufficient_quota` (платный план). Нужно пополнить или убрать из провайдеров |
 | 3 | 🟡 | **TELEGRAM_CHAT_ID пустой** — алерты не доходят |
 | 4 | 🟠 | **Grid BUY уровни пустые** — 2.295 TON (только газ). Активируются автоматически по мере выполнения SELL уровней |
+| 5 | 🟡 | **entry_usd в open_trades = None** — бот при каждом тике перезаписывает поле; нужно добавить его в trader.py при открытии сделки |
 
 ---
 
-## 🔄 Grid статус (29.07.2026 ~19:18 UTC)
+## ⚠️ Важные наблюдения (30.07.2026)
 
-**Центральная цена:** 0.000437 TON/GRINCH  
-**Шаг:** 4% (было 5%) | **Уровни:** 10 SELL (все waiting), 5 BUY (no_funds)  
-**Compound:** 1.06x | **Всего прибыли от grid:** +5.27 TON
-
-| Уровень | TON/GRINCH | USD (×1.43) | GRINCH | Статус |
-|---------|-----------|-------------|--------|--------|
-| SELL L1 | 0.000455 | $0.000651 | 87,328 | ⏳ waiting |
-| SELL L2 | 0.000473 | $0.000677 | 87,328 | ⏳ waiting |
-| SELL L3 | 0.000492 | $0.000704 | 87,328 | ⏳ waiting |
-| SELL L4 | 0.000511 | $0.000731 | 87,328 | ⏳ waiting |
-| SELL L5 | 0.000532 | $0.000761 | 87,328 | ⏳ waiting |
-| SELL L6 | 0.000553 | $0.000791 | 87,328 | ⏳ waiting ~BE |
-| SELL L7 | 0.000575 | $0.000822 | 87,328 | ⏳ waiting ~TP |
-| SELL L8 | 0.000598 | $0.000855 | 87,328 | ⏳ waiting |
-| SELL L9 | 0.000622 | $0.000890 | 87,328 | ⏳ waiting |
-| SELL L10| 0.000647 | $0.000925 | 87,328 | ⏳ waiting |
+- **bot_settings хранит каждый параметр отдельной строкой** с колонкой `section` (NOT NULL). Секции: `trading`, `trader_state`, `config`, `ai_advisor` и др.
+- **bot_ai_state.dca перезаписывается на каждом тике** — фиксы state актуальны только до следующего тика (но это нормально, бот берёт позицию из bot_open_trades при рестарте).
+- **entry_usd = None** — бот не устанавливает entry_price_usd при открытии сделки (нужно добавить в trader.py)
+- **price_feed API**: в контейнере `price_feed.get()` не работает (нет атрибута); нужно `price_feed.PriceFeed` или запрашивать через /api/status (но требует auth).
 
 ---
 
 ## 📊 DCA статус (29.07.2026 ~19:18 UTC)
 
 - **Позиция:** 873,281 GRINCH @ avg $0.000723 | -15.1%
-- **Вложено:** 444.90 TON | **Сейчас:** ~378 TON
+- **Вложено:** 444.90 TON | **Сейчас:** ~378 TON  
 - **Breakeven:** $0.000731 (~L4 сетки)
 - **TP (новый):** 16% = $0.000839 (~L8-L9 сетки)
 - **TON свободно:** 2.295 TON (только газ)
-- **DCA DROP trigger:** 8% (было 10%)
 
 ---
 
