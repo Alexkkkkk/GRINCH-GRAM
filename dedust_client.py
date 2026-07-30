@@ -223,9 +223,12 @@ class DedustClient:
             return
 
         words = mnemonic_raw.strip().split()
+        # C3 fix: сразу стираем raw-строку мнемоники из локальной переменной
+        mnemonic_raw = None  # noqa
         if len(words) not in (24,):
             self._error = f"Мнемоника должна содержать 24 слова, получено: {len(words)}"
             log.error(self._error)
+            words = []  # scrub
             return
 
         self._mnemonic = words

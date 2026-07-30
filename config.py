@@ -413,10 +413,12 @@ class Config:
     EV_THRESHOLD = float(os.getenv("EV_THRESHOLD", "-1.0"))
 
     DEMO_MODE  = os.getenv("DEMO_MODE",  "false").lower() == "true"
-    SECRET_KEY = os.getenv("SECRET_KEY", "grinch-gram-secret-2024")
-    # ⚠️ Предупреждение: если SECRET_KEY не задан в env — Flask-сессии подделываемы.
-    # На боевом деплое ОБЯЗАТЕЛЬНО выставить SECRET_KEY в секретах Bothost/Replit.
-    if SECRET_KEY == "grinch-gram-secret-2024":
+    SECRET_KEY = os.getenv("SECRET_KEY", "")
+    # H1 fix: никогда не используем хардкоднутый дефолт — генерируем случайный.
+    # app.py использует _resolve_secret_key() (постоянный файл), это поле — запасное.
+    if not SECRET_KEY or SECRET_KEY == "grinch-gram-secret-2024":
+        import secrets as _s
+        SECRET_KEY = _s.token_hex(32)
         import logging as _log
         _log.getLogger("config").warning(
             "⚠️  SECRET_KEY использует дефолтное значение. "

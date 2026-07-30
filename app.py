@@ -332,15 +332,26 @@ def _resolve_secret_key():
     os.makedirs(_data_dir, exist_ok=True)
     path = os.path.join(_data_dir, ".session_secret")
     try:
-        if os.path.exists(path):
-            with open(path) as f:
-                saved = f.read().strip()
-            if saved:
-                return saved
-        generated = _secrets.token_hex(32)
-        with open(path, "w") as f:
-            f.write(generated)
-        return generated
+        import fcntl as _fcntl
+        lock_path = path + ".lock"
+        with open(lock_path, "w") as _lf:
+            _fcntl.flock(_lf, _fcntl.LOCK_EX)   # M1 fix: file lock — защита от race между worker'ами
+            try:
+                if os.path.exists(path):
+                    with open(path) as f:
+                        saved = f.read().strip()
+                    if saved:
+                        return saved
+                generated = _secrets.token_hex(32)
+                tmp = path + ".tmp"
+                with open(tmp, "w") as f:
+                    f.write(generated)
+                    f.flush()
+                    os.fsync(f.fileno())
+                os.replace(tmp, path)
+                return generated
+            finally:
+                _fcntl.flock(_lf, _fcntl.LOCK_UN)
     except Exception:
         return _secrets.token_hex(32)
 
@@ -861,6 +872,7 @@ def login():
                 and hmac.compare_digest(password, ADMIN_PASSWORD)):
             if _security:
                 _security.record_login_success(_ip)
+            session.clear()          # M2 fix: session fixation — обновляем сессию перед входом
             session.permanent = True
             session["logged_in"] = True
             session["user"] = username
@@ -954,6 +966,25 @@ def health():
     }), 200
 
 
+def _check_admin_confirm() -> bool:
+    """C1/C2 fix: step-up для деструктивных admin-операций.
+    Если задан ADMIN_CONFIRM_PIN — требуем его в заголовке X-Admin-Confirm или в теле запроса.
+    Если не задан — пропускаем (backward-compat), но логируем предупреждение.
+    """
+    pin = os.environ.get("ADMIN_CONFIRM_PIN", "")
+    if not pin:
+        import logging as _lg
+        _lg.getLogger("app").warning(
+            "[AdminSecurity] ADMIN_CONFIRM_PIN не задан — деструктивный admin-endpoint не защищён step-up!")
+        return True   # backward-compat
+    provided = (
+        request.headers.get("X-Admin-Confirm")
+        or (request.json or {}).get("admin_confirm_pin", "")
+        if request.is_json else request.form.get("admin_confirm_pin", "")
+    )
+    return hmac.compare_digest(str(provided), pin)
+
+
 @app.route("/api/admin/self_update", methods=["POST"])
 def api_admin_self_update():
     """Само-обновление: скачивает актуальные .py-файлы с GitHub и делает
@@ -975,6 +1006,9 @@ def api_admin_self_update():
         "coin_info.py", "exchange.py",
         "templates/index.html", "templates/join.html", "templates/user_dash.html",
     ]
+
+    if not _check_admin_confirm():
+        return jsonify({"ok": False, "error": "step-up подтверждение не прошло — укажите ADMIN_CONFIRM_PIN"}), 403
 
     branch = (request.json or {}).get("branch", "main") if request.is_json else "main"
     updated, skipped, errors = [], [], []
@@ -1031,12 +1065,9 @@ def api_admin_self_update():
 
 @app.route("/api/admin/hard_restart", methods=["POST"])
 def api_admin_hard_restart():
-    """Настоящий перезапуск процесса (не graceful SIGHUP воркеров, которое
-    при --preload не подхватывает новый код/шаблоны с диска). Отправляет
-    SIGTERM мастеру gunicorn: супервизор/Docker с restart-политикой поднимет
-    процесс заново, который импортирует все .py и шаблоны с чистого листа.
-    Требует авторизации (тот же before_request, что и остальной /api/admin).
-    """
+    """Настоящий перезапуск процесса. Требует авторизации + step-up pin."""
+    if not _check_admin_confirm():
+        return jsonify({"ok": False, "error": "step-up подтверждение не прошло — укажите ADMIN_CONFIRM_PIN"}), 403
     import signal as _sig
     try:
         import psutil as _ps

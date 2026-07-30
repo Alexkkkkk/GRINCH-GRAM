@@ -128,8 +128,13 @@ _selected_provider: Optional[str] = None
 
 
 def _provider_key_file(provider_id: str) -> str:
-    fname = PROVIDER_CONFIGS.get(provider_id, {}).get("key_file", f"{provider_id}_key.txt")
-    return os.path.join(_DATA_DIR, fname)
+    # C4 fix: validate provider_id against whitelist — never build paths from raw user input.
+    if provider_id not in PROVIDER_CONFIGS:
+        raise ValueError(f"Unknown provider_id: {provider_id!r}")
+    fname = PROVIDER_CONFIGS[provider_id].get("key_file", f"{provider_id}_key.txt")
+    # Extra guard: reject any path traversal in the filename itself
+    safe_fname = os.path.basename(fname)
+    return os.path.join(_DATA_DIR, safe_fname)
 
 
 def _read_provider_key(provider_id: str) -> str:

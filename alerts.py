@@ -13,6 +13,7 @@ alerts.py — оповещения о состоянии торгового бо
   и обратно на healthy), чтобы не заспамить чат одним и тем же сообщением
   каждые 20 секунд.
 """
+import html as _html
 import logging
 import os
 import threading
@@ -43,24 +44,47 @@ def _get_creds():
     return token, chat_id, enabled
 
 
-def send_alert(text: str) -> dict:
-    """Отправить сообщение в Telegram. Возвращает {"ok": bool, "error"?: str}."""
+def _safe_html(text: str) -> str:
+    """M7 fix: экранирует динамический контент для parse_mode=HTML.
+    Теги <b>, <i> и т.п. должны быть добавлены явно в шаблонах алертов,
+    а пользовательский текст всегда экранируется.
+    """
+    return _html.escape(text)
+
+
+def send_alert(text: str, retries: int = 2) -> dict:
+    """Отправить сообщение в Telegram. Возвращает {"ok": bool, "error"?: str}.
+    M7 fix: добавлен retry с backoff при временных ошибках сети.
+    """
     token, chat_id, enabled = _get_creds()
     if not token or not chat_id:
         return {"ok": False, "error": "Telegram не настроен (нет токена/chat_id)"}
-    try:
-        resp = SESSION.post(
-            f"https://api.telegram.org/bot{token}/sendMessage",
-            json={"chat_id": chat_id, "text": text, "parse_mode": "HTML"},
-            timeout=10,
-        )
-        data = resp.json()
-        if not data.get("ok"):
-            return {"ok": False, "error": data.get("description", "неизвестная ошибка Telegram")}
-        return {"ok": True}
-    except Exception as e:
-        logger.warning(f"[Alerts] Telegram send error: {e}")
-        return {"ok": False, "error": str(e)}
+    last_err = ""
+    for attempt in range(retries + 1):
+        try:
+            resp = SESSION.post(
+                f"https://api.telegram.org/bot{token}/sendMessage",
+                json={"chat_id": chat_id, "text": text, "parse_mode": "HTML"},
+                timeout=10,
+            )
+            data = resp.json()
+            if data.get("ok"):
+                return {"ok": True}
+            last_err = data.get("description", "неизвестная ошибка Telegram")
+            # 429 Too Many Requests — ждём Retry-After
+            if resp.status_code == 429:
+                wait = int(resp.headers.get("Retry-After", 5))
+                time.sleep(min(wait, 30))
+            elif resp.status_code >= 500:
+                time.sleep(2 ** attempt)
+            else:
+                break   # клиентская ошибка — не повторяем
+        except Exception as e:
+            last_err = str(e)
+            logger.warning(f"[Alerts] Telegram send error (attempt {attempt+1}): {e}")
+            if attempt < retries:
+                time.sleep(2 ** attempt)
+    return {"ok": False, "error": last_err}
 
 
 _pretrain_start_ts: float = 0.0  # когда впервые увидели running=True + last_tick_ts==0

@@ -93,16 +93,33 @@ def _save_blacklist():
 # ══════════════════════════════════════════════════════════════════════════
 #  Вспомогательные функции
 # ══════════════════════════════════════════════════════════════════════════
+def _mask_ip(ip: str) -> str:
+    """M10 fix: маскирует последний октет IPv4 для логов (GDPR/privacy)."""
+    parts = ip.split(".")
+    if len(parts) == 4:
+        return f"{parts[0]}.{parts[1]}.{parts[2]}.*"
+    return ip[:8] + "***" if len(ip) > 8 else "***"
+
+
 def get_client_ip() -> str:
-    """Реальный IP клиента (nginx ставит X-Real-IP)."""
+    """Реальный IP клиента.
+    H2 fix: доверяем X-Real-IP / X-Forwarded-For ТОЛЬКО если TCP-соединение
+    пришло от доверенного прокси (127.0.0.1 / ::1 = nginx на том же хосте).
+    Если подключение внешнее — используем raw remote_addr, иначе IP spoofing.
+    """
     from flask import request as _req
-    ip = (
-        _req.headers.get("X-Real-IP")
-        or _req.headers.get("X-Forwarded-For", "").split(",")[0].strip()
-        or _req.remote_addr
-        or "unknown"
-    )
-    return ip.strip()
+    ra = (_req.remote_addr or "").strip()
+    if ra in ("127.0.0.1", "::1", "localhost"):
+        # Доверенный прокси — читаем реальный IP из заголовков
+        ip = (
+            _req.headers.get("X-Real-IP")
+            or _req.headers.get("X-Forwarded-For", "").split(",")[0].strip()
+            or ra
+        )
+    else:
+        # Прямое подключение — не доверяем заголовкам
+        ip = ra
+    return (ip or "unknown").strip()
 
 
 def _is_banned(ip: str) -> bool:
@@ -147,21 +164,29 @@ def check_request():
             return jsonify({"error": "Forbidden"}), 403
 
         # ── 2. Путь — известная цель сканера ────────────────────────────
+        _need_save = False
         for sp in _SCANNER_PATHS:
             if path.lower().startswith(sp):
                 _perm_banned.add(ip)
-                _save_blacklist()
-                log.warning("[Security] 🚫 Бан %s — попытка доступа к %s", ip, path)
-                return jsonify({"error": "Not Found"}), 404
+                _need_save = True
+                log.warning("[Security] 🚫 Бан %s — попытка доступа к %s", _mask_ip(ip), path)  # M10 fix
+                break
+        if _need_save:
+            _save_blacklist()   # M5 fix: I/O вне лока — не блокируем все запросы
+            return jsonify({"error": "Not Found"}), 404
 
         # ── 3. User-Agent сканера ────────────────────────────────────────
         ua = (_req.headers.get("User-Agent") or "").lower()
+        _ua_banned = False
         for frag in _BAD_UA_FRAGMENTS:
             if frag in ua:
                 _perm_banned.add(ip)
-                _save_blacklist()
-                log.warning("[Security] 🚫 Бан %s — сканер UA: %.60s", ip, ua)
-                return jsonify({"error": "Forbidden"}), 403
+                _ua_banned = True
+                log.warning("[Security] 🚫 Бан %s — сканер UA: %.60s", _mask_ip(ip), ua)  # M10 fix
+                break
+        if _ua_banned:
+            _save_blacklist()   # M5 fix: I/O вне лока
+            return jsonify({"error": "Forbidden"}), 403
 
         # ── 4. Rate limiting (скользящее окно) ──────────────────────────
         q = _ip_requests[ip]
@@ -173,6 +198,7 @@ def check_request():
         # Автобан при флуде
         if count > AUTO_BAN_THRESHOLD:
             _auto_ban(ip, f"DDoS flood {count} req/{RATE_WINDOW_SEC}s")
+            log.warning("[Security] 🚫 AutoBan %s — flood %d req", _mask_ip(ip), count)  # M10 fix
             return jsonify({"error": "Too Many Requests"}), 429
 
         # Лимит по типу пути
