@@ -1250,8 +1250,8 @@ class GridTrader:
         try:
             from dedust_client import get_shared_balance
             bal = get_shared_balance()
-            ton_bal    = float(bal.get("ton", 0))
-            grinch_bal = float(bal.get("grinch", 0))
+            ton_bal    = float(bal.get("TON", bal.get("ton", 0)))
+            grinch_bal = float(bal.get("GRINCH", bal.get("grinch", 0)))
             if grinch_bal < 1000:
                 from db_store import db_store as _ds
                 _trades    = _ds.trades_load_open()

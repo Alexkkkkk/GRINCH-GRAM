@@ -3140,7 +3140,7 @@ def api_grid_build():
         if 'grinch_balance' in data:
             grinch_bal = float(data['grinch_balance'])
         else:
-            grinch_bal = float(bal.get('grinch', 0))
+            grinch_bal = float(bal.get('GRINCH', bal.get('grinch', 0)))
             if grinch_bal < 1000:
                 # Весь GRINCH в DCA — берём сумму открытых позиций
                 try:
@@ -3153,7 +3153,7 @@ def api_grid_build():
         result = get_grid_trader().build_grid(
             current_price_ton = price_ton,
             grinch_balance    = grinch_bal,
-            ton_balance       = float(bal.get('ton', 0)),
+            ton_balance       = float(bal.get('TON', bal.get('ton', 0))),
             step_pct          = float(data.get('step_pct', GridConfig.DEFAULT_STEP_PCT)),
             sell_levels       = int(data.get('sell_levels',  GridConfig.SELL_LEVELS_COUNT)),
             buy_levels        = int(data.get('buy_levels',   GridConfig.BUY_LEVELS_COUNT)),
