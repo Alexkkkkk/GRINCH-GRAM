@@ -101,23 +101,46 @@ def _mask_ip(ip: str) -> str:
     return ip[:8] + "***" if len(ip) > 8 else "***"
 
 
+def _is_trusted_proxy(addr: str) -> bool:
+    """H2 fix: доверяем заголовкам только от известных прокси.
+    На этом VPS: nginx в Docker → gateway 172.16-31.x / 10.x / 192.168.x / loopback.
+    Порт 3000 снаружи недоступен, поэтому RFC-1918 + loopback = безопасный доверенный диапазон.
+    """
+    if not addr:
+        return False
+    if addr in ("127.0.0.1", "::1", "localhost"):
+        return True
+    # RFC-1918 private ranges (Docker gateway, LAN)
+    parts = addr.split(".")
+    if len(parts) == 4:
+        try:
+            a, b = int(parts[0]), int(parts[1])
+            if a == 10:
+                return True                        # 10.0.0.0/8
+            if a == 172 and 16 <= b <= 31:
+                return True                        # 172.16.0.0/12
+            if a == 192 and b == 168:
+                return True                        # 192.168.0.0/16
+        except ValueError:
+            pass
+    return False
+
+
 def get_client_ip() -> str:
     """Реальный IP клиента.
-    H2 fix: доверяем X-Real-IP / X-Forwarded-For ТОЛЬКО если TCP-соединение
-    пришло от доверенного прокси (127.0.0.1 / ::1 = nginx на том же хосте).
-    Если подключение внешнее — используем raw remote_addr, иначе IP spoofing.
+    H2 fix v2: доверяем X-Real-IP / X-Forwarded-For ТОЛЬКО от trusted proxy
+    (loopback + RFC-1918 = nginx/Docker). Прямые внешние подключения используют
+    raw remote_addr — IP spoofing через заголовки невозможен.
     """
     from flask import request as _req
     ra = (_req.remote_addr or "").strip()
-    if ra in ("127.0.0.1", "::1", "localhost"):
-        # Доверенный прокси — читаем реальный IP из заголовков
+    if _is_trusted_proxy(ra):
         ip = (
             _req.headers.get("X-Real-IP")
             or _req.headers.get("X-Forwarded-For", "").split(",")[0].strip()
             or ra
         )
     else:
-        # Прямое подключение — не доверяем заголовкам
         ip = ra
     return (ip or "unknown").strip()
 
