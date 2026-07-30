@@ -778,14 +778,21 @@ class DedustClient:
                 result = data.get("result", {}) if data.get("ok") else {}
                 if result.get("exit_code") == 0:
                     stack = result.get("stack", [])
-                    if len(stack) >= 2:
+                    # DeDust CPMM get_pool_data стек (19 элементов):
+                    # [9]  = TON reserve (nanoton)
+                    # [10] = GRINCH reserve (nano, 9 decimals)
+                    if len(stack) >= 11:
                         def _parse_stack_num(item):
-                            # item может быть ["num","0x..."] или {"type":"num","value":"0x..."}
+                            # item: ["num","0x..."] или {"value":"0x..."}
                             raw = item[1] if isinstance(item, list) else item.get("value", "0")
                             s = str(raw)
-                            return int(s, 16) if s.startswith("0x") else int(s)
-                        r0 = _parse_stack_num(stack[0])  # TON nanoton
-                        r1 = _parse_stack_num(stack[1])  # GRINCH nano (9 decimals)
+                            if s.startswith("-0x"):
+                                return -int(s[3:], 16)
+                            if s.startswith("0x"):
+                                return int(s, 16)
+                            return int(s)
+                        r0 = _parse_stack_num(stack[9])   # TON nanoton
+                        r1 = _parse_stack_num(stack[10])  # GRINCH nano
                         ton_r    = r0 / TON
                         grinch_r = r1 / TON
                         if ton_r > 0 and grinch_r > 0:
