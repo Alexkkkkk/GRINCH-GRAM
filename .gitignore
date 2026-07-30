@@ -43,3 +43,7 @@ ai_advisor.py.bak
 fix_stats_test.py
 .deploy.lock
 .last_docker_prune
+
+# Файлы которые пересоздаются на VPS и не должны трекаться git
+/app.js
+/index.html

@@ -727,6 +727,22 @@ def start_background():
         except Exception as _sc_ex:
             print(f"[Scanner] не запущен: {_sc_ex}")
 
+        # ── Бэкфилл: нормализация старых записей bot_trades (одноразово) ──────
+        try:
+            import db_store as _dbs
+            _dbs.backfill_trade_fields()
+        except Exception as _bf_ex:
+            print(f"[Startup] backfill_trade_fields: {_bf_ex}")
+
+        # ── Очистка артефакта: сталый ключ trading.trading_enabled в bot_settings
+        # Бот читает ТОЛЬКО trader_state.trading_enabled; секция "trading" — устаревший
+        # артефакт предыдущей версии кода, вызывавший путаницу при аудите.
+        try:
+            import db_store as _dbs_te
+            _dbs_te.settings_delete_key("trading", "trading_enabled")
+        except Exception as _te_ex:
+            print(f"[Startup] clean trading_enabled conflict: {_te_ex}")
+
         # -- Grid Trader v2: compound-реинвест + DCA + GridAI --
         try:
             from grid_trader import get_grid_trader

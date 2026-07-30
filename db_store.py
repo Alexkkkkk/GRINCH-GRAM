@@ -428,6 +428,21 @@ def settings_get(section: str, key: str):
         return None
 
 
+def settings_delete_key(section: str, key: str):
+    """Удаляет один ключ из bot_settings (используется для чистки артефактов)."""
+    if not _check_available():
+        return
+    try:
+        with _conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "DELETE FROM bot_settings WHERE section=%s AND key=%s",
+                    (section, key)
+                )
+    except Exception as e:
+        logger.warning(f"[DB] settings_delete_key error: {e}")
+
+
 def settings_get_all() -> dict:
     if not _check_available():
         return {}
@@ -472,6 +487,34 @@ def _normalize_trade_fields(trade: dict) -> dict:
     if "dca_entries_count" not in t or t["dca_entries_count"] is None:
         t["dca_entries_count"] = t.get("merged_count") or t.get("dca_index") or 1
     return t
+
+
+def backfill_trade_fields():
+    """Одноразовая нормализация старых записей в bot_trades, которые были созданы
+    до добавления _normalize_trade_fields().  Запускается при старте — безопасно
+    вызывать повторно (только обновляет записи у которых нет profit_ton)."""
+    if not _check_available():
+        return
+    try:
+        with _conn() as conn:
+            with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+                cur.execute("SELECT id, data FROM bot_trades")
+                rows = cur.fetchall()
+        patched = 0
+        for row in rows:
+            trade = row["data"]
+            if not isinstance(trade, dict):
+                continue
+            # Только те записи, у которых нет хотя бы одного нормализованного поля
+            if all(k in trade and trade[k] is not None
+                   for k in ("profit_ton", "profit_pct", "close_price", "avg_price")):
+                continue
+            trades_upsert(trade)   # _normalize_trade_fields вызывается внутри
+            patched += 1
+        if patched:
+            logger.info(f"[DB] backfill_trade_fields: нормализовано {patched} записей в bot_trades")
+    except Exception as e:
+        logger.warning(f"[DB] backfill_trade_fields error: {e}")
 
 
 def trades_upsert(trade: dict):
