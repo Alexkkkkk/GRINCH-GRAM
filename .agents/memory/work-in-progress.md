@@ -9,15 +9,12 @@ description: ЧТО ДЕЛАЛОСЬ В ПРОШЛОЙ СЕССИИ — файл
 
 ### Что сделано
 - Обновлён секрет VPS_SSH_KEY (новый пароль)
-- **ИСПРАВЛЕН БАГ «только в плюс» (grid_trader.py)**:
-  - До: AI BUY ≥ 55% был жёстким гейтом ПЕРЕД проверкой прибыльности → BUY никогда не срабатывал (GridAI не обучен → signal=0%)
-  - После: сначала `_is_profitable_buy_cycle()` (математика), потом AI SELL-гейт, AI BUY — только масштабирует размер (0.7x–1.8x), не блокирует
-  - Тот же паттерн применён к DCA-уровням
-- **ИСПРАВЛЕН БАГ GridAI (_train)**:
-  - `_safe_atr()` коерция atr_pct к float (защита от строк/None)
-  - Когда все примеры одного класса (только прибыльные) — DCA-модель пропускается, но step-модель обучается и `_trained=True` выставляется
-  - GridAI теперь обучается с первого запуска: `step_model=OK dca_model=OK`
-- Коммит `073d0c5` — задеплоен через docker cp на VPS
+- **ИСПРАВЛЕН grid_trader.py** — «только в плюс»: убран AI-гейт перед BUY, AI масштабирует только размер
+- **ИСПРАВЛЕН grid_ai.py** — обучение: safe_atr float-коерция, обработка одного класса
+- **БЭКФИЛЛ bot_trades** — заполнены open_price и profit_pct для всех 22 сделок
+  - Скрипт: `/tmp/backfill_profit.py` (уже выполнен, удалять не нужно)
+  - Формула: open_price = close_price / (1 + profit_ton/stake_ton)
+  - profit_pct = profit_ton / stake_ton * 100
 
 ### Текущее состояние VPS (17:10 UTC 30.07.2026)
 - bot-bot-1: healthy | bot-nginx-1: healthy
@@ -30,8 +27,6 @@ description: ЧТО ДЕЛАЛОСЬ В ПРОШЛОЙ СЕССИИ — файл
 - DCA: 880,702 GRINCH | вложено 450.29 TON | -26% | ждёт +44% до $0.000773
 
 ### Открытые задачи
-- Task #2 (PROPOSED): Fix GridAI training crash → ЗАКРЫТ этой сессией (исправлен)
-- Task #3 (PROPOSED): Fix missing trade profit/price data in database (profit_ton, profit_pct etc. NULL в bot_trades)
 - Task #4 (PROPOSED): Telegram-алерт когда grid BUY levels застряли на no_funds
 
 ### Известные проблемы
