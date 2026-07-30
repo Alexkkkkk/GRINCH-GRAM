@@ -287,7 +287,7 @@ function updateUI(data) {
 
   renderOpenTrades(data.open_trades  || [], Number(data.analysis?.price) || 0, Number(data.grinch_ton) || 0);
   renderOpenShortTrades(data.open_short_trades || [], Number(data.analysis?.price) || 0, Number(data.grinch_ton) || 0);
-  renderHistory(data.recent_trades || []);
+  renderHistory(data.recent_trades || []);  // async — не ждём
   renderLogs(data.logs             || []);
 
   // ═══ AI COMMAND CENTER ═══
@@ -1321,30 +1321,70 @@ function renderGridPanel(d) {
 //  История сделок
 // ════════════════════════════════════════════════════
 
-function renderHistory(trades) {
-  const el     = document.getElementById("trades-history");
-  const closed = trades.filter(t => t.status === "closed").reverse();
-  if (!closed.length) { el.innerHTML = '<div class="empty-msg">История пуста</div>'; return; }
-  el.innerHTML = closed.slice(0, 20).map(t => {
+async function renderHistory(trades) {
+  const el = document.getElementById("trades-history");
+
+  // ── DCA/AI сделки ──────────────────────────────────────────────
+  const dcaClosed = trades.filter(t => t.status === "closed").map(t => ({
+    _ts:         t.closed_at ? new Date(t.closed_at).getTime() : 0,
+    pnl:         t.pnl || 0,
+    side:        t.side || "sell",
+    entry_price: t.entry_price,
+    exit_price:  t.exit_price,
+    closed_at:   t.closed_at || "",
+    close_reason: t.close_reason || "—",
+    _is_grid:    false,
+  }));
+
+  // ── Grid SELL (заполненные уровни) ────────────────────────────
+  let gridFills = [];
+  try {
+    const gr = await fetch("/api/grid/status").then(r => r.json());
+    const centerTon = gr.center_price_ton || 0;
+    (gr.sell_levels || []).filter(l => l.status === "filled").forEach(l => {
+      gridFills.push({
+        _ts:         l.filled_at ? l.filled_at * 1000 : 0,
+        pnl:         l.profit_ton || 0,
+        side:        "sell",
+        entry_price: centerTon ? centerTon.toFixed(7) : null,
+        exit_price:  l.fill_price_ton ? l.fill_price_ton.toFixed(7) : null,
+        closed_at:   l.filled_at ? new Date(l.filled_at * 1000).toISOString() : "",
+        close_reason: `🔲 Grid L${l.id}` + (l.note ? ` (${l.note})` : ""),
+        _is_grid:    true,
+      });
+    });
+  } catch (e) { /* сетка недоступна — пропускаем */ }
+
+  // ── Объединяем, сортируем по времени (новые первые) ───────────
+  const all = [...dcaClosed, ...gridFills].sort((a, b) => b._ts - a._ts);
+
+  if (!all.length) { el.innerHTML = '<div class="empty-msg">История пуста</div>'; return; }
+
+  el.innerHTML = all.slice(0, 30).map(t => {
     const pnl    = t.pnl || 0;
     const cls    = pnl >= 0 ? "closed-win" : "closed-loss";
     const pnlCls = pnl >= 0 ? "pnl-pos" : "pnl-neg";
-    const ep = t.entry_price ? Number(t.entry_price).toFixed(6) : "—";
-    const xp = t.exit_price  ? Number(t.exit_price).toFixed(6)  : "—";
-    const dateStr = t.closed_at ? t.closed_at.slice(5,10) + ' ' + t.closed_at.slice(11,16) : "";
+    const ep     = t.entry_price ? Number(t.entry_price).toFixed(7) : "—";
+    const xp     = t.exit_price  ? Number(t.exit_price).toFixed(7)  : "—";
+    const dateStr = t.closed_at
+      ? t.closed_at.slice(5,10) + " " + t.closed_at.slice(11,16)
+      : "";
+    const gridBadge = t._is_grid
+      ? `<span style="font-size:10px;padding:1px 5px;border-radius:6px;background:rgba(0,212,255,.13);color:#00d4ff;margin-left:4px">🔲 Grid</span>`
+      : "";
     return `
       <div class="trade-card ${cls}">
         <div class="trade-row">
-          <span class="trade-side ${t.side || 'buy'}">${escapeHtml((t.side || 'buy').toUpperCase())}</span>
+          <span class="trade-side ${t.side}">${escapeHtml(t.side.toUpperCase())}${gridBadge}</span>
           <span class="${pnlCls}" style="font-family:var(--mono);font-size:13px;font-weight:800">${pnl >= 0 ? "+" : ""}${pnl.toFixed(4)} TON</span>
         </div>
         <div class="th-prices">
-          <span class="th-price-ep">$${ep}</span>
+          <span class="th-price-ep">${ep}</span>
           <span class="th-price-arrow">→</span>
-          <span class="th-price-xp">$${xp}</span>
+          <span class="th-price-xp">${xp}</span>
         </div>
         <div class="trade-row th-meta">
-          <span>${escapeHtml(t.close_reason || "—")}</span>
+          <span>${escapeHtml(t.close_reason)}</span>
           <span>${dateStr}</span>
         </div>
       </div>`;
