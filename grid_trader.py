@@ -55,6 +55,10 @@ class GridConfig:
     AI_SKIP_SELL_BUY_CONF  = 75.0   # пропустить SELL если AI BUY ≥ 75%
     AI_SKIP_BUY_SELL_CONF  = 60.0   # пропустить BUY если AI SELL ≥ 60%
     AI_FREEZE_BUY_SELL     = 80.0   # заморозить все BUY если AI SELL ≥ 80%
+    # ── Только-в-плюс под AI ──────────────────────────────────────────
+    AI_MIN_BUY_CONF        = 55.0   # минимальный BUY-сигнал для открытия любой покупки
+    AI_BUY_SIZE_MIN_MULT   = 0.7    # множитель суммы при AI BUY = AI_MIN_BUY_CONF
+    AI_BUY_SIZE_MAX_MULT   = 1.8    # множитель суммы при AI BUY = 100%
     # DCA — добавление позиции вниз
     DCA_MIN_CONF       = 55.0   # мин. уверенность GridAI для DCA-закупки
     DCA_MAX_LEVELS     = 3      # макс. активных DCA-уровней одновременно
@@ -726,6 +730,16 @@ class GridTrader:
                     if price_ton > level.price_ton:
                         break
 
+                    # ── ТОЛЬКО-В-ПЛЮС: требуем явный AI BUY-сигнал ──────
+                    if ai_buy_conf < GridConfig.AI_MIN_BUY_CONF:
+                        log.info("[Grid] ⏭ BUY L%d @ %.6f — AI BUY слабый (%.0f%% < %.0f%%)",
+                                 level.id, level.price_ton,
+                                 ai_buy_conf, GridConfig.AI_MIN_BUY_CONF)
+                        self._state.last_action = (
+                            f"BUY L{level.id} ожидает AI BUY ≥{GridConfig.AI_MIN_BUY_CONF:.0f}% "
+                            f"(сейчас {ai_buy_conf:.0f}%)")
+                        continue
+
                     if ai_sell_conf >= GridConfig.AI_SKIP_BUY_SELL_CONF:
                         log.info("[Grid] ⏭ BUY L%d @ %.6f — AI SELL %.0f%%",
                                  level.id, level.price_ton, ai_sell_conf)
@@ -739,9 +753,24 @@ class GridTrader:
                             f"BUY L{level.id} пропущен (цикл убыточен {profit_est:+.4f} TON)")
                         continue
 
-                    log.info("[Grid] 🟢 BUY L%d: %.2f TON @ %.6f (цена: %.6f)",
-                             level.id, level.amount_ton, level.price_ton, price_ton)
+                    # ── Масштабируем размер по уверенности AI ───────────
+                    ai_size_mult = GridConfig.AI_BUY_SIZE_MIN_MULT + (
+                        (ai_buy_conf - GridConfig.AI_MIN_BUY_CONF) /
+                        max(1.0, 100.0 - GridConfig.AI_MIN_BUY_CONF)
+                    ) * (GridConfig.AI_BUY_SIZE_MAX_MULT - GridConfig.AI_BUY_SIZE_MIN_MULT)
+                    ai_size_mult = round(min(GridConfig.AI_BUY_SIZE_MAX_MULT, ai_size_mult), 3)
+                    scaled_ton   = round(level.amount_ton * ai_size_mult, 4)
+                    orig_ton     = level.amount_ton
+
+                    log.info("[Grid] 🟢 BUY L%d: %.2f TON (×%.2f AI=%.0f%%) @ %.6f (цена: %.6f)",
+                             level.id, scaled_ton, ai_size_mult, ai_buy_conf,
+                             level.price_ton, price_ton)
+                    level.amount_ton = scaled_ton  # временно, для исполнения
+                    level.note = (level.note or "") + \
+                        f" | AI BUY {ai_buy_conf:.0f}% × {ai_size_mult:.2f}"
                     res = self._execute_buy(level, price_ton, atr_pct, regime)
+                    if not res.get("ok"):
+                        level.amount_ton = orig_ton   # откатить если ошибка
                     if res.get("ok"):
                         executed = True
                         break
@@ -757,6 +786,12 @@ class GridTrader:
                     if price_ton > level.price_ton:
                         break
 
+                    # ── ТОЛЬКО-В-ПЛЮС: DCA тоже требует AI BUY ─────────
+                    if ai_buy_conf < GridConfig.AI_MIN_BUY_CONF:
+                        log.debug("[Grid] ⏭ DCA @ %.6f — AI BUY %.0f%% < %.0f%%",
+                                  level.price_ton, ai_buy_conf, GridConfig.AI_MIN_BUY_CONF)
+                        continue
+
                     if ai_sell_conf >= GridConfig.AI_SKIP_BUY_SELL_CONF:
                         continue
 
@@ -764,9 +799,21 @@ class GridTrader:
                     if not profitable:
                         continue
 
-                    log.info("[Grid] 🟣 DCA: %.2f TON @ %.6f (цена: %.6f)",
-                             level.amount_ton, level.price_ton, price_ton)
+                    # Масштабируем размер DCA по AI-уверенности
+                    ai_size_mult = GridConfig.AI_BUY_SIZE_MIN_MULT + (
+                        (ai_buy_conf - GridConfig.AI_MIN_BUY_CONF) /
+                        max(1.0, 100.0 - GridConfig.AI_MIN_BUY_CONF)
+                    ) * (GridConfig.AI_BUY_SIZE_MAX_MULT - GridConfig.AI_BUY_SIZE_MIN_MULT)
+                    ai_size_mult  = round(min(GridConfig.AI_BUY_SIZE_MAX_MULT, ai_size_mult), 3)
+                    orig_ton      = level.amount_ton
+                    level.amount_ton = round(orig_ton * ai_size_mult, 4)
+
+                    log.info("[Grid] 🟣 DCA: %.2f TON (×%.2f AI=%.0f%%) @ %.6f (цена: %.6f)",
+                             level.amount_ton, ai_size_mult, ai_buy_conf,
+                             level.price_ton, price_ton)
                     res = self._execute_dca(level, price_ton, atr_pct, regime)
+                    if not res.get("ok"):
+                        level.amount_ton = orig_ton
                     if res.get("ok"):
                         executed = True
                         break
