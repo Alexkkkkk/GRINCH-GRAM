@@ -218,9 +218,16 @@ class GridAI:
 
             sells = [e for e in self._experience if e.get("side") == "sell"]
 
+            def _safe_atr(e: dict) -> float:
+                """Коерция atr_pct к float — защита от строк/None в старых записях."""
+                try:
+                    return float(e.get("atr_pct") or 0.0)
+                except (TypeError, ValueError):
+                    return 0.0
+
             # ── Step-predictor (Ridge regression) ─────────────────────────
             if len(sells) >= MIN_SAMPLES:
-                X_s = [self._make_features(e["atr_pct"], e.get("regime", "SIDEWAYS"))
+                X_s = [self._make_features(_safe_atr(e), e.get("regime", "SIDEWAYS"))
                        for e in sells]
                 y_s = [e["step_used"] for e in sells]
                 self._step_model = Pipeline([
@@ -233,14 +240,21 @@ class GridAI:
             all_exp = self._experience
             if len(all_exp) >= MIN_SAMPLES:
                 y_p = [e["is_profitable"] for e in all_exp]
-                if sum(y_p) >= 2 and len(y_p) - sum(y_p) >= 1:
-                    X_p = [self._make_features(e["atr_pct"], e.get("regime", "SIDEWAYS"))
+                n_pos = sum(y_p)
+                n_neg = len(y_p) - n_pos
+                if n_pos >= 2 and n_neg >= 1:
+                    X_p = [self._make_features(_safe_atr(e), e.get("regime", "SIDEWAYS"))
                            for e in all_exp]
                     self._dca_model = Pipeline([
                         ("sc", StandardScaler()),
                         ("m",  LogisticRegression(C=1.0, max_iter=300, class_weight="balanced")),
                     ])
                     self._dca_model.fit(X_p, y_p)
+                else:
+                    # Пока все сделки одного класса (только прибыльные) —
+                    # DCA-модель не нужна: всегда отвечаем «да» из эвристики.
+                    log.info("[GridAI] DCA-модель пропущена: нет убыточных примеров "
+                             "(pos=%d neg=%d) — используем эвристику", n_pos, n_neg)
 
             self._trained      = True
             self._last_train_n = len(self._experience)
