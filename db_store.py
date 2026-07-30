@@ -449,6 +449,31 @@ def settings_get_all() -> dict:
 #  TRADES (закрытые сделки)
 # ═══════════════════════════════════════════════════════════════════════════════
 
+def _normalize_trade_fields(trade: dict) -> dict:
+    """Добавляет алиасы полей для совместимости дашборда и запросов к БД.
+
+    Трейдер хранит прибыль в ключах pnl/pnl_pct/exit_price, а дашборд и аналитика
+    ожидают profit_ton/profit_pct/close_price/avg_price/dca_entries_count.
+    Нормализуем при записи — один раз тут, вместо правок в 20 местах.
+    """
+    t = dict(trade)
+    # profit_ton / profit_pct
+    if "profit_ton" not in t or t["profit_ton"] is None:
+        t["profit_ton"] = t.get("pnl") or t.get("dca_profit_ton") or 0.0
+    if "profit_pct" not in t or t["profit_pct"] is None:
+        t["profit_pct"] = t.get("pnl_pct") or t.get("dca_profit_pct") or 0.0
+    # close_price (USD)
+    if "close_price" not in t or t["close_price"] is None:
+        t["close_price"] = t.get("exit_price") or t.get("close_price_usd") or 0.0
+    # avg_price (TON) — средняя цена входа после слияния DCA-позиций
+    if "avg_price" not in t or t["avg_price"] is None:
+        t["avg_price"] = t.get("entry_price_ton") or t.get("avg_entry_ton") or 0.0
+    # dca_entries_count — сколько DCA-входов было в цикле
+    if "dca_entries_count" not in t or t["dca_entries_count"] is None:
+        t["dca_entries_count"] = t.get("merged_count") or t.get("dca_index") or 1
+    return t
+
+
 def trades_upsert(trade: dict):
     if not _check_available():
         return
@@ -462,6 +487,8 @@ def trades_upsert(trade: dict):
             closed_at = datetime.fromisoformat(str(closed_at_str))
         except Exception:
             pass
+    # Нормализуем поля перед записью (добавляем алиасы для дашборда)
+    trade = _normalize_trade_fields(trade)
     TRADES_KEEP = 500   # храним не более 500 закрытых сделок (защита от бесконечного роста)
     try:
         with _conn() as conn:
@@ -658,7 +685,7 @@ def open_trades_save(trades: list):
         return
     try:
         rows = [
-            (str(t.get("id") or ""), _jdumps(t, ensure_ascii=False))
+            (str(t.get("id") or ""), _jdumps(_normalize_trade_fields(t), ensure_ascii=False))
             for t in trades if t.get("id")
         ]
         with _conn() as conn:
