@@ -303,6 +303,7 @@ class GridState:
     sell_levels:    List[GridLevel] = field(default_factory=list)
     buy_levels:     List[GridLevel] = field(default_factory=list)
     dca_levels:     List[GridLevel] = field(default_factory=list)   # DCA-добавления
+    completed_fills:      List[GridLevel] = field(default_factory=list)  # все заполненные SELL, выживают при rebuild
     total_profit_ton:     float = 0.0
     total_sell_cycles:    int   = 0
     total_buy_cycles:     int   = 0
@@ -320,9 +321,10 @@ class GridState:
 
     def to_dict(self) -> dict:
         d = asdict(self)
-        d["sell_levels"] = [asdict(l) for l in self.sell_levels]
-        d["buy_levels"]  = [asdict(l) for l in self.buy_levels]
-        d["dca_levels"]  = [asdict(l) for l in self.dca_levels]
+        d["sell_levels"]     = [asdict(l) for l in self.sell_levels]
+        d["buy_levels"]      = [asdict(l) for l in self.buy_levels]
+        d["dca_levels"]      = [asdict(l) for l in self.dca_levels]
+        d["completed_fills"] = [asdict(l) for l in self.completed_fills]
         return d
 
     @staticmethod
@@ -330,11 +332,13 @@ class GridState:
         s = GridState()
         for k, v in d.items():
             if k == "sell_levels":
-                s.sell_levels = [GridLevel(**l) for l in (v or [])]
+                s.sell_levels     = [GridLevel(**l) for l in (v or [])]
             elif k == "buy_levels":
-                s.buy_levels  = [GridLevel(**l) for l in (v or [])]
+                s.buy_levels      = [GridLevel(**l) for l in (v or [])]
             elif k == "dca_levels":
-                s.dca_levels  = [GridLevel(**l) for l in (v or [])]
+                s.dca_levels      = [GridLevel(**l) for l in (v or [])]
+            elif k == "completed_fills":
+                s.completed_fills = [GridLevel(**l) for l in (v or [])]
             else:
                 try:
                     setattr(s, k, v)
@@ -425,23 +429,25 @@ class GridTrader:
 
         with self._lock:
             # Сохраняем compound_multiplier при перестройке
-            old_mult = self._state.compound_multiplier
-            old_profit = self._state.total_profit_ton
-            old_sell_c = self._state.total_sell_cycles
-            old_buy_c  = self._state.total_buy_cycles
-            old_dca_c  = self._state.total_dca_cycles
-            old_cb     = self._state.total_compound_bonus
+            old_mult      = self._state.compound_multiplier
+            old_profit    = self._state.total_profit_ton
+            old_sell_c    = self._state.total_sell_cycles
+            old_buy_c     = self._state.total_buy_cycles
+            old_dca_c     = self._state.total_dca_cycles
+            old_cb        = self._state.total_compound_bonus
+            old_completed = list(self._state.completed_fills)  # сохраняем историю через rebuild
 
             state = GridState()
-            state.center_price_ton  = current_price_ton
-            state.step_pct          = step_pct
-            state.created_at        = time.time()
+            state.center_price_ton    = current_price_ton
+            state.step_pct            = step_pct
+            state.created_at          = time.time()
             state.compound_multiplier = old_mult
-            state.total_profit_ton  = old_profit
-            state.total_sell_cycles = old_sell_c
-            state.total_buy_cycles  = old_buy_c
-            state.total_dca_cycles  = old_dca_c
+            state.total_profit_ton    = old_profit
+            state.total_sell_cycles   = old_sell_c
+            state.total_buy_cycles    = old_buy_c
+            state.total_dca_cycles    = old_dca_c
             state.total_compound_bonus = old_cb
+            state.completed_fills     = old_completed
 
             # ── SELL-уровни ────────────────────────────────────────────
             grinch_per_level = grinch_balance / sell_levels if sell_levels > 0 else 0
@@ -578,6 +584,14 @@ class GridTrader:
                      "profit_ton": round(l.profit_ton, 4),
                      "note": l.note, "filled_at": l.filled_at}
                     for l in s.sell_levels
+                ],
+                "completed_fills": [
+                    {"id": l.id, "price_ton": l.price_ton,
+                     "amount_grinch": l.amount_grinch,
+                     "profit_ton": round(l.profit_ton, 4),
+                     "fill_price_ton": l.fill_price_ton,
+                     "note": l.note, "filled_at": l.filled_at}
+                    for l in sorted(s.completed_fills, key=lambda x: x.filled_at or 0, reverse=True)
                 ],
                 "buy_levels": [
                     {"id": l.id, "price_ton": l.price_ton,
@@ -850,6 +864,9 @@ class GridTrader:
 
                 self._state.total_profit_ton  += level.profit_ton
                 self._state.total_sell_cycles += 1
+                # Сохраняем в completed_fills — выживает при rebuild
+                import copy as _copy
+                self._state.completed_fills.append(_copy.copy(level))
                 self._state.last_action = (
                     f"✅ SELL L{level.id}: {level.amount_grinch:.0f} GRINCH "
                     f"@ {current_price:.6f} | нетто ≈ {net_ton:.2f} TON "

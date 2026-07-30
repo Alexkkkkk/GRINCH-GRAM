@@ -1336,12 +1336,16 @@ async function renderHistory(trades) {
     _is_grid:    false,
   }));
 
-  // ── Grid SELL (заполненные уровни) ────────────────────────────
+  // ── Grid SELL (все заполненные уровни, включая предыдущие rebuild) ─────
   let gridFills = [];
   try {
     const gr = await fetch("/api/grid/status").then(r => r.json());
     const centerTon = gr.center_price_ton || 0;
-    (gr.sell_levels || []).filter(l => l.status === "filled").forEach(l => {
+    // completed_fills — полная история через все rebuild сетки
+    const fills = (gr.completed_fills && gr.completed_fills.length)
+      ? gr.completed_fills
+      : (gr.sell_levels || []).filter(l => l.status === "filled"); // fallback
+    fills.forEach(l => {
       gridFills.push({
         _ts:         l.filled_at ? l.filled_at * 1000 : 0,
         pnl:         l.profit_ton || 0,
