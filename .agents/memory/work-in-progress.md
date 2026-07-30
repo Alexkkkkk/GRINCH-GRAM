@@ -8,30 +8,30 @@ description: ЧТО ДЕЛАЛОСЬ В ПРОШЛОЙ СЕССИИ — файл
 ## Последняя сессия: 2026-07-30
 
 ### Что сделано
-- Восстановлено SSH-подключение к VPS (обновлён секрет VPS_SSH_KEY)
-- Исправлен баг: `completed_fills` обнулялся при graceful shutdown контейнера
-  - `grid_trader.py` `from_dict()`: авто-миграция из filled sell_levels когда completed_fills пуст
-  - Закоммичено в origin/main (`3fd23bb`), задеплоено на VPS
-- Проведён полный аудит VPS и БД
+- Обновлён секрет VPS_SSH_KEY (новый пароль Kander3132001574@@@)
+- Полный анализ работы Grid Trading на VPS
 
-### Текущее состояние VPS (08:41 UTC 30.07.2026)
-- DCA позиция: 885,414 GRINCH, вложено 450.19 TON, сейчас ~335 TON (-26.3%)
-- ONLY_PROFIT_EXIT активен, ждём +43% до цели $0.000773
-- Liquidator: цель $0.000773, до продажи +43.1%
-- DCA_MAX_ENTRIES=3 лимит достигнут, докупок нет
-- TON баланс на кошельке: **2.29 TON** (критически мало — нет денег для докупок)
-- Grid: 3 SELL в completed_fills, total_profit=10.296 TON
-- Peak equity: 600.78 TON | Drawdown: 9.67% от пика | Sharpe: 1.72
-- Контейнеры: bot-bot-1 (healthy), bot-nginx-1 (healthy)
-- Health: degraded (tick_age~92s, порог 180s)
-- Groq advisor: провалился (~3 часа назад, rate-limit)
+### Текущее состояние VPS (16:18 UTC 30.07.2026)
 
-### НАЙДЕННЫЕ БАГИ (аудит)
-1. **КРИТИЧНО**: `profit_ton`, `profit_pct`, `avg_price`, `close_price`, `dca_entries_count` не пишутся в `bot_trades` и `bot_open_trades` (MISSING в jsonb). Реальный учёт в `experience.json` + `ai_state` работает корректно (147.997 TON, 20/22 wins).
-2. **bot_ai_examples**: всего 4 строки — AI обучается через experience.json, не через DB-таблицу.
-3. **Конфликт trading_enabled**: trader_state="False", trading="True".
-4. **Untracked файлы** в /opt/bot: app.js, index.html.
+#### Grid Trading
+- Active: true, тиков: 2493, последний тик 2с назад — здорова
+- Центр: 0.00037677 TON | Шаг: 4%
+- Реализованная прибыль: **10.30 TON** | Compound-бонус: **+16.70 TON** (1.12x)
+- Циклов продаж: 6 | Циклов покупок: 3 | Win rate: 100%
+- **ПРОБЛЕМА**: Все BUY levels (#-1..#-5) имеют статус `no_funds` — TON на кошельке ~2.29 TON, сетка не может открывать новые покупки
+- Ближайший SELL: 0.00045230 TON (+20% от текущей цены ~0.000377)
+- Последнее действие: авто-перецентровка @ 0.000377
+
+#### DCA-бот (основная позиция)
+- 880,702 GRINCH | вложено 450.29 TON | сейчас ~333 TON | убыток **-26%**
+- ONLY_PROFIT_EXIT активен, ждём +44% до цели $0.000773 (сейчас $0.000536)
+- Liquidator активен, ждёт того же уровня
+- DCA_MAX_ENTRIES=3 достигнут, докупок нет
+
+#### Контейнеры
+- bot-bot-1: healthy | bot-nginx-1: healthy
 
 ### Открытые задачи
-- Task #3: Fix missing trade profit and price data in the database
-- Task #4: Raise DCA entry limit (нужно пополнить TON на кошельке сначала)
+- Task #2: Telegram-алерт когда grid BUY levels застряли на no_funds
+- Task #3: Fix missing trade profit/price data in database (profit_ton, profit_pct, avg_price etc. NULL в bot_trades)
+- ⚠️ Кошелёк TON практически пустой (~2.29 TON) — нужно пополнить для возобновления BUY-циклов сетки
