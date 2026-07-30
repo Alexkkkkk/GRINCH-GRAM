@@ -733,7 +733,7 @@ class DedustClient:
     # Комиссия пула GRINCH/TON на DeDust нестандартная — 1% (CPMM v2).
     _POOL_FEE = 0.01
     _RESERVES_TIMEOUT = 8
-    _RESERVES_CACHE_TTL = 45.0
+    _RESERVES_CACHE_TTL = 120.0   # увеличен с 45→120с чтобы реже долбить API
 
     @staticmethod
     def _same_addr(a: str, b: str) -> bool:
@@ -745,15 +745,14 @@ class DedustClient:
             return (a or "").lower() == (b or "").lower()
 
     def _pool_reserves(self):
-        """Читает РЕАЛЬНЫЕ резервы пула (ton_reserve, grinch_reserve) через TonAPI.
+        """Читает РЕАЛЬНЫЕ резервы пула (ton_reserve, grinch_reserve).
 
-        Это единственный надёжный способ узнать фактический курс именно нашего
-        1%-пула: типизированные get-методы DeDust SDK на этом CPMM-v2 контракте
-        падают (exit 11), а внешний USD/priceNative-фид систематически расходится
-        с пулом — из-за чего min-out оказывался завышен и пул отклонял свопы
-        (exit 65535, bounce). По резервам считаем выход свопа точной формулой CPMM.
+        Приоритет источников:
+          1) TonCenter runGetMethod → get_pool_data (точные резервы без газа/ренты)
+          2) TonAPI account/jettons (fallback, ~3% off из-за gas/rent остатка)
 
         Возвращает (ton_reserve, grinch_reserve) в обычных единицах или None.
+        Кэш: 120с. 429-backoff: 300с.
         """
         now = time.time()
         cached = getattr(self, "_pool_reserves_cache", None)
@@ -761,20 +760,55 @@ class DedustClient:
         if cached and (now - cached_ts) < self._RESERVES_CACHE_TTL:
             return cached
 
-        # ── 429-backoff: не долбить TonAPI пока действует пауза ──────────────
+        # ── 429-backoff (только для TonAPI fallback) ─────────────────────────
         backoff_until = getattr(self, "_pool_reserves_backoff_until", 0.0)
-        if now < backoff_until:
-            return cached  # вернуть последний удачный курс без запроса
 
         pool = Config.GRINCH_POOL_ADDRESS
+
+        # ── 1. TonCenter runGetMethod: get_pool_data (точные резервы) ─────────
+        try:
+            r = _HTTP.post(
+                "https://toncenter.com/api/v2/runGetMethod",
+                headers={**_tc_headers(), "Content-Type": "application/json"},
+                json={"address": pool, "method": "get_pool_data", "stack": []},
+                timeout=self._RESERVES_TIMEOUT,
+            )
+            if r.status_code == 200:
+                data = r.json()
+                result = data.get("result", {}) if data.get("ok") else {}
+                if result.get("exit_code") == 0:
+                    stack = result.get("stack", [])
+                    if len(stack) >= 2:
+                        def _parse_stack_num(item):
+                            # item может быть ["num","0x..."] или {"type":"num","value":"0x..."}
+                            raw = item[1] if isinstance(item, list) else item.get("value", "0")
+                            s = str(raw)
+                            return int(s, 16) if s.startswith("0x") else int(s)
+                        r0 = _parse_stack_num(stack[0])  # TON nanoton
+                        r1 = _parse_stack_num(stack[1])  # GRINCH nano (9 decimals)
+                        ton_r    = r0 / TON
+                        grinch_r = r1 / TON
+                        if ton_r > 0 and grinch_r > 0:
+                            reserves = (ton_r, grinch_r)
+                            self._pool_reserves_cache    = reserves
+                            self._pool_reserves_cache_ts = now
+                            self._pool_reserves_backoff_until = 0.0
+                            return reserves
+        except Exception as e:  # noqa: BLE001
+            log.debug(f"[DeDust] get_pool_data TonCenter: {e}")
+
+        # ── 2. TonAPI account/jettons (fallback) ──────────────────────────────
+        if now < backoff_until:
+            return cached  # TonAPI на паузе — вернуть последний удачный курс
+
         try:
             r1 = _HTTP.get(
                 f"https://tonapi.io/v2/accounts/{pool}",
                 headers={"Accept": "application/json"}, timeout=self._RESERVES_TIMEOUT,
             )
             if r1.status_code == 429:
-                self._pool_reserves_backoff_until = now + 120.0  # пауза 2 минуты
-                log.warning("dedust_client: 429 от TonAPI (pool/balance) — пауза 120с")
+                self._pool_reserves_backoff_until = now + 300.0  # пауза 5 минут
+                log.warning("dedust_client: 429 от TonAPI (pool/balance) — пауза 300с")
                 return cached
             r1.raise_for_status()
             r1_data = r1.json() if r1.headers.get("content-type", "").startswith("application/json") else {}
@@ -784,8 +818,8 @@ class DedustClient:
                 headers={"Accept": "application/json"}, timeout=self._RESERVES_TIMEOUT,
             )
             if r2.status_code == 429:
-                self._pool_reserves_backoff_until = now + 120.0
-                log.warning("dedust_client: 429 от TonAPI (pool/jettons) — пауза 120с")
+                self._pool_reserves_backoff_until = now + 300.0
+                log.warning("dedust_client: 429 от TonAPI (pool/jettons) — пауза 300с")
                 return cached
             r2.raise_for_status()
             r2_data = r2.json() if r2.headers.get("content-type", "").startswith("application/json") else {}
@@ -794,20 +828,18 @@ class DedustClient:
                 jetton  = b.get("jetton", {}) or {}
                 jaddr   = jetton.get("address", "")
                 jsymbol = (jetton.get("symbol", "") or "").upper()
-                # Сначала совпадение по адресу, затем по символу "GRINCH"
                 if self._same_addr(jaddr, Config.GRINCH_TOKEN_ADDRESS) or jsymbol == "GRINCH":
                     grinch_reserve = float(b.get("balance", 0)) / TON
                     break
             if ton_reserve > 0 and grinch_reserve and grinch_reserve > 0:
                 reserves = (ton_reserve, grinch_reserve)
-                self._pool_reserves_cache = reserves
+                self._pool_reserves_cache    = reserves
                 self._pool_reserves_cache_ts = now
-                self._pool_reserves_backoff_until = 0.0  # сброс backoff при успехе
+                self._pool_reserves_backoff_until = 0.0
                 return reserves
         except Exception as e:  # noqa: BLE001
             log.warning(f"Не удалось прочитать резервы пула: {e}")
-        # Ошибка не затирает последний удачный курс: краткий fallback
-        # позволяет дождаться восстановления TonAPI без повторного шторма.
+
         return cached
 
     def _cpmm_out(self, amount_in: float, reserve_in: float, reserve_out: float) -> float:
