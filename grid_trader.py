@@ -919,6 +919,34 @@ class GridTrader:
                     except Exception:
                         pass
 
+                # ── Сохраняем в bot_trades для истории P&L ─────────────
+                try:
+                    import db_store as _db
+                    _db.trades_upsert({
+                        "id":          f"grid_sell_{int(level.filled_at)}",
+                        "side":        "sell",
+                        "status":      "closed",
+                        "source":      "grid",
+                        "symbol":      "GRINCH/TON",
+                        "stake_ton":   round(cost_ton, 4),
+                        "amount":      round(level.amount_grinch, 2),
+                        "open_price":  round(
+                            level.price_ton / (1 + profit_pct / 100)
+                            if profit_pct else level.price_ton, 8),
+                        "close_price": round(current_price, 8),
+                        "entry_price": round(level.price_ton, 8),
+                        "exit_price":  round(current_price, 8),
+                        "profit_ton":  round(profit, 4),
+                        "profit_pct":  round(profit_pct, 4),
+                        "step_pct":    self._state.step_pct,
+                        "regime":      regime,
+                        "tx_hash":     level.tx_hash,
+                        "closed_at":   time.strftime(
+                            "%Y-%m-%dT%H:%M:%S", time.gmtime(level.filled_at)),
+                    })
+                except Exception as _e:
+                    log.debug("[Grid] bot_trades save error: %s", _e)
+
                 return {"ok": True}
             else:
                 err = result.get("error", "неизвестная ошибка")
