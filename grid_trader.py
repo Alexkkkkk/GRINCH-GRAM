@@ -190,7 +190,7 @@ class GridAIManager:
         if grinch_balance > 1000 and price_ton > 0:
             now = time.time()
             rebuild_reason = self._need_rebuild(
-                sell_levels, regime, now)
+                sell_levels, regime, now, ton_balance)
 
             if rebuild_reason:
                 target_levels = policy["levels"]
@@ -233,8 +233,23 @@ class GridAIManager:
                      " | ".join(decisions), regime,
                      atr_pct, ai_buy_conf, ai_sell_conf)
 
-    def _need_rebuild(self, sell_levels: list, regime: str, now: float) -> str:
+    def _need_rebuild(self, sell_levels: list, regime: str, now: float,
+                      ton_balance: float = 0.0) -> str:
         """Возвращает причину перестройки или ''."""
+
+        # ── Без кулдауна: все BUY-уровни no_funds, но TON есть ──────────────
+        # Проверяем при каждом вызове — кулдаун здесь не применяем,
+        # иначе пополнение кошелька не активирует сетку 30 минут.
+        with self._trader._lock:
+            buy_levels_copy = list(self._trader._state.buy_levels)
+        original_buys = [l for l in buy_levels_copy if -100 < l.id < 0]
+        if original_buys:
+            no_funds_buys = [l for l in original_buys if l.status == "no_funds"]
+            if (len(no_funds_buys) == len(original_buys)
+                    and ton_balance > GridConfig.MIN_ORDER_TON * len(original_buys)):
+                return (f"все BUY-уровни no_funds, "
+                        f"но TON={ton_balance:.1f} достаточно — активируем BUY")
+
         if now - self._last_rebuild_ts < self.REBUILD_COOLDOWN:
             return ""
 
