@@ -55,8 +55,10 @@ description: Текущая незавершённая работа — что �
 | Что сделано | Результат |
 |------------|-----------|
 | **Баг renderGridPanel** исправлен | `if (!d \|\| !d.active !== false && !d.active)` → `if (!d)` — карточка рендерится в любом состоянии |
-| **Задеплоен** `static/js/app.js` на VPS | docker cp → /usr/src/app/static/js/app.js |
+| **`/api/grid/status` в публичные пути** | Добавлен в `_PUBLIC_EXACT` — без авторизации, как /api/performance |
+| **Задеплоен** `app.py` + `static/js/app.js` на VPS | docker cp + docker restart → карточка появилась |
 | **VPS_SSH_KEY** обновлён в Secrets | SSH-доступ работает: `sshpass -p "$VPS_SSH_KEY" ssh root@2.27.25.126` |
+| **Grid-сетка активна** | +10.296 TON прибыли, 6 циклов, 3/13 SELL выполнено, сетка готова к торговле |
 
 ---
 
