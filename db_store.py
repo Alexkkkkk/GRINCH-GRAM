@@ -480,12 +480,20 @@ def _normalize_trade_fields(trade: dict) -> dict:
     # close_price (USD)
     if "close_price" not in t or t["close_price"] is None:
         t["close_price"] = t.get("exit_price") or t.get("close_price_usd") or 0.0
+    # open_price (USD) — цена входа; алиас entry_price, который пишет trader.py
+    if not t.get("open_price"):
+        t["open_price"] = t.get("entry_price") or t.get("avg_entry_usd") or 0.0
     # avg_price (TON) — средняя цена входа после слияния DCA-позиций
     if "avg_price" not in t or t["avg_price"] is None:
         t["avg_price"] = t.get("entry_price_ton") or t.get("avg_entry_ton") or 0.0
     # dca_entries_count — сколько DCA-входов было в цикле
     if "dca_entries_count" not in t or t["dca_entries_count"] is None:
         t["dca_entries_count"] = t.get("merged_count") or t.get("dca_index") or 1
+    # profit_pct — если 0 но profit_ton есть — пересчитываем от stake_ton
+    stake = float(t.get("stake_ton") or 0.0)
+    pnl   = t.get("profit_ton")
+    if stake > 0 and pnl is not None and not t.get("profit_pct"):
+        t["profit_pct"] = round(float(pnl) / stake * 100, 4)
     return t
 
 
