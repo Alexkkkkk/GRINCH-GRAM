@@ -1229,7 +1229,7 @@ function _gtxt(id, val) {
 }
 
 function renderGridPanel(d) {
-  if (!d || !d.active !== false && !d.active) return;
+  if (!d) return;
 
   // Статус-бейдж
   const active = d.active;
