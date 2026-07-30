@@ -5,33 +5,34 @@ description: ЧТО ДЕЛАЛОСЬ В ПРОШЛОЙ СЕССИИ — файл
 
 # Work In Progress
 
-## Последняя сессия: 2026-07-30
+## Последняя сессия: 2026-07-30 (вечер)
 
 ### Что сделано
-- Обновлён секрет VPS_SSH_KEY (новый пароль Kander3132001574@@@)
-- Полный анализ работы Grid Trading на VPS
+- Обновлён секрет VPS_SSH_KEY (новый пароль)
+- **ИСПРАВЛЕН БАГ**: `get_shared_balance()` возвращает `{"TON":...,"GRINCH":...}` (заглавные), но код везде читал строчные `ton/grinch` → 0 → `no_funds` на BUY-уровнях сетки
+  - `grid_trader.py` `_get_balances()`: строчные → заглавные ключи
+  - `app.py` `api_grid_build`: строчные → заглавные ключи
+- **ДОБАВЛЕНА АВТО-АКТИВАЦИЯ BUY**: `_need_rebuild()` теперь проверяет «все BUY-уровни no_funds + TON достаточно» и запускает перестройку без кулдауна
+- Docker образ пересобран и задеплоен на VPS
+- Все 5 BUY-уровней стали `waiting` по 17.659 TON каждый
 
-### Текущее состояние VPS (16:18 UTC 30.07.2026)
-
-#### Grid Trading
-- Active: true, тиков: 2493, последний тик 2с назад — здорова
-- Центр: 0.00037677 TON | Шаг: 4%
-- Реализованная прибыль: **10.30 TON** | Compound-бонус: **+16.70 TON** (1.12x)
-- Циклов продаж: 6 | Циклов покупок: 3 | Win rate: 100%
-- **ПРОБЛЕМА**: Все BUY levels (#-1..#-5) имеют статус `no_funds` — TON на кошельке ~2.29 TON, сетка не может открывать новые покупки
-- Ближайший SELL: 0.00045230 TON (+20% от текущей цены ~0.000377)
-- Последнее действие: авто-перецентровка @ 0.000377
-
-#### DCA-бот (основная позиция)
-- 880,702 GRINCH | вложено 450.29 TON | сейчас ~333 TON | убыток **-26%**
-- ONLY_PROFIT_EXIT активен, ждём +44% до цели $0.000773 (сейчас $0.000536)
-- Liquidator активен, ждёт того же уровня
-- DCA_MAX_ENTRIES=3 достигнут, докупок нет
-
-#### Контейнеры
+### Текущее состояние VPS (16:40 UTC 30.07.2026)
 - bot-bot-1: healthy | bot-nginx-1: healthy
+- Grid: **АКТИВНА**, 5 BUY (waiting, 17.659 TON/ур) + 10 SELL waiting + 3 filled
+- Grid profit: 10.30 TON реализовано + 16.70 TON compound (1.12x)
+- DCA: 880,702 GRINCH | вложено 450.29 TON | сейчас ~333 TON | -26%
+- ONLY_PROFIT_EXIT: ждём +44% до $0.000773 (сейчас $0.000536)
+- Liquidator: активен, та же цель
+- TON на кошельке: 93.29 TON
+
+### Коммиты (origin/main)
+- `262d19c` — fix(grid): rebuild BUY levels when all no_funds but TON available; fix uppercase key in _get_balances
+- `48217ae` — fix: grid build/get_balances use uppercase TON/GRINCH keys from get_shared_balance
 
 ### Открытые задачи
-- Task #2: Telegram-алерт когда grid BUY levels застряли на no_funds
-- Task #3: Fix missing trade profit/price data in database (profit_ton, profit_pct, avg_price etc. NULL в bot_trades)
-- ⚠️ Кошелёк TON практически пустой (~2.29 TON) — нужно пополнить для возобновления BUY-циклов сетки
+- Task #2 (PROPOSED): Telegram-алерт когда grid BUY levels застряли на no_funds — частично закрыт (авто-ребилд добавлен), остался только алерт
+- Task #3 (PROPOSED): Fix missing trade profit/price data in database (profit_ton, profit_pct etc. NULL в bot_trades)
+
+### Известные проблемы
+- ⚠️ GridAI не обучен (9 примеров, ошибка `'str' ** int` в grid_ai.py при обучении)
+- Replit workflow сломан (не критично — Replit используется только как редактор)
