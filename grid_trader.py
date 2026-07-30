@@ -344,6 +344,12 @@ class GridState:
                     setattr(s, k, v)
                 except Exception:
                     pass
+        # Авто-миграция: если completed_fills пуст, но в sell_levels есть filled —
+        # восстанавливаем из них, чтобы история не терялась после graceful shutdown.
+        if not s.completed_fills:
+            s.completed_fills = [
+                l for l in s.sell_levels if l.status == "filled"
+            ]
         return s
 
 
