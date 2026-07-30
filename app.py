@@ -775,6 +775,7 @@ _PUBLIC_EXACT = {
     "/api/ai-modules",   # статус AI-модулей — нужен до авторизации для дашборда
     "/api/performance",  # read-only торговая статистика — нужна виджетам без авторизации
     "/api/ai/history",   # статистика обучения AI — только чтение, не содержит sensitive данных
+    "/api/grid/status",  # статус grid-сетки — read-only, нужен дашборду без авторизации
 }
 _PUBLIC_PREFIXES = ("/static/", "/dashboard/", "/api/user/")
 
