@@ -915,7 +915,12 @@ class GridTrader:
                       atr_pct: float = 0.0, regime: str = "UNKNOWN") -> dict:
         """Продать GRINCH. После успеха — compound-реинвест + обучение GridAI."""
         try:
-            cost_ton = level.amount_grinch * self._state.center_price_ton
+            # Используем ту же логику cost_ton, что и в _is_profitable_sell
+            if level.amount_ton > 0:
+                cost_ton = level.amount_ton
+            else:
+                step = self._state.step_pct or GridConfig.DEFAULT_STEP_PCT
+                cost_ton = level.amount_grinch * (level.price_ton / (1 + step / 100))
             result   = self._dc.sell(level.amount_grinch)
             if result.get("ok"):
                 received_ton = result.get("received_ton") or (
@@ -1286,11 +1291,27 @@ class GridTrader:
     # ── Проверки прибыльности ─────────────────────────────────────────────────
 
     def _is_profitable_sell(self, level: GridLevel, current_price: float) -> tuple:
-        """SELL прибылен если received_ton - gas > cost_ton по центральной цене."""
+        """SELL прибылен если received_ton - gas > cost_ton.
+
+        База затрат (cost_ton) определяется так:
+        1. Если level.amount_ton > 0 — уровень был куплен BUY-циклом,
+           используем реальные затраты TON.
+        2. Иначе (начальный SELL из холдингов) — вычисляем cost как цену
+           уровня ниже: price_ton / (1 + step_pct/100). Это корректно
+           независимо от того, была ли рецентровка сетки вверх (center_price_ton
+           мог вырасти и делал profit ложно отрицательным).
+        """
         received_ton = level.amount_grinch * current_price * (1 - GridConfig.FEE_PCT)
         net_ton      = received_ton - GridConfig.GAS_PER_TRADE_TON
-        cost_ton     = level.amount_grinch * self._state.center_price_ton
-        profit       = net_ton - cost_ton
+        if level.amount_ton > 0:
+            # Куплено BUY-циклом — реальные затраты известны
+            cost_ton = level.amount_ton
+        else:
+            # Начальный SELL из холдингов: cost = grinch * цена уровня ниже
+            step = self._state.step_pct or GridConfig.DEFAULT_STEP_PCT
+            cost_per_grinch = level.price_ton / (1 + step / 100)
+            cost_ton = level.amount_grinch * cost_per_grinch
+        profit = net_ton - cost_ton
         return profit > 0, round(profit, 4)
 
     def _is_profitable_buy_cycle(self, level: GridLevel) -> tuple:
