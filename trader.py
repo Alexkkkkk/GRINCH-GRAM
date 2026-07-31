@@ -254,9 +254,13 @@ class Trader:
                 self.dca_last_buy_price = float(
                     _dca_sorted[-1].get("entry_price") or 0
                 )
-                # Количество входов = максимальный dca_index среди открытых
+                # Количество входов = максимальный dca_index среди открытых.
+                # BUG-FIX: merged trade хранит реальное кол-во входов в merged_count;
+                # используем max(dca_index, merged_count) чтобы не занизить счётчик
+                # после слияния позиций и рестарта бота.
                 self.dca_entries_count = max(
-                    int(t.get("dca_index") or 1) for t in _dca_trades
+                    max(int(t.get("dca_index") or 1) for t in _dca_trades),
+                    max(int(t.get("merged_count") or 1) for t in _dca_trades),
                 )
                 # Суммарные затраты
                 self.dca_total_stake = sum(
@@ -989,6 +993,12 @@ class Trader:
             merged["entry_ai_contexts"] = _entry_contexts
         merged["merged"]          = True
         merged["merged_count"]    = len(long_trades)
+        # BUG-FIX: сохраняем dca_index = общее количество входов (= merged_count),
+        # чтобы при рестарте dca_entries_count восстанавливался корректно.
+        # Без этого merged trade имел dca_index=1 (от первого входа) → бот считал
+        # что сделан только 1 DCA-вход и докупал снова после рестарта.
+        _max_dca_idx = max((t.get("dca_index") or 1) for t in long_trades)
+        merged["dca_index"]       = max(_max_dca_idx, len(long_trades))
 
         # Оставляем SHORT-позиции, заменяем все LONG на одну объединённую
         # M1-fix: всегда держим _ot_lock при переприсвоении open_trades
