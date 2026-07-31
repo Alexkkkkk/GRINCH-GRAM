@@ -4285,8 +4285,15 @@ class Trader:
                                 "WARN"
                             )
                             return False
-                    except Exception:
-                        pass
+                    except Exception as _lock_err:
+                        # Ошибка при проверке цены: fail-closed — НЕ продаём.
+                        # Без подтверждённой цены мы не можем гарантировать прибыль.
+                        self.log(
+                            f"🛡️ ЖЕЛЕЗНЫЙ ЗАМОК: ошибка проверки цены ({_lock_err}) — "
+                            f"продажа отклонена (fail-closed). Держим.",
+                            "WARN"
+                        )
+                        return False
                 # AMM preflight: стоимость этой конкретной позиции.
                 # force=True → min_net_ton=0 (принимаем убыток, но всё равно продаём).
                 _stake_ton   = float(trade.get("stake_ton", 0) or 0)

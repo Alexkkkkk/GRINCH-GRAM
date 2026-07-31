@@ -70,6 +70,10 @@ class GrinchLiquidator:
         self._last_sell_at   = None
         self._sell_count     = 0
         self._logs           = []
+        # Флаг in-flight: True пока _execute_sell выполняется.
+        # Предотвращает дублирование продажи если два тика пройдут
+        # проверку порога до того, как первая продажа завершится.
+        self._sell_in_flight = False
         # Порог роста для продажи — можно менять через API.
         # Загружаем сохранённое значение из settings.json (если есть), иначе
         # дефолт = нетто-цель + комиссия цикла (≈22% gross → ≥20% нетто).
@@ -342,13 +346,27 @@ class GrinchLiquidator:
                     "WARN"
                 )
                 return
+
+            # ── Anti-duplicate: атомарно устанавливаем флаг in-flight ────────
+            # Без флага два тика могут оба пройти проверку выше (lock снят)
+            # и одновременно запустить _execute_sell → двойная продажа.
+            with self._lock:
+                if self._sell_in_flight:
+                    self._log("⏳ Продажа уже выполняется — пропуск дублирующего тика", "WARN")
+                    return
+                self._sell_in_flight = True
+
             self._log(
                 f"🚀 Цена выросла на {rise_pct:+.2f}%! "
                 f"${ref:.8f} → ${current:.8f} (цель: ${target:.8f}) | "
                 f"Продаём {grinch:.4f} GRINCH...",
                 "INFO"
             )
-            self._execute_sell(grinch, current)
+            try:
+                self._execute_sell(grinch, current)
+            finally:
+                with self._lock:
+                    self._sell_in_flight = False
         else:
             pct_to_go = ((target - current) / current) * 100
             self._log(
@@ -398,10 +416,10 @@ class GrinchLiquidator:
                     else:
                         # Fallback: напрямую очищаем открытые позиции в DB
                         import db_store as _ds
-                        with _ds._pool.getconn() as _conn:
-                            _conn.cursor().execute("DELETE FROM bot_open_trades")
+                        with _ds._conn() as _conn:
+                            with _conn.cursor() as _cur:
+                                _cur.execute("DELETE FROM bot_open_trades")
                             _conn.commit()
-                            _ds._pool.putconn(_conn)
                         self._log("Позиция очищена через DB (app ещё не загружен)", "INFO")
                 except Exception as _te:
                     self._log(f"⚠️ Не удалось оповестить трейдер о продаже ликвидатором: {_te}", "WARN")
@@ -477,10 +495,21 @@ class GrinchLiquidator:
                 )
             }
 
+        # ── Anti-duplicate: не позволяем параллельным HTTP-запросам
+        # нажать «продать» дважды пока первый ещё не завершился.
+        with self._lock:
+            if self._sell_in_flight:
+                return {"ok": False, "error": "Продажа уже выполняется — подождите"}
+            self._sell_in_flight = True
+
         self._log(f"🔴 РУЧНАЯ продажа {grinch:.4f} GRINCH @ ${current:.8f}")
         # Возвращаем РЕАЛЬНЫЙ результат свопа (ok только при подтверждённом
         # списании GRINCH on-chain), а не безусловный успех.
-        return self._execute_sell(grinch, current)
+        try:
+            return self._execute_sell(grinch, current)
+        finally:
+            with self._lock:
+                self._sell_in_flight = False
 
 
 # ── Синглтон — запускается при импорте модуля ────────────────────────────────
