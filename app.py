@@ -228,6 +228,24 @@ def _apply_saved_config():
         Config.PROFIT_PROTECT_ENABLED = True   # защита прибыли (откат от пика)
         Config.PROFIT_PROTECT_AI_SELL = True   # AI SELL тоже триггерит защиту
 
+        # BUG-FIX: DCA_DROP_TRIGGER_PCT должен быть в диапазоне 1–25%.
+        # Значение 50% было ошибочно сохранено в settings_store и блокировало DCA
+        # (докупка не срабатывала до -50% падения). Сбрасываем в env-дефолт,
+        # если значение вышло за разумные пределы, и перезаписываем в settings_store.
+        _env_default_drop_trigger = float(os.getenv("DCA_DROP_TRIGGER_PCT", "10"))
+        if not (1 <= Config.DCA_DROP_TRIGGER_PCT <= 25):
+            _old_val = Config.DCA_DROP_TRIGGER_PCT
+            Config.DCA_DROP_TRIGGER_PCT = _env_default_drop_trigger
+            _startup_log.warning(
+                f"[Config] ⚠️ DCA_DROP_TRIGGER_PCT={_old_val}% вне диапазона 1–25%, "
+                f"сброс → {Config.DCA_DROP_TRIGGER_PCT}% (env default)"
+            )
+            try:
+                from settings_store import update_section
+                update_section("config", {"DCA_DROP_TRIGGER_PCT": Config.DCA_DROP_TRIGGER_PCT})
+            except Exception:
+                pass
+
         # BUG-FIX гарантия: трейл-пороги не опускаются ниже ATR-откалиброванных минимумов.
         # Защищает от старых значений в DB. Логика max(): выше → сохраняем; ниже порога → зажимаем.
         # Калибровка 20.07.2026: ATR(15m)=2.225%, ATR(1h)хар.≈4-5%, памп до +50% за свечу.
