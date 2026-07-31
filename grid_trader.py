@@ -731,6 +731,11 @@ class GridTrader:
             for _lv in self._state.sell_levels:
                 if _lv.status != "skipped_ai":
                     continue
+                # ⚠️ Никогда не восстанавливаем уровни ниже центра — они
+                # заведомо убыточны (profit-guard всё равно заблокирует) и
+                # создают мусорные записи в last_action каждый тик.
+                if _lv.price_ton <= self._state.center_price_ton:
+                    continue
                 price_below_trigger = price_ton < _lv.price_ton
                 ai_no_longer_blocks = (price_ton >= _lv.price_ton
                                        and ai_buy_conf < GridConfig.AI_SKIP_SELL_BUY_CONF)
@@ -1212,15 +1217,56 @@ class GridTrader:
             self._state.last_action = (
                 f"🔄 Авто-перецентровка @ {price_ton:.6f} "
                 f"(ушли {steps_away:.1f} шагов от центра)")
-            # Сбрасываем waiting SELL-уровни ниже новой цены (они теперь behind)
+
+            # ── Сбрасываем SELL-уровни ниже новой цены и собираем GRINCH ──
+            freed_grinch = 0.0
             reset = 0
             for l in self._state.sell_levels:
                 if l.status == "waiting" and l.price_ton < price_ton:
+                    freed_grinch += l.amount_grinch
+                    l.amount_grinch = 0.0
                     l.status = "skipped_ai"
                     l.note   = f"ниже нового центра {price_ton:.6f}"
                     reset += 1
             if reset:
-                log.info("[Grid] Сброшено %d SELL-уровней ниже нового центра", reset)
+                log.info("[Grid] Сброшено %d SELL-уровней ниже нового центра "
+                         "(освобождено %.0f GRINCH)", reset, freed_grinch)
+
+            # ── Перераспределяем освобождённый GRINCH в новые SELL выше центра ──
+            if freed_grinch >= 1000:
+                step_pct = self._state.step_pct
+                # Берём максимальный id существующих sell
+                max_id = max((l.id for l in self._state.sell_levels), default=0)
+                # Сколько новых уровней добавить — по 1 на каждый сброшенный
+                grinch_per_new = freed_grinch / reset
+                added = 0
+                for i in range(1, reset + 3):
+                    new_id  = max_id + i
+                    trigger = price_ton * (1 + step_pct / 100) ** i
+                    # Пропускаем уровень если уже есть с близкой ценой (±0.5%)
+                    clash = any(
+                        abs(l.price_ton / trigger - 1) < 0.005
+                        for l in self._state.sell_levels
+                        if l.status not in ("skipped_ai",)
+                    )
+                    if clash:
+                        continue
+                    if grinch_per_new * trigger < GridConfig.MIN_ORDER_TON:
+                        continue
+                    self._state.sell_levels.append(GridLevel(
+                        id=new_id, side="sell",
+                        price_ton=round(trigger, 8),
+                        amount_grinch=round(grinch_per_new, 2),
+                        amount_ton=0.0,
+                        status="waiting",
+                        note=f"recenter-rebuild +{i}шаг @ {trigger:.6f}",
+                    ))
+                    added += 1
+                    if added >= reset:
+                        break
+                if added:
+                    log.info("[Grid] ✅ Добавлено %d новых SELL выше нового центра "
+                             "(%.0f GRINCH каждый)", added, grinch_per_new)
 
     # ── Проверки прибыльности ─────────────────────────────────────────────────
 
@@ -1246,67 +1292,49 @@ class GridTrader:
     # ── Вспомогательные методы ────────────────────────────────────────────────
 
     def _get_regime(self) -> tuple:
-        """Возвращает (regime: str, atr_pct: float) из BrainFusion или candles."""
+        """Возвращает (regime: str, atr_pct: float) из последнего DB-тика."""
         try:
-            from brain_fusion import BrainFusion
-            bf = (BrainFusion.get_instance()
-                  if hasattr(BrainFusion, "get_instance") else None)
-            if bf:
-                state = bf.get_state()
-                regime = state.get("regime", "UNKNOWN")
-                # ATR из источника
-                from coin_info import coin_info
-                candles = (coin_info.get_candles(limit=25)
-                           if hasattr(coin_info, "get_candles") else [])
-                atr_pct = self._calc_atr(candles)
-                return regime or "UNKNOWN", atr_pct
+            import db_store as _ds
+            ticks = _ds.ticks_get_recent(1)
+            if ticks:
+                t = ticks[0]
+                regime  = t.get("regime") or "UNKNOWN"
+                atr_pct = float(t.get("atr_pct") or 0.0)
+                return regime, atr_pct
         except Exception:
             pass
-        # Fallback: только ATR
         return "UNKNOWN", self._get_atr_pct()
 
     def _get_ai_signal(self) -> tuple:
-        """Возвращает (buy_conf%, sell_conf%) 0-100."""
+        """Возвращает (buy_conf%, sell_conf%) из последнего DB-тика."""
         try:
-            from brain_fusion import BrainFusion
-            bf = (BrainFusion.get_instance()
-                  if hasattr(BrainFusion, "get_instance") else None)
-            if bf:
-                state = bf.get_state()
-                sig  = state.get("signal", "HOLD")
-                conf = float(state.get("confidence", 0)) * 100
+            import db_store as _ds
+            ticks = _ds.ticks_get_recent(1)
+            if ticks:
+                t   = ticks[0]
+                sig  = t.get("ai_sig") or t.get("final") or "HOLD"
+                conf = float(t.get("ai_conf") or t.get("prob_up") or 0.0)
+                prob_down = float(t.get("prob_down") or 0.0)
                 if sig == "BUY":
-                    return conf, 0.0
+                    return conf, prob_down
                 if sig == "SELL":
-                    return 0.0, conf
-                return 0.0, 0.0
-        except Exception:
-            pass
-        try:
-            if self._ai:
-                from coin_info import coin_info
-                candles = (coin_info.get_candles(limit=50)
-                           if hasattr(coin_info, "get_candles") else [])
-                if candles and len(candles) >= 20:
-                    res  = self._ai.analyze(candles)
-                    sig  = res.get("ai_signal", "HOLD")
-                    conf = float(res.get("confidence", 0))
-                    if sig == "BUY":
-                        return conf, 0.0
-                    if sig == "SELL":
-                        return 0.0, conf
+                    return prob_down, conf
+                # HOLD — возвращаем обе вероятности
+                return conf, prob_down
         except Exception:
             pass
         return 0.0, 0.0
 
     def _get_atr_pct(self) -> float:
+        """ATR из последнего DB-тика (fallback: 0.0)."""
         try:
-            from coin_info import coin_info
-            candles = (coin_info.get_candles(limit=25)
-                       if hasattr(coin_info, "get_candles") else [])
-            return self._calc_atr(candles)
+            import db_store as _ds
+            ticks = _ds.ticks_get_recent(1)
+            if ticks:
+                return float(ticks[0].get("atr_pct") or 0.0)
         except Exception:
-            return 0.0
+            pass
+        return 0.0
 
     def _calc_atr(self, candles: list) -> float:
         if not candles or len(candles) < 5:
