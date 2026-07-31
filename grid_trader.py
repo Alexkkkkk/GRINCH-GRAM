@@ -798,7 +798,15 @@ class GridTrader:
                     if price_ton > level.price_ton:
                         break
 
-                    # ── ТОЛЬКО-В-ПЛЮС: сначала математика цикла ─────────
+                    # ── Стоп: сильный AI SELL-сигнал ─────────────────────
+                    if ai_sell_conf >= GridConfig.AI_SKIP_BUY_SELL_CONF:
+                        log.info("[Grid] ⏭ BUY L%d @ %.6f — AI SELL %.0f%% → стоп",
+                                 level.id, level.price_ton, ai_sell_conf)
+                        continue
+
+                    # ── ТОЛЬКО-В-ПЛЮС: главный гейт — математика цикла ──
+                    # BUY выполняется только если BUY→SELL цикл прибылен.
+                    # AI влияет лишь на размер ордера, не блокирует.
                     profitable, profit_est = self._is_profitable_buy_cycle(level)
                     if not profitable:
                         log.info("[Grid] ⚠️ BUY L%d @ %.6f — цикл убыточен (est %+.4f TON)",
@@ -807,22 +815,17 @@ class GridTrader:
                             f"BUY L{level.id} пропущен (цикл убыточен {profit_est:+.4f} TON)")
                         continue
 
-                    # AI SELL блокирует только при очень сильном сигнале
-                    if ai_sell_conf >= GridConfig.AI_SKIP_BUY_SELL_CONF:
-                        log.info("[Grid] ⏭ BUY L%d @ %.6f — AI SELL %.0f%%",
-                                 level.id, level.price_ton, ai_sell_conf)
-                        continue
-
-                    # ── Масштабируем размер по уверенности AI ───────────
-                    # AI влияет только на размер (0.7x–1.8x), не блокирует прибыльный BUY
+                    # ── AI масштабирует размер (0.7x–1.8x), не блокирует ─
                     if ai_buy_conf >= GridConfig.AI_MIN_BUY_CONF:
                         ai_size_mult = GridConfig.AI_BUY_SIZE_MIN_MULT + (
                             (ai_buy_conf - GridConfig.AI_MIN_BUY_CONF) /
                             max(1.0, 100.0 - GridConfig.AI_MIN_BUY_CONF)
                         ) * (GridConfig.AI_BUY_SIZE_MAX_MULT - GridConfig.AI_BUY_SIZE_MIN_MULT)
                     else:
-                        # AI не обучен / слабый сигнал → минимальный размер ордера
+                        # Слабый AI-сигнал → минимальный размер (осторожный вход)
                         ai_size_mult = GridConfig.AI_BUY_SIZE_MIN_MULT
+                        log.info("[Grid] 📉 BUY L%d — AI слабый (%.0f%%), вход мин. ×%.2f (прибыль est +%.4f TON)",
+                                 level.id, ai_buy_conf, ai_size_mult, profit_est)
                     ai_size_mult = round(
                         max(GridConfig.AI_BUY_SIZE_MIN_MULT,
                             min(GridConfig.AI_BUY_SIZE_MAX_MULT, ai_size_mult)), 3)
@@ -853,13 +856,15 @@ class GridTrader:
                     if price_ton > level.price_ton:
                         break
 
-                    # ── ТОЛЬКО-В-ПЛЮС: DCA — сначала математика цикла ──
+                    # ── Стоп: сильный AI SELL ────────────────────────────
+                    if ai_sell_conf >= GridConfig.AI_SKIP_BUY_SELL_CONF:
+                        continue
+
+                    # ── ТОЛЬКО-В-ПЛЮС: DCA — математика цикла ───────────
                     profitable, profit_est = self._is_profitable_buy_cycle(level)
                     if not profitable:
                         continue
 
-                    if ai_sell_conf >= GridConfig.AI_SKIP_BUY_SELL_CONF:
-                        continue
 
                     # Масштабируем размер DCA по AI-уверенности (не блокируем)
                     if ai_buy_conf >= GridConfig.AI_MIN_BUY_CONF:

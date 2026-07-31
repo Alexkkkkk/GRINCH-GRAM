@@ -197,7 +197,11 @@ class GridAI:
             "DISTRIBUTION": -1, "POST_PUMP": -3,
             "UNKNOWN": 0,
         }
-        regime_enc = regime_map.get(regime, 0)
+        regime_enc = regime_map.get(regime if isinstance(regime, str) else "UNKNOWN", 0)
+        try:
+            atr_pct = float(atr_pct)
+        except (TypeError, ValueError):
+            atr_pct = 0.0
         feat = [
             atr_pct,
             regime_enc,
