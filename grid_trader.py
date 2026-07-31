@@ -758,6 +758,16 @@ class GridTrader:
                 if price_ton < level.price_ton:
                     break
 
+                # Уровень ниже или на уровне центра — заведомо убыточен:
+                # сдвигаем в skipped_ai без логирования каждый тик.
+                if level.price_ton <= self._state.center_price_ton:
+                    level.status = "skipped_ai"
+                    level.note   = (f"ниже нового центра "
+                                    f"{self._state.center_price_ton:.6f}")
+                    log.info("[Grid] ⏩ SELL L%d @ %.6f → skipped (ниже центра %.6f)",
+                             level.id, level.price_ton, self._state.center_price_ton)
+                    continue
+
                 # AI BUY-фильтр: не мешаем росту
                 if ai_buy_conf >= GridConfig.AI_SKIP_SELL_BUY_CONF:
                     log.info("[Grid] ⏭ SELL L%d @ %.6f — AI BUY %.0f%%",
