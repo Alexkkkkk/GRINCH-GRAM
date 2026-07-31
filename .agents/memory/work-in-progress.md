@@ -1,36 +1,41 @@
 ---
 name: Work In Progress
-description: ЧТО ДЕЛАЛОСЬ В ПРОШЛОЙ СЕССИИ — файлы, незавершённые задачи, следующие шаги. Читать в начале каждой сессии.
+description: ЧТО ДЕЛАЛОСЬ В ПРОШЛОЙ СЕССИИ — файлы, незавершённые задачи, следующие шаги
 ---
 
-# Work In Progress
-
-## Последняя сессия: 2026-07-30 (вечер)
+## Последняя сессия: 2026-07-31
 
 ### Что сделано
-- Обновлён секрет VPS_SSH_KEY (новый пароль)
-- **ИСПРАВЛЕН grid_trader.py** — «только в плюс»: убран AI-гейт перед BUY, AI масштабирует только размер
-- **ИСПРАВЛЕН grid_ai.py** — обучение: safe_atr float-коерция, обработка одного класса
-- **БЭКФИЛЛ bot_trades** — заполнены open_price и profit_pct для всех 22 сделок
-  - Скрипт: `/tmp/backfill_profit.py` (уже выполнен, удалять не нужно)
-  - Формула: open_price = close_price / (1 + profit_ton/stake_ton)
-  - profit_pct = profit_ton / stake_ton * 100
 
-### Текущее состояние VPS (17:10 UTC 30.07.2026)
-- bot-bot-1: healthy | bot-nginx-1: healthy
-- Grid: АКТИВНА, тики идут (last_tick age ~7s)
-  - 5 BUY waiting (17.659 TON/ур, от -3.8% до -17.8% от центра)
-  - 10 SELL waiting
-  - profit: 10.30 TON реализовано + 16.70 TON compound (1.12x)
-- GridAI: trained=True, 9 примеров, step_model=OK dca_model=OK
-- Торговля (DCA): ⏸️ выключена ручным переключателем
-- DCA: 880,702 GRINCH | вложено 450.29 TON | -26% | ждёт +44% до $0.000773
+**1. Исправлен режим «только в плюс» для сетки (grid_trader.py)**
+- Ранее: `AI_MIN_BUY_CONF=55%` — жёсткий блокер. BrainFusion HOLD → ai_buy_conf=0% → grid никогда не покупал
+- Теперь: `_is_profitable_buy_cycle()` = главный гейт. AI влияет только на РАЗМЕР ордера (0.7x–1.8x)
+  - AI BUY ≥ 55% → полный размер по шкале
+  - AI BUY < 55% (слабый/HOLD) → вход min ×0.7, НО цикл прибылен → BUY происходит
+  - AI SELL сильный → стоп (без изменений)
 
-### Открытые задачи
-- Task #4 (PROPOSED): Telegram-алерт когда grid BUY levels застряли на no_funds
+**2. Исправлен GridAI (grid_ai.py)**
+- `atr_pct='UNKNOWN'` (строка) → TypeError в `_make_features()` → обучение падало
+- Фикс: `float(atr_pct)` с try/except, `isinstance(regime, str)` защита
+- Данные на VPS исправлены: 3 записи 'UNKNOWN' → 0.0
+- **GridAI теперь обучен: ✅ 10 примеров, step_model=OK, dca_model=OK**
 
-### Известные проблемы
-- GridAI ai_manager.last_regime=UNKNOWN (пока не было ни одного успешного тика с известным режимом)
-- Replit workflow сломан (не критично — Replit используется только как редактор)
-- git push из Replit не работает (таймаут); VPS git push — нет GitHub credentials
-  → деплой только через docker cp
+**3. Деплой**
+- scp → /opt/bot/ + docker cp → container
+- git rebase + push → e5c5efe в origin/main ✅
+- VPS /opt/bot HEAD = e5c5efe ✅ (синхронизировано)
+
+### Текущий статус VPS (07:05 UTC)
+- GridAI: trained=True, 10 примеров, win_rate=100%, avg_profit=1.72 TON
+- Grid: active=True, buy=6, sell=10, compound=1.14x
+- profit-check работает: `⚠️ SELL L2 @ 0.000411 — убыточно (est -1.39 TON)` ← корректно блокирует
+
+### Нерешённые проблемы
+
+1. **SELL L2 убыточно** — GRINCH куплен дороже чем SELL L2 (0.000411). Пройдёт когда цена вырастет.
+2. **Task #3** — missing profit_ton/profit_pct/avg_price/close_price в bot_trades/bot_open_trades DB
+3. **Торговля DCA выключена** (ручной переключатель) — намеренно пока DCA в минусе -26%
+
+### Следующие шаги (если пользователь попросит)
+- Task #3: записывать profit_ton, profit_pct, avg_price, close_price в БД при закрытии сделок
+- Telegram-уведомление когда BUY уровни go no_funds (Task #2 частично — авто-ребилд есть)
