@@ -88,8 +88,7 @@ class GridAI:
             return 25.0
 
         try:
-            feat = self._make_features(atr_pct, regime, extra=[drawdown_pct,
-                                                                price_vs_center_pct])
+            feat = self._make_features(atr_pct, regime)
             prob = float(self._dca_model.predict_proba([feat])[0][1])
             # Штраф при большой просадке
             if drawdown_pct > 35.0:
