@@ -718,6 +718,34 @@ class GridTrader:
             self._state.last_tick_ts = time.time()
             executed = False
 
+            # ── Восстановление skipped_ai уровней ─────────────────────────
+            # skipped_ai ставится в двух случаях:
+            #   a) AI BUY ≥ 75% (не хотим мешать росту)
+            #   b) _maybe_recenter (уровень оказался ниже нового центра)
+            # В обоих случаях состояние должно быть обратимым:
+            #   • Если цена откатилась ниже триггера → возвращаем waiting,
+            #     чтобы уровень исполнился при следующем ралли.
+            #   • Если цена по-прежнему ≥ триггера, но AI BUY уже не блокирует
+            #     → тоже восстанавливаем, sell-loop его немедленно исполнит.
+            restored_n = 0
+            for _lv in self._state.sell_levels:
+                if _lv.status != "skipped_ai":
+                    continue
+                price_below_trigger = price_ton < _lv.price_ton
+                ai_no_longer_blocks = (price_ton >= _lv.price_ton
+                                       and ai_buy_conf < GridConfig.AI_SKIP_SELL_BUY_CONF)
+                if price_below_trigger or ai_no_longer_blocks:
+                    _lv.status = "waiting"
+                    _lv.note   = (
+                        f"↩ восст. (откат {price_ton:.6f}<{_lv.price_ton:.6f})"
+                        if price_below_trigger
+                        else f"↩ восст. (AI BUY {ai_buy_conf:.0f}%<{GridConfig.AI_SKIP_SELL_BUY_CONF:.0f}%)"
+                    )
+                    restored_n += 1
+            if restored_n:
+                log.info("[Grid] ♻️ Восстановлено %d SELL из skipped_ai → waiting",
+                         restored_n)
+
             # ── SELL-уровни ───────────────────────────────────────────────
             for level in sorted(self._state.sell_levels, key=lambda l: l.price_ton):
                 if level.status != "waiting":
