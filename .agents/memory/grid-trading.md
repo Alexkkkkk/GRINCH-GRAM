@@ -5,6 +5,10 @@ description: AI-управляемая сеточная торговля GRINCH/
 
 # Grid Trading System
 
+## Версия
+
+**v3** (текущая): GridAI v3 + пирамидальное распределение + momentum-aware перецентровка + Kelly.
+
 ## Архитектура
 
 `grid_trader.py` — самостоятельный модуль, синглтон `get_grid_trader()`.
@@ -14,6 +18,38 @@ description: AI-управляемая сеточная торговля GRINCH/
 - `GridLevel` — один уровень сетки (id, side, price_ton, amount_grinch/ton, status)
 - `GridState` — полное состояние (уровни, прибыль, флаги), сохраняется в `/app/data/grid_state.json`
 - `GridTrader` — основной движок с фоновым поллером (30s интервал)
+  - `_price_history: deque(maxlen=20)` — история цен для momentum
+  - `_price_momentum_pct: float` — % momentum обновляется каждый тик
+  - `_calc_price_momentum()` — линейная регрессия slope по `_price_history`
+
+## GridAI v3 (`grid_ai.py`)
+
+- **Step-ансамбль:** RandomForestRegressor + GradientBoostingRegressor + Ridge (average)
+- **DCA-ансамбль:** RandomForestClassifier + LogisticRegression (calibrated proba)
+- **Время-взвешенное обучение:** `sample_weight=exp(-age_days / 7)`, T½=7 дней
+- **13 признаков** (vs 5 в v2): atr_pct, regime_enc, atr²,|regime|, atr×regime,
+  win_streak, recent_avg_profit, profit_momentum, hour_sin, hour_cos,
+  regime_duration, trend_binary, negative_binary
+- **Kelly criterion:** `f = (p×avg_win - (1-p)×avg_loss) / avg_win × 0.5` → `kelly_mult`
+- **Авто-калибровка MIN_STEP:** минимальный шаг прибыльных сделок – 0.25%
+- **Пирамидальные веса:** `get_pyramid_weights(n)` → [1.30 → 0.70], среднее=1.0
+- **Опыт:** `/app/data/grid_ai_experience.json`, max 2000 записей, полная обратная совместимость
+- **Синглтон:** `get_grid_ai()`
+
+## Пирамидальное распределение SELL-уровней
+
+В `build_grid()`: вес L1=1.30, L9=0.70 (линейное убывание), среднее=1.0.
+**Why:** нижние уровни срабатывают первыми → больше GRINCH = больше прибыли при умеренном росте.
+Примечание в level.note: `вес×{w:.2f}`.
+
+## Momentum-aware перецентровка
+
+В `_maybe_recenter()`:
+- mom < -0.5% → **не перецентровываться** (цена падает, ждём дна)
+- mom > 1.0% → порог снижается до 1.8 шагов (быстро добавляем sell выше)
+- mom 0.3–1.0% → порог 2.2 шагов
+- боковик → стандартный RECENTER_STEPS (2.5)
+**Why:** при тренде вниз перецентровка ниже = продажи по плохой цене; при росте — наоборот нужно быстрее.
 
 ## Параметры сетки (по умолчанию)
 
@@ -53,7 +89,7 @@ description: AI-управляемая сеточная торговля GRINCH/
 
 ## API эндпоинты (app.py)
 
-- `GET /api/grid/status` — полный статус
+- `GET /api/grid/status` — полный статус (включает ai_stats с v3-метриками)
 - `POST /api/grid/build` — построить/перестроить (params: step_pct, sell_levels, buy_levels)
 - `POST /api/grid/activate` — активировать
 - `POST /api/grid/deactivate` — остановить

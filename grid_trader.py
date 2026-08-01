@@ -16,9 +16,11 @@ grid_trader.py — AI-управляемая сеточная торговля G
 
 import os
 import json
+import math
 import time
 import threading
 import logging
+from collections import deque
 from dataclasses import dataclass, field, asdict
 from typing import List, Optional
 
@@ -371,7 +373,7 @@ class GridState:
 # ─── Основной класс ───────────────────────────────────────────────────────────
 
 class GridTrader:
-    """AI-управляемая сеточная торговля GRINCH/TON (v2 — compound + DCA + AI)."""
+    """AI-управляемая сеточная торговля GRINCH/TON (v3 — pyramid + momentum + GridAI v3)."""
 
     def __init__(self):
         self._lock    = threading.RLock()
@@ -380,10 +382,16 @@ class GridTrader:
         self._running = False
         self._dc      = None    # DeDustClient
         self._ai      = None    # AIEngine
-        self._grid_ai = None    # GridAI (самообучающийся оптимизатор)
+        self._grid_ai = None    # GridAI v3 (самообучающийся оптимизатор)
         self._ai_manager = GridAIManager(self)   # ← полное AI-управление
+
+        # История цен для momentum (последние 20 тиков = ~10 мин при 30с)
+        self._price_history: deque = deque(maxlen=20)
+        # Momentum в % (обновляется каждый тик)
+        self._price_momentum_pct: float = 0.0
+
         self._load_state()
-        log.info("[Grid] Инициализирован v2. active=%s sell=%d buy=%d dca=%d "
+        log.info("[Grid] Инициализирован v3. active=%s sell=%d buy=%d dca=%d "
                  "compound=%.2fx",
                  self._state.active,
                  len(self._state.sell_levels),
@@ -470,19 +478,29 @@ class GridTrader:
             state.total_compound_bonus = old_cb
             state.completed_fills     = old_completed
 
-            # ── SELL-уровни ────────────────────────────────────────────
-            grinch_per_level = grinch_balance / sell_levels if sell_levels > 0 else 0
+            # ── SELL-уровни (пирамидальное распределение) ─────────────
+            # GridAI v3: нижние уровни получают больше GRINCH → больше
+            # прибыли при умеренном росте (пирамида весов 1.30→0.70)
+            pyramid_weights = (
+                self._grid_ai.get_pyramid_weights(sell_levels)
+                if self._grid_ai else [1.0] * sell_levels
+            )
+            base_grinch = grinch_balance / sell_levels if sell_levels > 0 else 0
+            grinch_per_level = base_grinch  # для обратной совместимости отчёта
             for i in range(1, sell_levels + 1):
                 trigger = current_price_ton * (1 + step_pct / 100) ** i
-                if grinch_per_level * trigger < GridConfig.MIN_ORDER_TON:
+                w = pyramid_weights[i - 1] if i - 1 < len(pyramid_weights) else 1.0
+                amount = round(base_grinch * w, 2)
+                if amount * trigger < GridConfig.MIN_ORDER_TON:
                     continue
                 state.sell_levels.append(GridLevel(
                     id=i, side="sell",
                     price_ton=round(trigger, 8),
-                    amount_grinch=round(grinch_per_level, 2),
+                    amount_grinch=amount,
                     amount_ton=0.0,
                     status="waiting",
-                    note=f"+{round((trigger/current_price_ton-1)*100, 1)}% от центра",
+                    note=(f"+{round((trigger/current_price_ton-1)*100, 1)}% от центра"
+                          f" | вес×{w:.2f}"),
                 ))
 
             # ── BUY-уровни ─────────────────────────────────────────────
@@ -682,6 +700,17 @@ class GridTrader:
 
         # ── Режим рынка + ATR ─────────────────────────────────────────────
         regime, atr_pct = self._get_regime()
+
+        # ── Ценовой буфер и momentum ──────────────────────────────────────
+        self._price_history.append(price_ton)
+        self._price_momentum_pct = self._calc_price_momentum()
+
+        # ── Обновляем счётчик режима в GridAI ────────────────────────────
+        if self._grid_ai:
+            try:
+                self._grid_ai.update_regime(regime)
+            except Exception:
+                pass
 
         # ── AI-сигнал (BrainFusion) ───────────────────────────────────────
         ai_buy_conf, ai_sell_conf = 0.0, 0.0
@@ -1208,6 +1237,12 @@ class GridTrader:
     def _maybe_recenter(self, price_ton: float, atr_pct: float, regime: str):
         """Авто-перецентровка: если цена ушла слишком далеко от центра.
 
+        v3 — momentum-aware:
+          • Сильный тренд вверх (mom > +1%/тик) → более ранняя перецентровка
+            (порог снижается до 1.8 шагов), т.к. старые sell-уровни выгодны,
+            но новые нужны выше для дальнейшей торговли.
+          • Тренд вниз (mom < -1%) → НЕ перецентровываемся (ждём разворота).
+          • Боковик → стандартный порог RECENTER_STEPS.
         Не перецентровывает при pump/distribution — только при спокойном рынке.
         Cooldown между перецентровками: RECENTER_COOLDOWN секунд.
         """
@@ -1219,11 +1254,25 @@ class GridTrader:
         if now - self._state.last_recenter_ts < GridConfig.RECENTER_COOLDOWN:
             return
 
+        # Momentum-aware порог: при росте перецентровываемся раньше,
+        # при падении — вообще не перецентровываемся (ждём дна)
+        mom = self._price_momentum_pct
+        if mom < -0.5:
+            # Цена падает — перецентровка вниз усилит убыток; пропускаем
+            return
+        if mom > 1.0:
+            # Сильный рост: снижаем порог → добавляем sell выше быстрее
+            recenter_threshold = max(1.8, GridConfig.RECENTER_STEPS - 0.7)
+        elif mom > 0.3:
+            recenter_threshold = max(2.0, GridConfig.RECENTER_STEPS - 0.3)
+        else:
+            recenter_threshold = GridConfig.RECENTER_STEPS
+
         # Сколько шагов ушла цена от центра
         pct_from_center = abs(price_ton / self._state.center_price_ton - 1) * 100
         steps_away = pct_from_center / self._state.step_pct if self._state.step_pct > 0 else 0
 
-        if steps_away < GridConfig.RECENTER_STEPS:
+        if steps_away < recenter_threshold:
             return
 
         log.info("[Grid] 🔄 Авто-перецентровка: цена %.6f ушла на %.1f шагов "
@@ -1378,6 +1427,29 @@ class GridTrader:
         last20 = candles[-20:]
         ranges = [(c[2] - c[3]) / c[3] * 100 for c in last20 if len(c) > 3 and c[3] > 0]
         return sum(ranges) / len(ranges) if ranges else 0.0
+
+    def _calc_price_momentum(self) -> float:
+        """Momentum цены: % изменение за доступную историю (макс ~10 мин).
+
+        Положительный = цена растёт, отрицательный = падает.
+        Используем линейную регрессию по точкам для устойчивости к шуму.
+        """
+        prices = list(self._price_history)
+        n = len(prices)
+        if n < 3:
+            return 0.0
+        # Линейная регрессия slope через least-squares
+        xs = list(range(n))
+        x_mean = (n - 1) / 2.0
+        p_mean = sum(prices) / n
+        num = sum((xs[i] - x_mean) * (prices[i] - p_mean) for i in range(n))
+        den = sum((xs[i] - x_mean) ** 2 for i in range(n))
+        if den == 0 or p_mean == 0:
+            return 0.0
+        slope = num / den  # TON/GRINCH per tick
+        # Нормируем в % от средней цены
+        mom_pct = slope / p_mean * 100
+        return round(max(-20.0, min(20.0, mom_pct)), 4)
 
     def _get_balances(self) -> tuple:
         """Возвращает (grinch_balance, ton_balance). GRINCH берём из DCA-позиции если кошелёк = 0."""
