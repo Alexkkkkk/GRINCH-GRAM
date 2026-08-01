@@ -1410,11 +1410,11 @@ class GridTrader:
                 conf = float(t.get("ai_conf") or t.get("prob_up") or 0.0)
                 prob_down = float(t.get("prob_down") or 0.0)
                 if sig == "BUY":
-                    return conf, prob_down
+                    return conf, prob_down          # BUY=conf, SELL=prob_down
                 if sig == "SELL":
-                    return prob_down, conf
+                    return prob_up, conf            # BUY=prob_up, SELL=conf (было prob_down→дублировало conf)
                 # HOLD — возвращаем обе вероятности
-                return conf, prob_down
+                return prob_up, prob_down
         except Exception:
             pass
         return 0.0, 0.0
