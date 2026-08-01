@@ -3,50 +3,46 @@ name: Work In Progress
 description: Что делалось в прошлой сессии — незавершённые задачи и следующие шаги
 ---
 
-## Последняя сессия — 01.08.2026
+## Последняя сессия — 01.08.2026 (вечер)
 
-### Выполнено: полный аудит VPS
+### Выполнено: исправление всех найденных багов после аудита
 
-Проведён аудит трёх направлений: БД, код/состояние бота, сетка.
+#### DB-исправления (применены на VPS):
+1. ✅ **failed_providers** очищены: groq=0, openai=0 → AI-советник разблокирован
+2. ✅ **selected_provider** переключён на `deepseek` (имеет ключ, не падал)
+3. ✅ **ai_state.dca** синхронизирован: entries=2, stake_ton=521.3526, last_buy_price=0.00046286
 
-#### Ключевые находки
+#### Код (задеплоен на VPS + закоммичен в git):
+4. ✅ **grid_trader.py**: исправлена формула compound_bonus
+   - Было: `bonus = net_ton * (new_mult - 1.0)` (чуть завышала)
+   - Стало: `bonus = (net_ton - GAS_RESERVE_TON) * (new_mult - 1.0)` (точная)
 
-**🔴 КРИТИЧНО:**
-1. `telegram_chat_id` пустой → Telegram-алерты не работают
-2. openai (сбой 01.08 13:37) и groq (сбой 31.07 09:28) в failed_providers → AI-советник не работает
-3. Открытая позиция -18.4% (-95.76 TON), TP=0.000715 (+83% от текущей ~0.000391)
+### Текущее состояние бота (01.08.2026 18:37 UTC)
+- Позиция: -18.0% (-94 TON unrealized), stake=521.35 TON
+- DCA триггер СРАБОТАЛ (падение 17.6% > 15%) — НО 2.295 TON свободно, не хватает для докупки
+- Grid: активна, tick идут, 9 SELL waiting (L1 @ 0.000429), 5 BUY no_funds (2.3 TON ≠ 15 TON min)
+- AI-советник: deepseek выбран, следующий запрос через ~2 мин после рестарта
+- Telegram: chat_id НЕ настроен (пользователь не ответил на форму)
 
-**🟡 ВАЖНО:**
-4. Grid: total_trades=0 при total_sell_cycles=8 (баг счётчика)
-5. Grid: compound_bonus=29.74 TON > total_profit=12.91 TON (аномалия)
-6. Grid: все 5 BUY-уровней no_funds, перецентровка ни разу не срабатывала
-7. Stake расхождение: open_trades=521.35 TON vs ai_state.dca=444.9 TON (76 TON)
-8. DCA_MAX_ENTRIES=1 достигнут, новый вход невозможен
+### Незакрытые вопросы:
+1. **Telegram chat_id** — нужен числовой ID чата. Задать через дашборд: Settings → Alerts → chat_id
+2. **BUY levels no_funds** — нужен свободный TON. Невозможно без пополнения кошелька TON
+3. **DCA докупка хочет войти** (откат 29.1% ≥ 15%) — нужно ~5-10 TON на кошельке
+4. **Task #4 (TP)** — TP=0.000715 рассчитан от avg_entry_usd=0.000668; текущая цена 0.000551 USD, до TP +29.8%. TP пересчитывается автоматически при следующей merge.
 
-#### Состояние бота (01.08.2026 ~15:10 UTC)
-- Позиция: dedust_1785565235, BUY, 1 101 171 GRINCH, открыта 28.07 @ 0.000668 TON
-- avg_price (DCA): 0.000463 TON, текущая: ~0.000391 TON
-- stake: 521.35 TON, value_now: 430.25 TON
-- ONLY_PROFIT_EXIT: заблокирован, ждёт восстановления
-- Grid: активна, тик #858, 9 SELL waiting, 5 BUY no_funds
-- AI stats: 33 сделки, 20 побед (60.6%), total PnL=160.91 TON, Sharpe=1.72
-
-#### Предложенные задачи
-- Task #2: Восстановить Telegram-алерты и AI-советника
-- Task #3: Починить баги сетки
-- Task #4: Разобраться с открытой позицией (TP, stake)
-
-### Схемы таблиц (важно — не стандартные!)
+### DB-схемы таблиц (критически важно — нестандартные!):
 - bot_open_trades: **trade_id** (char), data (jsonb), updated_at
 - bot_trades: **id** (char), data (jsonb), **closed_at**
-- bot_equity: id (bigint), **ts**, **ton**, **grinch**, grinch_usd, equity_ton (прямые колонки, НЕ jsonb!)
-- bot_ticks: id (bigint), **ts**, data (jsonb)
-- bot_settings: **section** (char), **key** (char), **value** (text) — НЕ section+data!
+- bot_equity: id, **ts**, **ton**, **grinch**, grinch_usd, equity_ton (прямые колонки, НЕ jsonb)
+- bot_settings: **section** (char), **key** (char), **value** (text)
 - bot_ai_state: **key** (char), **value** (text)
-- bot_wallets: **address** (char), data (jsonb)
-- bot_wallet_snapshots: id, ts, ton_balance, grinch_balance, ... (прямые колонки)
-- user_wallets: id, token, name, ton_address, virtual_ton_balance, ... (много колонок)
 
-### experience.json структура (изменилась!)
-Ключи: version, created, **trades** (list!), open_trades, equity, stats, ai, control
-НЕ плоская структура — вложенная с секциями.
+### experience.json структура (изменилась!):
+Ключи: version, created, **trades** (list!), open_trades, equity, **stats** (dict), **ai** (dict), **control** (dict)
+НЕ плоская структура — вложенная.
+
+### Ложные срабатывания из аудита (не баги):
+- total_trades=0 в grid: мой скрипт проверял несуществующий ключ; правильный — total_sell_cycles=8
+- compound_bonus > total_profit: ожидаемое поведение при compound reinvesting; формула была чуть неточна (исправлено)
+- BUY no_funds: нет свободного TON, не код
+- Recenter не срабатывал: правильно (цена ушла на 1.1 шага, порог 2.5)

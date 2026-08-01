@@ -991,7 +991,10 @@ class GridTrader:
                         GridConfig.COMPOUND_MAX_MULT,
                         old_mult + GridConfig.COMPOUND_RATE)
                     self._state.compound_multiplier = new_mult
-                    bonus = net_ton * (new_mult - 1.0)
+                    # Точный расчёт: бонус = РЕАЛЬНО реинвестированная сумма сверх
+                    # чистых поступлений (за вычетом газового резерва).
+                    # Было: net_ton * (mult-1) — чуть завышало на GAS_RESERVE*(mult-1)
+                    bonus = max(0.0, (net_ton - GridConfig.GAS_RESERVE_TON) * (new_mult - 1.0))
                     self._state.total_compound_bonus += bonus
                     log.info("[Grid] 📈 Compound: %.2fx → %.2fx (+%.4f TON bonus)",
                              old_mult, new_mult, bonus)
