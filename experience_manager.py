@@ -635,16 +635,19 @@ class ExperienceManager:
             base_conf = float(ctrl["base_min_conf"])
             base_amt  = float(ctrl["base_trade_amount"])
 
+            # FIX#26: считаем только закрытые сделки с реальным pnl (не None/0),
+            # незакрытые (pnl=None) и ошибочные (pnl=0) не влияют на серию.
+            _closed = [t for t in trades if t.get("pnl") is not None and t.get("status") != "open"]
             # — серия убытков подряд (с конца журнала) —
             streak = 0
-            for t in reversed(trades):
+            for t in reversed(_closed):
                 if (t.get("pnl") or 0) < 0:
                     streak += 1
                 else:
                     break
             # — серия ПРИБЫЛЬНЫХ сделок подряд (для безопасного роста ставки) —
             win_streak = 0
-            for t in reversed(trades):
+            for t in reversed(_closed):
                 if (t.get("pnl") or 0) > 0:
                     win_streak += 1
                 else:

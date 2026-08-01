@@ -1058,8 +1058,10 @@ class GridTrader:
         try:
             result = self._dc.buy(level.amount_ton)
             if result.get("ok"):
-                grinch_received = result.get("received_grinch") or (
-                    level.amount_ton / current_price * (1 - GridConfig.FEE_PCT))
+                # FIX#10: guard against ZeroDivisionError when current_price=0
+                _fb = (level.amount_ton / current_price * (1 - GridConfig.FEE_PCT)
+                       if current_price > 0 else 0.0)
+                grinch_received = result.get("received_grinch") or _fb
                 level.status         = "filled"
                 level.filled_at      = time.time()
                 level.fill_price_ton = current_price
@@ -1102,8 +1104,10 @@ class GridTrader:
         try:
             result = self._dc.buy(level.amount_ton)
             if result.get("ok"):
-                grinch_received = result.get("received_grinch") or (
-                    level.amount_ton / current_price * (1 - GridConfig.FEE_PCT))
+                # FIX#10: guard against ZeroDivisionError when current_price=0
+                _fb = (level.amount_ton / current_price * (1 - GridConfig.FEE_PCT)
+                       if current_price > 0 else 0.0)
+                grinch_received = result.get("received_grinch") or _fb
                 level.status         = "filled"
                 level.filled_at      = time.time()
                 level.fill_price_ton = current_price

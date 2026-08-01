@@ -270,9 +270,14 @@ class WalletTracker:
                     new_bal[addr] = int(raw) / 1e9
                 except Exception:
                     pass
-            with self._lock:
-                self._on_chain_balances = new_bal
-                self._last_balance_poll = time.time()
+            # FIX#21: не заменяем весь словарь при частичном сбое API.
+            # Если new_bal пустой (все запросы упали) — оставляем старые данные.
+            if new_bal:
+                with self._lock:
+                    self._on_chain_balances = new_bal
+                    self._last_balance_poll = time.time()
+            else:
+                logger.debug("[WalletTracker] _poll_whale_balances: все запросы неудачны, оставляем старый кэш")
             whales = sum(1 for v in new_bal.values() if v >= min_g)
             logger.debug("[WalletTracker] on-chain: %d кошельков, %d китов", len(new_bal), whales)
         except Exception as e:
@@ -542,7 +547,8 @@ class WalletTracker:
                 with open(tmp, "w", encoding="utf-8") as fh:
                     json.dump(payload, fh, ensure_ascii=False)
                 os.replace(tmp, STORE_PATH)
-            except Exception:
-                pass
+            except Exception as _je:
+                # FIX#35: не подавляем молча — логируем, чтобы потеря бэкапа была заметна
+                logger.warning(f"[WalletTracker] JSON backup write error: {_je}")
         threading.Thread(target=_write_json, daemon=True,
                          name="wt-json-save").start()

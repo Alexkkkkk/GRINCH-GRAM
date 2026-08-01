@@ -4213,7 +4213,11 @@ class Trader:
     def _close_trade(self, trade, price, reason, force: bool = False):
         """Сериализует закрытие (лок) и защищает от двойной продажи позиции."""
         with self._close_lock:
-            if trade.get("id") not in {t.get("id") for t in self.open_trades}:
+            # FIX#1/#6: читаем open_trades под _ot_lock (RLock), чтобы снапшот
+            # был атомарным — исключаем гонку с параллельными _ot_lock-write операциями.
+            with self._ot_lock:
+                _trade_open = trade.get("id") in {t.get("id") for t in self.open_trades}
+            if not _trade_open:
                 return False   # уже закрыта другим потоком
             return self._close_trade_locked(trade, price, reason, force=force)
 
@@ -4348,14 +4352,21 @@ class Trader:
         # В DeDust-режиме цены в USD → конвертируем P&L в TON для корректного отображения
         if self.exchange.mode == "dedust":
             from price_feed import price_feed
-            ton_usd = price_feed.get("TON") or 2.44
-            # BUG-FIX: вычитаем газ обоих свопов — он платится on-chain реально,
-            # но ранее не учитывался в P&L этого пути (только в DCA-путях учитывался).
-            # buy_gas уже уплачен при входе (sunk cost), sell_gas — сейчас.
-            pnl = round(
-                pnl_raw / ton_usd - Config.BUY_GAS_TON - Config.SELL_GAS_TON,
-                6
-            )
+            # FIX#5: не использовать хардкодный fallback — price_feed уже отдаёт
+            # stale-кэш при недоступности API. Если кэш пуст (первый старт),
+            # ставим pnl=0 вместо ложного значения по устаревшей цене.
+            ton_usd = price_feed.get("TON") or 0.0
+            if ton_usd > 0:
+                # BUG-FIX: вычитаем газ обоих свопов — он платится on-chain реально,
+                # но ранее не учитывался в P&L этого пути (только в DCA-путях учитывался).
+                # buy_gas уже уплачен при входе (sunk cost), sell_gas — сейчас.
+                pnl = round(
+                    pnl_raw / ton_usd - Config.BUY_GAS_TON - Config.SELL_GAS_TON,
+                    6
+                )
+            else:
+                self.log("⚠️ P&L: цена TON/USD недоступна — P&L помечен как 0 (уточнится позже)", "WARN")
+                pnl = 0.0
         else:
             pnl = round(pnl_raw, 6)
 
@@ -4503,7 +4514,10 @@ class Trader:
         # wait_pullback=True явно в своих ветках.
         # Ручное закрытие (reason="manual") этот путь пропускало → бот мог
         # войти заново сразу, без ожидания отката цены.
-        if Config.DCA_MODE and not self.open_trades:
+        # FIX#6: читаем open_trades под _ot_lock — снапшот после удаления сделки.
+        with self._ot_lock:
+            _no_open = not self.open_trades
+        if Config.DCA_MODE and _no_open:
             if not self.dca_wait_pullback:
                 self.dca_wait_pullback = True
                 self.dca_peak_price    = price
@@ -4670,26 +4684,28 @@ class Trader:
         # ── DCA статус ───────────────────────────────────────────────
         # Self-heal: если open_trades есть, но счётчики цикла = 0 (рассинхрон
         # после рестарта или кратковременного сброса) — восстановить из позиций.
+        # FIX#7: модификация DCA-state только под _ot_lock.
         if Config.DCA_MODE and self.open_trades and self.dca_entries_count == 0:
             try:
-                _sh_trades = [t for t in self.open_trades if t.get("dca_entry")]
-                if not _sh_trades:
-                    _sh_trades = [t for t in self.open_trades
-                                  if t.get("trade_type") != "short"]
-                if _sh_trades:
-                    self.dca_entries_count = max(
-                        int(t.get("dca_index") or 1) for t in _sh_trades)
-                    self.dca_total_stake = sum(
-                        float(t.get("stake_ton") or 0) for t in _sh_trades)
-                    if not self.dca_last_buy_price:
-                        _sh_sorted = sorted(
-                            _sh_trades,
-                            key=lambda t: (t.get("dca_index") or 0, t.get("opened_at") or ""))
-                        self.dca_last_buy_price = float(
-                            _sh_sorted[-1].get("entry_price") or 0)
-                    self.log(
-                        f"[get_status] DCA self-heal: entries={self.dca_entries_count} "
-                        f"stake={self.dca_total_stake:.2f} TON", "DEBUG")
+                with self._ot_lock:
+                    _sh_trades = [t for t in self.open_trades if t.get("dca_entry")]
+                    if not _sh_trades:
+                        _sh_trades = [t for t in self.open_trades
+                                      if t.get("trade_type") != "short"]
+                    if _sh_trades:
+                        self.dca_entries_count = max(
+                            int(t.get("dca_index") or 1) for t in _sh_trades)
+                        self.dca_total_stake = sum(
+                            float(t.get("stake_ton") or 0) for t in _sh_trades)
+                        if not self.dca_last_buy_price:
+                            _sh_sorted = sorted(
+                                _sh_trades,
+                                key=lambda t: (t.get("dca_index") or 0, t.get("opened_at") or ""))
+                            self.dca_last_buy_price = float(
+                                _sh_sorted[-1].get("entry_price") or 0)
+                        self.log(
+                            f"[get_status] DCA self-heal: entries={self.dca_entries_count} "
+                            f"stake={self.dca_total_stake:.2f} TON", "DEBUG")
             except Exception:
                 pass
 

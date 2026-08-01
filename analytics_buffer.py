@@ -90,7 +90,8 @@ class AnalyticsBuffer:
         """
         _ensure_tick_writer()
         entry = {
-            "ts":             datetime.utcnow().strftime("%H:%M:%S"),
+            # FIX#25: полный ISO-timestamp — "%H:%M:%S" ломает аналитику после полуночи
+            "ts":             datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%S"),
             # ── Цена ──────────────────────────────────────────────────────────
             "p_usd":          _sf(data.get("price_usd")),
             "p_ton":          _sf(data.get("price_ton")),

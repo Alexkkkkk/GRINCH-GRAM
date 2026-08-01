@@ -520,9 +520,11 @@ class Organism:
                 if n < 10:
                     break
                 entry_idx = random.randint(0, n // 2)
-                exit_idx  = random.randint(
-                    entry_idx + 3, min(entry_idx + 30, n - 1)
-                )
+                # FIX#32: min(entry_idx+30, n-1) может быть < entry_idx+3 при малом n
+                _exit_hi = min(entry_idx + 30, n - 1)
+                if _exit_hi < entry_idx + 3:
+                    break
+                exit_idx  = random.randint(entry_idx + 3, _exit_hi)
                 ep = prices[entry_idx]
                 xp = prices[exit_idx]
                 if ep <= 0:

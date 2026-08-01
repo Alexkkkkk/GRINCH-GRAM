@@ -2953,14 +2953,21 @@ def api_user_status(token):
 
 @app.route("/api/user/deposit", methods=["POST"])
 def api_user_deposit_manual():
-    """Ручное зачисление депозита (для тестирования / после ручной проверки)."""
+    """Ручное зачисление депозита (только для администратора после ручной проверки)."""
+    # FIX#3: эндпоинт ручного зачисления — только для авторизованного владельца.
+    if not session.get("logged_in"):
+        return jsonify({"ok": False, "error": "Требуется вход администратора"}), 401
     if not _db_available:
         return jsonify({"ok": False, "error": "БД недоступна"}), 503
     data   = request.json or {}
     token  = str(data.get("token", ""))
-    amount = float(data.get("amount", 0))
-    if amount <= 0:
-        return jsonify({"ok": False, "error": "Сумма должна быть > 0"}), 400
+    # FIX#20: проверяем finite перед float-конвертацией
+    try:
+        amount = float(data.get("amount", 0))
+    except (TypeError, ValueError):
+        return jsonify({"ok": False, "error": "Некорректная сумма"}), 400
+    if not math.isfinite(amount) or amount <= 0:
+        return jsonify({"ok": False, "error": "Сумма должна быть конечным числом > 0"}), 400
     ok = user_mgr.credit_deposit(token, amount, app)
     if not ok:
         return jsonify({"ok": False, "error": "Пользователь не найден"}), 404
@@ -2975,10 +2982,16 @@ def api_user_deposit_manual():
 
 @app.route("/api/user/withdraw", methods=["POST"])
 def api_user_withdraw():
-    data   = request.json or {}
-    token  = str(data.get("token", ""))
-    amount = float(data.get("amount", 0))
-    if amount < 0.1:
+    data  = request.json or {}
+    token = str(data.get("token", ""))
+    if not token:
+        return jsonify({"ok": False, "error": "Токен обязателен"}), 400
+    # FIX#4/#20: проверяем finite перед float-конвертацией
+    try:
+        amount = float(data.get("amount", 0))
+    except (TypeError, ValueError):
+        return jsonify({"ok": False, "error": "Некорректная сумма"}), 400
+    if not math.isfinite(amount) or amount < 0.1:
         return jsonify({"ok": False, "error": "Минимальный вывод 0.1 TON"}), 400
     result = user_mgr.withdraw(token, amount, app)
     return jsonify(result), 200 if result.get("ok") else 400
@@ -3138,7 +3151,9 @@ def api_grid_status():
         from grid_trader import get_grid_trader
         return jsonify(get_grid_trader().get_status())
     except Exception as e:
-        return jsonify({'error': str(e)}), 500
+        # FIX#12: не раскрываем внутренние ошибки (SQL, пути, конфигурацию)
+        logger.error("api_grid_status error: %s", e, exc_info=True)
+        return jsonify({'error': 'Внутренняя ошибка сервера'}), 500
 
 
 @app.route('/api/grid/build', methods=['POST'])
@@ -3178,7 +3193,9 @@ def api_grid_build():
         )
         return jsonify(result)
     except Exception as e:
-        return jsonify({'ok': False, 'error': str(e)}), 500
+        # FIX#12: скрываем внутренние ошибки
+        logger.error("api_grid_build error: %s", e, exc_info=True)
+        return jsonify({'ok': False, 'error': 'Внутренняя ошибка сервера'}), 500
 
 
 @app.route('/api/grid/activate', methods=['POST'])
@@ -3187,7 +3204,8 @@ def api_grid_activate():
         from grid_trader import get_grid_trader
         return jsonify(get_grid_trader().activate())
     except Exception as e:
-        return jsonify({'ok': False, 'error': str(e)}), 500
+        logger.error("api_grid_activate error: %s", e, exc_info=True)
+        return jsonify({'ok': False, 'error': 'Внутренняя ошибка сервера'}), 500
 
 
 @app.route('/api/grid/deactivate', methods=['POST'])
@@ -3198,7 +3216,8 @@ def api_grid_deactivate():
         reason = data.get('reason', 'manual')
         return jsonify(get_grid_trader().deactivate(reason=reason))
     except Exception as e:
-        return jsonify({'ok': False, 'error': str(e)}), 500
+        logger.error("api_grid_deactivate error: %s", e, exc_info=True)
+        return jsonify({'ok': False, 'error': 'Внутренняя ошибка сервера'}), 500
 
 
 @app.route('/api/grid/ai_status', methods=['GET'])
@@ -3215,7 +3234,8 @@ def api_grid_ai_status():
             "regime":     status.get("ai_manager", {}).get("last_regime", "UNKNOWN"),
         })
     except Exception as e:
-        return jsonify({"ok": False, "error": str(e)}), 500
+        logger.error("api_grid_ai_status error: %s", e, exc_info=True)
+        return jsonify({"ok": False, "error": "Внутренняя ошибка сервера"}), 500
 
 @app.route('/api/grid/step', methods=['POST'])
 def api_grid_set_step():
@@ -3230,4 +3250,5 @@ def api_grid_set_step():
             gt._save_state()
         return jsonify({'ok': True, 'step_pct': step})
     except Exception as e:
-        return jsonify({'ok': False, 'error': str(e)}), 500
+        logger.error("api_grid_set_step error: %s", e, exc_info=True)
+        return jsonify({'ok': False, 'error': 'Внутренняя ошибка сервера'}), 500

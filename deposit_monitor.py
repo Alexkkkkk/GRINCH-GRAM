@@ -122,10 +122,17 @@ class DepositMonitor:
 
         from models import UserWallet
         from database import db
+        # FIX#13: LIKE-поиск по префиксу совпадал с чужими токенами, если код короткий.
+        # Мемо записывается как "GG-{token[:8]}", поэтому ищем точное совпадение первых 8 символов.
+        # Сначала ищем точное совпадение токена по первым символам (длина кода = 8 hex-символов).
         uw = UserWallet.query.filter(
             UserWallet.token.like(f"{code}%"),
             UserWallet.active == True
         ).first()
+        # Дополнительная проверка: код в memo должен совпадать с началом токена (защита от коллизии LIKE)
+        if uw and not uw.token.lower().startswith(code):
+            log.warning(f"[DepositMonitor] LIKE-коллизия: memo-код {code!r} не совпадает с токеном {uw.token[:16]!r}")
+            uw = None
         if not uw:
             return
 

@@ -50,7 +50,21 @@ class PriceFeed:
             entry = self._cache.get(base)
             if entry and now - entry[1] < self.ttl:
                 return entry[0]
-        price = self._fetch(base)
+            # FIX#23: cache stampede — если уже идёт запрос для этого тикера,
+            # возвращаем stale-значение вместо параллельных дублирующих запросов.
+            if not hasattr(self, '_fetching_keys'):
+                self._fetching_keys = set()
+            if base in self._fetching_keys:
+                if entry:
+                    if max_stale is None or (now - entry[1]) <= max_stale:
+                        return entry[0]
+                return None
+            self._fetching_keys.add(base)
+        try:
+            price = self._fetch(base)
+        finally:
+            with self._lock:
+                self._fetching_keys.discard(base)
         if price and price > 0:
             with self._lock:
                 self._cache[base] = (price, now)

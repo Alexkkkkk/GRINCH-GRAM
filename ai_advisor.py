@@ -1726,7 +1726,12 @@ def run_advisor(auto_apply: bool = None, user_message: str = "",
                 "conf":    result["confidence"],
                 "analysis": result["analysis"][:120],
             })
+        # FIX#34: _persist_history делает медленную запись в БД — выносим из-под лока,
+        # чтобы не блокировать status-поток на время IO.
+        try:
             _persist_history()
+        except Exception as _ph_e:
+            logger.debug(f"[Advisor] _persist_history error: {_ph_e}")
 
         if applied:
             logger.info(f"[Advisor] Применено {len(applied)} изм.: {'; '.join(applied[:3])}")

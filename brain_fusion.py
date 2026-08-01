@@ -299,7 +299,9 @@ class BrainFusion:
             w.grinch_price_ton = grinch_price_ton
             w.total_value_ton  = ton_bal + grinch_bal * grinch_price_ton
             w.open_pnl_pct     = open_pnl_pct
-            w.has_position     = grinch_bal > 100  # > 100 GRINCH = открытая позиция
+            # FIX#27: вместо хардкодного 100 — порог из Config (с fallback 100)
+            _grinch_pos_threshold = getattr(Config, "GRINCH_MIN_POSITION_HOLD", 100)
+            w.has_position     = grinch_bal > _grinch_pos_threshold
             w.updated_at       = time.time()
 
     # ── Основной метод: консенсусный сигнал ─────────────────────────────────

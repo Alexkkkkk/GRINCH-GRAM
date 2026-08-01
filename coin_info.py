@@ -343,14 +343,28 @@ class CoinInfo:
             e = cache.get(key)
             if e and now - e[1] < ttl:
                 return e[0]
-        val = fetch(key)
-        if val is not None:
+            # FIX#23: cache stampede — если уже идёт запрос по этому ключу,
+            # возвращаем stale-значение вместо параллельного дублирующего запроса.
+            if not hasattr(self, '_fetching_keys'):
+                self._fetching_keys = set()
+            if key in self._fetching_keys:
+                return e[0] if e else None
+            self._fetching_keys.add(key)
+        try:
+            val = fetch(key)
             with self._lock:
-                cache[key] = (val, now)
-            return val
-        with self._lock:
-            e = cache.get(key)
-            return e[0] if e else None
+                self._fetching_keys.discard(key)
+                if val is not None:
+                    cache[key] = (val, now)
+            if val is not None:
+                return val
+            with self._lock:
+                e = cache.get(key)
+                return e[0] if e else None
+        except Exception:
+            with self._lock:
+                self._fetching_keys.discard(key)
+            raise
 
 
 coin_info = CoinInfo()

@@ -314,18 +314,31 @@ def _hourly_loop():
                 logger.info(line)
 
             # 2) В файл на диске (переживёт рестарт)
+            # FIX#30: ротация файла при превышении 5 МБ — предотвращаем исчерпание диска
             if _REPORT_FILE:
                 try:
                     os.makedirs(os.path.dirname(_REPORT_FILE), exist_ok=True)
+                    _MAX_REPORT_BYTES = 5 * 1024 * 1024  # 5 MB
+                    try:
+                        if os.path.getsize(_REPORT_FILE) > _MAX_REPORT_BYTES:
+                            _bak = _REPORT_FILE + ".bak"
+                            if os.path.exists(_bak):
+                                os.remove(_bak)
+                            os.rename(_REPORT_FILE, _bak)
+                    except OSError:
+                        pass
                     with open(_REPORT_FILE, "a", encoding="utf-8") as f:
                         f.write(report + "\n")
                 except Exception as _fe:
                     logger.warning(f"[HourlyReport] file write error: {_fe}")
 
             # 3) В Telegram (если настроен)
+            # FIX#29: обрезаем отчёт до 4096 символов (лимит Telegram)
             token, chat_id, enabled = _get_creds()
             if enabled:
-                send_alert(report)
+                _MAX_TG = 4096
+                _report_tg = report if len(report) <= _MAX_TG else report[:_MAX_TG - 20] + "\n…(обрезано)"
+                send_alert(_report_tg)
 
         except Exception as _e:
             logger.warning(f"[HourlyReport] ошибка: {_e}")
