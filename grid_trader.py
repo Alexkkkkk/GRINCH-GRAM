@@ -1405,14 +1405,19 @@ class GridTrader:
             import db_store as _ds
             ticks = _ds.ticks_get_recent(1)
             if ticks:
-                t   = ticks[0]
-                sig  = t.get("ai_sig") or t.get("final") or "HOLD"
-                conf = float(t.get("ai_conf") or t.get("prob_up") or 0.0)
+                t         = ticks[0]
+                sig       = t.get("ai_sig") or t.get("final") or "HOLD"
+                conf      = float(t.get("ai_conf") or 0.0)
+                prob_up   = float(t.get("prob_up")   or 0.0)
                 prob_down = float(t.get("prob_down") or 0.0)
                 if sig == "BUY":
-                    return conf, prob_down          # BUY=conf, SELL=prob_down
+                    # conf — уверенность BUY; prob_down — вероятность падения
+                    buy_val  = conf if conf > 0 else prob_up
+                    return buy_val, prob_down
                 if sig == "SELL":
-                    return prob_up, conf            # BUY=prob_up, SELL=conf (было prob_down→дублировало conf)
+                    # conf — уверенность SELL; prob_up — вероятность роста
+                    sell_val = conf if conf > 0 else prob_down
+                    return prob_up, sell_val
                 # HOLD — возвращаем обе вероятности
                 return prob_up, prob_down
         except Exception:
