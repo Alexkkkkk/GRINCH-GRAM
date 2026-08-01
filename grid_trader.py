@@ -165,8 +165,10 @@ class GridAIManager:
             should_active = False
             decisions.append(f"⏸ AI SELL {ai_sell_conf:.0f}% → пауза")
 
-        if should_active and not currently_active and self._paused_by_ai:
-            # Режим восстановился — включаем обратно
+        has_levels = bool(t._state.sell_levels or t._state.buy_levels)
+        if should_active and not currently_active and (self._paused_by_ai or has_levels):
+            # Режим восстановился — включаем обратно.
+            # has_levels: сетка построена но ещё не активирована (напр. после ручного rebuild).
             t.activate()
             self._paused_by_ai = False
             decisions.append(f"▶️ авто-запуск (режим вернулся: {regime})")
@@ -676,10 +678,11 @@ class GridTrader:
             time.sleep(GridConfig.TICK_INTERVAL_SEC)
 
     def _tick(self):
-        if not self._state.active or not self._dc:
+        # Без DeDust-клиента совсем ничего не делаем
+        if not self._dc:
             return
 
-        # ── Получаем цену ─────────────────────────────────────────────────
+        # ── Получаем цену (нужна и AI-менеджеру, и торговле) ─────────────
         try:
             from price_feed import price_feed
             price_ton = price_feed.get_grinch_ton_price()
@@ -719,11 +722,6 @@ class GridTrader:
         except Exception:
             pass
 
-        # ── Заморозка BUY при сильном SELL-сигнале ────────────────────────
-        buy_frozen = ai_sell_conf >= GridConfig.AI_FREEZE_BUY_SELL
-        if buy_frozen:
-            log.info("[Grid] 🧊 BUY заморожены — AI SELL %.0f%%", ai_sell_conf)
-
         # ── GridAI-шаг (каждые N тиков) ──────────────────────────────────
         with self._lock:
             self._state.tick_count += 1
@@ -732,10 +730,21 @@ class GridTrader:
             self.adjust_step_by_atr(atr_pct, regime)
 
         # ── GridAIManager — полное AI-управление сеткой ───────────────────
+        # ВАЖНО: вызываем до проверки active, чтобы AI-менеджер мог
+        # авто-активировать сетку даже когда та неактивна (напр. после rebuild).
         grinch_bal, ton_bal = self._get_balances()
         self._ai_manager.tick(
             regime, atr_pct, ai_buy_conf, ai_sell_conf,
             price_ton, grinch_bal, ton_bal)
+
+        # ── Если сетка неактивна — дальше не идём (торговля заморожена) ───
+        if not self._state.active:
+            return
+
+        # ── Заморозка BUY при сильном SELL-сигнале ────────────────────────
+        buy_frozen = ai_sell_conf >= GridConfig.AI_FREEZE_BUY_SELL
+        if buy_frozen:
+            log.info("[Grid] 🧊 BUY заморожены — AI SELL %.0f%%", ai_sell_conf)
 
         # ── Авто-перецентровка ────────────────────────────────────────────
         try:
