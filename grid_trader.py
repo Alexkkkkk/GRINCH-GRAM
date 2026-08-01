@@ -1480,9 +1480,9 @@ class GridTrader:
             ton_bal    = float(bal.get("TON", bal.get("ton", 0)))
             grinch_bal = float(bal.get("GRINCH", bal.get("grinch", 0)))
             if grinch_bal < 1000:
-                from db_store import db_store as _ds
-                _trades    = _ds.trades_load_open()
-                grinch_bal = sum(float(t.get("amount", 0)) for t in _trades.values())
+                import db_store as _ds
+                _trades    = _ds.open_trades_get()
+                grinch_bal = sum(float(t.get("amount", 0)) for t in _trades)
             return grinch_bal, ton_bal
         except Exception:
             return 0.0, 0.0

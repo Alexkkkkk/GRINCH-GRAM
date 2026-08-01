@@ -3177,9 +3177,9 @@ def api_grid_build():
             if grinch_bal < 1000:
                 # Весь GRINCH в DCA — берём сумму открытых позиций
                 try:
-                    from db_store import db_store as _ds
-                    _trades = _ds.trades_load_open()
-                    grinch_bal = sum(float(t.get('amount', 0)) for t in _trades.values())
+                    import db_store as _ds
+                    _trades = _ds.open_trades_get()
+                    grinch_bal = sum(float(t.get('amount', 0)) for t in _trades)
                 except Exception:
                     pass
 

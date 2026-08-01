@@ -168,9 +168,22 @@ CREATE TABLE IF NOT EXISTS bot_wallet_snapshots (
     entry_price_usd   DOUBLE PRECISION,
     pnl_ton           DOUBLE PRECISION,
     pnl_pct           DOUBLE PRECISION,
-    pnl_usd           DOUBLE PRECISION
+    pnl_usd           DOUBLE PRECISION,
+    tracked_amount    DOUBLE PRECISION,
+    tracked_entries   INTEGER,
+    tracked_stake     DOUBLE PRECISION
 );
 CREATE INDEX IF NOT EXISTS bot_wallet_snapshots_ts ON bot_wallet_snapshots (ts);
+-- Миграция для существующих БД: добавляем tracked_* если ещё нет
+DO $$ BEGIN
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns
+                   WHERE table_name='bot_wallet_snapshots' AND column_name='tracked_amount') THEN
+        ALTER TABLE bot_wallet_snapshots
+            ADD COLUMN tracked_amount  DOUBLE PRECISION,
+            ADD COLUMN tracked_entries INTEGER,
+            ADD COLUMN tracked_stake   DOUBLE PRECISION;
+    END IF;
+END $$;
 
 -- Персистентная история виртуальных сделок мультипользовательской платформы
 -- (ранее хранилась только в памяти UserTradingManager и терялась при рестарте).
@@ -974,8 +987,9 @@ def wallet_snapshot_insert(snap: dict):
                         (ts, ton_balance, grinch_balance, grinch_price_ton, grinch_price_usd,
                          ton_price_usd, grinch_value_ton, grinch_value_usd,
                          total_equity_ton, total_equity_usd,
-                         entry_price_ton, entry_price_usd, pnl_ton, pnl_pct, pnl_usd)
-                    VALUES (NOW(),%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+                         entry_price_ton, entry_price_usd, pnl_ton, pnl_pct, pnl_usd,
+                         tracked_amount, tracked_entries, tracked_stake)
+                    VALUES (NOW(),%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
                 """, (
                     snap.get("ton_balance"),
                     snap.get("grinch_balance"),
@@ -991,6 +1005,9 @@ def wallet_snapshot_insert(snap: dict):
                     snap.get("pnl_ton"),
                     snap.get("pnl_pct"),
                     snap.get("pnl_usd"),
+                    snap.get("tracked_amount"),
+                    snap.get("tracked_entries"),
+                    snap.get("tracked_stake"),
                 ))
                 if random.random() < 0.05:
                     cur.execute("""
@@ -1013,7 +1030,8 @@ def wallet_snapshots_get_recent(limit: int = 200) -> list:
                     SELECT ts, ton_balance, grinch_balance, grinch_price_ton, grinch_price_usd,
                            ton_price_usd, grinch_value_ton, grinch_value_usd,
                            total_equity_ton, total_equity_usd,
-                           entry_price_ton, entry_price_usd, pnl_ton, pnl_pct, pnl_usd
+                           entry_price_ton, entry_price_usd, pnl_ton, pnl_pct, pnl_usd,
+                           tracked_amount, tracked_entries, tracked_stake
                     FROM bot_wallet_snapshots
                     ORDER BY id DESC LIMIT %s
                 """, (limit,))
@@ -1035,6 +1053,9 @@ def wallet_snapshots_get_recent(limit: int = 200) -> list:
                         "pnl_ton":          row["pnl_ton"],
                         "pnl_pct":          row["pnl_pct"],
                         "pnl_usd":          row["pnl_usd"],
+                        "tracked_amount":   row["tracked_amount"],
+                        "tracked_entries":  row["tracked_entries"],
+                        "tracked_stake":    row["tracked_stake"],
                     }
                     for row in reversed(rows)
                 ]
@@ -1054,7 +1075,8 @@ def wallet_snapshot_get_latest() -> dict:
                     SELECT ts, ton_balance, grinch_balance, grinch_price_ton, grinch_price_usd,
                            ton_price_usd, grinch_value_ton, grinch_value_usd,
                            total_equity_ton, total_equity_usd,
-                           entry_price_ton, entry_price_usd, pnl_ton, pnl_pct, pnl_usd
+                           entry_price_ton, entry_price_usd, pnl_ton, pnl_pct, pnl_usd,
+                           tracked_amount, tracked_entries, tracked_stake
                     FROM bot_wallet_snapshots ORDER BY id DESC LIMIT 1
                 """)
                 row = cur.fetchone()
@@ -1076,6 +1098,9 @@ def wallet_snapshot_get_latest() -> dict:
                     "pnl_ton":          row["pnl_ton"],
                     "pnl_pct":          row["pnl_pct"],
                     "pnl_usd":          row["pnl_usd"],
+                    "tracked_amount":   row["tracked_amount"],
+                    "tracked_entries":  row["tracked_entries"],
+                    "tracked_stake":    row["tracked_stake"],
                 }
     except Exception as e:
         logger.warning(f"[DB] wallet_snapshot_get_latest error: {e}")
