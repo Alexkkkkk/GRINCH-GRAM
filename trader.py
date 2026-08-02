@@ -3471,9 +3471,11 @@ class Trader:
                 )
                 stake = spendable
             ton_stake = stake
-            amount = stake / price
-        else:
-            amount = stake / price
+        # Guard: price должен быть > 0, иначе деление вызовет ZeroDivisionError
+        if not price or price <= 0:
+            self.log(f"⛔ _open_trade: price={price} недопустима — отмена", "ERROR")
+            return False
+        amount = stake / price
 
         # ── Детальный расчёт комиссий и цели (до исполнения) ────────────
         if side == "buy" and ton_stake:
@@ -3645,7 +3647,9 @@ class Trader:
         """
         closed_any = False
         for trade in list(self.open_short_trades):
-            entry_usd  = trade["entry_price"]
+            entry_usd  = trade.get("entry_price", 0)
+            if not entry_usd:
+                continue  # позиция без цены входа — пропускаем, не можем рассчитать P&L
             low_water  = trade.get("low_water", entry_usd)
             grinch_val = trade.get("grinch_value_ton")
             required_drop = Config.required_drop_pct_for_short(grinch_val)
@@ -3813,6 +3817,17 @@ class Trader:
         grinch_sold    = trade.get("amount", 0)
         grinch_val_ton = trade.get("grinch_value_ton", 0)
         entry_price    = trade.get("entry_price", price)
+
+        # Guard: price=0 ломает все деления ниже — используем entry_price как fallback
+        if not price or price <= 0:
+            self.log(
+                f"⚠️ _close_short_trade: price={price} недопустима, "
+                f"используем entry_price={entry_price:.8f}", "WARN"
+            )
+            price = entry_price or 0
+            if not price or price <= 0:
+                self.log("⛔ _close_short_trade: нет ни price ни entry_price — отмена", "ERROR")
+                return False
 
         if self.exchange.mode == "dedust" and ton_to_spend > 0:
             # Необходимо оставить газ на покупку
