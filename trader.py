@@ -3921,7 +3921,13 @@ class Trader:
             if trade.get("symbol", Config.SYMBOL) != Config.SYMBOL:
                 continue
 
-            entry      = trade["entry_price"]
+            entry = trade.get("entry_price", 0)
+            if not entry:
+                self.log(
+                    f"⚠️ SL/TP: позиция {trade.get('id','?')} без entry_price — пропускаем",
+                    "WARN"
+                )
+                continue
             profit_pct = (price - entry) / entry * 100
 
             # ── Stale Position Reaper ─────────────────────────────────────────
@@ -3963,7 +3969,7 @@ class Trader:
                 # «Взведённый» стоп = трейлинг уже активирован (стоп ≥ floor_price).
                 # До взведения стоп = 0 и вниз не срабатывает (держим позицию,
                 # никакого стоп-лосса в убыток не существует).
-                armed = trade["stop_loss"] > 0
+                armed = trade.get("stop_loss", 0) > 0
 
                 # Прибыль достигла пола → взводим/подтягиваем трейлинг. Стоп
                 # НИКОГДА не опускается ниже floor_price (гарантия +N% нетто).
@@ -4005,8 +4011,8 @@ class Trader:
                     new_sl = self.exchange._round(high_water * (1 - trail_pct / 100))
                     new_sl = max(new_sl, floor_price)    # пол ≥ +N% нетто
 
-                    if new_sl > trade["stop_loss"]:
-                        old_sl = trade["stop_loss"]
+                    if new_sl > trade.get("stop_loss", 0):
+                        old_sl = trade.get("stop_loss", 0)
                         trade["stop_loss"] = new_sl
                         regime_name = ((self.last_ai or {}).get("regime") or {}).get("name", "")
                         smart_label = " [🧠 Smart TP]" if smart_active else ""
@@ -4021,7 +4027,7 @@ class Trader:
                 # Если стоп взведён — проверяем выход КАЖДЫЙ тик (даже если цена
                 # уже просела ниже пола): иначе зафиксированную прибыль можно
                 # «забыть» снять. Стоп всегда ≥ floor_price → выход в плюс.
-                if armed and price <= trade["stop_loss"]:
+                if armed and price <= trade.get("stop_loss", 0):
                     if self._close_trade(trade, price, "take_profit"):
                         closed_any = True
                 continue
@@ -4047,8 +4053,8 @@ class Trader:
                 breakeven_sl = self.exchange._round(entry * (1 + Config.FEE_ROUND_TRIP / 100))
                 new_sl = max(new_sl, breakeven_sl)
 
-            if new_sl > trade["stop_loss"]:
-                old_sl = trade["stop_loss"]
+            if new_sl > trade.get("stop_loss", 0):
+                old_sl = trade.get("stop_loss", 0)
                 trade["stop_loss"] = new_sl
                 stage_label = (
                     f"≥{Config.TRAIL_STAGE4_AT:.0f}% (trail {trail_pct}%)" if profit_pct >= Config.TRAIL_STAGE4_AT else
@@ -4062,11 +4068,11 @@ class Trader:
                     f"прибыль {profit_pct:+.1f}% | {stage_label}", "INFO"
                 )
 
-            if price <= trade["stop_loss"]:
-                reason = "trailing_stop" if trade["stop_loss"] > entry else "stop_loss"
+            if price <= trade.get("stop_loss", 0):
+                reason = "trailing_stop" if trade.get("stop_loss", 0) > entry else "stop_loss"
                 if self._close_trade(trade, price, reason):
                     closed_any = True
-            elif price >= trade["take_profit"]:
+            elif price >= trade.get("take_profit", float("inf")):
                 if self._close_trade(trade, price, "take_profit"):
                     closed_any = True
 

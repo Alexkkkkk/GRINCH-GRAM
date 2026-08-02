@@ -47,3 +47,4 @@ fix_stats_test.py
 # Файлы которые пересоздаются на VPS и не должны трекаться git
 /app.js
 /index.html
+.local/keys/
