@@ -52,6 +52,7 @@
 - [Post-Pump Distribution v4.5](post-pump-distribution.md) — новый режим POST_PUMP (-3 в regime_enc); 4 новые фичи (ath_dist_20/dump_velocity/vol_collapse/post_pump_dump); штраф BUY до -28%; GRINCHPumpDetector возвращает DISTRIBUTION/DUMP_PATTERN с отриц. conf_boost; vol_r НЕ существует до line~2211 в _build_features — использовать _vol_r_pp временный расчёт.
 - [AI-модули — тройка оптимизаторов](ai-modules-triad.md) — EntryOpt+TPOpt+Scanner: пусты при старте, обучаются на реальных сделках; динамический TP не ниже Config; scanner = 4-й источник BrainFusion.
 - [VPS SSH Access](vps-ssh-access.md) — пароль root в секрете VPS_SSH_KEY (не ключ!); sshpass -p "$VPS_SSH_KEY" ssh root@2.27.25.126; контейнер bot-bot-1; код в /opt/bot.
+- [Price zero-division guards](price-guard-fixes.md) — _open_trade/_check_short_positions/_close_short_trade: guard `if not price or price <= 0` before any division; _check_short_positions: use .get("entry_price",0)+continue on 0.
 - [Work In Progress](work-in-progress.md) — ЧТО ДЕЛАЛОСЬ В ПРОШЛОЙ СЕССИИ: файлы, незавершённые задачи, следующие шаги. Читать в начале каждой сессии, обновлять в конце.
 - [Grid Trading System](grid-trading.md) — grid_trader.py: recovery-grid + реинвест + AI-фильтр; API /api/grid/*; состояние в /app/data/grid_state.json; координация с DCA trader.
 - [GridAI DCA feature mismatch](grid-ai-feature-mismatch.md) — _dca_model trains on 5 features; never pass extra=[] to _make_features in get_dca_confidence or inference crashes silently.
