@@ -1014,8 +1014,9 @@ def _check_admin_confirm() -> bool:
         return True   # backward-compat
     provided = (
         request.headers.get("X-Admin-Confirm")
-        or (request.json or {}).get("admin_confirm_pin", "")
-        if request.is_json else request.form.get("admin_confirm_pin", "")
+        or ((request.json or {}).get("admin_confirm_pin", "") if request.is_json
+            else request.form.get("admin_confirm_pin", ""))
+        or ""
     )
     return hmac.compare_digest(str(provided), pin)
 
@@ -1157,8 +1158,9 @@ def api_admin_fix_open_trades():
     if fixed:
         try:
             trader.exp.save_open_trades(trader._combined_open_trades())
-        except Exception:
-            pass
+        except Exception as _e:
+            import logging as _lg
+            _lg.getLogger("app").warning("fix_open_trades save_open_trades error: %s", _e)
     return jsonify({"ok": True, "fixed": fixed, "count": len(fixed)})
 
 

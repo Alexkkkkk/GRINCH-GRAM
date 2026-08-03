@@ -3,56 +3,53 @@ name: Work In Progress
 description: Что делалось в прошлой сессии — незавершённые задачи и следующие шаги
 ---
 
-## Последняя сессия — 01.08.2026 (вечер, аудит)
+## Последняя сессия — 03.08.2026 (полный аудит кода)
 
-### Выполнено: глубокий аудит синхронизации кода
+### Выполнено: полный аудит всех 38 Python-файлов (28 522 строк)
 
-Запущены 4 параллельных субагента (API-роуты, модули, DB-схема, Config-параметры).
+#### Метод:
+- Синтаксическая проверка всех .py → нет ошибок ✅
+- Проверка всех Config.* (149 атрибутов) — все валидны ✅
+- Проверка всех db_store.* вызовов — все валидны ✅
+- Проверка всех ExchangeClient.* — все валидны ✅
+- Проверка всех AIEngine.* — все валидны ✅
+- Проверка всех BrainFusion.* — все валидны ✅
+- Проверка всех ExperienceManager.* — все валидны ✅
+- wallet_tracker._seen — dict ✅
+- dedust_client — _clean_addr_str, amount_nano cap ✅
+- Ложные срабатывания: GridConfig.X совпадал с паттерном Config.X, self._grid_ai.X совпадал с _ai.X — исключены
 
 #### Найдено и исправлено (3 бага):
 
-1. ✅ **grid_trader.py:1483-1485** — `from db_store import db_store as _ds` + `_ds.trades_load_open()`
-   - Исправлено: `import db_store as _ds` + `_ds.open_trades_get()` + итерация как list (не `.values()`)
+1. ✅ **app.py:1015-1019** — operator precedence в `_check_admin_confirm()`
+   - При `request.is_json=False` заголовок `X-Admin-Confirm` не проверялся (только form data)
+   - Исправлено: явные скобки гарантируют проверку заголовка при любом Content-Type
 
-2. ✅ **app.py:3180-3181** — тот же баг (grid build endpoint)
-   - Исправлено аналогично
+2. ✅ **app.py:1159** — `except Exception: pass` после `save_open_trades`
+   - Ошибки (напр. AttributeError) молча глотались
+   - Исправлено: `except Exception as _e: log.warning(...)`
 
-3. ✅ **db_store.py** — `tracked_amount`, `tracked_entries`, `tracked_stake` не сохранялись в DB
-   - Добавлены колонки в DDL + DO $$ migrate для существующих БД
-   - Обновлены wallet_snapshot_insert(), wallet_snapshots_get_recent(), wallet_snapshot_get_latest()
+3. ✅ **db_store.py:1268** — аннотация `tuple[dict, list, set, float]` вместо `tuple[dict, list, dict, float]`
+   - `wallets_load()` возвращает dict (не set) для `seen`
+   - Исправлено: аннотация приведена к реальности
+
+#### Низкоприоритетные (не исправлялись, не критичны):
+- app.py:1965-1967, 1986-1988 — `_require_login()` дублирует before_request (мёртвый код, но безопасен)
+- db_store.py:383 — `_pool_lock` + sleep при импорте — НЕ баг (при старте других потоков нет)
+- db_store.py:891 — генератор `ai_examples_export_all` глотает ошибку (логирует), допустимо
+- trader.py — 30+ `except Exception: pass` — НАМЕРЕННЫ (предотвращают краш цикла)
 
 #### Деплой:
-- Файлы закоммичены в git и задеплоены через `docker compose up -d --build`
-- Контейнер бот статус: **healthy** ✅
-- DB-миграция запустится автоматически при следующем подключении к БД
+- Изменения закоммичены и запушены в GitHub (origin/main)
+- VPS подхватит через cron `*/3 * * * *` → deploy.sh → docker rebuild
+- SSH-секреты VPS (VPS_SSH_KEY, VPS_SSH_PASSWORD) недоступны в этом Replit-инстансе
 
-### Текущее состояние бота (01.08.2026 ~19:35 UTC)
+### Текущее состояние бота (известно из сессии 01.08.2026):
 - Позиция: -18.0% (-94 TON unrealized), stake=521.35 TON, amount=1101171.25 GRINCH
-- DCA откат 29.1% ≥ порог 15% → готов к докупке, НО 2.295 TON ≠ min 5 TON (нет средств)
-- ONLY_PROFIT_EXIT: заблокирован (убыток), держим до возврата в плюс
-- Grid: active=False, sell=9, buy=5, compound=1.16x
-- AI: 4 подтверждённых примера, переобучений=488
+- ONLY_PROFIT_EXIT: активен, ждём возврата в плюс
+- Grid: active=False
 
 ### Незакрытые вопросы:
-1. **Telegram chat_id** — не настроен (задача #2)
-2. **BUY no_funds** — нужен свободный TON (min 5 TON после газа и резерва)
-3. **Позиция -18%** — ждём восстановления до TP=$0.000715 (+29.9%)
-
-### Аудит — что OK (не требует исправлений):
-- Все Flask-роуты имеют frontend-вызовы ✅
-- SocketIO события совпадают ✅
-- Все Config.* атрибуты определены ✅
-- Все db_store функции вызываются корректно (кроме исправленных) ✅
-- Циклические импорты — только managed (app←trader ленивый, не блокирует) ✅
-
-### DB-схемы таблиц (критически важно — нестандартные!):
-- bot_open_trades: **trade_id** (char), data (jsonb), updated_at
-- bot_trades: **id** (char), data (jsonb), **closed_at**
-- bot_equity: id, **ts**, **ton**, **grinch**, grinch_usd, equity_ton (прямые колонки, НЕ jsonb)
-- bot_settings: **section** (char), **key** (char), **value** (text)
-- bot_ai_state: **key** (char), **value** (text)
-- bot_wallet_snapshots: 15 колонок + tracked_amount, tracked_entries, tracked_stake (добавлены 01.08)
-
-### experience.json структура (изменилась!):
-Ключи: version, created, **trades** (list!), open_trades, equity, **stats** (dict), **ai** (dict), **control** (dict)
-НЕ плоская структура — вложенная.
+1. **Telegram chat_id** — не настроен
+2. **BUY no_funds** — нужен свободный TON (min 5 TON)
+3. **VPS SSH** — пароль root не задан в секретах Replit → прямой деплой через SSH невозможен из Replit

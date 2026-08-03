@@ -1265,7 +1265,7 @@ def wallets_save(wallets: dict, events: list, seen: list, last_poll: float):
         logger.warning(f"[DB] wallets_save error: {e}")
 
 
-def wallets_load() -> tuple[dict, list, set, float]:
+def wallets_load() -> tuple[dict, list, dict, float]:
     """Возвращает (wallets, events, seen_set, last_poll)."""
     if not _check_available():
         return {}, [], set(), 0.0
