@@ -3,53 +3,47 @@ name: Work In Progress
 description: Что делалось в прошлой сессии — незавершённые задачи и следующие шаги
 ---
 
-## Последняя сессия — 03.08.2026 (полный аудит кода)
+## Последняя сессия — 03.08.2026 (Grid↔DCA координация)
 
-### Выполнено: полный аудит всех 38 Python-файлов (28 522 строк)
+### Выполнено: исправлена координация Grid ↔ DCA в grid_trader.py
 
-#### Метод:
-- Синтаксическая проверка всех .py → нет ошибок ✅
-- Проверка всех Config.* (149 атрибутов) — все валидны ✅
-- Проверка всех db_store.* вызовов — все валидны ✅
-- Проверка всех ExchangeClient.* — все валидны ✅
-- Проверка всех AIEngine.* — все валидны ✅
-- Проверка всех BrainFusion.* — все валидны ✅
-- Проверка всех ExperienceManager.* — все валидны ✅
-- wallet_tracker._seen — dict ✅
-- dedust_client — _clean_addr_str, amount_nano cap ✅
-- Ложные срабатывания: GridConfig.X совпадал с паттерном Config.X, self._grid_ai.X совпадал с _ai.X — исключены
+#### Проблема:
+Grid и DCA-трейдер используют одни и те же GRINCH — без защиты сетка могла
+продавать монеты, которые DCA держит до своей TP (ONLY_PROFIT_EXIT).
 
-#### Найдено и исправлено (3 бага):
+#### Три изменения в grid_trader.py (коммит cb90686):
 
-1. ✅ **app.py:1015-1019** — operator precedence в `_check_admin_confirm()`
-   - При `request.is_json=False` заголовок `X-Admin-Confirm` не проверялся (только form data)
-   - Исправлено: явные скобки гарантируют проверку заголовка при любом Content-Type
+1. **`_get_dca_reserved_grinch()`** — новый метод, читает `open_trades` из DB
+   и возвращает суммарное кол-во GRINCH в открытых DCA-позициях.
 
-2. ✅ **app.py:1159** — `except Exception: pass` после `save_open_trades`
-   - Ошибки (напр. AttributeError) молча глотались
-   - Исправлено: `except Exception as _e: log.warning(...)`
+2. **`build_grid()` — свободный GRINCH**:
+   - `free_grinch = wallet_balance - dca_reserved`
+   - SELL-уровни строятся только из `free_grinch` (не из полного баланса)
 
-3. ✅ **db_store.py:1268** — аннотация `tuple[dict, list, set, float]` вместо `tuple[dict, list, dict, float]`
-   - `wallets_load()` возвращает dict (не set) для `seen`
-   - Исправлено: аннотация приведена к реальности
+3. **`_execute_sell()` — runtime-guard**:
+   - Перед свопом: `free_g = wallet_grinch - dca_reserved`
+   - Если `free_g < level.amount_grinch` → статус `skipped_dca`, продажа отменена
+   - Логирует предупреждение с цифрами
 
-#### Низкоприоритетные (не исправлялись, не критичны):
-- app.py:1965-1967, 1986-1988 — `_require_login()` дублирует before_request (мёртвый код, но безопасен)
-- db_store.py:383 — `_pool_lock` + sleep при импорте — НЕ баг (при старте других потоков нет)
-- db_store.py:891 — генератор `ai_examples_export_all` глотает ошибку (логирует), допустимо
-- trader.py — 30+ `except Exception: pass` — НАМЕРЕННЫ (предотвращают краш цикла)
+4. **Восстановление `skipped_dca`** (в tick-loop):
+   - Восстанавливается в `waiting` когда DCA закрывает позицию (GRINCH освобождается)
+   - Или при откате цены ниже триггера
 
-#### Деплой:
-- Изменения закоммичены и запушены в GitHub (origin/main)
-- VPS подхватит через cron `*/3 * * * *` → deploy.sh → docker rebuild
-- SSH-секреты VPS (VPS_SSH_KEY, VPS_SSH_PASSWORD) недоступны в этом Replit-инстансе
+#### Статус:
+- Коммит: cb90686 (local main)
+- Push в GitHub: НЕ выполнен (нет SSH deploy key)
+- Нужен деплой на VPS: `scp grid_trader.py` + `docker cp`
 
-### Текущее состояние бота (известно из сессии 01.08.2026):
-- Позиция: -18.0% (-94 TON unrealized), stake=521.35 TON, amount=1101171.25 GRINCH
-- ONLY_PROFIT_EXIT: активен, ждём возврата в плюс
+### Текущее состояние бота (03.08.2026 08:04):
+- Позиция DCA: 1 101 171 GRINCH, стейк 521.35 TON, вход @ $0.000883
+- Текущая цена: $0.000838 (−5.08%)
+- ONLY_PROFIT_EXIT активен, цель: +7.07% → $0.000946
 - Grid: active=False
+- Свободный TON: 307.575 (газ)
+- GRINCH на кошельке: 400 580.87
 
 ### Незакрытые вопросы:
-1. **Telegram chat_id** — не настроен
-2. **BUY no_funds** — нужен свободный TON (min 5 TON)
-3. **VPS SSH** — пароль root не задан в секретах Replit → прямой деплой через SSH невозможен из Replit
+1. **GitHub deploy key** — не настроен в этом Replit → git push невозможен; деплой через docker cp
+2. **Telegram chat_id** — не настроен
+3. **ADMIN_PASSWORD** — не задан (дашборд открыт без пароля)
+4. **Grid активация** — можно активировать ПОСЛЕ закрытия DCA-позиции или выделить её на свободный TON
