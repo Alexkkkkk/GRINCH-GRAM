@@ -102,6 +102,31 @@ class GridConfig:
     IDLE_DEPTH_BOOST    = float(os.getenv("GRID_IDLE_DEPTH_BOOST", "0.15"))  # +15% за шаг
     IDLE_DEPTH_MAX_MULT = float(os.getenv("GRID_IDLE_DEPTH_MAX",   "1.5"))   # макс 1.5x
 
+    # ── [УЛУЧШЕНИЕ] Compound acceleration ──────────────────────────────────
+    # Динамическая ставка compound: base 2%, +0.5% за каждый выигрыш подряд (макс 5%)
+    COMPOUND_ACCEL_PER_WIN = 0.005   # +0.5% к compound rate за WIN STREAK
+    COMPOUND_ACCEL_MAX     = 0.05    # максимальная ставка compound за тик
+    # Третий реинвест-BUY: активируется когда compound_multiplier >= 1.5x
+    REINVEST_STEP_MULT3    = 1.60    # третий BUY на 1.6× шага — глубокое страхование
+    # ── [УЛУЧШЕНИЕ] Volatility spike protection ────────────────────────────
+    # Если цена упала > SPIKE_DROP_MULT × ATR за 1 тик — включить усиленную защиту
+    SPIKE_DROP_MULT        = 1.5     # множитель ATR для срабатывания spike-защиты
+    SPIKE_PROTECTION_SEC   = 600     # держать усиленную защиту 10 минут
+    SPIKE_MOMENTUM_MULT    = 2.0     # во время spike: momentum_block × этот множитель
+    # ── [УЛУЧШЕНИЕ] Adaptive tick speed ───────────────────────────────────
+    TICK_INTERVAL_FAST     = int(os.getenv("GRID_TICK_FAST",   "10"))  # сек если цена рядом с уровнем
+    TICK_INTERVAL_SLOW     = int(os.getenv("GRID_TICK_SLOW",   "30"))  # сек если цена далеко
+    TICK_NEAR_LEVEL_PCT    = 0.5     # "рядом" = в пределах 0.5% от уровня
+    # ── [УЛУЧШЕНИЕ] Idle deploy — динамический порог + сброс по цене ──────
+    IDLE_BALANCE_PCT       = 0.10    # деплоить если простаивает > 10% от суммарного баланса в TON
+    IDLE_PRICE_RESET_STEPS = 1.5     # сбросить cooldown если цена ушла > N шагов от последнего деплоя
+    IDLE_DEPLOY_MAX_LEVELS_RICH = 5  # макс. новых уровней если свободного TON очень много (>3×порога)
+    # ── [УЛУЧШЕНИЕ] Order sizing — Kelly boost ─────────────────────────────
+    AI_BUY_SIZE_KELLY_MAX      = 2.2    # при высоком win_rate разрешаем до 2.2x
+    AI_BUY_SIZE_KELLY_MIN_WR   = 8      # win_streak порог для Kelly-буста
+    # ── [УЛУЧШЕНИЕ] Regime confirmation ────────────────────────────────────
+    REGIME_CONFIRM_TICKS   = 2   # требуется подряд N одинаковых режимов перед применением политики
+
 
 # ─── AI-менеджер сетки ───────────────────────────────────────────────────────
 
@@ -157,6 +182,11 @@ class GridAIManager:
         self._paused_by_ai:   bool  = False
         self._decision_log:   list  = []   # последние 20 решений
         self._MAX_LOG:        int   = 20
+        # [УЛУЧШ] Regime confirmation: применять политику только после N тиков с одним режимом
+        self._pending_regime:        str = "UNKNOWN"
+        self._regime_confirm_count:  int = 0
+        # [УЛУЧШ] Плавное изменение шага: запомнить последний целевой шаг
+        self._last_target_step:    float = 0.0
 
     # ── Главный метод — вызывается каждый тик ────────────────────────────────
 
@@ -184,7 +214,17 @@ class GridAIManager:
         if tick_n % self.AI_MANAGE_EVERY_N != 0:
             return
 
-        policy = self.REGIME_POLICY.get(regime, self.REGIME_POLICY["UNKNOWN"])
+        # [УЛУЧШ] Regime confirmation: не дёргать политику при мимолётных сменах режима.
+        # Применяем новую политику только после REGIME_CONFIRM_TICKS подряд с одним режимом.
+        if regime == self._pending_regime:
+            self._regime_confirm_count += 1
+        else:
+            self._pending_regime       = regime
+            self._regime_confirm_count = 1
+        _confirmed_regime = (regime if self._regime_confirm_count >= GridConfig.REGIME_CONFIRM_TICKS
+                             else self._last_regime)
+
+        policy = self.REGIME_POLICY.get(_confirmed_regime, self.REGIME_POLICY["UNKNOWN"])
         decisions: list = []
 
         # ── 1. Активация / деактивация ────────────────────────────────────
@@ -360,6 +400,7 @@ class GridState:
     # Compound реинвест
     compound_multiplier:  float = 1.0   # растёт с каждым прибыльным SELL
     total_compound_bonus: float = 0.0   # доп. TON от compound-эффекта
+    compound_win_streak:  int   = 0     # серия подряд прибыльных SELL (dynamic compound rate)
     # Служебные поля
     created_at:           float = 0.0
     last_tick_ts:         float = 0.0
@@ -427,6 +468,14 @@ class GridTrader:
         self._buy_timestamps: deque = deque(maxlen=50)
         # Cascade hold: заморозка BUY до этого момента
         self._cascade_hold_until: float = 0.0
+        # [УЛУЧШ] Adaptive tick: текущий интервал опроса (обновляется каждый тик)
+        self._adaptive_tick_interval: float = float(GridConfig.TICK_INTERVAL_SEC)
+        # [УЛУЧШ] Spike protection: до какого момента активна усиленная защита
+        self._spike_protection_until: float = 0.0
+        # [УЛУЧШ] Spike detection: цена на прошлом тике для расчёта резкого обвала
+        self._prev_tick_price:        float = 0.0
+        # [УЛУЧШ] Idle deploy: цена при последнем деплое (для сброса cooldown по движению цены)
+        self._last_idle_deploy_price: float = 0.0
 
         self._load_state()
         log.info("[Grid] Инициализирован v3. active=%s sell=%d buy=%d dca=%d "
@@ -765,7 +814,8 @@ class GridTrader:
                 self._tick()
             except Exception as e:
                 log.error("[Grid] Ошибка тика: %s", e, exc_info=True)
-            time.sleep(GridConfig.TICK_INTERVAL_SEC)
+            # [УЛУЧШ] Adaptive tick: быстро если рядом с уровнем, медленно если далеко
+            time.sleep(self._adaptive_tick_interval)
 
     def _tick(self):
         # Без DeDust-клиента совсем ничего не делаем
@@ -797,6 +847,37 @@ class GridTrader:
         # ── Ценовой буфер и momentum ──────────────────────────────────────
         self._price_history.append(price_ton)
         self._price_momentum_pct = self._calc_price_momentum()
+
+        # ── [УЛУЧШ] Spike protection: резкий обвал > SPIKE_DROP_MULT × ATR за 1 тик ─
+        if self._prev_tick_price > 0 and atr_pct > 0 and price_ton > 0:
+            _tick_drop_pct = (self._prev_tick_price - price_ton) / self._prev_tick_price * 100
+            if _tick_drop_pct > GridConfig.SPIKE_DROP_MULT * atr_pct:
+                self._spike_protection_until = time.time() + GridConfig.SPIKE_PROTECTION_SEC
+                log.info(
+                    "[Grid] 🚨 Spike-protect ON: -%.2f%% за тик (ATR=%.2f%%×%.1f). "
+                    "Защита %ds",
+                    _tick_drop_pct, atr_pct, GridConfig.SPIKE_DROP_MULT,
+                    GridConfig.SPIKE_PROTECTION_SEC,
+                )
+        _spike_active = time.time() < self._spike_protection_until
+        self._prev_tick_price = price_ton
+
+        # ── [УЛУЧШ] Adaptive tick: ускоряемся если цена рядом с уровнем ──
+        try:
+            _near = False
+            _step_p = self._state.step_pct or GridConfig.DEFAULT_STEP_PCT
+            for _lv in list(self._state.sell_levels) + list(self._state.buy_levels):
+                if _lv.status != "waiting" or _lv.price_ton <= 0:
+                    continue
+                if abs(_lv.price_ton - price_ton) / price_ton * 100 < GridConfig.TICK_NEAR_LEVEL_PCT:
+                    _near = True
+                    break
+            self._adaptive_tick_interval = (
+                GridConfig.TICK_INTERVAL_FAST if _near
+                else max(GridConfig.TICK_INTERVAL_SEC, GridConfig.TICK_INTERVAL_SLOW)
+            )
+        except Exception:
+            pass
 
         # ── Обновляем счётчик режима в GridAI ────────────────────────────
         if self._grid_ai:
@@ -992,7 +1073,11 @@ class GridTrader:
                     # откладывать дальше опасно, лучше войти).
                     _deep_dip = (level.price_ton > 0 and
                                  price_ton < level.price_ton * (1 - self._state.step_pct / 100))
-                    if (self._price_momentum_pct < -GridConfig.MOMENTUM_BUY_BLOCK_PCT
+                    # [УЛУЧШ] Spike protection: во время обвала — двойной порог блокировки
+                    _momentum_block = GridConfig.MOMENTUM_BUY_BLOCK_PCT
+                    if time.time() < self._spike_protection_until:
+                        _momentum_block *= GridConfig.SPIKE_MOMENTUM_MULT
+                    if (self._price_momentum_pct < -_momentum_block
                             and not _deep_dip):
                         log.info(
                             "[Grid] ⏳ BUY L%d @ %.6f — цена падает "
@@ -1014,11 +1099,21 @@ class GridTrader:
                         continue
 
                     # ── AI масштабирует размер (0.7x–1.8x), не блокирует ─
+                    # [УЛУЧШ] Нелинейная кривая + Kelly-буст по win_streak GridAI
+                    _kelly_max = GridConfig.AI_BUY_SIZE_MAX_MULT
+                    if self._grid_ai:
+                        try:
+                            _streak = getattr(self._grid_ai, "_win_streak", 0)
+                            if _streak >= GridConfig.AI_BUY_SIZE_KELLY_MIN_WR:
+                                _kb = min(1.0, (_streak - GridConfig.AI_BUY_SIZE_KELLY_MIN_WR) / 10.0)
+                                _kelly_max = GridConfig.AI_BUY_SIZE_MAX_MULT + _kb * (
+                                    GridConfig.AI_BUY_SIZE_KELLY_MAX - GridConfig.AI_BUY_SIZE_MAX_MULT)
+                        except Exception:
+                            pass
                     if ai_buy_conf >= GridConfig.AI_MIN_BUY_CONF:
-                        ai_size_mult = GridConfig.AI_BUY_SIZE_MIN_MULT + (
-                            (ai_buy_conf - GridConfig.AI_MIN_BUY_CONF) /
-                            max(1.0, 100.0 - GridConfig.AI_MIN_BUY_CONF)
-                        ) * (GridConfig.AI_BUY_SIZE_MAX_MULT - GridConfig.AI_BUY_SIZE_MIN_MULT)
+                        # Квадратичная кривая: сильный сигнал → непропорционально больший ордер
+                        _t = (ai_buy_conf - GridConfig.AI_MIN_BUY_CONF) / max(1.0, 100.0 - GridConfig.AI_MIN_BUY_CONF)
+                        ai_size_mult = GridConfig.AI_BUY_SIZE_MIN_MULT + (_t ** 1.5) * (_kelly_max - GridConfig.AI_BUY_SIZE_MIN_MULT)
                     else:
                         # Слабый AI-сигнал → минимальный размер (осторожный вход)
                         ai_size_mult = GridConfig.AI_BUY_SIZE_MIN_MULT
@@ -1026,7 +1121,7 @@ class GridTrader:
                                  level.id, ai_buy_conf, ai_size_mult, profit_est)
                     ai_size_mult = round(
                         max(GridConfig.AI_BUY_SIZE_MIN_MULT,
-                            min(GridConfig.AI_BUY_SIZE_MAX_MULT, ai_size_mult)), 3)
+                            min(_kelly_max, ai_size_mult)), 3)
                     scaled_ton   = round(level.amount_ton * ai_size_mult, 4)
                     orig_ton     = level.amount_ton
 
@@ -1065,16 +1160,25 @@ class GridTrader:
 
 
                     # Масштабируем размер DCA по AI-уверенности (не блокируем)
+                    # [УЛУЧШ] Нелинейная кривая DCA + Kelly-буст (аналог BUY)
+                    _kelly_max_dca = GridConfig.AI_BUY_SIZE_MAX_MULT
+                    if self._grid_ai:
+                        try:
+                            _streak = getattr(self._grid_ai, "_win_streak", 0)
+                            if _streak >= GridConfig.AI_BUY_SIZE_KELLY_MIN_WR:
+                                _kb = min(1.0, (_streak - GridConfig.AI_BUY_SIZE_KELLY_MIN_WR) / 10.0)
+                                _kelly_max_dca = GridConfig.AI_BUY_SIZE_MAX_MULT + _kb * (
+                                    GridConfig.AI_BUY_SIZE_KELLY_MAX - GridConfig.AI_BUY_SIZE_MAX_MULT)
+                        except Exception:
+                            pass
                     if ai_buy_conf >= GridConfig.AI_MIN_BUY_CONF:
-                        ai_size_mult = GridConfig.AI_BUY_SIZE_MIN_MULT + (
-                            (ai_buy_conf - GridConfig.AI_MIN_BUY_CONF) /
-                            max(1.0, 100.0 - GridConfig.AI_MIN_BUY_CONF)
-                        ) * (GridConfig.AI_BUY_SIZE_MAX_MULT - GridConfig.AI_BUY_SIZE_MIN_MULT)
+                        _t = (ai_buy_conf - GridConfig.AI_MIN_BUY_CONF) / max(1.0, 100.0 - GridConfig.AI_MIN_BUY_CONF)
+                        ai_size_mult = GridConfig.AI_BUY_SIZE_MIN_MULT + (_t ** 1.5) * (_kelly_max_dca - GridConfig.AI_BUY_SIZE_MIN_MULT)
                     else:
                         ai_size_mult = GridConfig.AI_BUY_SIZE_MIN_MULT
                     ai_size_mult = round(
                         max(GridConfig.AI_BUY_SIZE_MIN_MULT,
-                            min(GridConfig.AI_BUY_SIZE_MAX_MULT, ai_size_mult)), 3)
+                            min(_kelly_max_dca, ai_size_mult)), 3)
                     orig_ton      = level.amount_ton
                     level.amount_ton = round(orig_ton * ai_size_mult, 4)
 
@@ -1173,18 +1277,22 @@ class GridTrader:
 
                 # ── Compound-реинвест ──────────────────────────────────
                 if profit > 0:
+                    # [УЛУЧШ] Динамическая ставка compound: base 2% + 0.5% за WIN STREAK
+                    self._state.compound_win_streak += 1
+                    _dyn_rate = min(
+                        GridConfig.COMPOUND_ACCEL_MAX,
+                        GridConfig.COMPOUND_RATE +
+                        self._state.compound_win_streak * GridConfig.COMPOUND_ACCEL_PER_WIN)
                     old_mult = self._state.compound_multiplier
-                    new_mult = min(
-                        GridConfig.COMPOUND_MAX_MULT,
-                        old_mult + GridConfig.COMPOUND_RATE)
+                    new_mult = min(GridConfig.COMPOUND_MAX_MULT, old_mult + _dyn_rate)
                     self._state.compound_multiplier = new_mult
-                    # Точный расчёт: бонус = РЕАЛЬНО реинвестированная сумма сверх
-                    # чистых поступлений (за вычетом газового резерва).
-                    # Было: net_ton * (mult-1) — чуть завышало на GAS_RESERVE*(mult-1)
                     bonus = max(0.0, (net_ton - GridConfig.GAS_RESERVE_TON) * (new_mult - 1.0))
                     self._state.total_compound_bonus += bonus
-                    log.info("[Grid] 📈 Compound: %.2fx → %.2fx (+%.4f TON bonus)",
-                             old_mult, new_mult, bonus)
+                    log.info("[Grid] 📈 Compound: %.2fx → %.2fx | streak=%d rate=%.3f (+%.4f TON)",
+                             old_mult, new_mult, self._state.compound_win_streak, _dyn_rate, bonus)
+                else:
+                    # Сброс серии при убытке
+                    self._state.compound_win_streak = 0
 
                 ton_to_reinvest = (net_ton - GridConfig.GAS_RESERVE_TON) * \
                                   self._state.compound_multiplier
@@ -1374,7 +1482,15 @@ class GridTrader:
         # ── Второй BUY: чуть дальше (REINVEST_STEP_MULT2 × step) ────────────
         # Добавляем только если капитал позволяет (≥ 2×MIN_ORDER_TON на каждый)
         if ton_amount >= GridConfig.MIN_ORDER_TON * 2:
-            half = round(ton_amount / 2, 4)
+            # [УЛУЧШ] При compound >= 1.5x: три BUY вместо двух — 40/40/20% капитала
+            _use_third = (self._state.compound_multiplier >= 1.5
+                          and ton_amount >= GridConfig.MIN_ORDER_TON * 3)
+            if _use_third:
+                third = round(ton_amount * 0.20, 4)
+                half  = round((ton_amount - third) / 2, 4)
+            else:
+                half  = round(ton_amount / 2, 4)
+                third = 0.0
             # Скорректировать сумму первого BUY
             self._state.buy_levels[-1].amount_ton = half
             buy_price2 = from_price / (1 + step * GridConfig.REINVEST_STEP_MULT2 / 100)
@@ -1390,6 +1506,22 @@ class GridTrader:
             ))
             log.info("[Grid] 📥 Реинвест BUY#2 @ %.6f с %.2f TON (×%.2fшаг)",
                      buy_price2, half, GridConfig.REINVEST_STEP_MULT2)
+            # [УЛУЧШ] Третий BUY на глубоком страховании (только при compound >= 1.5x)
+            if _use_third and third >= GridConfig.MIN_ORDER_TON:
+                buy_price3 = from_price / (1 + step * GridConfig.REINVEST_STEP_MULT3 / 100)
+                nid3 = _next_compound_id()
+                self._state.buy_levels.append(GridLevel(
+                    id=nid3, side="buy",
+                    price_ton=round(buy_price3, 8),
+                    amount_grinch=0.0,
+                    amount_ton=third,
+                    status="waiting",
+                    note=(f"compound-реинвест {self._state.compound_multiplier:.2f}x"
+                          f" @ {from_price:.6f} | ×{GridConfig.REINVEST_STEP_MULT3}шаг (глубокий)"),
+                ))
+                log.info("[Grid] 📥 Реинвест BUY#3 @ %.6f с %.2f TON (×%.2fшаг, compound=%.2fx)",
+                         buy_price3, third, GridConfig.REINVEST_STEP_MULT3,
+                         self._state.compound_multiplier)
 
     def _add_cycle_sell(self, grinch_amount: float, buy_price: float,
                         note: str = ""):
@@ -1491,6 +1623,16 @@ class GridTrader:
         лавинообразное добавление.
         """
         now = time.time()
+
+        # [УЛУЧШ] Сброс cooldown если цена ушла достаточно далеко от последнего деплоя
+        _step_p = self._state.step_pct or GridConfig.DEFAULT_STEP_PCT
+        if (self._last_idle_deploy_price > 0 and price_ton > 0
+                and abs(price_ton - self._last_idle_deploy_price) / self._last_idle_deploy_price * 100
+                    > _step_p * GridConfig.IDLE_PRICE_RESET_STEPS):
+            self._last_idle_deploy_ts = 0.0   # сбросить cooldown: цена ушла
+            log.debug("[Grid] idle-deploy cooldown сброшен — цена сдвинулась на > %.1f шагов",
+                      GridConfig.IDLE_PRICE_RESET_STEPS)
+
         if now - self._last_idle_deploy_ts < GridConfig.IDLE_COOLDOWN_SEC:
             return
 
@@ -1499,7 +1641,13 @@ class GridTrader:
             l.amount_ton for l in self._state.buy_levels if l.status == "waiting"
         )
         free_ton = ton_bal - frozen_buy_ton - GridConfig.GAS_RESERVE_TON
-        if free_ton < GridConfig.IDLE_TON_THRESHOLD:
+
+        # [УЛУЧШ] Динамический порог: max(фиксированный, 10% от суммарного баланса в TON)
+        _dyn_threshold = max(
+            GridConfig.IDLE_TON_THRESHOLD,
+            ton_bal * GridConfig.IDLE_BALANCE_PCT,
+        )
+        if free_ton < _dyn_threshold:
             return
 
         # ── 2. AI-фильтр: при сильном SELL-сигнале не усиливаем BUY ────────
@@ -1518,8 +1666,12 @@ class GridTrader:
         step_pct = self._state.step_pct or GridConfig.DEFAULT_STEP_PCT
 
         # ── 4. Определяем сколько новых уровней добавить ────────────────────
+        # [УЛУЧШ] При очень большом свободном балансе добавляем больше уровней
+        _max_levels = (GridConfig.IDLE_DEPLOY_MAX_LEVELS_RICH
+                       if free_ton >= _dyn_threshold * 3
+                       else GridConfig.IDLE_DEPLOY_MAX_LEVELS)
         n_add = min(
-            GridConfig.IDLE_DEPLOY_MAX_LEVELS,
+            _max_levels,
             int(free_ton / GridConfig.IDLE_LEVEL_TON),
         )
         if n_add <= 0:
@@ -1581,7 +1733,8 @@ class GridTrader:
             level_price /= (1 + step_pct / 100)
 
         if added:
-            self._last_idle_deploy_ts = now
+            self._last_idle_deploy_ts    = now
+            self._last_idle_deploy_price = price_ton  # [УЛУЧШ] для price-movement reset cooldown
             log.info(
                 "[Grid] 💰 idle-deploy: +%d BUY-уровней из %.1f свободных TON "
                 "(frozen=%.1f TON | AI BUY=%.0f%% | режим=%s)",
