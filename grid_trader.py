@@ -1710,9 +1710,21 @@ class GridTrader:
             return
 
         # ── 2. AI-фильтр: при сильном SELL-сигнале не усиливаем BUY ────────
-        if ai_buy_conf < GridConfig.AI_MIN_BUY_CONF and regime not in ("SIDEWAYS", "UNKNOWN"):
-            log.debug("[Grid] idle-deploy пропущен — AI BUY %.0f%% < %.0f%% в режиме %s",
-                      ai_buy_conf, GridConfig.AI_MIN_BUY_CONF, regime)
+        # Аварийный режим: если BUY-уровней нет совсем, снижаем порог до 65%
+        # от нормального чтобы не оставлять сетку без возможности закупки.
+        _no_buy_levels = not any(l.status == "waiting" for l in self._state.buy_levels)
+        _eff_min_conf = (GridConfig.AI_MIN_BUY_CONF * 0.65
+                         if _no_buy_levels else GridConfig.AI_MIN_BUY_CONF)
+        if ai_buy_conf < _eff_min_conf and regime not in ("SIDEWAYS", "UNKNOWN"):
+            if _no_buy_levels:
+                log.warning(
+                    "[Grid] ⚠️ Нет BUY-уровней, AI BUY=%.0f%% < аварийного порога=%.0f%% "
+                    "(режим=%s) — idle-deploy пропущен",
+                    ai_buy_conf, _eff_min_conf, regime,
+                )
+            else:
+                log.debug("[Grid] idle-deploy пропущен — AI BUY %.0f%% < %.0f%% в режиме %s",
+                          ai_buy_conf, GridConfig.AI_MIN_BUY_CONF, regime)
             return
 
         # ── 3. Нижняя точка существующих BUY-ордеров (или цена со скидкой step) ─
