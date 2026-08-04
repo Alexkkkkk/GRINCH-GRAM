@@ -50,6 +50,7 @@ from sklearn.preprocessing import StandardScaler, RobustScaler
 from sklearn.pipeline import Pipeline
 import warnings
 import concurrent.futures as _cf
+from config import Config
 warnings.filterwarnings("ignore")
 
 # ─── Режим для маломощных хостов (Bothost и т.п.) ────────────────────────────
