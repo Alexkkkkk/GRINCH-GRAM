@@ -87,6 +87,20 @@ class GridConfig:
     IDLE_LEVEL_TON        = float(os.getenv("GRID_IDLE_LEVEL_TON",  "20.0"))  # TON на 1 новый уровень
     IDLE_DEPLOY_MAX_LEVELS= int(os.getenv("GRID_IDLE_MAX_LEVELS",   "3"))     # макс. новых уровней за вызов
     IDLE_COOLDOWN_SEC     = int(os.getenv("GRID_IDLE_COOLDOWN",     "300"))   # пауза между деплоями (5 мин)
+    # ── Momentum-reversal gate ─────────────────────────────────────────────
+    # Блокирует BUY пока цена ещё активно падает. Значение = порог падения
+    # momentum за последние 20 тиков (%). При -2% и хуже — ждём разворота.
+    MOMENTUM_BUY_BLOCK_PCT = float(os.getenv("GRID_MOMENTUM_BLOCK", "2.0"))
+    # ── Anti-cascade защита ────────────────────────────────────────────────
+    # Не делать больше CASCADE_MAX_BUYS покупок за CASCADE_WINDOW_SEC секунд.
+    # Защищает от слива всего капитала в затяжной dump.
+    CASCADE_MAX_BUYS    = int(os.getenv("GRID_CASCADE_MAX",    "2"))
+    CASCADE_WINDOW_SEC  = int(os.getenv("GRID_CASCADE_WINDOW", "600"))   # 10 мин
+    CASCADE_COOLDOWN_SEC= int(os.getenv("GRID_CASCADE_COOLDOWN","300"))  # 5 мин паузы
+    # ── Depth-weighted sizing для idle-deploy ─────────────────────────────
+    # Каждый шаг глубже anchor = +IDLE_DEPTH_BOOST к размеру ордера (до IDLE_DEPTH_MAX_MULT)
+    IDLE_DEPTH_BOOST    = float(os.getenv("GRID_IDLE_DEPTH_BOOST", "0.15"))  # +15% за шаг
+    IDLE_DEPTH_MAX_MULT = float(os.getenv("GRID_IDLE_DEPTH_MAX",   "1.5"))   # макс 1.5x
 
 
 # ─── AI-менеджер сетки ───────────────────────────────────────────────────────
@@ -409,6 +423,10 @@ class GridTrader:
         self._price_momentum_pct: float = 0.0
         # Время последнего деплоя простаивающего баланса (throttle)
         self._last_idle_deploy_ts: float = 0.0
+        # Anti-cascade: метки времени последних BUY-исполнений
+        self._buy_timestamps: deque = deque(maxlen=50)
+        # Cascade hold: заморозка BUY до этого момента
+        self._cascade_hold_until: float = 0.0
 
         self._load_state()
         log.info("[Grid] Инициализирован v3. active=%s sell=%d buy=%d dca=%d "
@@ -934,8 +952,25 @@ class GridTrader:
                     executed = True
                     break
 
+            # ── Anti-cascade: не более CASCADE_MAX_BUYS BUY за CASCADE_WINDOW_SEC ─
+            _now_ts = time.time()
+            _cascade_active = _now_ts < self._cascade_hold_until
+            if not _cascade_active:
+                _recent_buy_count = sum(
+                    1 for _t in self._buy_timestamps
+                    if _now_ts - _t < GridConfig.CASCADE_WINDOW_SEC
+                )
+                if _recent_buy_count >= GridConfig.CASCADE_MAX_BUYS:
+                    self._cascade_hold_until = _now_ts + GridConfig.CASCADE_COOLDOWN_SEC
+                    _cascade_active = True
+                    log.info(
+                        "[Grid] 🛡 Cascade-protect: %d BUY за %ds → пауза %ds",
+                        _recent_buy_count, GridConfig.CASCADE_WINDOW_SEC,
+                        GridConfig.CASCADE_COOLDOWN_SEC,
+                    )
+
             # ── BUY-уровни ────────────────────────────────────────────────
-            if not executed and not buy_frozen:
+            if not executed and not buy_frozen and not _cascade_active:
                 for level in sorted(self._state.buy_levels,
                                     key=lambda l: l.price_ton, reverse=True):
                     if level.status != "waiting":
@@ -949,6 +984,22 @@ class GridTrader:
                     if ai_sell_conf >= GridConfig.AI_SKIP_BUY_SELL_CONF:
                         log.info("[Grid] ⏭ BUY L%d @ %.6f — AI SELL %.0f%% → стоп",
                                  level.id, level.price_ton, ai_sell_conf)
+                        continue
+
+                    # ── Momentum-reversal gate: не покупать в свободном падении ─
+                    # Если цена активно падает (momentum < -X%) — ждём разворота.
+                    # Исключение: цена уже ниже уровня на >1 шаг (глубокий дип —
+                    # откладывать дальше опасно, лучше войти).
+                    _deep_dip = (level.price_ton > 0 and
+                                 price_ton < level.price_ton * (1 - self._state.step_pct / 100))
+                    if (self._price_momentum_pct < -GridConfig.MOMENTUM_BUY_BLOCK_PCT
+                            and not _deep_dip):
+                        log.info(
+                            "[Grid] ⏳ BUY L%d @ %.6f — цена падает "
+                            "(momentum=%.1f%% < -%.1f%%), ждём разворота",
+                            level.id, level.price_ton,
+                            self._price_momentum_pct, GridConfig.MOMENTUM_BUY_BLOCK_PCT,
+                        )
                         continue
 
                     # ── ТОЛЬКО-В-ПЛЮС: главный гейт — математика цикла ──
@@ -1208,6 +1259,7 @@ class GridTrader:
                 level.tx_hash        = result.get("tx_hash", "")
 
                 self._state.total_buy_cycles += 1
+                self._buy_timestamps.append(time.time())   # anti-cascade учёт
                 self._state.last_action = (
                     f"✅ BUY L{level.id}: {level.amount_ton:.2f} TON "
                     f"→ {grinch_received:.0f} GRINCH @ {current_price:.6f}")
@@ -1254,6 +1306,7 @@ class GridTrader:
                 level.tx_hash        = result.get("tx_hash", "")
 
                 self._state.total_dca_cycles += 1
+                self._buy_timestamps.append(time.time())   # anti-cascade учёт
                 self._state.last_action = (
                     f"✅ DCA: {level.amount_ton:.2f} TON "
                     f"→ {grinch_received:.0f} GRINCH @ {current_price:.6f} "
@@ -1502,9 +1555,14 @@ class GridTrader:
                 level_price /= (1 + step_pct / 100)
                 continue
 
-            amount_ton = round(
-                min(GridConfig.IDLE_LEVEL_TON, free_ton - added * GridConfig.IDLE_LEVEL_TON), 2
-            )
+            # Depth-weighted sizing: чем глубже уровень — тем больший ордер
+            # Смысл: глубокий дип = выгодная цена = стоит купить больше.
+            depth_steps = (anchor_price / max(rounded, 1e-12) - 1) * 100 / max(step_pct, 0.1)
+            depth_mult  = min(GridConfig.IDLE_DEPTH_MAX_MULT,
+                              1.0 + depth_steps * GridConfig.IDLE_DEPTH_BOOST)
+            base_amount = min(GridConfig.IDLE_LEVEL_TON,
+                              free_ton - added * GridConfig.IDLE_LEVEL_TON)
+            amount_ton  = round(base_amount * depth_mult, 2)
             if amount_ton < GridConfig.MIN_ORDER_TON:
                 break
 
