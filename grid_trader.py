@@ -480,6 +480,7 @@ class GridTrader:
         self._unprofitable_warned: set = set()
 
         self._load_state()
+        self._cleanup_stale_idle_levels()
         log.info("[Grid] Инициализирован v3. active=%s sell=%d buy=%d dca=%d "
                  "compound=%.2fx",
                  self._state.active,
@@ -487,6 +488,43 @@ class GridTrader:
                  len(self._state.buy_levels),
                  len(self._state.dca_levels),
                  self._state.compound_multiplier)
+
+    def _cleanup_stale_idle_levels(self):
+        """Удаляет idle-deploy BUY уровни, у которых цикл заведомо убыточен.
+
+        Такие уровни появляются после изменения минимального размера ордера
+        (GridConfig.IDLE_LEVEL_TON или GAS_PER_TRADE_TON).  Каждый тик они
+        пропускаются и спамят лог «цикл убыточен».  Безопасно удалить их при
+        старте — они не были исполнены и не содержат реальных средств.
+        """
+        step_pct = self._state.step_pct or GridConfig.DEFAULT_STEP_PCT
+        cycle_factor = (1 + step_pct / 100) * (1 - GridConfig.FEE_PCT) ** 2 - 1
+        if cycle_factor <= 0:
+            return
+        min_ton = GridConfig.GAS_PER_TRADE_TON * 2 / cycle_factor
+
+        stale = [
+            l for l in self._state.buy_levels
+            if "idle-deploy" in (l.note or "")
+            and l.status == "waiting"
+            and l.amount_ton < min_ton
+        ]
+        if not stale:
+            return
+
+        stale_ids = {l.id for l in stale}
+        before = len(self._state.buy_levels)
+        self._state.buy_levels = [
+            l for l in self._state.buy_levels if l.id not in stale_ids
+        ]
+        removed = before - len(self._state.buy_levels)
+        log.info(
+            "[Grid] 🧹 Очистка: удалено %d устаревших idle-deploy BUY уровней "
+            "(amount_ton < %.1f TON) — ids=%s",
+            removed, min_ton,
+            sorted(stale_ids),
+        )
+        self._save_state()
 
     # ── Внешние зависимости ───────────────────────────────────────────────────
 
@@ -788,6 +826,20 @@ class GridTrader:
                      "profit_ton": round(l.profit_ton, 4)}
                     for l in s.dca_levels
                 ],
+                "idle_deploy": {
+                    "waiting_count": len([
+                        l for l in s.buy_levels
+                        if "idle-deploy" in (l.note or "") and l.status == "waiting"
+                    ]),
+                    "waiting_ton": round(sum(
+                        l.amount_ton for l in s.buy_levels
+                        if "idle-deploy" in (l.note or "") and l.status == "waiting"
+                    ), 2),
+                    "filled_count": len([
+                        l for l in s.buy_levels
+                        if "idle-deploy" in (l.note or "") and l.status == "filled"
+                    ]),
+                },
             }
 
     def adjust_step_by_atr(self, atr_pct: float, regime: str = "UNKNOWN") -> float:

@@ -650,9 +650,19 @@
         </div>
 
         <!-- BUY уровни -->
-        <div style="margin-bottom:10px">
+        <div style="margin-bottom:6px">
           <div style="font-size:10px;font-weight:700;color:var(--text-mid);margin-bottom:5px;letter-spacing:.5px">🟢 BUY УРОВНИ</div>
           <div id="grid-buy-levels" style="display:flex;flex-direction:column;gap:2px;max-height:130px;overflow-y:auto"></div>
+        </div>
+
+        <!-- Idle-Deploy статистика -->
+        <div id="grid-idle-deploy-row" style="display:none;margin-bottom:10px;padding:6px 10px;background:rgba(251,191,36,.05);border:1px solid rgba(251,191,36,.12);border-radius:8px">
+          <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+            <span style="font-size:10px;font-weight:700;color:var(--yellow)">💰 Idle-Deploy</span>
+            <span id="grid-idle-waiting" style="font-size:10px;font-family:var(--mono);color:var(--text2)">—</span>
+            <span id="grid-idle-ton" style="font-size:10px;font-family:var(--mono);color:var(--yellow);font-weight:700"></span>
+            <span id="grid-idle-filled" style="font-size:10px;color:var(--text2)"></span>
+          </div>
         </div>
 
         <!-- GridAI-менеджер -->

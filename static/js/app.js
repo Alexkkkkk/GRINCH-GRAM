@@ -1356,6 +1356,23 @@ function renderGridPanel(d) {
     }
   }
 
+  // Idle-Deploy статистика
+  const idle    = d.idle_deploy || {};
+  const idleRow = document.getElementById('grid-idle-deploy-row');
+  if (idleRow) {
+    const idleWait   = idle.waiting_count || 0;
+    const idleTon    = idle.waiting_ton   || 0;
+    const idleFilled = idle.filled_count  || 0;
+    if (idleWait > 0 || idleFilled > 0) {
+      idleRow.style.display = '';
+      _gtxt('grid-idle-waiting', idleWait + ' ожид.');
+      _gtxt('grid-idle-ton',     idleTon  > 0 ? idleTon.toFixed(1) + ' TON заморожено' : '');
+      _gtxt('grid-idle-filled',  idleFilled > 0 ? '· ' + idleFilled + ' исполнено' : '');
+    } else {
+      idleRow.style.display = 'none';
+    }
+  }
+
   // GridAI-менеджер: лог решений
   const logEl = document.getElementById('grid-ai-mgr-log');
   const decLog = aiMgr.decision_log || [];
