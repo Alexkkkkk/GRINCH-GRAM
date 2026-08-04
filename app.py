@@ -594,7 +594,8 @@ def push_updates():
                     _status_snapshot = snap
                 socketio.emit("status_update", snap)
         except Exception as e:
-            print(f"[Push] Ошибка: {e}")
+            import traceback as _tb
+            print(f"[Push] Ошибка: {e}\n{_tb.format_exc()}")
         time.sleep(2)
 
 
@@ -3238,6 +3239,24 @@ def api_grid_ai_status():
     except Exception as e:
         logger.error("api_grid_ai_status error: %s", e, exc_info=True)
         return jsonify({"ok": False, "error": "Внутренняя ошибка сервера"}), 500
+
+@app.route('/api/grid/reset_errors', methods=['POST'])
+def api_grid_reset_errors():
+    """Сбросить error-уровни сетки обратно в waiting.
+    Body (опционально): {"level_ids": [1, 4, 5]}  — конкретные id.
+    Без level_ids — сбрасываются все error-уровни.
+    """
+    try:
+        from grid_trader import get_grid_trader
+        data      = request.get_json(silent=True) or {}
+        level_ids = data.get("level_ids") or None
+        if level_ids:
+            level_ids = [int(x) for x in level_ids]
+        return jsonify(get_grid_trader().reset_error_levels(level_ids))
+    except Exception as e:
+        logger.error("api_grid_reset_errors error: %s", e, exc_info=True)
+        return jsonify({'ok': False, 'error': 'Внутренняя ошибка сервера'}), 500
+
 
 @app.route('/api/grid/step', methods=['POST'])
 def api_grid_set_step():

@@ -2686,7 +2686,7 @@ function renderWalletAnalytics(d) {
       const isBuy  = (t.side||t.type||'').toString().includes('buy');
       const col    = isBuy ? '#00ff88' : '#ff453a';
       const icon   = isBuy ? '🟢 BUY' : '🔴 SELL';
-      const profit = t.profit_ton ?? t.pnl_ton ?? t.net_profit ?? t.pnl ?? null;
+      const profit = (isBuy && t.status !== 'closed') ? null : (t.profit_ton ?? t.pnl_ton ?? t.net_profit ?? t.pnl ?? null);
       const amount = t.amount  ? fmtGrn(t.amount)+' 🐸' : '—';
       const stake  = t.stake_ton || t.ton_spent;
       const ts     = t.timestamp || t.close_time || t.created_at || t.closed_at || t.opened_at || '';

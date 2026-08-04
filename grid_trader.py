@@ -567,6 +567,51 @@ class GridTrader:
             log.info("[Grid] ⏹ Остановлена: %s", reason)
             return {"ok": True, "message": f"Grid остановлена: {reason}"}
 
+    def reset_error_levels(self, level_ids: list = None) -> dict:
+        """Сбросить error-уровни обратно в waiting.
+
+        level_ids — список id для сброса, или None/[] → сбросить все error-уровни.
+        Уровни с amount_grinch == 0 (SELL) / amount_ton == 0 (BUY) будут помечены
+        skipped_small — они не могут торговать, но исчезнут из error-статуса.
+        """
+        with self._lock:
+            s = self._state
+            all_levels = s.sell_levels + s.buy_levels + s.dca_levels
+            targets = [
+                l for l in all_levels
+                if l.status == "error"
+                and (not level_ids or l.id in level_ids)
+            ]
+            if not targets:
+                return {"ok": False, "error": "Нет уровней со статусом error"}
+
+            reset_ids, skipped_ids = [], []
+            for l in targets:
+                # Уровень без GRINCH/TON не сможет торговать — пометить skipped_small
+                if l.side in ("sell", "dca") and (l.amount_grinch or 0) <= 0:
+                    l.status = "skipped_small"
+                    l.note   = "Нет GRINCH для продажи (авто-скип)"
+                    skipped_ids.append(l.id)
+                elif l.side == "buy" and (l.amount_ton or 0) <= 0:
+                    l.status = "skipped_small"
+                    l.note   = "Нет TON для покупки (авто-скип)"
+                    skipped_ids.append(l.id)
+                else:
+                    l.status = "waiting"
+                    l.note   = ""
+                    reset_ids.append(l.id)
+
+            self._save_state()
+            log.info("[Grid] reset_error_levels: waiting=%s skipped_small=%s",
+                     reset_ids, skipped_ids)
+            return {
+                "ok":      True,
+                "reset":   reset_ids,
+                "skipped": skipped_ids,
+                "message": (f"Сброшено в waiting: {reset_ids}; "
+                            f"помечено skipped_small (нет баланса): {skipped_ids}"),
+            }
+
     def get_status(self) -> dict:
         """Полный статус для /api/grid/status, включая GridAI-статистику."""
         with self._lock:
