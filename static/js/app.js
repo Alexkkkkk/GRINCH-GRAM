@@ -1272,6 +1272,7 @@ function renderGridPanel(d) {
     if (!sells.length) {
       lvlEl.innerHTML = '<div style="font-size:11px;color:var(--text2);padding:4px">Нет уровней</div>';
     } else {
+      const curPrice = _lastLivePrice || 0;
       lvlEl.innerHTML = sells.map(l => {
         const isFilled  = l.status === 'filled';
         const isWaiting = l.status === 'waiting';
@@ -1280,11 +1281,29 @@ function renderGridPanel(d) {
         const priceStr = l.price_ton ? l.price_ton.toFixed(6) : '—';
         const amtStr   = l.amount_grinch ? (l.amount_grinch / 1000).toFixed(0) + 'k GRN' : '';
         const profitStr = isFilled && l.profit_ton ? `<span style="color:var(--green);font-size:10px">+${l.profit_ton.toFixed(3)} TON</span>` : '';
-        return `<div style="display:flex;align-items:center;gap:8px;padding:3px 6px;background:rgba(255,255,255,.025);border-radius:4px;font-size:11px">
-          <span style="width:14px;flex-shrink:0">${icon}</span>
-          <span style="font-family:var(--mono);color:${clr};flex:1">${priceStr} TON</span>
-          <span style="color:var(--text2);font-size:10px">${amtStr}</span>
-          ${profitStr}
+
+        // Прогресс-бар до закупки (только для waiting уровней с известной ценой)
+        let progressBar = '';
+        if (isWaiting && curPrice > 0 && l.price_ton > 0) {
+          const pct = Math.min(100, (curPrice / l.price_ton) * 100);
+          const pctRounded = pct.toFixed(1);
+          // Цвет: зелёный при >90%, жёлтый при >70%, серо-голубой иначе
+          const barClr = pct >= 90 ? '#00ff88' : pct >= 70 ? '#ffd166' : '#00d4ff';
+          progressBar = `
+            <div style="margin-top:3px;height:3px;background:rgba(255,255,255,.07);border-radius:2px;overflow:hidden">
+              <div style="width:${pct.toFixed(1)}%;height:100%;background:${barClr};border-radius:2px;transition:width .4s ease"></div>
+            </div>
+            <div style="font-size:9px;color:${barClr};text-align:right;margin-top:1px;font-family:var(--mono)">${pctRounded}%</div>`;
+        }
+
+        return `<div style="padding:3px 6px;background:rgba(255,255,255,.025);border-radius:4px;font-size:11px">
+          <div style="display:flex;align-items:center;gap:8px">
+            <span style="width:14px;flex-shrink:0">${icon}</span>
+            <span style="font-family:var(--mono);color:${clr};flex:1">${priceStr} TON</span>
+            <span style="color:var(--text2);font-size:10px">${amtStr}</span>
+            ${profitStr}
+          </div>
+          ${progressBar}
         </div>`;
       }).join('');
     }
