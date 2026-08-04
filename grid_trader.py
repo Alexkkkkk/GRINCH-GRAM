@@ -62,17 +62,21 @@ class GridConfig:
     AI_BUY_SIZE_MIN_MULT   = 0.7    # множитель суммы при AI BUY = AI_MIN_BUY_CONF
     AI_BUY_SIZE_MAX_MULT   = 1.8    # множитель суммы при AI BUY = 100%
     # DCA — добавление позиции вниз
-    DCA_MIN_CONF       = 55.0   # мин. уверенность GridAI для DCA-закупки
-    DCA_MAX_LEVELS     = 3      # макс. активных DCA-уровней одновременно
+    DCA_MIN_CONF       = 48.0   # мин. уверенность GridAI для DCA-закупки
+    DCA_MAX_LEVELS     = 5      # макс. активных DCA-уровней одновременно
     DCA_STEP_MULT      = 1.5    # DCA-триггер ниже центра на step * 1.5
     # Compound реинвест
     COMPOUND_RATE      = 0.02   # +2% к размеру reinvest за каждый прибыльный цикл
     COMPOUND_MAX_MULT  = 2.0    # максимальный множитель размера
+    # Compound BUY размещается НЕ на полный шаг вниз, а на REINVEST_STEP_MULT×step
+    # (0.6 = 60% шага). Меньшее расстояние → BUY заполняется быстрее при откатах.
+    REINVEST_STEP_MULT = 0.60   # множитель шага для первого реинвест-BUY
+    REINVEST_STEP_MULT2 = 1.10  # второй реинвест-BUY (если капитала хватает на 2)
     # Авто-перецентровка
-    RECENTER_STEPS     = 2.5    # шагов от центра до тихой перецентровки
-    RECENTER_COOLDOWN  = 3600   # секунд между перецентровками
+    RECENTER_STEPS     = 1.8    # шагов от центра до тихой перецентровки (было 2.5)
+    RECENTER_COOLDOWN  = 1800   # секунд между перецентровками (было 3600)
     # Период опроса цены
-    TICK_INTERVAL_SEC  = int(os.getenv("GRID_TICK_SEC", "30"))
+    TICK_INTERVAL_SEC  = int(os.getenv("GRID_TICK_SEC", "20"))
     # Интервал обновления GridAI-параметров (тиков)
     AI_TUNE_EVERY_N    = 10
 
@@ -1030,6 +1034,12 @@ class GridTrader:
                 except Exception as e:
                     log.warning("[Grid] DCA-level error: %s", e)
 
+            # ── Near-price density: добавить SELL-уровень если рядом нет ни одного ─
+            try:
+                self._ensure_near_price_sell(price_ton, regime)
+            except Exception as e:
+                log.warning("[Grid] near-price-sell error: %s", e)
+
             self._save_state()
 
     # ── Исполнение сделок ─────────────────────────────────────────────────────
@@ -1261,21 +1271,54 @@ class GridTrader:
     # ── Динамические уровни ───────────────────────────────────────────────────
 
     def _add_reinvestment_buy(self, ton_amount: float, from_price: float):
-        """После SELL: BUY-уровень на шаг ниже с compound-суммой."""
-        buy_price = from_price / (1 + self._state.step_pct / 100)
-        # Уникальный ID: минимальный из compound-уровней (≤ -100) минус 1
-        compound_ids = [l.id for l in self._state.buy_levels if l.id <= -100]
-        new_id = (min(compound_ids) - 1) if compound_ids else -101
+        """После SELL: один или два BUY-уровня с compound-суммой.
+
+        Первый BUY размещается на REINVEST_STEP_MULT×step (≈60%) ниже цены SELL
+        вместо полного шага — так он заполняется быстрее при малом откате.
+        Если ton_amount >= 2×MIN_ORDER_TON, добавляется второй BUY на
+        REINVEST_STEP_MULT2×step (≈110%) — создаёт дополнительный BUY→SELL цикл.
+        """
+        step = self._state.step_pct
+
+        def _next_compound_id():
+            compound_ids = [l.id for l in self._state.buy_levels if l.id <= -100]
+            return (min(compound_ids) - 1) if compound_ids else -101
+
+        # ── Первый BUY: ближе к цене (REINVEST_STEP_MULT × step) ────────────
+        buy_price1 = from_price / (1 + step * GridConfig.REINVEST_STEP_MULT / 100)
+        nid1 = _next_compound_id()
         self._state.buy_levels.append(GridLevel(
-            id=new_id, side="buy",
-            price_ton=round(buy_price, 8),
+            id=nid1, side="buy",
+            price_ton=round(buy_price1, 8),
             amount_grinch=0.0,
             amount_ton=round(ton_amount, 4),
             status="waiting",
-            note=f"compound-реинвест {self._state.compound_multiplier:.2f}x @ {from_price:.6f}",
+            note=(f"compound-реинвест {self._state.compound_multiplier:.2f}x"
+                  f" @ {from_price:.6f} | ×{GridConfig.REINVEST_STEP_MULT}шаг"),
         ))
-        log.info("[Grid] 📥 Compound-реинвест BUY @ %.6f с %.2f TON (mult=%.2f)",
-                 buy_price, ton_amount, self._state.compound_multiplier)
+        log.info("[Grid] 📥 Реинвест BUY#1 @ %.6f с %.2f TON (×%.2fшаг mult=%.2f)",
+                 buy_price1, ton_amount, GridConfig.REINVEST_STEP_MULT,
+                 self._state.compound_multiplier)
+
+        # ── Второй BUY: чуть дальше (REINVEST_STEP_MULT2 × step) ────────────
+        # Добавляем только если капитал позволяет (≥ 2×MIN_ORDER_TON на каждый)
+        if ton_amount >= GridConfig.MIN_ORDER_TON * 2:
+            half = round(ton_amount / 2, 4)
+            # Скорректировать сумму первого BUY
+            self._state.buy_levels[-1].amount_ton = half
+            buy_price2 = from_price / (1 + step * GridConfig.REINVEST_STEP_MULT2 / 100)
+            nid2 = _next_compound_id()
+            self._state.buy_levels.append(GridLevel(
+                id=nid2, side="buy",
+                price_ton=round(buy_price2, 8),
+                amount_grinch=0.0,
+                amount_ton=half,
+                status="waiting",
+                note=(f"compound-реинвест {self._state.compound_multiplier:.2f}x"
+                      f" @ {from_price:.6f} | ×{GridConfig.REINVEST_STEP_MULT2}шаг"),
+            ))
+            log.info("[Grid] 📥 Реинвест BUY#2 @ %.6f с %.2f TON (×%.2fшаг)",
+                     buy_price2, half, GridConfig.REINVEST_STEP_MULT2)
 
     def _add_cycle_sell(self, grinch_amount: float, buy_price: float,
                         note: str = ""):
@@ -1361,6 +1404,66 @@ class GridTrader:
         log.info("[Grid] 🟣 DCA L%d добавлен @ %.6f с %.2f TON "
                  "(conf=%.1f%% regime=%s drawdown=%.1f%%)",
                  new_id, dca_price, amount_ton, effective_conf, regime, drawdown_pct)
+
+    def _ensure_near_price_sell(self, price_ton: float, regime: str):
+        """Near-price density: если нет SELL в пределах 1.5×step → создать из дальнего.
+
+        Раз в тик пассивно проверяет: есть ли хотя бы один ожидающий SELL-уровень
+        рядом с ценой (≤ 1.5 шага вверх). Если нет — берёт 35% GRINCH у самого
+        крупного дальнего уровня (> 3×step) и создаёт новый ближний. Безопасные
+        ограничения: min_grinch_value ≥ MIN_ORDER_TON, min_source ≥ 100К GRINCH.
+        Не работает в PUMP/DISTRIBUTION/POST_PUMP.
+        """
+        if regime in ("PUMP", "DISTRIBUTION", "POST_PUMP"):
+            return
+        step = self._state.step_pct
+        if step <= 0:
+            return
+
+        near_limit = price_ton * (1 + step * 1.5 / 100)
+        near_sells = [
+            l for l in self._state.sell_levels
+            if l.status == "waiting"
+            and price_ton < l.price_ton <= near_limit
+            and l.amount_grinch >= 100
+        ]
+        if near_sells:
+            return  # Уже есть — ничего делать не нужно
+
+        # Ищем самый крупный дальний уровень (> 3× step от цены)
+        far_limit = price_ton * (1 + step * 3 / 100)
+        far_sells = [
+            l for l in self._state.sell_levels
+            if l.status == "waiting"
+            and l.price_ton > far_limit
+            and l.amount_grinch >= 100_000     # минимум 100К GRINCH для донорства
+        ]
+        if not far_sells:
+            return
+
+        source = max(far_sells, key=lambda l: l.amount_grinch)
+        split_grinch = round(source.amount_grinch * 0.35, 2)
+
+        # Проверяем минимальный размер ордера
+        if split_grinch * price_ton < GridConfig.MIN_ORDER_TON:
+            return
+
+        source.amount_grinch = round(source.amount_grinch - split_grinch, 2)
+        near_price = price_ton * (1 + step / 100)
+
+        cycle_ids = [l.id for l in self._state.sell_levels if l.id >= 100]
+        new_id = (max(cycle_ids) + 1) if cycle_ids else 101
+
+        self._state.sell_levels.append(GridLevel(
+            id=new_id, side="sell",
+            price_ton=round(near_price, 8),
+            amount_grinch=split_grinch,
+            amount_ton=0.0,
+            status="waiting",
+            note=f"near-density (35% от L{source.id}) @ {near_price:.6f}",
+        ))
+        log.info("[Grid] 🎯 Near-density SELL L%d @ %.6f (+%.1f%%) с %.0f GRINCH ← L%d",
+                 new_id, near_price, step, split_grinch, source.id)
 
     def _maybe_recenter(self, price_ton: float, atr_pct: float, regime: str):
         """Авто-перецентровка: если цена ушла слишком далеко от центра.
