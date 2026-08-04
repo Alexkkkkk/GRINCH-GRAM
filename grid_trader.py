@@ -101,6 +101,10 @@ class GridAIManager:
                          "desc": "тренд — широкий шаг"},
         "TREND_UP":     {"active": True,  "step_mult": 1.5,  "levels": 7,
                          "desc": "тренд вверх — меньше уровней"},
+        "VOLATILE":     {"active": True,  "step_mult": 1.1,  "levels": 9,
+                         "desc": "волатильность — шаг немного шире"},
+        "TRANSITION":   {"active": True,  "step_mult": 1.0,  "levels": 10,
+                         "desc": "переход режимов"},
         "PUMP":         {"active": False, "step_mult": 2.0,  "levels": 5,
                          "desc": "памп — сетка на паузе"},
         "POST_PUMP":    {"active": False, "step_mult": 1.5,  "levels": 6,
@@ -859,11 +863,16 @@ class GridTrader:
                     )
 
                 if should_restore:
-                    _lv.status = "waiting"
-                    _lv.note   = reason
+                    # Уровни с нулевым GRINCH нельзя продать — сразу помечаем skipped_small
+                    if _lv.side in ("sell", "dca") and (_lv.amount_grinch or 0) < 100:
+                        _lv.status = "skipped_small"
+                        _lv.note   = "нет GRINCH после восстановления (amount=0)"
+                    else:
+                        _lv.status = "waiting"
+                        _lv.note   = reason
                     restored_n += 1
             if restored_n:
-                log.info("[Grid] ♻️ Восстановлено %d SELL → waiting", restored_n)
+                log.info("[Grid] ♻️ Восстановлено %d SELL → waiting/skipped_small", restored_n)
 
             # ── SELL-уровни ───────────────────────────────────────────────
             for level in sorted(self._state.sell_levels, key=lambda l: l.price_ton):
@@ -1254,7 +1263,9 @@ class GridTrader:
     def _add_reinvestment_buy(self, ton_amount: float, from_price: float):
         """После SELL: BUY-уровень на шаг ниже с compound-суммой."""
         buy_price = from_price / (1 + self._state.step_pct / 100)
-        new_id    = -(100 + len(self._state.buy_levels))
+        # Уникальный ID: минимальный из compound-уровней (≤ -100) минус 1
+        compound_ids = [l.id for l in self._state.buy_levels if l.id <= -100]
+        new_id = (min(compound_ids) - 1) if compound_ids else -101
         self._state.buy_levels.append(GridLevel(
             id=new_id, side="buy",
             price_ton=round(buy_price, 8),
@@ -1270,7 +1281,9 @@ class GridTrader:
                         note: str = ""):
         """После BUY: SELL-уровень на шаг выше для замыкания цикла."""
         sell_price = buy_price * (1 + self._state.step_pct / 100)
-        new_id     = 100 + len(self._state.sell_levels)
+        # Уникальный ID: максимальный из cycle-уровней (≥ 100) плюс 1
+        cycle_ids = [l.id for l in self._state.sell_levels if l.id >= 100]
+        new_id    = (max(cycle_ids) + 1) if cycle_ids else 101
         self._state.sell_levels.append(GridLevel(
             id=new_id, side="sell",
             price_ton=round(sell_price, 8),
