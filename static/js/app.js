@@ -1285,7 +1285,9 @@ function renderGridPanel(d) {
       labelClr = barClr;
     }
     const label = deltaPct <= 0
-      ? `<span style="color:var(--green);font-size:9px;font-family:var(--mono)">✓ достигнут</span>`
+      ? (direction === 'sell'
+          ? `<span style="color:var(--green);font-size:9px;font-family:var(--mono)">✓ достигнут</span>`
+          : `<span style="color:#ffd166;font-size:9px;font-family:var(--mono)">⚡ ниже уровня</span>`)
       : `<span style="color:${labelClr};font-size:9px;font-family:var(--mono)">${deltaSign}${deltaPct.toFixed(1)}% до ${direction === 'sell' ? 'продажи' : 'закупки'}</span>`;
     return `
       <div style="display:flex;align-items:center;gap:5px;margin-top:3px">
@@ -1334,11 +1336,11 @@ function renderGridPanel(d) {
     } else {
       const curPrice = _lastLivePrice || 0;
       buyEl.innerHTML = buys.map(l => {
-        const isFilled   = l.status === 'filled';
-        const isWaiting  = l.status === 'waiting';
-        const isBlocked  = l.status === 'skipped_unprofitable' || (l.note && l.note.includes('убыточен'));
-        const icon  = isFilled ? '✅' : isBlocked ? '⛔' : isWaiting ? '🟢' : '⊘';
-        const clr   = isFilled ? 'var(--green)' : isBlocked ? 'var(--red)' : isWaiting ? '#00ff88' : 'var(--text2)';
+        const isFilled     = l.status === 'filled';
+        const isWaiting    = l.status === 'waiting';
+        const isIdleDeploy = isWaiting && l.note && l.note.includes('idle-deploy');
+        const icon  = isFilled ? '✅' : isIdleDeploy ? '⏳' : isWaiting ? '🟢' : '⊘';
+        const clr   = isFilled ? 'var(--green)' : isIdleDeploy ? 'var(--yellow)' : isWaiting ? '#00ff88' : 'var(--text2)';
         const priceStr = l.price_ton ? l.price_ton.toFixed(6) : '—';
         const amtStr   = l.amount_ton ? l.amount_ton.toFixed(1) + ' TON' : '';
         const bar = isWaiting ? _gridLevelBar(curPrice, l.price_ton, 'buy') : '';

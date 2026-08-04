@@ -476,6 +476,8 @@ class GridTrader:
         self._prev_tick_price:        float = 0.0
         # [УЛУЧШ] Idle deploy: цена при последнем деплое (для сброса cooldown по движению цены)
         self._last_idle_deploy_price: float = 0.0
+        # Suppress-set: не спамить лог про одни и те же убыточные уровни каждый тик
+        self._unprofitable_warned: set = set()
 
         self._load_state()
         log.info("[Grid] Инициализирован v3. active=%s sell=%d buy=%d dca=%d "
@@ -1092,11 +1094,16 @@ class GridTrader:
                     # AI влияет лишь на размер ордера, не блокирует.
                     profitable, profit_est = self._is_profitable_buy_cycle(level)
                     if not profitable:
-                        log.info("[Grid] ⚠️ BUY L%d @ %.6f — цикл убыточен (est %+.4f TON)",
-                                 level.id, level.price_ton, profit_est)
+                        # Логируем только первый раз — не спамим каждые 30с для тех же уровней
+                        if level.id not in self._unprofitable_warned:
+                            log.info("[Grid] ⚠️ BUY L%d @ %.6f — цикл убыточен (est %+.4f TON)",
+                                     level.id, level.price_ton, profit_est)
+                            self._unprofitable_warned.add(level.id)
                         self._state.last_action = (
                             f"BUY L{level.id} пропущен (цикл убыточен {profit_est:+.4f} TON)")
                         continue
+                    # Уровень стал прибыльным — убираем из suppress-set (цена/шаг изменились)
+                    self._unprofitable_warned.discard(level.id)
 
                     # ── AI масштабирует размер (0.7x–1.8x), не блокирует ─
                     # [УЛУЧШ] Нелинейная кривая + Kelly-буст по win_streak GridAI
@@ -1699,13 +1706,15 @@ class GridTrader:
                 level_price /= (1 + step_pct / 100)
                 continue
 
-            # Профит-гейт: BUY на этой цене должен давать прибыльный цикл
-            sell_price = rounded * (1 + step_pct / 100)
-            gross_pct  = (sell_price / rounded - 1) * 100
-            net_pct    = gross_pct - GridConfig.FEE_PCT * 2 * 100
-            if net_pct <= 0:
+            # Профит-гейт: BUY→SELL цикл должен быть прибыльным с учётом газа
+            # Шаг должен покрыть комиссию (оба плеча) — иначе смысла нет в принципе
+            _cycle_factor = (1 + step_pct / 100) * (1 - GridConfig.FEE_PCT) ** 2 - 1
+            if _cycle_factor <= 0:
                 level_price /= (1 + step_pct / 100)
                 continue
+            # Минимальный TON при котором газ окупается: gas×2 / cycle_factor
+            _min_ton_for_profit = math.ceil(
+                GridConfig.GAS_PER_TRADE_TON * 2 / _cycle_factor * 10) / 10  # округл. вверх до 0.1
 
             # Depth-weighted sizing: чем глубже уровень — тем больший ордер
             # Смысл: глубокий дип = выгодная цена = стоит купить больше.
@@ -1714,9 +1723,15 @@ class GridTrader:
                               1.0 + depth_steps * GridConfig.IDLE_DEPTH_BOOST)
             base_amount = min(GridConfig.IDLE_LEVEL_TON,
                               free_ton - added * GridConfig.IDLE_LEVEL_TON)
+            # Поднимаем до минимально прибыльного (газ-inclusive)
+            base_amount = max(base_amount, _min_ton_for_profit)
             amount_ton  = round(base_amount * depth_mult, 2)
             if amount_ton < GridConfig.MIN_ORDER_TON:
                 break
+            # Бюджетный контроль: после подъёма base_amount может превысить остаток
+            if amount_ton > free_ton - added * base_amount:
+                level_price /= (1 + step_pct / 100)
+                continue
 
             self._state.buy_levels.append(GridLevel(
                 id=next_id - added,

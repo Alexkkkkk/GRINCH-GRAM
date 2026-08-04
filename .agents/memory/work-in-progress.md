@@ -3,32 +3,31 @@ name: Work In Progress
 description: Что делалось в прошлой сессии — незавершённые задачи и следующие шаги
 ---
 
-## Последняя сессия — 04.08.2026 (вечер, раунд 4)
+## Последняя сессия — 04.08.2026 (вечер, раунд 5)
 
 ### Выполнено
 
-1. ✅ **static/js/app.js** — прогресс-бар до закупки в SELL уровнях сетки:
-   - Тонкая полоска (3px) под каждым waiting SELL уровнем
-   - Показывает: current_price / target_price × 100%
-   - Цвет: голубой → жёлтый (>70%) → зелёный (>90%)
-   - Под полоской — процент в числовом виде
-   - Задеплоено: scp + docker cp, MD5 совпадает
+1. ✅ **Прогресс-бары** в SELL и BUY уровнях сетки (static/js/app.js + templates/index.html)
+   - SELL: полоска + "+X.X% до продажи"
+   - BUY: новая секция «🟢 BUY УРОВНИ», полоска + "-X.X% до закупки"
+
+2. ✅ **4 бага в сетке исправлены** (grid_trader.py + static/js/app.js):
+   - **Bug 1 (Log spam)**: `_unprofitable_warned` set — "убыточен" логируется 1 раз, не каждые 30с
+   - **Bug 2 (Idle-deploy создаёт убыточные уровни)**: добавлен `_min_ton_for_profit` = gas×2/cycle_factor ≈ 31 TON при шаге 4%; base_amount = max(IDLE_LEVEL_TON, min_ton)
+   - **Bug 3 (JS isBlocked)**: исправлен — проверяет `l.note.includes('idle-deploy')` вместо несуществующего статуса
+   - **Bug 4 (JS "✓ достигнут" для BUY)**: при цене ниже BUY-уровня показывает "⚡ ниже уровня"
 
 ### Деплой на VPS (04.08.2026, вечер)
-- app.js задеплоен, MD5: 916d071ce1070c66e6c0f2b936848b49
-- Контейнер: healthy, trader=running
+- app.js: 29f15553e4dbaae063b37cbecca5de96
+- grid_trader.py: c33d2ab4cb9da75050034fed1d5b067c
+- Контейнер перезапущен: healthy, trader=running, 287.7 MB
 
-### Текущее состояние сетки (анализ)
-- center_price: 0.000436 TON
-- step_pct: 4.0% | compound: ×1.28
-- profit: 28.55 TON | sell_cycles: 14 | buy_cycles: 10
-- Все BUY уровни filled (~533 TON в GRINCH)
-- Idle-deploy BUY L-2007/2008/2009 заблокированы (цикл убыточен -0.21 TON)
-- 73 TON свободных — ждут условий
-- Ближайший SELL: L-124 @ 0.000443 (+1.6%)
+### Результат после рестарта
+- Log spam ОСТАНОВЛЕН: 3 строки при старте → тишина (suppress-set работает)
+- Новые idle-deploy уровни будут создаваться с min 31 TON (прибыльный цикл)
+- Существующие 3 уровня (L-2007/2008/2009 @ 20 TON) остаются, но будут замещены правильными при следующем idle-deploy
 
 ### Незакрытые задачи
-- **Task #2** — Исправить 5 багов (alerts, dedust, settings, strategy, user_trader)
 - **Task #3** — idle-deploy статистика на дашборде
 - **Task #4** — _maybe_deploy_idle_grinch (SELL-аналог)
 
