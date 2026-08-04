@@ -79,6 +79,14 @@ class GridConfig:
     TICK_INTERVAL_SEC  = int(os.getenv("GRID_TICK_SEC", "20"))
     # Интервал обновления GridAI-параметров (тиков)
     AI_TUNE_EVERY_N    = 10
+    # ── Деплой простаивающего баланса в новые BUY-уровни ──────────────────
+    # Если на кошельке лежит > IDLE_TON_THRESHOLD свободных TON (не в ордерах,
+    # не зарезервированных под газ) — автоматически добавляем новые BUY-уровни
+    # ниже текущей цены, чтобы деньги работали, а не лежали без дела.
+    IDLE_TON_THRESHOLD    = float(os.getenv("GRID_IDLE_THRESHOLD",  "20.0"))  # мин. простой (TON)
+    IDLE_LEVEL_TON        = float(os.getenv("GRID_IDLE_LEVEL_TON",  "20.0"))  # TON на 1 новый уровень
+    IDLE_DEPLOY_MAX_LEVELS= int(os.getenv("GRID_IDLE_MAX_LEVELS",   "3"))     # макс. новых уровней за вызов
+    IDLE_COOLDOWN_SEC     = int(os.getenv("GRID_IDLE_COOLDOWN",     "300"))   # пауза между деплоями (5 мин)
 
 
 # ─── AI-менеджер сетки ───────────────────────────────────────────────────────
@@ -399,6 +407,8 @@ class GridTrader:
         self._price_history: deque = deque(maxlen=20)
         # Momentum в % (обновляется каждый тик)
         self._price_momentum_pct: float = 0.0
+        # Время последнего деплоя простаивающего баланса (throttle)
+        self._last_idle_deploy_ts: float = 0.0
 
         self._load_state()
         log.info("[Grid] Инициализирован v3. active=%s sell=%d buy=%d dca=%d "
@@ -1034,6 +1044,14 @@ class GridTrader:
                 except Exception as e:
                     log.warning("[Grid] DCA-level error: %s", e)
 
+            # ── Деплой простаивающего баланса в новые BUY-уровни ──────────
+            if not executed and not buy_frozen:
+                try:
+                    self._maybe_deploy_idle_balance(
+                        price_ton, ton_bal, ai_buy_conf, regime)
+                except Exception as e:
+                    log.warning("[Grid] idle-deploy error: %s", e)
+
             # ── Near-price density: добавить SELL-уровень если рядом нет ни одного ─
             try:
                 self._ensure_near_price_sell(price_ton, regime)
@@ -1404,6 +1422,113 @@ class GridTrader:
         log.info("[Grid] 🟣 DCA L%d добавлен @ %.6f с %.2f TON "
                  "(conf=%.1f%% regime=%s drawdown=%.1f%%)",
                  new_id, dca_price, amount_ton, effective_conf, regime, drawdown_pct)
+
+    def _maybe_deploy_idle_balance(self, price_ton: float, ton_bal: float,
+                                   ai_buy_conf: float, regime: str):
+        """Автоматически размещает новые BUY-уровни из простаивающего TON-баланса.
+
+        Логика:
+        1. Считаем TON, уже заморожённый в ожидающих BUY-ордерах.
+        2. free_ton = ton_bal − frozen_buy_ton − GAS_RESERVE_TON
+        3. Если free_ton ≥ IDLE_TON_THRESHOLD и AI BUY-сигнал приемлем:
+           добавляем до IDLE_DEPLOY_MAX_LEVELS новых BUY-уровней ниже текущей
+           цены с шагом step_pct, не дублируя существующие уровни.
+
+        Вызывается каждый тик; cooldown IDLE_COOLDOWN_SEC предотвращает
+        лавинообразное добавление.
+        """
+        now = time.time()
+        if now - self._last_idle_deploy_ts < GridConfig.IDLE_COOLDOWN_SEC:
+            return
+
+        # ── 1. Считаем уже замороженный TON ────────────────────────────────
+        frozen_buy_ton = sum(
+            l.amount_ton for l in self._state.buy_levels if l.status == "waiting"
+        )
+        free_ton = ton_bal - frozen_buy_ton - GridConfig.GAS_RESERVE_TON
+        if free_ton < GridConfig.IDLE_TON_THRESHOLD:
+            return
+
+        # ── 2. AI-фильтр: при сильном SELL-сигнале не усиливаем BUY ────────
+        if ai_buy_conf < GridConfig.AI_MIN_BUY_CONF and regime not in ("SIDEWAYS", "UNKNOWN"):
+            log.debug("[Grid] idle-deploy пропущен — AI BUY %.0f%% < %.0f%% в режиме %s",
+                      ai_buy_conf, GridConfig.AI_MIN_BUY_CONF, regime)
+            return
+
+        # ── 3. Нижняя точка существующих BUY-ордеров (или цена со скидкой step) ─
+        waiting_buys = [l for l in self._state.buy_levels if l.status == "waiting"]
+        if waiting_buys:
+            anchor_price = min(l.price_ton for l in waiting_buys)
+        else:
+            anchor_price = price_ton
+
+        step_pct = self._state.step_pct or GridConfig.DEFAULT_STEP_PCT
+
+        # ── 4. Определяем сколько новых уровней добавить ────────────────────
+        n_add = min(
+            GridConfig.IDLE_DEPLOY_MAX_LEVELS,
+            int(free_ton / GridConfig.IDLE_LEVEL_TON),
+        )
+        if n_add <= 0:
+            return
+
+        # ── 5. Собираем уже занятые цены (BUY + DCA) чтобы не дублировать ──
+        existing_prices = set()
+        for l in self._state.buy_levels:
+            existing_prices.add(round(l.price_ton, 8))
+        for l in self._state.dca_levels:
+            existing_prices.add(round(l.price_ton, 8))
+
+        added = 0
+        next_id = -(2000 + len(self._state.buy_levels))
+        level_price = anchor_price / (1 + step_pct / 100)   # первый ниже anchor
+
+        for _ in range(n_add * 3):   # итераций с запасом (пропускаем дубли)
+            if added >= n_add:
+                break
+            rounded = round(level_price, 8)
+            # Не дублируем: пропустить если уже есть уровень ближе ±0.5%
+            too_close = any(abs(p - rounded) / max(rounded, 1e-12) < 0.005
+                            for p in existing_prices)
+            if too_close:
+                level_price /= (1 + step_pct / 100)
+                continue
+
+            # Профит-гейт: BUY на этой цене должен давать прибыльный цикл
+            sell_price = rounded * (1 + step_pct / 100)
+            gross_pct  = (sell_price / rounded - 1) * 100
+            net_pct    = gross_pct - GridConfig.FEE_PCT * 2 * 100
+            if net_pct <= 0:
+                level_price /= (1 + step_pct / 100)
+                continue
+
+            amount_ton = round(
+                min(GridConfig.IDLE_LEVEL_TON, free_ton - added * GridConfig.IDLE_LEVEL_TON), 2
+            )
+            if amount_ton < GridConfig.MIN_ORDER_TON:
+                break
+
+            self._state.buy_levels.append(GridLevel(
+                id=next_id - added,
+                side="buy",
+                price_ton=rounded,
+                amount_grinch=0.0,
+                amount_ton=amount_ton,
+                status="waiting",
+                note=(f"idle-deploy | free={free_ton:.1f} TON | "
+                      f"AI BUY={ai_buy_conf:.0f}% | regime={regime}"),
+            ))
+            existing_prices.add(rounded)
+            added += 1
+            level_price /= (1 + step_pct / 100)
+
+        if added:
+            self._last_idle_deploy_ts = now
+            log.info(
+                "[Grid] 💰 idle-deploy: +%d BUY-уровней из %.1f свободных TON "
+                "(frozen=%.1f TON | AI BUY=%.0f%% | режим=%s)",
+                added, free_ton, frozen_buy_ton, ai_buy_conf, regime,
+            )
 
     def _ensure_near_price_sell(self, price_ton: float, regime: str):
         """Near-price density: если нет SELL в пределах 1.5×step → создать из дальнего.
