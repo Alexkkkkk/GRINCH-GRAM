@@ -3,35 +3,37 @@ name: Work In Progress
 description: Что делалось в прошлой сессии — незавершённые задачи и следующие шаги
 ---
 
-## Последняя сессия — 04.08.2026 (вечер, раунд 5)
+## Последняя сессия — 04.08.2026 (раунд 6)
 
 ### Выполнено
 
-1. ✅ **Прогресс-бары** в SELL и BUY уровнях сетки (static/js/app.js + templates/index.html)
-   - SELL: полоска + "+X.X% до продажи"
-   - BUY: новая секция «🟢 BUY УРОВНИ», полоска + "-X.X% до закупки"
+1. ✅ **Task #2 — Очистка idle-deploy BUY уровней**
+   - `_cleanup_stale_idle_levels()` в grid_trader.py: при старте удаляет idle-deploy BUY уровни с amount_ton < min_ton_for_profit (31.1 TON при шаге 4%)
+   - На VPS при рестарте: удалены L-2007/2008/2009 (60 TON освобождено, buy: 10 → 7)
+   - Логспам «цикл убыточен» остановлен
 
-2. ✅ **4 бага в сетке исправлены** (grid_trader.py + static/js/app.js):
-   - **Bug 1 (Log spam)**: `_unprofitable_warned` set — "убыточен" логируется 1 раз, не каждые 30с
-   - **Bug 2 (Idle-deploy создаёт убыточные уровни)**: добавлен `_min_ton_for_profit` = gas×2/cycle_factor ≈ 31 TON при шаге 4%; base_amount = max(IDLE_LEVEL_TON, min_ton)
-   - **Bug 3 (JS isBlocked)**: исправлен — проверяет `l.note.includes('idle-deploy')` вместо несуществующего статуса
-   - **Bug 4 (JS "✓ достигнут" для BUY)**: при цене ниже BUY-уровня показывает "⚡ ниже уровня"
+2. ✅ **Task #3 — Idle-deploy статистика на дашборде**
+   - `get_status()`: добавлен блок `idle_deploy.{waiting_count, waiting_ton, filled_count}`
+   - `templates/index.html`: строка «💰 Idle-Deploy» между BUY-уровнями и GridAI
+   - `static/js/app.js`: рендер в `renderGridPanel()` (скрыт если нет уровней)
 
-### Деплой на VPS (04.08.2026, вечер)
-- app.js: 29f15553e4dbaae063b37cbecca5de96
-- grid_trader.py: c33d2ab4cb9da75050034fed1d5b067c
-- Контейнер перезапущен: healthy, trader=running, 287.7 MB
+### Деплой на VPS (04.08.2026)
+- grid_trader.py: 5d0a800bb4e358ccff6c8c22c38fec6b
+- index.html:     8a4f07cdd38ac0ed6cdd79bded377504
+- app.js:         8d70d8cdbbcb2ef9abf04bb74f7d82dd
+- Контейнер: healthy, sell=25 buy=7 dca=2, compound=1.28x
+- Коммит: 8f57283
 
-### Результат после рестарта
-- Log spam ОСТАНОВЛЕН: 3 строки при старте → тишина (suppress-set работает)
-- Новые idle-deploy уровни будут создаваться с min 31 TON (прибыльный цикл)
-- Существующие 3 уровня (L-2007/2008/2009 @ 20 TON) остаются, но будут замещены правильными при следующем idle-deploy
+### Текущее состояние сетки VPS (на момент сессии)
+- Профит: 28.55 TON | 14 SELL-цикла | 10 BUY-циклов
+- Режим: DOWNTREND | ATR 3.3% | центр 0.000400 TON
+- DCA-трейдер: **выключен вручную** (ручной переключатель)
+- DCA-позиция: 857k GRINCH @ 523 TON stake, текущая цена -34%, Liquidator ждёт +64%
+- Последний SELL: ~14ч назад (L-114/L-115)
 
 ### Незакрытые задачи
-- **Task #3** — idle-deploy статистика на дашборде
-- **Task #4** — _maybe_deploy_idle_grinch (SELL-аналог)
+- Нет активных задач
 
 ### Git статус
-- Локальные коммиты НЕ запушены (GitHub auth не настроен)
-- VPS_SSH_KEY работает: sshpass -p "$VPS_SSH_KEY" ssh -o StrictHostKeyChecking=no root@2.27.25.126
-- Контейнер: bot-bot-1, путь: /usr/src/app/
+- Коммит 8f57283 запушен в локальный git (GitHub push не настроен)
+- VPS_SSH_KEY работает
