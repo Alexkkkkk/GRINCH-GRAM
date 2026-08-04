@@ -126,6 +126,13 @@ class GridConfig:
     AI_BUY_SIZE_KELLY_MIN_WR   = 8      # win_streak порог для Kelly-буста
     # ── [УЛУЧШЕНИЕ] Regime confirmation ────────────────────────────────────
     REGIME_CONFIRM_TICKS   = 2   # требуется подряд N одинаковых режимов перед применением политики
+    # ── [УЛУЧШЕНИЕ] DCA-reduce: прибыль сетки снижает DCA-минус ───────────
+    # После каждого прибыльного SELL: DCA_REDUCE_RATE × profit_ton TON
+    # тратится на покупку GRINCH по текущей цене и добавляется в открытую
+    # DCA-позицию трейдера. Это снижает среднюю цену входа и уменьшает минус.
+    DCA_REDUCE_ENABLED    = True   # включить авто-снижение DCA-минуса
+    DCA_REDUCE_RATE       = 0.25   # 25% от прибыли каждого SELL → в DCA-позицию
+    DCA_REDUCE_MIN_PROFIT = 1.0    # мин. прибыль TON для срабатывания (не тратим копейки)
 
 
 # ─── AI-менеджер сетки ───────────────────────────────────────────────────────
@@ -1358,6 +1365,13 @@ class GridTrader:
                 if ton_to_reinvest >= GridConfig.MIN_ORDER_TON:
                     self._add_reinvestment_buy(ton_to_reinvest, current_price)
 
+                # ── DCA-reduce: часть прибыли снижает средний вход DCA ─
+                if GridConfig.DCA_REDUCE_ENABLED:
+                    try:
+                        self._reduce_dca_loss(profit, current_price)
+                    except Exception as _rde:
+                        log.debug("[Grid] DCA-reduce error: %s", _rde)
+
                 # ── Обучаем GridAI ─────────────────────────────────────
                 if self._grid_ai:
                     try:
@@ -1581,6 +1595,128 @@ class GridTrader:
                 log.info("[Grid] 📥 Реинвест BUY#3 @ %.6f с %.2f TON (×%.2fшаг, compound=%.2fx)",
                          buy_price3, third, GridConfig.REINVEST_STEP_MULT3,
                          self._state.compound_multiplier)
+
+    def _reduce_dca_loss(self, profit_ton: float, current_price_ton: float):
+        """После прибыльного SELL: часть прибыли снижает средний вход DCA-позиции.
+
+        Покупает GRINCH на DCA_REDUCE_RATE × profit_ton TON по текущей цене
+        и добавляет в открытую LONG-позицию трейдера, снижая её average entry.
+        """
+        if profit_ton < GridConfig.DCA_REDUCE_MIN_PROFIT:
+            return
+        ton_for_reduce = round(profit_ton * GridConfig.DCA_REDUCE_RATE, 4)
+        if ton_for_reduce < GridConfig.MIN_ORDER_TON:
+            return
+
+        # Проверяем наличие открытой DCA-позиции
+        try:
+            import db_store as _ds
+            open_trades = _ds.open_trades_get()
+            long_trades = [t for t in open_trades if t.get("side") == "buy"]
+            if not long_trades:
+                log.debug("[Grid] DCA-reduce: нет LONG-позиции — пропуск")
+                return
+        except Exception as _e:
+            log.debug("[Grid] DCA-reduce: open_trades read error: %s", _e)
+            return
+
+        log.info("[Grid] 📉 DCA-reduce: покупаем %.3f TON "
+                 "(%.0f%% от прибыли %.3f TON) → снижаем средний вход",
+                 ton_for_reduce, GridConfig.DCA_REDUCE_RATE * 100, profit_ton)
+
+        result = self._dc.buy(ton_for_reduce)
+        if not result.get("ok"):
+            log.warning("[Grid] DCA-reduce: buy failed — %s", result.get("error"))
+            return
+
+        grinch_bought = float(result.get("grinch_received", 0))
+        if grinch_bought <= 0:
+            # Оценка по цене пула (≈ без слиппейджа)
+            grinch_bought = ton_for_reduce / max(current_price_ton, 1e-12) * 0.99
+        grinch_bought = round(grinch_bought, 6)
+
+        # ── USD-цена для нового входа: берём из соотношения существующей позиции ──
+        _entry_usd = 0.0
+        try:
+            _lt0     = long_trades[0]
+            _ep_usd  = float(_lt0.get("entry_price", 0) or 0)
+            _ep_ton  = float(_lt0.get("entry_price_ton", 0) or 0)
+            if _ep_ton > 0 and _ep_usd > 0:
+                _entry_usd = round(current_price_ton * _ep_usd / _ep_ton, 8)
+        except Exception:
+            pass
+        if _entry_usd == 0.0:
+            try:
+                from price_feed import get as _pf_get
+                _entry_usd = float(_pf_get("GRINCH") or 0)
+            except Exception:
+                pass
+
+        # ── Пытаемся добавить вход через in-memory синглтон трейдера ──────────
+        import sys as _sys, time as _time
+        _app = _sys.modules.get("app") or _sys.modules.get("__main__")
+        tr   = getattr(_app, "trader", None)
+
+        _max_dca_idx = max((int(t.get("dca_index") or 1) for t in long_trades), default=1)
+        extra_entry  = {
+            "id":              f"grid_dca_reduce_{int(_time.time())}",
+            "side":            "buy",
+            "symbol":          "GRINCH/TON",
+            "amount":          grinch_bought,
+            "stake_ton":       ton_for_reduce,
+            "entry_price":     _entry_usd,
+            "entry_price_ton": round(current_price_ton, 8),
+            "dca_entry":       True,
+            "dca_index":       _max_dca_idx + 1,
+            "opened_at":       _time.strftime("%Y-%m-%dT%H:%M:%S", _time.gmtime()),
+            "status":          "open",
+            "source":          "grid_dca_reduce",
+            "note":            (f"Grid DCA-reduce: +{grinch_bought:.0f} GRINCH "
+                                f"@ {current_price_ton:.6f} TON"),
+        }
+
+        if tr is not None:
+            # Добавляем в in-memory список и перемёрживаем
+            with tr._ot_lock:
+                tr.open_trades.append(extra_entry)
+            tr._merge_long_trades()
+            # Лог результата
+            try:
+                with tr._ot_lock:
+                    merged = next((t for t in tr.open_trades
+                                   if t.get("side") == "buy"), None)
+                if merged:
+                    new_avg  = float(merged.get("entry_price_ton") or current_price_ton)
+                    tot_grch = float(merged.get("amount") or 0)
+                    log.info(
+                        "[Grid] ✅ DCA-reduce OK: +%.0f GRINCH @ %.6f TON | "
+                        "новый avg вход %.6f TON | итого %.0f GRINCH",
+                        grinch_bought, current_price_ton, new_avg, tot_grch)
+            except Exception:
+                pass
+        else:
+            # Fallback: обновляем БД напрямую (трейдер подхватит при рестарте)
+            try:
+                lt         = long_trades[0]
+                old_amount = float(lt.get("amount") or 0)
+                old_stake  = float(lt.get("stake_ton") or 0)
+                new_amount = old_amount + grinch_bought
+                new_stake  = old_stake + ton_for_reduce
+                lt["amount"]          = round(new_amount, 6)
+                lt["stake_ton"]       = round(new_stake, 4)
+                lt["entry_price_ton"] = round(new_stake / new_amount, 8) if new_amount > 0 else lt.get("entry_price_ton", 0)
+                if old_amount > 0:
+                    _old_ep_usd = float(lt.get("entry_price") or 0)
+                    _old_ep_ton = old_stake / old_amount
+                    if _old_ep_ton > 0 and _old_ep_usd > 0:
+                        lt["entry_price"] = round(
+                            lt["entry_price_ton"] * _old_ep_usd / _old_ep_ton, 8)
+                _ds.open_trades_save(open_trades)
+                log.info("[Grid] ✅ DCA-reduce (DB fallback): "
+                         "+%.0f GRINCH @ %.6f, новый avg %.6f TON",
+                         grinch_bought, current_price_ton, lt["entry_price_ton"])
+            except Exception as _dbe:
+                log.warning("[Grid] DCA-reduce DB update error: %s", _dbe)
 
     def _add_cycle_sell(self, grinch_amount: float, buy_price: float,
                         note: str = ""):
