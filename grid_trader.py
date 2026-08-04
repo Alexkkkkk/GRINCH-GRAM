@@ -306,7 +306,7 @@ class GridLevel:
     price_ton:      float   # цена-триггер (TON/GRINCH)
     amount_grinch:  float   # GRINCH на уровне (для sell/dca)
     amount_ton:     float   # TON на уровне (для buy/dca)
-    status:         str     # 'waiting'|'filled'|'skipped_ai'|'no_funds'|'error'
+    status:         str     # 'waiting'|'filled'|'skipped_ai'|'skipped_dca'|'no_funds'|'error'
     filled_at:      float = 0.0
     fill_price_ton: float = 0.0
     profit_ton:     float = 0.0
@@ -487,7 +487,16 @@ class GridTrader:
                 self._grid_ai.get_pyramid_weights(sell_levels)
                 if self._grid_ai else [1.0] * sell_levels
             )
-            base_grinch = grinch_balance / sell_levels if sell_levels > 0 else 0
+            # Координация Grid ↔ DCA: отнимаем GRINCH, занятый открытыми
+            # DCA-позициями. Сетка работает только со «свободным» балансом,
+            # чтобы не продавать то, что DCA держит до своей TP.
+            dca_reserved    = self._get_dca_reserved_grinch()
+            free_grinch     = max(0.0, grinch_balance - dca_reserved)
+            if dca_reserved > 0:
+                log.info("[Grid] build_grid: кошелёк %.0f GRINCH, "
+                         "DCA резерв %.0f, свободно %.0f",
+                         grinch_balance, dca_reserved, free_grinch)
+            base_grinch = free_grinch / sell_levels if sell_levels > 0 else 0
             grinch_per_level = base_grinch  # для обратной совместимости отчёта
             for i in range(1, sell_levels + 1):
                 trigger = current_price_ton * (1 + step_pct / 100) ** i
@@ -756,18 +765,19 @@ class GridTrader:
             self._state.last_tick_ts = time.time()
             executed = False
 
-            # ── Восстановление skipped_ai уровней ─────────────────────────
+            # ── Восстановление skipped_ai / skipped_dca уровней ──────────
             # skipped_ai ставится в двух случаях:
             #   a) AI BUY ≥ 75% (не хотим мешать росту)
             #   b) _maybe_recenter (уровень оказался ниже нового центра)
-            # В обоих случаях состояние должно быть обратимым:
-            #   • Если цена откатилась ниже триггера → возвращаем waiting,
-            #     чтобы уровень исполнился при следующем ралли.
-            #   • Если цена по-прежнему ≥ триггера, но AI BUY уже не блокирует
-            #     → тоже восстанавливаем, sell-loop его немедленно исполнит.
+            # skipped_dca — в _execute_sell при нехватке свободного GRINCH
+            #   (кошелёк занят DCA-позицией). Восстанавливается автоматически
+            #   когда DCA закрывает позицию и GRINCH освобождается.
+            # В обоих случаях состояние обратимо:
+            #   • Если цена откатилась ниже триггера → возвращаем waiting.
+            #   • Если цена ≥ триггера, но блокировщик снят → тоже waiting.
             restored_n = 0
             for _lv in self._state.sell_levels:
-                if _lv.status != "skipped_ai":
+                if _lv.status not in ("skipped_ai", "skipped_dca"):
                     continue
                 # ⚠️ Никогда не восстанавливаем уровни ниже центра — они
                 # заведомо убыточны (profit-guard всё равно заблокирует) и
@@ -775,19 +785,40 @@ class GridTrader:
                 if _lv.price_ton <= self._state.center_price_ton:
                     continue
                 price_below_trigger = price_ton < _lv.price_ton
-                ai_no_longer_blocks = (price_ton >= _lv.price_ton
-                                       and ai_buy_conf < GridConfig.AI_SKIP_SELL_BUY_CONF)
-                if price_below_trigger or ai_no_longer_blocks:
-                    _lv.status = "waiting"
-                    _lv.note   = (
+
+                if _lv.status == "skipped_ai":
+                    ai_no_longer_blocks = (price_ton >= _lv.price_ton
+                                           and ai_buy_conf < GridConfig.AI_SKIP_SELL_BUY_CONF)
+                    should_restore = price_below_trigger or ai_no_longer_blocks
+                    reason = (
                         f"↩ восст. (откат {price_ton:.6f}<{_lv.price_ton:.6f})"
                         if price_below_trigger
                         else f"↩ восст. (AI BUY {ai_buy_conf:.0f}%<{GridConfig.AI_SKIP_SELL_BUY_CONF:.0f}%)"
                     )
+                else:  # skipped_dca
+                    # Восстанавливаем: a) откат — уровень ещё не достигнут,
+                    #                  b) DCA закрылась — свободный GRINCH появился
+                    try:
+                        _reserved = self._get_dca_reserved_grinch()
+                        from dedust_client import get_shared_balance as _gsb2
+                        _w2 = float(_gsb2().get("GRINCH", 0))
+                        _free2 = max(0.0, _w2 - _reserved)
+                        dca_freed = _free2 >= _lv.amount_grinch
+                    except Exception:
+                        dca_freed = False
+                    should_restore = price_below_trigger or dca_freed
+                    reason = (
+                        f"↩ восст. (откат {price_ton:.6f}<{_lv.price_ton:.6f})"
+                        if price_below_trigger
+                        else f"↩ восст. (DCA свободно ≥{_lv.amount_grinch:.0f} GRINCH)"
+                    )
+
+                if should_restore:
+                    _lv.status = "waiting"
+                    _lv.note   = reason
                     restored_n += 1
             if restored_n:
-                log.info("[Grid] ♻️ Восстановлено %d SELL из skipped_ai → waiting",
-                         restored_n)
+                log.info("[Grid] ♻️ Восстановлено %d SELL → waiting", restored_n)
 
             # ── SELL-уровни ───────────────────────────────────────────────
             for level in sorted(self._state.sell_levels, key=lambda l: l.price_ton):
@@ -959,6 +990,29 @@ class GridTrader:
             else:
                 step = self._state.step_pct or GridConfig.DEFAULT_STEP_PCT
                 cost_ton = level.amount_grinch * (level.price_ton / (1 + step / 100))
+
+            # ── Координация Grid ↔ DCA: runtime-guard ─────────────────────
+            # Проверяем прямо перед свопом: не залезаем ли в GRINCH DCA.
+            # DCA reserved читаем из open_trades (актуально всегда).
+            try:
+                from dedust_client import get_shared_balance as _gsb
+                _bal      = _gsb()
+                _wallet_g = float(_bal.get("GRINCH", _bal.get("grinch", 0)))
+                _reserved = self._get_dca_reserved_grinch()
+                _free_g   = max(0.0, _wallet_g - _reserved)
+                if _free_g < level.amount_grinch:
+                    log.warning(
+                        "[Grid] ⛔ SELL L%d заблокирован: "
+                        "свободно %.0f GRINCH (кошелёк %.0f − DCA %.0f), "
+                        "нужно %.0f — пропуск",
+                        level.id, _free_g, _wallet_g, _reserved, level.amount_grinch)
+                    level.status = "skipped_dca"
+                    level.note   = (f"DCA резерв: свободно {_free_g:.0f} "
+                                    f"< нужно {level.amount_grinch:.0f}")
+                    return {"ok": False, "error": "dca_reserved"}
+            except Exception as _ge:
+                log.debug("[Grid] DCA-guard check error: %s", _ge)
+
             result   = self._dc.sell(level.amount_grinch)
             if result.get("ok"):
                 received_ton = result.get("received_ton") or (
@@ -1486,6 +1540,22 @@ class GridTrader:
             return grinch_bal, ton_bal
         except Exception:
             return 0.0, 0.0
+
+    def _get_dca_reserved_grinch(self) -> float:
+        """Возвращает суммарное кол-во GRINCH, зарезервированное открытыми DCA-позициями.
+
+        Координация Grid ↔ DCA: сетка НЕ должна продавать GRINCH, который
+        DCA-трейдер считает своим (open_trades). Используется как в build_grid
+        (чтобы выделить сетке только «свободный» GRINCH), так и в _execute_sell
+        (runtime-проверка перед реальным свопом).
+        """
+        try:
+            import db_store as _ds
+            trades = _ds.open_trades_get()
+            return float(sum(float(t.get("amount", 0)) for t in trades
+                             if t.get("symbol", "GRINCH") and "GRINCH" in str(t.get("symbol", "GRINCH"))))
+        except Exception:
+            return 0.0
 
     def _heuristic_step(self, atr_pct: float, regime: str = "UNKNOWN") -> float:
         """Эвристический шаг без GridAI."""
