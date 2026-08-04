@@ -960,9 +960,11 @@ class Trader:
         min_gross = Config.required_gross_pct_with_gas(total_stake)
         tp        = round(avg_entry_usd * (1 + Config.TAKE_PROFIT_PCT / 100), 8)
 
-        # Основа — новейшая (последняя) позиция
+        # Основа — новейшая (последняя) позиция, но ID берём от самой старой,
+        # чтобы слияние не меняло идентификатор позиции (ликвидатор/UI кешируют id).
         newest = long_trades[-1]
         merged = dict(newest)
+        merged["id"]              = long_trades[0].get("id", newest.get("id", ""))
         merged["amount"]          = round(total_amount, 6)
         merged["stake_ton"]       = round(total_stake, 4)
         merged["entry_price"]     = round(avg_entry_usd, 8)
