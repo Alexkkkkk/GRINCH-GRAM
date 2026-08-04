@@ -3,31 +3,46 @@ name: Work In Progress
 description: Что делалось в прошлой сессии — незавершённые задачи и следующие шаги
 ---
 
-## Последняя сессия — 03.08.2026
+## Последняя сессия — 04.08.2026 (утро)
 
-### Выполнено: 4 исправления
+### Выполнено
 
-1. ✅ **brain_fusion.py:41** — добавлен `from config import Config` глобально
-   - Root cause `[Push] Ошибка: name 'Config' is not defined`
-   - Файл использовал Config на строке 303 в update_wallet(), но никогда не импортировал его глобально (только `_Cfg` внутри функции на 409)
+1. ✅ **grid_trader.py** — добавлен `_maybe_deploy_idle_balance()`:
+   - GridConfig: IDLE_TON_THRESHOLD=20, IDLE_LEVEL_TON=20, IDLE_DEPLOY_MAX_LEVELS=3, IDLE_COOLDOWN_SEC=300
+   - Каждый тик считает free_ton = wallet_ton - frozen_buy_orders - GAS_RESERVE
+   - Если free_ton ≥ 20 TON → добавляет до 3 новых BUY-уровней ниже anchor
+   - AI BUY-фильтр, profit-guard, дедупликация ±0.5%, cooldown 5 мин
+   - Вызов в `_tick()` после DCA-блока
 
-2. ✅ **app.py:push_updates** — улучшено логирование: traceback добавлен в `[Push] Ошибка`
+2. ✅ **ai_engine.py** — критический баг исправлен:
+   - Добавлен `from config import Config` (строка ~52 импортов)
+   - Баг: `Config.EV_THRESHOLD` вызывал NameError при ≥12 подтверждённых сделках
+   - Ломал `analyze()` каждый тик, дашборд не обновлялся
 
-3. ✅ **grid_trader.py** — добавлен метод `reset_error_levels(level_ids=None)`
-   - Сбрасывает error → waiting; уровни без баланса → skipped_small
-   - API endpoint: `POST /api/grid/reset_errors` с body `{"level_ids": [1,4,5]}`
+### Деплой на VPS (04.08.2026 ~05:43 UTC)
+- `grid_trader.py` + `ai_engine.py` задеплоены через `scp` + `docker cp`
+- MD5 совпадает в обоих случаях
+- Контейнер перезапущен, статус: **healthy** ✅
+- NameError исчез из логов ✅
+- Последнее действие бота: BUY L-106: 64.92 TON → 116305 GRINCH ✅
 
-4. ✅ **templates/index.html:2689** — BUY-трейды в "Последние сделки" теперь не показывают "+0.0000 TON"
-   - `profit = (isBuy && t.status !== 'closed') ? null : ...`
-   - Причина бага: pnl=0.0 не является null, `??` его не заменяет
+### Текущее состояние бота (04.08.2026 ~05:43 UTC)
+- Health: ok | trader: running | RSS: 299 MB
+- Grid: active=True, sell=18, buy=7, dca=1
+- Торговля: выключена ручным переключателем (нет свободного TON для DCA, -11% позиция ждёт TP)
+- Позиция: ~677k GRINCH @ -11.28% | Цель: +20.69% до продажи ($0.00090443)
 
-### Состояние git:
-- Коммит: `fix: brain_fusion Config NameError + grid reset_errors API + BUY pnl display`
-- **Push на GitHub НЕ выполнен** — UNAUTHENTICATED (нужно подключить GitHub-аккаунт в Replit или пушнуть вручную через Replit Git panel)
-- VPS НЕ подхватит изменения пока не будет push в origin/main
+### Незакрытые задачи (task queue)
+- **Task #2** — Исправить оставшиеся 5 багов из аудита:
+  - alerts.py:27 — _STALL_THRESHOLD_SEC=90 → нужно 180
+  - dedust_client.py:169 — кэш баланса застревает при реальном TON=0
+  - settings_store.py:74 — JSON пишется до DB
+  - strategy.py:40-112 — rolling() без min_periods=1
+  - user_trader.py:275 — _virtual_buy не проверяет баланс
+- **Task #3** — Показывать idle-deploy статистику на дашборде
+- **Task #4** — _maybe_deploy_idle_grinch (SELL-аналог idle-deploy)
 
-### Незакрытые вопросы:
-1. **GitHub push** — залогиниться в Replit Git panel и запушить
-2. **L1 error-уровень** — после деплоя вызвать `POST /api/grid/reset_errors {"level_ids":[1,4,5]}`
-3. **Telegram chat_id** — не настроен
-4. **BUY no_funds** — нужен свободный TON (min 5 TON)
+### Git статус
+- Локальные коммиты НЕ запушены (GitHub auth не настроен — нужен токен или SSH-ключ для HTTPS)
+- Деплой на VPS вручную через scp+docker cp
+- VPS_SSH_KEY обновлён и работает
