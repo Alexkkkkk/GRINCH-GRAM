@@ -1453,7 +1453,8 @@ class GridTrader:
                     try:
                         self._grid_ai.record_fill(
                             "sell", self._state.step_pct,
-                            atr_pct, regime, profit, profit_pct)
+                            atr_pct, regime, profit, profit_pct,
+                            compound_mult=self._state.compound_multiplier)
                     except Exception:
                         pass
 
