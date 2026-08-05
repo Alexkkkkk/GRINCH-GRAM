@@ -491,6 +491,7 @@ class GridTrader:
 
         self._load_state()
         self._cleanup_stale_idle_levels()
+        self._cleanup_dead_dca_levels()
         log.info("[Grid] Инициализирован v3. active=%s sell=%d buy=%d dca=%d "
                  "compound=%.2fx",
                  self._state.active,
@@ -533,6 +534,28 @@ class GridTrader:
             "(amount_ton < %.1f TON) — ids=%s",
             removed, min_ton,
             sorted(stale_ids),
+        )
+        self._save_state()
+
+    def _cleanup_dead_dca_levels(self):
+        """Удаляет DCA-уровни, которые никогда не смогут исполниться:
+        1. amount_ton < MIN_ORDER_TON — слишком маленький ордер (баг размера).
+        2. (проверяется в тике) price_ton > текущей цены — уровень выше рынка.
+        """
+        bad = [
+            l for l in self._state.dca_levels
+            if l.status == "waiting"
+            and l.amount_ton < GridConfig.MIN_ORDER_TON
+        ]
+        if not bad:
+            return
+        bad_ids = {l.id for l in bad}
+        self._state.dca_levels = [
+            l for l in self._state.dca_levels if l.id not in bad_ids
+        ]
+        log.info(
+            "[Grid] 🧹 Очистка DCA: удалено %d уровней с amount_ton < %.1f TON (ids=%s)",
+            len(bad_ids), GridConfig.MIN_ORDER_TON, sorted(bad_ids),
         )
         self._save_state()
 
@@ -1214,6 +1237,23 @@ class GridTrader:
                         break
 
             # ── DCA-уровни (добавление позиции) ──────────────────────────
+            # Чистим DCA-уровни, которые оказались выше текущей цены —
+            # они никогда не исполнятся (BUY ждёт падения ДО уровня).
+            stale_above = [
+                l for l in self._state.dca_levels
+                if l.status == "waiting" and l.price_ton > price_ton * 1.02
+            ]
+            if stale_above:
+                sa_ids = {l.id for l in stale_above}
+                self._state.dca_levels = [
+                    l for l in self._state.dca_levels if l.id not in sa_ids
+                ]
+                log.info(
+                    "[Grid] 🧹 DCA-уровни выше рынка удалены: %s (цена %.6f)",
+                    sorted(sa_ids), price_ton,
+                )
+                self._save_state()
+
             if not executed and not buy_frozen:
                 for level in sorted(self._state.dca_levels,
                                     key=lambda l: l.price_ton, reverse=True):
@@ -1829,7 +1869,7 @@ class GridTrader:
         size_mult = (self._grid_ai.get_dca_size_multiplier(dca_num, win_rate)
                      if self._grid_ai else 1.0)
         base_ton  = GridConfig.MIN_ORDER_TON * 1.5  # 22.5 TON базовый DCA-ордер
-        amount_ton = round(base_ton * size_mult, 2)
+        amount_ton = round(max(base_ton * size_mult, GridConfig.MIN_ORDER_TON), 2)
 
         new_id = -(1000 + len(self._state.dca_levels))
         self._state.dca_levels.append(GridLevel(
