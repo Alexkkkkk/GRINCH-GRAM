@@ -34,3 +34,12 @@ description: Что делалось в прошлой сессии — неза
 
 - Все коммиты на origin/main (GitHub). VPS GitOps cron: */3 * * * * deploy.sh
 - deploy.sh: git reset --hard origin/main + docker compose up --force-recreate
+
+## Анализ VPS — 05.08.2026
+
+- VPS и контейнер `bot-bot-1` работают; `/health`: trader running, последний tick ~2 секунды назад.
+- Grid active, центр `0.0004713675 TON`, текущий шаг `4.0%`, режим в логах `SQUEEZE`, ATR около `2.4%`.
+- BUY: 14 уровней — 8 filled, 5 cancelled_reposition, 1 waiting; свободный BUY-резерв только `40.62 TON` на уровне `0.00043581`.
+- SELL: 28 уровней — 21 waiting, 3 filled, 2 skipped_small, 1 skipped_ai, 1 skipped_dca; в ожидании около `1.757M GRINCH`.
+- Накопленный результат grid в state: `29.2188 TON`; последние 90 минут — свежие AI-решения, ошибок исполнения не видно.
+- Изменений на VPS не вносилось. Для перенастройки сначала требуется отдельное решение по перекосу: почти весь BUY-резерв уже исполнен, SELL-уровни начинаются ниже центра и широко уходят вверх.
