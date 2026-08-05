@@ -86,7 +86,7 @@ class GridConfig:
     IDLE_TON_THRESHOLD    = float(os.getenv("GRID_IDLE_THRESHOLD",  "20.0"))  # мин. простой (TON)
     IDLE_LEVEL_TON        = float(os.getenv("GRID_IDLE_LEVEL_TON",  "20.0"))  # TON на 1 новый уровень
     IDLE_DEPLOY_MAX_LEVELS= int(os.getenv("GRID_IDLE_MAX_LEVELS",   "3"))     # макс. новых уровней за вызов
-    IDLE_COOLDOWN_SEC     = int(os.getenv("GRID_IDLE_COOLDOWN",     "300"))   # пауза между деплоями (5 мин)
+    IDLE_COOLDOWN_SEC     = int(os.getenv("GRID_IDLE_COOLDOWN",     "120"))   # пауза между деплоями (2 мин)
     # ── Momentum-reversal gate ─────────────────────────────────────────────
     # Блокирует BUY пока цена ещё активно падает. Значение = порог падения
     # momentum за последние 20 тиков (%). При -2% и хуже — ждём разворота.
@@ -1911,29 +1911,47 @@ class GridTrader:
                       GridConfig.IDLE_PRICE_RESET_STEPS)
 
         # ── 0. Перепозиционирование устаревших idle-deploy BUY-уровней ────────
-        # Если idle-deploy уровень стоит > 2×step ниже текущей цены —
+        # Если idle-deploy уровень стоит > 1×step ниже текущей цены —
         # значит цена ушла вверх после деплоя (перецентровка/рост).
         # Отменяем такой уровень → TON освобождается → переразмещаем ближе.
         _step_now = self._state.step_pct or GridConfig.DEFAULT_STEP_PCT
+        # Используем center_price как базу сравнения (стабильнее тик-цены).
+        # Порог = 2.5×step: уровни на -1×step и -2×step (штатные позиции) не
+        # перепозиционируются; только уровни от старого центра (> 2.5×step).
+        _ref_price = self._state.center_price_ton or price_ton
+        _reposition_thresh = _step_now * 2.5
         _stale_idle = [
             l for l in self._state.buy_levels
             if l.status == "waiting"
             and "idle-deploy" in (l.note or "").lower()
-            and price_ton > 0
-            and (price_ton - l.price_ton) / price_ton * 100 > _step_now * 2.0
+            and _ref_price > 0
+            and (_ref_price - l.price_ton) / _ref_price * 100 > _reposition_thresh
         ]
         if _stale_idle:
             for _sl in _stale_idle:
                 _sl.status = "cancelled_reposition"
                 log.info(
                     "[Grid] 🔄 idle-deploy L%d @ %.8f перепозиционируется "
-                    "(%.1f%% ниже цены %.8f, > 2×%.1f%%=%.1f%%)",
+                    "(%.1f%% ниже центра %.8f, > 2.5×%.1f%%=%.1f%%)",
                     _sl.id, _sl.price_ton,
-                    (price_ton - _sl.price_ton) / price_ton * 100,
-                    price_ton, _step_now, _step_now * 2,
+                    (_ref_price - _sl.price_ton) / _ref_price * 100,
+                    _ref_price, _step_now, _reposition_thresh,
                 )
             self._last_idle_deploy_ts = 0.0   # сбросить cooldown → немедленный переdeплой
             log.info("[Grid] 🔄 %d idle-deploy уровней отменены → переразмещение по актуальной цене", len(_stale_idle))
+
+        # Чистим накопившиеся cancelled_reposition уровни (оставляем последние 5).
+        _cancelled = [l for l in self._state.buy_levels
+                      if l.status == "cancelled_reposition"]
+        if len(_cancelled) > 5:
+            _keep_ids = {l.id for l in sorted(_cancelled, key=lambda x: x.id)[-5:]}
+            _before = len(self._state.buy_levels)
+            self._state.buy_levels = [
+                l for l in self._state.buy_levels
+                if l.status != "cancelled_reposition" or l.id in _keep_ids
+            ]
+            log.debug("[Grid] 🧹 cancelled_reposition: удалено %d старых записей",
+                      _before - len(self._state.buy_levels))
 
         if now - self._last_idle_deploy_ts < GridConfig.IDLE_COOLDOWN_SEC:
             return
@@ -1970,12 +1988,20 @@ class GridTrader:
                           ai_buy_conf, GridConfig.AI_MIN_BUY_CONF, regime)
             return
 
-        # ── 3. Нижняя точка существующих BUY-ордеров (или цена со скидкой step) ─
+        # ── 3. Якорная цена для новых idle-deploy уровней ───────────────────
+        # Всегда используем CENTER-цену как базу (стабильная точка сетки),
+        # а не текущую тик-цену (волатильна, смещает уровни к тем же ценам).
+        # Если есть настоящие (compound/реинвест) BUY — берём их нижнюю точку.
+        _center = self._state.center_price_ton or price_ton
         waiting_buys = [l for l in self._state.buy_levels if l.status == "waiting"]
-        if waiting_buys:
-            anchor_price = min(l.price_ton for l in waiting_buys)
+        waiting_real  = [l for l in waiting_buys
+                         if "idle-deploy" not in (l.note or "").lower()]
+        if waiting_real:
+            # Есть настоящие (compound/реинвест) BUY — якорь по нижнему
+            anchor_price = min(l.price_ton for l in waiting_real)
         else:
-            anchor_price = price_ton
+            # Только idle-deploy или пусто — якорь по ЦЕНТРУ (не по тику)
+            anchor_price = _center
 
         step_pct = self._state.step_pct or GridConfig.DEFAULT_STEP_PCT
 
@@ -1992,11 +2018,14 @@ class GridTrader:
             return
 
         # ── 5. Собираем уже занятые цены (BUY + DCA) чтобы не дублировать ──
+        # Cancelled-уровни не блокируют — их место свободно для переразмещения.
         existing_prices = set()
         for l in self._state.buy_levels:
-            existing_prices.add(round(l.price_ton, 8))
+            if l.status != "cancelled_reposition":
+                existing_prices.add(round(l.price_ton, 8))
         for l in self._state.dca_levels:
-            existing_prices.add(round(l.price_ton, 8))
+            if l.status != "cancelled_reposition":
+                existing_prices.add(round(l.price_ton, 8))
 
         added = 0
         next_id = -(2000 + len(self._state.buy_levels))
