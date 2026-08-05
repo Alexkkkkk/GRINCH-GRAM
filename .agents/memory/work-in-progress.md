@@ -3,35 +3,36 @@ name: Work In Progress
 description: Что делалось в прошлой сессии — незавершённые задачи и следующие шаги
 ---
 
-## Последняя сессия — 04.08.2026 (раунд 8)
+## Последняя сессия — 05.08.2026
 
 ### Выполнено
 
-1. ✅ **feat: DCA-reduce** — сетка снижает DCA-минус, 25% прибыли каждого SELL → докупка в DCA-позицию
-2. ✅ **fix: 4 бага из аудита** (коммит e74522d):
-   - 🔴 Grid lock held 60-120s во время buy → фоновый поток + `_dca_reduce_lock`
-   - 🔴 Double spending compound+DCA → DCA-бюджет вычисляется ДО compound
-   - 🟡 `_merge_long_trades` вне `_ot_lock` → append+merge под одним lock
-   - 🟡 Trade ID менялся на `grid_dca_reduce_*` → trader.py сохраняет ID старейшей позиции
-   - minor: `_add_cycle_sell` guard: grinch < 1.0 → пропуск
+1. ✅ **fix: SELL guard** — `_execute_sell` и restore-логика `skipped_dca` вычитают
+   `grid_sell_alloc` из DCA-резерва, иначе guard блокировал все SELL (wallet=DCA=857k).
+2. ✅ **fix: `_add_cycle_sell` guard** — grinch < 1.0 → пропуск уровня (нет 0-GRINCH SELLов).
+3. ✅ **Торговля включена** — settings_store + DB обновлены, контейнер рестартован.
+4. ✅ **4 аудит-бага** из прошлой сессии (lock/budget/race/id) — задеплоены и проверены.
 
-### Деплой (04.08.2026, раунд 8)
-- grid_trader.py: 289930ee867c642072faddec3cf3295c
-- trader.py: 663b3bb07d295192acce37a5d6469bd1
-- Контейнер: running+healthy
-
-### Текущее состояние сетки VPS
-- Профит: 28.55 TON | 14 SELL-цикла | Compound 1.28x
-- SELL waiting: 21 (ближайший +18.8% от текущей цены)
-- BUY waiting: 2
-- DCA-позиция: 857k GRINCH @ stake 523 TON, -30.89% (минус уменьшится при первом SELL)
+### Текущее состояние (05.08.2026, ~03:20 UTC)
+- Health: OK | trader: running | RAM: 362 MB
+- Grid: active=True | sell_waiting=20 | profit_ton=28.55 | next_sell=+2.1%
+- DCA: 857573 GRINCH @ $0.00084470, сейчас -29% | мёртвый час 03:xx UTC
 - TON баланс: ~81.6 TON
 
-### Известные проблемы (из аудита, не критичные)
-- /health мониторит только trader.last_tick_ts, не grid — зависание сетки невидимо
-- Gas accounting inconsistency: merge считает total_buy_gas × N entries, но _dca_portfolio_value и _enriched_open_trades используют 1 buy_gas — P&L немного оптимистичен
-- DCA-reduce учитывается в DCA_MAX_ENTRIES счётчике (может быть не желательно)
+### md5 деплоя
+- grid_trader.py: 4185f436523f8d66c8bc6bd838282d7b
+- trader.py: 663b3bb07d295192acce37a5d6469bd1
 
-### Git статус
-- Коммиты: 8f57283 + 4df9b4e + 9186da9 + e74522d
-- GitHub push не настроен
+### Почему торговля снова выключилась
+- В 03:13:27 `disable_trading()` был вызван через веб-дашборд (кто-то нажал Stop)
+- Это НЕ автоматика — только ручное нажатие или `POST /api/trading/disable`
+- GridTrader.py НЕ проверяет trading_enabled — сетка работает независимо
+
+### Известные проблемы (не критичные)
+- DCA-reduce entries учитываются в DCA_MAX_ENTRIES (может быть не желательно)
+- /health не мониторит grid.last_tick_ts (задача #4 отменена)
+- OpenAI / DeepSeek ключи на VPS не работают (429 / 401) — LLM-советник падает
+
+### Git
+- Все коммиты на origin/main (GitHub). VPS GitOps cron: */3 * * * * deploy.sh
+- deploy.sh: git reset --hard origin/main + docker compose up --force-recreate
