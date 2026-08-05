@@ -1870,6 +1870,31 @@ class GridTrader:
             log.debug("[Grid] idle-deploy cooldown сброшен — цена сдвинулась на > %.1f шагов",
                       GridConfig.IDLE_PRICE_RESET_STEPS)
 
+        # ── 0. Перепозиционирование устаревших idle-deploy BUY-уровней ────────
+        # Если idle-deploy уровень стоит > 2×step ниже текущей цены —
+        # значит цена ушла вверх после деплоя (перецентровка/рост).
+        # Отменяем такой уровень → TON освобождается → переразмещаем ближе.
+        _step_now = self._state.step_pct or GridConfig.DEFAULT_STEP_PCT
+        _stale_idle = [
+            l for l in self._state.buy_levels
+            if l.status == "waiting"
+            and "idle-deploy" in (l.note or "").lower()
+            and price_ton > 0
+            and (price_ton - l.price_ton) / price_ton * 100 > _step_now * 2.0
+        ]
+        if _stale_idle:
+            for _sl in _stale_idle:
+                _sl.status = "cancelled_reposition"
+                log.info(
+                    "[Grid] 🔄 idle-deploy L%d @ %.8f перепозиционируется "
+                    "(%.1f%% ниже цены %.8f, > 2×%.1f%%=%.1f%%)",
+                    _sl.id, _sl.price_ton,
+                    (price_ton - _sl.price_ton) / price_ton * 100,
+                    price_ton, _step_now, _step_now * 2,
+                )
+            self._last_idle_deploy_ts = 0.0   # сбросить cooldown → немедленный переdeплой
+            log.info("[Grid] 🔄 %d idle-deploy уровней отменены → переразмещение по актуальной цене", len(_stale_idle))
+
         if now - self._last_idle_deploy_ts < GridConfig.IDLE_COOLDOWN_SEC:
             return
 
