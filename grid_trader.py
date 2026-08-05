@@ -2028,6 +2028,7 @@ class GridTrader:
                 existing_prices.add(round(l.price_ton, 8))
 
         added = 0
+        committed = 0.0   # реально зарезервированный TON (сумма amount_ton добавленных уровней)
         next_id = -(2000 + len(self._state.buy_levels))
         level_price = anchor_price / (1 + step_pct / 100)   # первый ниже anchor
 
@@ -2057,15 +2058,15 @@ class GridTrader:
             depth_steps = (anchor_price / max(rounded, 1e-12) - 1) * 100 / max(step_pct, 0.1)
             depth_mult  = min(GridConfig.IDLE_DEPTH_MAX_MULT,
                               1.0 + depth_steps * GridConfig.IDLE_DEPTH_BOOST)
-            base_amount = min(GridConfig.IDLE_LEVEL_TON,
-                              free_ton - added * GridConfig.IDLE_LEVEL_TON)
+            remaining   = free_ton - committed   # реальный остаток с учётом уже добавленных
+            base_amount = min(GridConfig.IDLE_LEVEL_TON, remaining)
             # Поднимаем до минимально прибыльного (газ-inclusive)
             base_amount = max(base_amount, _min_ton_for_profit)
             amount_ton  = round(base_amount * depth_mult, 2)
             if amount_ton < GridConfig.MIN_ORDER_TON:
                 break
-            # Бюджетный контроль: после подъёма base_amount может превысить остаток
-            if amount_ton > free_ton - added * base_amount:
+            # Бюджетный контроль: точная проверка по реально оставшемуся балансу
+            if amount_ton > remaining:
                 level_price /= (1 + step_pct / 100)
                 continue
 
@@ -2080,6 +2081,7 @@ class GridTrader:
                       f"AI BUY={ai_buy_conf:.0f}% | regime={regime}"),
             ))
             existing_prices.add(rounded)
+            committed += amount_ton   # точный учёт реально зарезервированного TON
             added += 1
             level_price /= (1 + step_pct / 100)
 
