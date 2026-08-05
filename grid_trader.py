@@ -1025,10 +1025,16 @@ class GridTrader:
                     # Восстанавливаем: a) откат — уровень ещё не достигнут,
                     #                  b) DCA закрылась — свободный GRINCH появился
                     try:
-                        _reserved = self._get_dca_reserved_grinch()
+                        _dca_raw2 = self._get_dca_reserved_grinch()
                         from dedust_client import get_shared_balance as _gsb2
                         _w2 = float(_gsb2().get("GRINCH", 0))
-                        _free2 = max(0.0, _w2 - _reserved)
+                        # та же поправка: grid sell alloc вычитаем из DCA резерва
+                        _grid_alloc2 = sum(
+                            l.amount_grinch for l in self._state.sell_levels
+                            if l.status in ("waiting", "skipped_dca", "skipped_small", "dca")
+                            and l.amount_grinch > 0
+                        )
+                        _free2 = max(0.0, _w2 - max(0.0, _dca_raw2 - _grid_alloc2))
                         dca_freed = _free2 >= _lv.amount_grinch
                     except Exception:
                         dca_freed = False
@@ -1299,19 +1305,30 @@ class GridTrader:
 
             # ── Координация Grid ↔ DCA: runtime-guard ─────────────────────
             # Проверяем прямо перед свопом: не залезаем ли в GRINCH DCA.
-            # DCA reserved читаем из open_trades (актуально всегда).
+            # ВАЖНО: GRINCH, уже выделенный на sell-уровни сетки (status=waiting/
+            # skipped_dca/skipped_small), принадлежит сетке, а не DCA. Вычитаем
+            # его из DCA-резерва, иначе guard всегда блокирует когда DCA держит
+            # весь кошелёк (grid_alloc был вырезан ещё при build_grid).
             try:
                 from dedust_client import get_shared_balance as _gsb
                 _bal      = _gsb()
                 _wallet_g = float(_bal.get("GRINCH", _bal.get("grinch", 0)))
-                _reserved = self._get_dca_reserved_grinch()
+                _dca_raw  = self._get_dca_reserved_grinch()
+                # GRINCH уже выделенный на sell-уровни сетки — он наш, не DCA
+                _grid_sell_alloc = sum(
+                    l.amount_grinch for l in self._state.sell_levels
+                    if l.status in ("waiting", "skipped_dca", "skipped_small", "dca")
+                    and l.amount_grinch > 0
+                )
+                _reserved = max(0.0, _dca_raw - _grid_sell_alloc)
                 _free_g   = max(0.0, _wallet_g - _reserved)
                 if _free_g < level.amount_grinch:
                     log.warning(
                         "[Grid] ⛔ SELL L%d заблокирован: "
-                        "свободно %.0f GRINCH (кошелёк %.0f − DCA %.0f), "
+                        "свободно %.0f GRINCH (кошелёк %.0f − DCA %.0f − grid_alloc %.0f), "
                         "нужно %.0f — пропуск",
-                        level.id, _free_g, _wallet_g, _reserved, level.amount_grinch)
+                        level.id, _free_g, _wallet_g, _dca_raw,
+                        _grid_sell_alloc, level.amount_grinch)
                     level.status = "skipped_dca"
                     level.note   = (f"DCA резерв: свободно {_free_g:.0f} "
                                     f"< нужно {level.amount_grinch:.0f}")
