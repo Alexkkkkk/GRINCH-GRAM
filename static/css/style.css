@@ -2221,6 +2221,25 @@ body::after {
   .th-meta    { font-size: 10px; }
 }
 
+/* ─── GridAI v5: Trap Alert ──────────────────────────────────────── */
+.grid-trap-alert {
+  padding: 10px 12px;
+  background: rgba(255,77,109,.08);
+  border: 1px solid rgba(255,77,109,.3);
+  border-radius: 8px;
+  margin-top: 2px;
+}
+
+@keyframes trap-pulse-anim {
+  0%   { box-shadow: 0 0 0 0 rgba(255,77,109,.5); border-color: rgba(255,77,109,.7); }
+  50%  { box-shadow: 0 0 0 6px rgba(255,77,109,.0); border-color: rgba(255,77,109,.2); }
+  100% { box-shadow: 0 0 0 0 rgba(255,77,109,.0); border-color: rgba(255,77,109,.4); }
+}
+
+.grid-trap-alert.trap-pulse {
+  animation: trap-pulse-anim 1.4s ease-out 3;
+}
+
 /* ─ Extra small: ≤400px ───────────────────────────────────── */
 @media (max-width: 400px) {
   .hdr-bal-area { display: none; }   /* балансы в хэдере скрыть — есть в панели */

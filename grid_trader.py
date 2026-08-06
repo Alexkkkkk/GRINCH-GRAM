@@ -2450,8 +2450,9 @@ class GridTrader:
                 from coin_info import get_snapshot as _ci_snap
                 ci = _ci_snap()
                 if ci:
-                    buys = float(ci.get("buy_count") or ci.get("buys_5m") or 0)
-                    sells = float(ci.get("sell_count") or ci.get("sells_5m") or 0)
+                    # coin_info возвращает buys_h1/sells_h1 (DexScreener txns за 1 час)
+                    buys = float(ci.get("buys_h1") or ci.get("buys_h6") or ci.get("buys_h24") or 0)
+                    sells = float(ci.get("sells_h1") or ci.get("sells_h6") or ci.get("sells_h24") or 0)
                     total = buys + sells
                     if total > 0:
                         order_buy = buys / total

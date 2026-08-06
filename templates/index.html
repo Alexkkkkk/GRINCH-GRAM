@@ -675,6 +675,50 @@
             <div style="font-size:11px;color:var(--text2)">Решений пока нет</div>
           </div>
         </div>
+
+        <!-- GridAI v5 stats -->
+        <div style="padding:8px 10px;background:rgba(0,212,255,.04);border:1px solid rgba(0,212,255,.1);border-radius:8px">
+          <div style="display:flex;align-items:center;gap:6px;margin-bottom:6px">
+            <span style="font-size:10px;font-weight:700;color:#00d4ff">⚡ GridAI v5</span>
+            <span id="grid-ai-v5-badge" style="font-size:9px;padding:1px 6px;border-radius:8px;background:rgba(0,255,136,.12);color:var(--green);display:none">обучен</span>
+            <span id="grid-ai-v5-samples" style="font-size:9px;color:var(--text2);margin-left:auto"></span>
+          </div>
+          <!-- Модели VolModel / ExitModel -->
+          <div style="display:flex;gap:6px;margin-bottom:6px;flex-wrap:wrap">
+            <span id="grid-v5-volmodel" style="font-size:9px;padding:2px 7px;border-radius:6px;background:rgba(255,255,255,.06);color:var(--text2)">📈 VolModel —</span>
+            <span id="grid-v5-exitmodel" style="font-size:9px;padding:2px 7px;border-radius:6px;background:rgba(255,255,255,.06);color:var(--text2)">🎯 ExitModel —</span>
+          </div>
+          <!-- Kelly · Backtest -->
+          <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:4px">
+            <div style="text-align:center">
+              <div style="font-size:9px;color:var(--text2)">Kelly×</div>
+              <div id="grid-v5-kelly" style="font-size:11px;font-weight:700;font-family:var(--mono);color:#ffd166">—</div>
+            </div>
+            <div style="text-align:center">
+              <div style="font-size:9px;color:var(--text2)">Backtest R²</div>
+              <div id="grid-v5-r2" style="font-size:11px;font-weight:700;font-family:var(--mono);color:#00d4ff">—</div>
+            </div>
+            <div style="text-align:center">
+              <div style="font-size:9px;color:var(--text2)">Dir.Acc</div>
+              <div id="grid-v5-diracc" style="font-size:11px;font-weight:700;font-family:var(--mono);color:#c084fc">—</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- GridAI Trap Alert -->
+        <div id="grid-trap-alert" class="grid-trap-alert" style="display:none">
+          <div style="display:flex;align-items:center;gap:8px">
+            <span style="font-size:14px">🚨</span>
+            <div style="flex:1">
+              <div id="grid-trap-title" style="font-size:11px;font-weight:700;color:#ff4d6d">ЛОВУШКА</div>
+              <div id="grid-trap-reason" style="font-size:10px;color:rgba(255,255,255,.6);margin-top:2px"></div>
+            </div>
+            <div style="text-align:right">
+              <div id="grid-trap-conf" style="font-size:14px;font-weight:900;color:#ff4d6d;font-family:var(--mono)">0%</div>
+              <div style="font-size:9px;color:rgba(255,255,255,.4)">уверенность</div>
+            </div>
+          </div>
+        </div>
       </div>
 
       <!-- Feature importance -->

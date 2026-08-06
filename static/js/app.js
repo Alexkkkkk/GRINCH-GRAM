@@ -1398,6 +1398,60 @@ function renderGridPanel(d) {
     const mins = Math.ceil(aiMgr.rebuild_cooldown_left / 60);
     cdEl.textContent = mins > 0 ? `перестройка через ${mins} мин` : 'перестройка готова';
   }
+
+  // ── GridAI v5 stats ──────────────────────────────────────────────
+  const gai = d.grid_ai || {};
+  if (gai.trained != null) {
+    // Badge обучен/нет
+    const v5badge = document.getElementById('grid-ai-v5-badge');
+    if (v5badge) {
+      v5badge.style.display = gai.trained ? '' : 'none';
+    }
+    // Количество примеров
+    const sampEl = document.getElementById('grid-ai-v5-samples');
+    if (sampEl) sampEl.textContent = gai.samples != null ? `${gai.samples} примеров` : '';
+
+    // VolModel / ExitModel
+    const v5models = gai.v5_models || [];
+    const volEl  = document.getElementById('grid-v5-volmodel');
+    const exitEl = document.getElementById('grid-v5-exitmodel');
+    if (volEl) {
+      const hasVol = v5models.includes('VolModel');
+      volEl.textContent = hasVol ? '📈 VolModel ✓' : '📈 VolModel —';
+      volEl.style.color = hasVol ? 'var(--green)' : 'var(--text2)';
+      volEl.style.background = hasVol ? 'rgba(0,255,136,.12)' : 'rgba(255,255,255,.06)';
+    }
+    if (exitEl) {
+      const hasExit = v5models.includes('ExitModel');
+      exitEl.textContent = hasExit ? '🎯 ExitModel ✓' : '🎯 ExitModel —';
+      exitEl.style.color = hasExit ? '#c084fc' : 'var(--text2)';
+      exitEl.style.background = hasExit ? 'rgba(192,132,252,.12)' : 'rgba(255,255,255,.06)';
+    }
+
+    // Kelly ×
+    const kellyEl = document.getElementById('grid-v5-kelly');
+    if (kellyEl) {
+      const km = Number(gai.kelly_mult || 1.0);
+      kellyEl.textContent = '×' + km.toFixed(3);
+      kellyEl.style.color = km >= 1.05 ? 'var(--green)' : km <= 0.85 ? 'var(--red)' : '#ffd166';
+    }
+
+    // Backtest R²
+    const r2El = document.getElementById('grid-v5-r2');
+    if (r2El) {
+      const r2 = gai.backtest_r2 != null ? Number(gai.backtest_r2) : null;
+      r2El.textContent = r2 != null ? r2.toFixed(3) : '—';
+      if (r2 != null) r2El.style.color = r2 >= 0.1 ? 'var(--green)' : r2 >= -0.5 ? '#00d4ff' : 'var(--red)';
+    }
+
+    // Direction Accuracy
+    const daEl = document.getElementById('grid-v5-diracc');
+    if (daEl) {
+      const da = gai.backtest_dir_acc != null ? Number(gai.backtest_dir_acc) : null;
+      daEl.textContent = da != null ? (da * 100).toFixed(0) + '%' : '—';
+      if (da != null) daEl.style.color = da >= 0.55 ? 'var(--green)' : da >= 0.45 ? '#c084fc' : 'var(--red)';
+    }
+  }
 }
 
 // ════════════════════════════════════════════════════
@@ -2237,6 +2291,45 @@ const TB_STAGE_ORDER = ["collecting", "features", "rf", "gb", "validate", "ready
 // 1) SocketIO event "training_progress" (в реальном времени)
 // 2) поле training_progress в updateUI (polling fallback, уже встроен выше)
 socket.on("training_progress", renderTrainingProgress);
+
+// ── GridAI v5: детектор ловушки ──────────────────────────────────
+socket.on("grid_trap_alert", function(data) {
+  const el = document.getElementById('grid-trap-alert');
+  if (!el) return;
+  const action = data.action || 'HOLD';
+  const conf   = Number(data.confidence || 0);
+  const reason = data.reason || '';
+  const regime = data.regime || '';
+  const draw   = Number(data.drawdown || 0);
+
+  const titleEl  = document.getElementById('grid-trap-title');
+  const reasonEl = document.getElementById('grid-trap-reason');
+  const confEl   = document.getElementById('grid-trap-conf');
+
+  if (action === 'EXIT') {
+    el.style.borderColor = 'rgba(255,77,109,.4)';
+    el.style.background  = 'rgba(255,77,109,.08)';
+    if (titleEl) { titleEl.textContent = '🚨 ЛОВУШКА — ВЫХОД'; titleEl.style.color = '#ff4d6d'; }
+  } else {
+    el.style.borderColor = 'rgba(255,209,102,.3)';
+    el.style.background  = 'rgba(255,209,102,.06)';
+    if (titleEl) { titleEl.textContent = '⚠️ ЛОВУШКА — REDUCE'; titleEl.style.color = '#ffd166'; }
+  }
+  if (reasonEl) reasonEl.textContent = `${regime} | просадка −${draw.toFixed(1)}% | ${reason}`;
+  if (confEl)   confEl.textContent   = conf.toFixed(0) + '%';
+
+  el.style.display = '';
+  el.classList.add('trap-pulse');
+
+  // Показываем 90 секунд, потом скрываем
+  clearTimeout(el._hideTimer);
+  el._hideTimer = setTimeout(() => {
+    el.style.display = 'none';
+    el.classList.remove('trap-pulse');
+  }, 90000);
+
+  showToast(`🚨 GridAI: ${action} (${conf.toFixed(0)}%) — ${regime}`, action === 'EXIT' ? 'err' : 'info');
+});
 
 function renderTrainingProgress(tp) {
   if (!tp) return;
