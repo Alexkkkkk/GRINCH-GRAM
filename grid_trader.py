@@ -1607,7 +1607,8 @@ class GridTrader:
         step = self._state.step_pct
 
         def _next_compound_id():
-            compound_ids = [l.id for l in self._state.buy_levels if l.id <= -100]
+            # Диапазон compound: -101 … -999 (не трогаем DCA -1000…-1999 и idle -2000…)
+            compound_ids = [l.id for l in self._state.buy_levels if -999 <= l.id <= -101]
             return (min(compound_ids) - 1) if compound_ids else -101
 
         # ── Первый BUY: ближе к цене (REINVEST_STEP_MULT × step) ────────────
@@ -1869,7 +1870,9 @@ class GridTrader:
         base_ton  = GridConfig.MIN_ORDER_TON * 1.5  # 22.5 TON базовый DCA-ордер
         amount_ton = round(max(base_ton * size_mult, GridConfig.MIN_ORDER_TON), 2)
 
-        new_id = -(1000 + len(self._state.dca_levels))
+        # Диапазон DCA: -1001 … -1999 (min существующих - 1)
+        _dca_ids = [l.id for l in self._state.dca_levels if l.id <= -1000]
+        new_id = (min(_dca_ids) - 1) if _dca_ids else -1001
         self._state.dca_levels.append(GridLevel(
             id=new_id, side="dca",
             price_ton=round(dca_price, 8),
@@ -2041,7 +2044,9 @@ class GridTrader:
 
         added = 0
         committed = 0.0   # реально зарезервированный TON (сумма amount_ton добавленных уровней)
-        next_id = -(2000 + len(self._state.buy_levels))
+        # Диапазон idle-deploy: -2001 … (min существующих - 1), чтобы никогда не повторять
+        _idle_ids = [l.id for l in self._state.buy_levels if l.id <= -2000]
+        next_id = (min(_idle_ids) - 1) if _idle_ids else -2001
         level_price = anchor_price / (1 + step_pct / 100)   # первый ниже anchor
 
         for _ in range(n_add * 3):   # итераций с запасом (пропускаем дубли)
