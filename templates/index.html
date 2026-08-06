@@ -676,17 +676,29 @@
           </div>
         </div>
 
-        <!-- GridAI v5 stats -->
+        <!-- GridAI v6 stats -->
         <div style="padding:8px 10px;background:rgba(0,212,255,.04);border:1px solid rgba(0,212,255,.1);border-radius:8px">
           <div style="display:flex;align-items:center;gap:6px;margin-bottom:6px">
-            <span style="font-size:10px;font-weight:700;color:#00d4ff">⚡ GridAI v5</span>
+            <span style="font-size:10px;font-weight:700;color:#00d4ff">⚡ GridAI v6</span>
             <span id="grid-ai-v5-badge" style="font-size:9px;padding:1px 6px;border-radius:8px;background:rgba(0,255,136,.12);color:var(--green);display:none">обучен</span>
+            <span id="grid-v6-gen" style="font-size:9px;padding:1px 6px;border-radius:8px;background:rgba(255,209,0,.1);color:#ffd166;display:none">Gen #0</span>
             <span id="grid-ai-v5-samples" style="font-size:9px;color:var(--text2);margin-left:auto"></span>
           </div>
           <!-- Модели VolModel / ExitModel -->
           <div style="display:flex;gap:6px;margin-bottom:6px;flex-wrap:wrap">
             <span id="grid-v5-volmodel" style="font-size:9px;padding:2px 7px;border-radius:6px;background:rgba(255,255,255,.06);color:var(--text2)">📈 VolModel —</span>
             <span id="grid-v5-exitmodel" style="font-size:9px;padding:2px 7px;border-radius:6px;background:rgba(255,255,255,.06);color:var(--text2)">🎯 ExitModel —</span>
+          </div>
+          <!-- v6 саморазвитие -->
+          <div style="display:flex;gap:6px;margin-bottom:6px;flex-wrap:wrap">
+            <span id="grid-v6-drift" style="font-size:9px;padding:2px 7px;border-radius:6px;background:rgba(255,107,107,.08);color:var(--text2)">🚨 Дрейф: 0</span>
+            <span id="grid-v6-bandit" style="font-size:9px;padding:2px 7px;border-radius:6px;background:rgba(192,132,252,.08);color:var(--text2)">🎲 Стратегия: —</span>
+            <span id="grid-v6-rl" style="font-size:9px;padding:2px 7px;border-radius:6px;background:rgba(0,255,136,.08);color:var(--text2)">🔄 RL: 0 эп.</span>
+          </div>
+          <!-- v6 режимные модели -->
+          <div id="grid-v6-regime-models" style="display:none;margin-bottom:6px">
+            <div style="font-size:9px;color:var(--text2);margin-bottom:3px">🧠 Режимные модели:</div>
+            <div id="grid-v6-regime-list" style="display:flex;gap:4px;flex-wrap:wrap"></div>
           </div>
           <!-- Kelly · Backtest -->
           <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:4px">

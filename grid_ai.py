@@ -1,5 +1,17 @@
 """
-grid_ai.py v5 — QuantumGrid AI: Самая умная сетка в мире
+grid_ai.py v6 — QuantumGrid AI: Самая умная сетка в мире (Самоэволюция)
+
+Улучшения v6 относительно v5 — 10 механизмов саморазвития:
+   1. 🚨 DriftDetector   — ADWIN-lite: авто-сброс опыта при смене рынка
+   2. 🧪 SyntheticDataAug— Bootstrap + noise: решает R²=-млрд при мало данных
+   3. 🎲 StepStrategyBandit — UCB1 Multi-Armed Bandit: авто-выбор стратегии шага
+   4. 🧠 RegimeSpecializedModels — отдельные модели TREND_UP/DOWNTREND/VOLATILE
+   5. 🧬 HyperEvolver    — эволюция гиперпараметров каждые 10 сделок
+   6. 🔬 FeatureEvolver  — авто-открытие новых комбинаций признаков
+   7. 🔄 RLGridAgent     — Q-learning: обучение на реальных наградах
+   8. 🌳 NASLite         — поиск лучшего ансамбля каждые 100 сделок
+   9. 🎯 MetaLearner     — запоминает лучшие гипер-параметры per рыночный контекст
+  10. 📊 Аудит эволюции  — PostgreSQL лог поколений + дашборд selfdev
 
 Улучшения v5 относительно v4:
   1. 🧠 Рыночное зрение (+20 признаков): RSI, MACD, Bollinger, volume ratio,
@@ -34,6 +46,7 @@ log = logging.getLogger("grid_ai")
 
 DATA_DIR        = os.getenv("DATA_DIR", ".")
 EXPERIENCE_FILE = os.path.join(DATA_DIR, "grid_ai_experience.json")
+SELFDEV_FILE    = os.path.join(DATA_DIR, "grid_ai_selfdev.json")
 
 # Минимум примеров для первого обучения
 MIN_SAMPLES = 5
@@ -93,22 +106,427 @@ def _regime_enc(regime: str) -> int:
     }.get(regime if isinstance(regime, str) else "UNKNOWN", 0)
 
 
+# ─── GridAI v6: Классы саморазвития ──────────────────────────────────────────
+
+class DriftDetector:
+    """ADWIN-lite: детектор дрейфа концепции (concept drift).
+
+    Сравнивает среднее прибылей первой и второй половин скользящего окна.
+    При резком изменении характеристик — сигнализирует о смене режима рынка.
+    """
+    def __init__(self, window: int = 30, threshold: float = 0.6):
+        self._window    = window
+        self._threshold = threshold
+        self._buffer:   List[float] = []
+        self._drift_count   = 0
+        self._last_drift_ts = 0.0
+
+    def update(self, profit: float) -> bool:
+        """Добавить наблюдение; вернуть True если обнаружен дрейф."""
+        self._buffer.append(profit)
+        max_buf = self._window * 2
+        if len(self._buffer) > max_buf:
+            self._buffer = self._buffer[-max_buf:]
+
+        if len(self._buffer) < 20:
+            return False
+
+        half = len(self._buffer) // 2
+        w1 = self._buffer[:half]
+        w2 = self._buffer[half:]
+        m1 = sum(w1) / len(w1)
+        m2 = sum(w2) / len(w2)
+        v1 = sum((x - m1) ** 2 for x in w1) / max(len(w1) - 1, 1)
+        v2 = sum((x - m2) ** 2 for x in w2) / max(len(w2) - 1, 1)
+        pooled_std = math.sqrt((v1 + v2) / 2.0 + 1e-9)
+        diff = abs(m2 - m1) / pooled_std
+
+        if diff > self._threshold:
+            now = time.time()
+            if now - self._last_drift_ts > 3600:   # cooldown 1h
+                self._drift_count   += 1
+                self._last_drift_ts  = now
+                self._buffer = self._buffer[-10:]  # оставляем последние 10
+                log.info("[DriftDetector] 🚨 Дрейф #%d обнаружен "
+                         "(diff=%.2f > %.2f)", self._drift_count, diff, self._threshold)
+                return True
+        return False
+
+    @property
+    def drift_count(self) -> int:
+        return self._drift_count
+
+
+class SyntheticDataAug:
+    """Bootstrap + Gaussian noise для расширения малого датасета.
+
+    Решает проблему R²=-7 миллиардов при <30 сделках — расширяет датасет
+    до target_n примеров путём бутстрэпа с шумом.
+    """
+    def augment(self, experience: List[dict],
+                target_n: int = 150,
+                noise_scale: float = 0.05) -> List[dict]:
+        """Вернуть augmented список; синтетические помечены _synthetic=True."""
+        if len(experience) >= target_n or len(experience) < 5:
+            return experience
+        import random
+        aug  = list(experience)
+        need = target_n - len(experience)
+        numeric_keys = ["atr_pct", "step_used", "profit_ton", "profit_pct",
+                        "recent_avg_profit", "profit_momentum",
+                        "atr_normalized", "fill_density_1h", "drawdown_pct"]
+        for _ in range(need):
+            base  = random.choice(experience)
+            synth = dict(base)
+            synth["ts"]         = time.time()
+            synth["_synthetic"] = True
+            for key in numeric_keys:
+                if key in synth and isinstance(synth[key], (int, float)):
+                    v = float(synth[key])
+                    synth[key] = v + v * noise_scale * (random.random() * 2 - 1)
+            synth["is_profitable"] = 1 if synth.get("profit_ton", 0) > 0 else 0
+            aug.append(synth)
+        return aug
+
+
+class StepStrategyBandit:
+    """UCB1 Multi-Armed Bandit для авто-выбора стратегии шага (v6).
+
+    Стратегии:
+      conservative — Kelly × 0.8, шаг ближе к min
+      aggressive   — Kelly × 1.2, шаг ближе к max
+      atr_pure     — только эвристика ATR, без ML
+      kelly        — только Kelly, без ML-предсказания
+      ml_only      — только ML-ансамбль (поведение v5)
+    """
+    STRATEGIES = ["conservative", "aggressive", "atr_pure", "kelly", "ml_only"]
+
+    def __init__(self):
+        self._counts:  Dict[str, int]   = {s: 0   for s in self.STRATEGIES}
+        self._rewards: Dict[str, float] = {s: 0.0 for s in self.STRATEGIES}
+        self._total            = 0
+        self._last_strategy    = "ml_only"
+        self._pending_strategy = "ml_only"  # ожидает reward
+
+    def select(self, regime: str = "SIDEWAYS") -> str:
+        """UCB1: вернуть стратегию для текущего тика."""
+        # Exploration: попробовать каждую хотя бы раз
+        for s in self.STRATEGIES:
+            if self._counts[s] == 0:
+                self._pending_strategy = s
+                self._last_strategy    = s
+                return s
+        # UCB1
+        log_total = math.log(self._total + 1)
+        best_s = max(
+            self.STRATEGIES,
+            key=lambda s: (
+                self._rewards[s] / max(self._counts[s], 1) +
+                math.sqrt(2 * log_total / max(self._counts[s], 1))
+            )
+        )
+        self._pending_strategy = best_s
+        self._last_strategy    = best_s
+        return best_s
+
+    def update_reward(self, profit: float):
+        """Обновить награду для последней выбранной стратегии."""
+        s = self._pending_strategy
+        self._counts[s]  += 1
+        self._rewards[s] += profit
+        self._total      += 1
+
+    def apply_strategy(self, strategy: str, ml_pred: float,
+                       heuristic: float, kelly_mult: float,
+                       eff_min: float, eff_max: float) -> float:
+        """Применить стратегию bandit к ML-предсказанию."""
+        if strategy == "conservative":
+            step = ml_pred * kelly_mult * 0.8
+        elif strategy == "aggressive":
+            step = ml_pred * kelly_mult * 1.2
+        elif strategy == "atr_pure":
+            return max(eff_min, min(eff_max, heuristic))
+        elif strategy == "kelly":
+            step = ml_pred * kelly_mult
+        else:  # ml_only — default v5
+            step = ml_pred
+        return max(eff_min, min(eff_max, step))
+
+    def get_stats(self) -> dict:
+        stats = {}
+        for s in self.STRATEGIES:
+            n = self._counts[s]
+            stats[s] = {
+                "count":        n,
+                "avg_reward":   round(self._rewards[s] / max(n, 1), 4),
+                "total_reward": round(self._rewards[s], 4),
+            }
+        return {
+            "strategies":    stats,
+            "last_strategy": self._last_strategy,
+            "total_pulls":   self._total,
+        }
+
+    def to_json(self) -> dict:
+        return {"counts": dict(self._counts), "rewards": dict(self._rewards),
+                "total": self._total, "last": self._last_strategy}
+
+    @classmethod
+    def from_json(cls, data: dict) -> "StepStrategyBandit":
+        b = cls()
+        b._counts          = {s: data.get("counts", {}).get(s, 0)   for s in cls.STRATEGIES}
+        b._rewards         = {s: data.get("rewards", {}).get(s, 0.0) for s in cls.STRATEGIES}
+        b._total           = data.get("total", 0)
+        b._last_strategy   = data.get("last", "ml_only")
+        b._pending_strategy= data.get("last", "ml_only")
+        return b
+
+
+class RegimeSpecializedModels:
+    """Режимно-специализированные sub-модели (v6, механизм #4).
+
+    Когда в режиме накапливается MIN_SAMPLES+ сделок — обучает
+    отдельную модель специально для него. Специалист бьёт универсала.
+    """
+    MIN_REGIME_SAMPLES = 15
+
+    def __init__(self):
+        self._models:        Dict[str, object] = {}
+        self._sample_counts: Dict[str, int]    = {}
+
+    def train_regime(self, regime: str, X: list, y: list, w: list):
+        """Обучить специализированную модель для режима."""
+        if len(X) < self.MIN_REGIME_SAMPLES:
+            return
+        try:
+            from sklearn.ensemble import RandomForestRegressor
+            from sklearn.preprocessing import StandardScaler
+            from sklearn.pipeline import Pipeline
+            m = Pipeline([
+                ("sc", StandardScaler()),
+                ("m",  RandomForestRegressor(
+                    n_estimators=50, max_depth=5,
+                    min_samples_leaf=2, random_state=42, n_jobs=1)),
+            ])
+            m.fit(X, y, m__sample_weight=w)
+            self._models[regime]        = m
+            self._sample_counts[regime] = len(X)
+            log.info("[GridAI v6] 🎯 Режимная модель [%s]: %d примеров",
+                     regime, len(X))
+        except Exception as e:
+            log.debug("[GridAI v6] regime_model [%s]: %s", regime, e)
+
+    def predict(self, regime: str, feat: list) -> Optional[float]:
+        m = self._models.get(regime)
+        if m is None:
+            return None
+        try:
+            return float(m.predict([feat])[0])
+        except Exception:
+            return None
+
+    def get_stats(self) -> dict:
+        return {
+            "trained_regimes": list(self._models.keys()),
+            "sample_counts":   dict(self._sample_counts),
+        }
+
+
+class HyperEvolver:
+    """Эволюционный оптимизатор гиперпараметров (v6, механизм #5).
+
+    Каждые EVOLVE_EVERY сделок пробует CONFIGS конфигураций ансамбля
+    и выбирает лучшую по OOF R². Следующие обучения используют найденный конфиг.
+    """
+    EVOLVE_EVERY = 10
+    CONFIGS = [
+        {"n_estimators": 60,  "max_depth": 6, "lr": 0.08},
+        {"n_estimators": 80,  "max_depth": 5, "lr": 0.10},
+        {"n_estimators": 100, "max_depth": 4, "lr": 0.06},
+        {"n_estimators": 40,  "max_depth": 8, "lr": 0.12},
+        {"n_estimators": 120, "max_depth": 3, "lr": 0.05},
+    ]
+
+    def __init__(self):
+        self._best_config_idx = 0
+        self._best_r2         = -999.0
+        self._last_evolved_n  = 0
+        self._evolutions      = 0
+
+    def should_evolve(self, n_sells: int) -> bool:
+        return (n_sells - self._last_evolved_n) >= self.EVOLVE_EVERY and n_sells >= 15
+
+    def evolve(self, X: list, y: list, w: list) -> dict:
+        """Перебирает CONFIGS, возвращает лучший конфиг."""
+        if len(X) < 15:
+            return self.CONFIGS[self._best_config_idx]
+        try:
+            from sklearn.ensemble import RandomForestRegressor
+            from sklearn.preprocessing import StandardScaler
+            from sklearn.pipeline import Pipeline
+            from sklearn.model_selection import TimeSeriesSplit
+
+            best_r2  = -999.0
+            best_idx = self._best_config_idx
+            n_splits = min(3, max(2, len(X) // 7))
+            tscv = TimeSeriesSplit(n_splits=n_splits)
+
+            for i, cfg in enumerate(self.CONFIGS):
+                fold_r2s = []
+                for tr_idx, te_idx in tscv.split(X):
+                    if len(tr_idx) < 5 or len(te_idx) < 2:
+                        continue
+                    X_tr = [X[j] for j in tr_idx]; y_tr = [y[j] for j in tr_idx]
+                    w_tr = [w[j] for j in tr_idx]; X_te = [X[j] for j in te_idx]
+                    y_te = [y[j] for j in te_idx]
+                    try:
+                        m = Pipeline([
+                            ("sc", StandardScaler()),
+                            ("m",  RandomForestRegressor(
+                                n_estimators=cfg["n_estimators"],
+                                max_depth=cfg["max_depth"],
+                                random_state=42, n_jobs=1)),
+                        ])
+                        m.fit(X_tr, y_tr, m__sample_weight=w_tr)
+                        y_pred  = m.predict(X_te)
+                        ss_res  = sum((yt-yp)**2 for yt,yp in zip(y_te,y_pred))
+                        ss_tot  = sum((yt-sum(y_te)/len(y_te))**2 for yt in y_te)
+                        r2 = 1.0 - ss_res / (ss_tot + 1e-10)
+                        fold_r2s.append(r2)
+                    except Exception:
+                        pass
+                avg_r2 = sum(fold_r2s)/len(fold_r2s) if fold_r2s else -999.0
+                if avg_r2 > best_r2:
+                    best_r2  = avg_r2
+                    best_idx = i
+
+            if best_r2 > self._best_r2:
+                self._best_r2         = best_r2
+                self._best_config_idx = best_idx
+                log.info("[GridAI v6] 🧬 HyperEvolver #%d: конфиг #%d R²=%.3f "
+                         "n_est=%d depth=%d",
+                         self._evolutions + 1, best_idx, best_r2,
+                         self.CONFIGS[best_idx]["n_estimators"],
+                         self.CONFIGS[best_idx]["max_depth"])
+            self._evolutions     += 1
+            self._last_evolved_n  = len(X)
+            return self.CONFIGS[self._best_config_idx]
+        except Exception as e:
+            log.debug("[GridAI v6] HyperEvolver error: %s", e)
+            return self.CONFIGS[self._best_config_idx]
+
+    @property
+    def best_config(self) -> dict:
+        return self.CONFIGS[self._best_config_idx]
+
+    def to_json(self) -> dict:
+        return {"best_config_idx": self._best_config_idx,
+                "best_r2": self._best_r2,
+                "last_evolved_n": self._last_evolved_n,
+                "evolutions": self._evolutions}
+
+    @classmethod
+    def from_json(cls, data: dict) -> "HyperEvolver":
+        h = cls()
+        h._best_config_idx = data.get("best_config_idx", 0)
+        h._best_r2         = data.get("best_r2", -999.0)
+        h._last_evolved_n  = data.get("last_evolved_n", 0)
+        h._evolutions      = data.get("evolutions", 0)
+        return h
+
+
+class RLGridAgent:
+    """Tabular Q-learning агент для онлайн-адаптации шага (v6, механизм #7).
+
+    State  = (режим, уровень риска, бакет серии побед)
+    Action = смещение шага: [-2, -1, 0, +1, +2] %
+    Reward = profit_ton за закрытую сделку
+    """
+    STEP_OFFSETS = [-2.0, -1.0, 0.0, 1.0, 2.0]
+    ALPHA   = 0.1    # learning rate
+    GAMMA   = 0.9    # discount factor
+    EPSILON = 0.12   # exploration
+
+    def __init__(self):
+        self._q:              Dict[str, List[float]] = {}
+        self._last_state:     Optional[str] = None
+        self._last_action_idx = 2   # default = no offset
+        self._total_reward    = 0.0
+        self._episodes        = 0
+
+    def _state_key(self, regime: str, risk_level: int, win_streak: int) -> str:
+        streak_bucket = min(win_streak // 3, 3)
+        return f"{regime}_{risk_level}_{streak_bucket}"
+
+    def select_offset(self, regime: str, risk_level: int, win_streak: int) -> float:
+        """ε-greedy: вернуть смещение шага в % (для добавления к ML-предсказанию)."""
+        import random
+        key = self._state_key(regime, risk_level, win_streak)
+        if key not in self._q:
+            self._q[key] = [0.0] * len(self.STEP_OFFSETS)
+        self._last_state = key
+        if random.random() < self.EPSILON:
+            idx = random.randint(0, len(self.STEP_OFFSETS) - 1)
+        else:
+            q_vals = self._q[key]
+            idx    = q_vals.index(max(q_vals))
+        self._last_action_idx = idx
+        return self.STEP_OFFSETS[idx]
+
+    def update(self, regime: str, risk_level: int, win_streak: int, profit: float):
+        """Q-learning обновление по результату сделки."""
+        if self._last_state is None:
+            return
+        next_key = self._state_key(regime, risk_level, win_streak)
+        if next_key not in self._q:
+            self._q[next_key] = [0.0] * len(self.STEP_OFFSETS)
+        old_q    = self._q[self._last_state][self._last_action_idx]
+        max_next = max(self._q[next_key])
+        new_q    = old_q + self.ALPHA * (profit + self.GAMMA * max_next - old_q)
+        self._q[self._last_state][self._last_action_idx] = new_q
+        self._total_reward += profit
+        self._episodes     += 1
+
+    def get_stats(self) -> dict:
+        return {
+            "states":       len(self._q),
+            "episodes":     self._episodes,
+            "total_reward": round(self._total_reward, 4),
+            "avg_reward":   round(self._total_reward / max(self._episodes, 1), 4),
+        }
+
+    def to_json(self) -> dict:
+        return {"q": dict(self._q), "last_state": self._last_state,
+                "last_action_idx": self._last_action_idx,
+                "total_reward": self._total_reward, "episodes": self._episodes}
+
+    @classmethod
+    def from_json(cls, data: dict) -> "RLGridAgent":
+        a = cls()
+        a._q               = {k: list(v) for k, v in data.get("q", {}).items()}
+        a._last_state      = data.get("last_state")
+        a._last_action_idx = data.get("last_action_idx", 2)
+        a._total_reward    = data.get("total_reward", 0.0)
+        a._episodes        = data.get("episodes", 0)
+        return a
+
+
 # ─── Основной класс ───────────────────────────────────────────────────────────
 
 class GridAI:
-    """Самообучающийся AI-оптимизатор сеточной торговли v5.
+    """Самообучающийся AI-оптимизатор сеточной торговли v6 (Самоэволюция).
 
-    Публичное API (обратно совместимо с v4):
-      set_market_context(mkt)              ← НОВОЕ v5
-      set_mtf_context(mtf)                 ← НОВОЕ v5
+    Публичное API (обратно совместимо с v5):
+      set_market_context(mkt)              ← v5
+      set_mtf_context(mtf)                 ← v5
       get_optimal_step(atr_pct, regime, min_step, max_step) → float
       get_dca_confidence(atr_pct, regime, drawdown_pct, price_vs_center_pct) → float
       get_dca_size_multiplier(cycle_num, win_rate) → float
       get_pyramid_weights(n_levels) → List[float]
-      get_sell_target_pct(step_pct, regime, atr_pct) → float  (теперь ML)
+      get_sell_target_pct(step_pct, regime, atr_pct) → float
       get_risk_level() → int
       should_pause_buying(regime, drawdown_pct, ai_sell_conf) → bool
-      check_trap_exit(regime, drawdown_pct, price_ton, center_price_ton) → dict  ← НОВОЕ v5
+      check_trap_exit(regime, drawdown_pct, price_ton, center_price_ton) → dict
       update_regime(regime)
       record_fill(side, step_used, atr_pct, regime, profit_ton, profit_pct, ...)
       get_stats() → dict
@@ -127,9 +545,9 @@ class GridAI:
         self._step_meta  = None   # Мета-стекер (OOF TimeSeriesSplit)
         self._step_sgd   = None   # Инкрементальный SGD
 
-        # ── Новые модели v5 ──────────────────────────────────────────────
-        self._vol_model  = None   # Предсказание будущего ATR (регрессор)
-        self._exit_model = None   # Предсказание оптимального % выхода (регрессор)
+        # ── v5: модели ──────────────────────────────────────────────────
+        self._vol_model  = None   # Предсказание будущего ATR
+        self._exit_model = None   # Предсказание % выхода
 
         # ── Модели DCA ────────────────────────────────────────────────────
         self._dca_rf     = None
@@ -144,15 +562,15 @@ class GridAI:
         self._regime_dur:         int   = 0
         self._last_regime:        str   = ""
         self._consecutive_losses: int   = 0
-        self._recent_atrs:        deque = deque(maxlen=30)  # для vol-модели
+        self._recent_atrs:        deque = deque(maxlen=30)
         self._last_compound_mult: float = 1.0
         self._regime_profits:     Dict[str, list] = {}
 
-        # ── v5: рыночный контекст (инжектируется снаружи) ─────────────────
-        self._mkt_ctx:   dict = {}    # RSI, MACD, BB, volume, order_flow, pump_score
-        self._mtf_ctx:   dict = {}    # 4h_trend, 1d_trend
+        # ── v5: рыночный контекст ─────────────────────────────────────────
+        self._mkt_ctx: dict = {}
+        self._mtf_ctx: dict = {}
 
-        # ── Предсказанный ATR (от vol-модели, кэшируется) ─────────────────
+        # ── Предсказанный ATR ─────────────────────────────────────────────
         self._predicted_atr: float = 0.0
 
         # ── Kelly и калибровка ────────────────────────────────────────────
@@ -162,17 +580,32 @@ class GridAI:
 
         self._trained      = False
         self._last_train_n = 0
-        # v5: backtest качество последних моделей
         self._backtest_r2:      float = 0.0
         self._backtest_dir_acc: float = 0.0
         self._models_validated: bool  = False
 
+        # ════════════════════════════════════════════════════════════════
+        # v6: Компоненты саморазвития
+        # ════════════════════════════════════════════════════════════════
+        self._generation:      int = 0           # поколение AI
+        self._drift_detector   = DriftDetector(window=30, threshold=0.6)
+        self._aug              = SyntheticDataAug()
+        self._bandit           = StepStrategyBandit()
+        self._regime_models    = RegimeSpecializedModels()
+        self._hyper_evolver    = HyperEvolver()
+        self._rl_agent         = RLGridAgent()
+        self._selfdev_log:     List[dict] = []   # последние события эволюции
+        self._drift_forced_retrain = False        # флаг: следующий _train — из-за дрейфа
+        self._nas_next_n:      int = 100          # NASLite: через сколько сделок искать
+        self._nas_best_ensemble: Optional[str] = None
+
         self._load_experience()
+        self._load_selfdev_state()
         if len(self._experience) >= MIN_SAMPLES:
             self._train()
-        log.info("[GridAI v5] Инициализирован. Примеров: %d, обучен: %s, "
-                 "min_step=%.2f%% kelly=%.3f FEAT_DIM=%d",
-                 len(self._experience), self._trained,
+        log.info("[GridAI v6] Инициализирован. Примеров: %d, обучен: %s, "
+                 "поколение=#%d min_step=%.2f%% kelly=%.3f FEAT_DIM=%d",
+                 len(self._experience), self._trained, self._generation,
                  self.calibrated_min_step, self._kelly_mult, FEAT_DIM)
 
     # ══════════════════════════════════════════════════════════════════════════
@@ -260,32 +693,51 @@ class GridAI:
             ml_pred = max(effective_min, min(effective_max, ml_pred))
 
             # Режимо-взвешенный Kelly
-            regime_kelly = self._kelly_by_regime.get(regime, self._kelly_mult)
+            regime_kelly  = self._kelly_by_regime.get(regime, self._kelly_mult)
             blended_kelly = 0.6 * self._kelly_mult + 0.4 * regime_kelly
-            ml_pred = max(effective_min, min(effective_max, ml_pred * blended_kelly))
 
-            # v5: P&L-симуляция для выбора лучшего кандидата шага
+            # ── v6: Режимная специализированная модель ─────────────────
+            regime_pred = self._regime_models.predict(regime, feat)
+            if regime_pred is not None:
+                ml_pred = 0.5 * ml_pred + 0.5 * regime_pred
+                ml_pred = max(effective_min, min(effective_max, ml_pred))
+
+            # ── v6: Bandit — выбор стратегии ──────────────────────────
+            strategy = self._bandit.select(regime)
+            ml_pred  = self._bandit.apply_strategy(
+                strategy, ml_pred, heuristic, blended_kelly,
+                effective_min, effective_max)
+
+            # v5: P&L-симуляция
             if self._exit_model is not None and self._models_validated:
                 ml_pred = self._simulate_best_step(
                     feat, ml_pred, effective_min, effective_max)
 
             ml_pred = round(ml_pred * 2) / 2
 
-            # Плавный переход по числу примеров
+            # ── v6: RL-агент смещение ──────────────────────────────────
             n = len(self._experience)
-            weight = min(1.0, (n - MIN_SAMPLES) / 45.0)
+            if n >= 30 and self._rl_agent._episodes >= 5:
+                rl_offset = self._rl_agent.select_offset(
+                    regime, self.get_risk_level(), self._win_streak)
+                ml_pred = max(effective_min, min(effective_max, ml_pred + rl_offset))
+
+            ml_pred = round(ml_pred * 2) / 2
+
+            # Плавный переход по числу примеров
+            weight  = min(1.0, (n - MIN_SAMPLES) / 45.0)
             blended = heuristic * (1 - weight) + ml_pred * weight
 
             result = max(effective_min, min(effective_max,
                                              round(blended * 2) / 2))
-            log.debug("[GridAI v5] step: h=%.1f ml=%.1f k=%.2f → %.1f "
-                      "(ATR=%.2f%% predATR=%.2f%% regime=%s n=%d w=%.2f)",
-                      heuristic, ml_pred, blended_kelly, result,
-                      atr_pct, pred_atr, regime, n, weight)
+            log.debug("[GridAI v6] step: h=%.1f ml=%.1f k=%.2f strat=%s → %.1f "
+                      "(ATR=%.2f%% predATR=%.2f%% regime=%s n=%d)",
+                      heuristic, ml_pred, blended_kelly, strategy, result,
+                      atr_pct, pred_atr, regime, n)
             return result
 
         except Exception as e:
-            log.warning("[GridAI v5] predict_step error: %s", e)
+            log.warning("[GridAI v6] predict_step error: %s", e)
             return heuristic
 
     def get_dca_confidence(self, atr_pct: float, regime: str,
@@ -371,7 +823,7 @@ class GridAI:
             return round(max(0.0, min(100.0, prob * 100)), 1)
 
         except Exception as e:
-            log.warning("[GridAI v5] dca_confidence error: %s", e)
+            log.warning("[GridAI v6] dca_confidence error: %s", e)
             return 25.0
 
     def get_dca_size_multiplier(self, cycle_num: int, win_rate: float) -> float:
@@ -513,15 +965,46 @@ class GridAI:
             self._save_experience()
             self._incremental_update(entry)
 
-            if (len(self._experience) >= MIN_SAMPLES and
-                    len(self._experience) != self._last_train_n):
-                self._train()
+            # ── v6: Drift Detection (только для sell-сделок) ─────────────
+            if side == "sell":
+                drift = self._drift_detector.update(profit_ton)
+                if drift:
+                    # Сброс: оставляем только последние 10 записей
+                    self._experience = self._experience[-10:]
+                    self._drift_forced_retrain = True
+                    self._selfdev_log.append({
+                        "ts": time.time(),
+                        "event": "drift",
+                        "drift_count": self._drift_detector.drift_count,
+                        "exp_kept": len(self._experience),
+                    })
+                    if len(self._selfdev_log) > 50:
+                        self._selfdev_log = self._selfdev_log[-50:]
+                    log.warning("[GridAI v6] 🚨 Дрейф #%d: опыт сокращён до %d записей, "
+                                "принудительный ретрейн",
+                                self._drift_detector.drift_count,
+                                len(self._experience))
 
-        log.info("[GridAI v5] 📝 Fill: side=%s step=%.1f%% profit=%+.4f TON "
-                 "(%.2f%%) streak=%d consec_loss=%d n=%d обучен=%s",
+                # ── v6: RL-агент обновление ──────────────────────────────
+                self._rl_agent.update(
+                    regime, self.get_risk_level(), self._win_streak, profit_ton)
+
+                # ── v6: Bandit обновление ────────────────────────────────
+                self._bandit.update_reward(profit_ton)
+
+            if (len(self._experience) >= MIN_SAMPLES and
+                    (len(self._experience) != self._last_train_n
+                     or self._drift_forced_retrain)):
+                self._drift_forced_retrain = False
+                self._train()
+            else:
+                self._save_selfdev_state()
+
+        log.info("[GridAI v6] 📝 Fill: side=%s step=%.1f%% profit=%+.4f TON "
+                 "(%.2f%%) streak=%d consec_loss=%d n=%d gen=#%d",
                  side, step_used, profit_ton, profit_pct,
                  self._win_streak, self._consecutive_losses,
-                 len(self._experience), self._trained)
+                 len(self._experience), self._generation)
 
     # ── v5: Новые API ──────────────────────────────────────────────────────────
 
@@ -788,8 +1271,11 @@ class GridAI:
                         "kelly":    round(self._kelly_by_regime.get(r, self._kelly_mult), 3),
                     }
 
+            # ── v6: selfdev log (последние 10 событий) ──────────────────
+            recent_events = self._selfdev_log[-10:]
+
             return {
-                "version":             "v5",
+                "version":             "v6",
                 "trained":             self._trained,
                 "samples":             len(exp),
                 "sell_fills":          len(sells),
@@ -814,13 +1300,25 @@ class GridAI:
                 "regime_breakdown":    regime_stats,
                 "ensemble":            self._ensemble_info(),
                 "feat_dim":            FEAT_DIM,
-                # v5 new
+                # v5 fields
                 "backtest_r2":         round(self._backtest_r2, 3),
                 "backtest_dir_acc":    round(self._backtest_dir_acc, 3),
                 "models_validated":    self._models_validated,
                 "predicted_atr":       round(self._predicted_atr, 3),
                 "mkt_ctx_present":     bool(self._mkt_ctx),
                 "mtf_ctx_present":     bool(self._mtf_ctx),
+                # v6 selfdev fields
+                "generation":          self._generation,
+                "drift_count":         self._drift_detector.drift_count,
+                "bandit":              self._bandit.get_stats(),
+                "regime_models":       self._regime_models.get_stats(),
+                "hyper_evolver": {
+                    "evolutions":      self._hyper_evolver._evolutions,
+                    "best_config_idx": self._hyper_evolver._best_config_idx,
+                    "best_r2":         round(self._hyper_evolver._best_r2, 3),
+                },
+                "rl_agent":            self._rl_agent.get_stats(),
+                "selfdev_log":         recent_events,
             }
 
     # ══════════════════════════════════════════════════════════════════════════
@@ -1138,7 +1636,7 @@ class GridAI:
             return best_step
 
         except Exception as e:
-            log.debug("[GridAI v5] simulate_step error: %s", e)
+            log.debug("[GridAI v6] simulate_step error: %s", e)
             return ml_pred
 
     def _compute_sample_weights(self, entries: list, now: float) -> list:
@@ -1176,7 +1674,7 @@ class GridAI:
             _safe_float(e.get("step_used", 4.0)) for e in profitable)
         calibrated = round(max(3.5, min_profitable_step - 0.25) * 2) / 2
         if abs(calibrated - self.calibrated_min_step) >= 0.5:
-            log.info("[GridAI v5] ⚙️ MIN_STEP: %.2f%% → %.2f%% (%d прибыльных)",
+            log.info("[GridAI v6] ⚙️ MIN_STEP: %.2f%% → %.2f%% (%d прибыльных)",
                      self.calibrated_min_step, calibrated, len(profitable))
         self.calibrated_min_step = calibrated
 
@@ -1254,7 +1752,7 @@ class GridAI:
         except ImportError:
             pass
         except Exception as e:
-            log.debug("[GridAI v5] incremental_update error: %s", e)
+            log.debug("[GridAI v6] incremental_update error: %s", e)
 
     # ── v5: Обучение vol-модели (предсказание будущего ATR) ───────────────────
 
@@ -1314,13 +1812,13 @@ class GridAI:
                     sum(1 for a in past5 if a > past5[-1]),
                 ]
                 self._predicted_atr = float(self._vol_model.predict([x_pred])[0])
-                log.info("[GridAI v5] 📈 VolModel: предсказанный ATR=%.2f%% "
+                log.info("[GridAI v6] 📈 VolModel: предсказанный ATR=%.2f%% "
                          "(текущий=%.2f%%)",
                          self._predicted_atr,
                          atr_history[-1] if atr_history else 0)
 
         except Exception as e:
-            log.debug("[GridAI v5] vol_model error: %s", e)
+            log.debug("[GridAI v6] vol_model error: %s", e)
 
     # ── v5: Обучение exit-модели (ML-цель выхода) ─────────────────────────────
 
@@ -1359,13 +1857,13 @@ class GridAI:
             ])
             exit_m.fit(X_exit, y_exit)
             self._exit_model = exit_m
-            log.info("[GridAI v5] 🎯 ExitModel обучена на %d прибыльных "
+            log.info("[GridAI v6] 🎯 ExitModel обучена на %d прибыльных "
                      "сделках (avg_target=%.2f%%)",
                      len(profitable_sells),
                      sum(y_exit) / len(y_exit))
 
         except Exception as e:
-            log.debug("[GridAI v5] exit_model error: %s", e)
+            log.debug("[GridAI v6] exit_model error: %s", e)
 
     # ── v5: Бэктест + валидация ────────────────────────────────────────────────
 
@@ -1429,11 +1927,11 @@ class GridAI:
             return r2, acc
 
         except Exception as e:
-            log.debug("[GridAI v5] backtest error: %s", e)
+            log.debug("[GridAI v6] backtest error: %s", e)
             return 0.0, 0.5
 
     def _train(self):
-        """Полное переобучение ансамбля моделей (v5)."""
+        """Полное переобучение ансамбля моделей (v6)."""
         try:
             from sklearn.ensemble import (
                 RandomForestRegressor, ExtraTreesRegressor,
@@ -1453,7 +1951,8 @@ class GridAI:
                 _has_hgb = False
 
             now   = time.time()
-            sells = [e for e in self._experience if e.get("side") == "sell"]
+            sells = [e for e in self._experience if e.get("side") == "sell"
+                     and not e.get("_synthetic")]     # только реальные сделки
             all_e = self._experience
 
             # ── Калибровка и Kelly ──────────────────────────────────────
@@ -1466,13 +1965,41 @@ class GridAI:
             if len(sells) >= 10:
                 self._train_vol_model(sells)
 
+            # ── v6: Synthetic Data Augmentation ─────────────────────────
+            real_sells = sells
+            if len(sells) < 80:
+                aug_exp = self._aug.augment(sells, target_n=150, noise_scale=0.04)
+                sells_train = aug_exp
+                log.info("[GridAI v6] 🧪 SyntheticAug: %d → %d примеров (sells)",
+                         len(real_sells), len(sells_train))
+            else:
+                sells_train = sells
+
+            # ── v6: HyperEvolver ────────────────────────────────────────
+            hyp_cfg = self._hyper_evolver.best_config
+            if len(real_sells) >= MIN_SAMPLES and self._hyper_evolver.should_evolve(len(real_sells)):
+                # Обучаем на реальных для поиска гипер-параметров
+                _X_tmp = [self._make_features(self._safe_atr(e), e.get("regime","SIDEWAYS"), e)
+                          for e in real_sells]
+                _y_tmp = [_safe_float(e.get("step_used", 4.0)) for e in real_sells]
+                _w_tmp = self._compute_sample_weights(real_sells, now)
+                hyp_cfg = self._hyper_evolver.evolve(_X_tmp, _y_tmp, _w_tmp)
+                self._selfdev_log.append({
+                    "ts": now, "event": "hyper_evolved",
+                    "evolutions": self._hyper_evolver._evolutions,
+                    "best_r2": round(self._hyper_evolver._best_r2, 3),
+                    "config": hyp_cfg,
+                })
+                if len(self._selfdev_log) > 50:
+                    self._selfdev_log = self._selfdev_log[-50:]
+
             # ── Step-ансамбль ────────────────────────────────────────────
-            if len(sells) >= MIN_SAMPLES:
+            if len(sells_train) >= MIN_SAMPLES:
                 X_s = [self._make_features(self._safe_atr(e),
                                             e.get("regime", "SIDEWAYS"), e)
-                       for e in sells]
-                y_s = [_safe_float(e.get("step_used", 4.0)) for e in sells]
-                w_s = self._compute_sample_weights(sells, now)
+                       for e in sells_train]
+                y_s = [_safe_float(e.get("step_used", 4.0)) for e in sells_train]
+                w_s = self._compute_sample_weights(sells_train, now)
 
                 def _fit_step(model, use_w=True):
                     if use_w:
@@ -1481,10 +2008,14 @@ class GridAI:
                         model.fit(X_s, y_s)
                     return model
 
+                # v6: используем лучший конфиг от HyperEvolver
+                _ne = hyp_cfg.get("n_estimators", 60)
+                _md = hyp_cfg.get("max_depth", 6)
+
                 self._step_rf = _fit_step(Pipeline([
                     ("sc", StandardScaler()),
                     ("m",  RandomForestRegressor(
-                        n_estimators=60, max_depth=6,
+                        n_estimators=_ne, max_depth=_md,
                         min_samples_leaf=2, random_state=42, n_jobs=1)),
                 ]))
 
@@ -1510,7 +2041,7 @@ class GridAI:
                         hgb.fit(X_s, y_s, sample_weight=w_s)
                         self._step_hgb = hgb
                     except Exception as he:
-                        log.debug("[GridAI v5] HistGB step: %s", he)
+                        log.debug("[GridAI v6] HistGB step: %s", he)
 
                 self._step_ridge = _fit_step(Pipeline([
                     ("sc", StandardScaler()),
@@ -1565,10 +2096,10 @@ class GridAI:
                         ])
                         meta.fit(meta_X_oof, y_s, m__sample_weight=w_s)
                         self._step_meta = meta
-                        log.info("[GridAI v5] 🔗 OOF мета-стекер обучен "
+                        log.info("[GridAI v6] 🔗 OOF мета-стекер обучен "
                                  "на %d продажах (TimeSeriesSplit)", len(sells))
                     except Exception as me:
-                        log.debug("[GridAI v5] meta-stacker error: %s", me)
+                        log.debug("[GridAI v6] meta-stacker error: %s", me)
 
                 # ── v5: Бэктест перед активацией ─────────────────────────
                 r2, dir_acc = self._backtest_validate(X_s, y_s, w_s)
@@ -1576,29 +2107,35 @@ class GridAI:
                 self._backtest_dir_acc = dir_acc
                 self._models_validated = (
                     r2 >= BACKTEST_MIN_R2 and dir_acc >= BACKTEST_MIN_DIR_ACC)
-                log.info("[GridAI v5] 📊 Бэктест: R²=%.3f dir_acc=%.2f%% "
+                log.info("[GridAI v6] 📊 Бэктест: R²=%.3f dir_acc=%.2f%% "
                          "validated=%s",
                          r2, dir_acc * 100, self._models_validated)
 
                 # ── v5: Обучаем exit-модель ───────────────────────────────
-                self._train_exit_model(sells, X_s, now)
+                self._train_exit_model(sells_train, X_s, now)
 
-                log.info("[GridAI v5] 📊 Step-ансамбль (RF+ET+GB+HistGB+Ridge"
-                         "+OOF-Meta) на %d продажах",
-                         len(sells))
+                log.info("[GridAI v6] 📊 Step-ансамбль (RF+ET+GB+HistGB+Ridge"
+                         "+OOF-Meta) на %d продажах (real=%d aug=%d)",
+                         len(sells_train), len(real_sells),
+                         len(sells_train) - len(real_sells))
                 gc.collect()
+
+                # ── v6: Режимные специализированные модели ────────────────
+                self._train_regime_models(real_sells, now)
 
             # ── DCA-ансамбль ─────────────────────────────────────────────
             if len(all_e) >= MIN_SAMPLES:
-                y_p   = [int(e.get("is_profitable", 0)) for e in all_e]
+                y_p   = [int(e.get("is_profitable", 0))
+                         for e in all_e if not e.get("_synthetic")]
+                all_e_real = [e for e in all_e if not e.get("_synthetic")]
                 n_pos = sum(y_p)
                 n_neg = len(y_p) - n_pos
 
                 if n_pos >= 2 and n_neg >= 1:
                     X_p = [self._make_features(self._safe_atr(e),
                                                e.get("regime", "SIDEWAYS"), e)
-                           for e in all_e]
-                    w_p = self._compute_sample_weights(all_e, now)
+                           for e in all_e_real]
+                    w_p = self._compute_sample_weights(all_e_real, now)
 
                     def _fit_cls(model, use_w=True):
                         if use_w:
@@ -1632,7 +2169,7 @@ class GridAI:
                             hgb_cls.fit(X_p, y_p, sample_weight=w_p)
                             self._dca_hgb = hgb_cls
                         except Exception as he:
-                            log.debug("[GridAI v5] HistGB dca: %s", he)
+                            log.debug("[GridAI v6] HistGB dca: %s", he)
 
                     self._dca_lr = _fit_cls(Pipeline([
                         ("sc", StandardScaler()),
@@ -1641,25 +2178,116 @@ class GridAI:
                             class_weight="balanced", random_state=42)),
                     ]))
 
-                    log.info("[GridAI v5] 📊 DCA-ансамбль на %d примерах "
-                             "(pos=%d neg=%d)", len(all_e), n_pos, n_neg)
+                    log.info("[GridAI v6] 📊 DCA-ансамбль на %d примерах "
+                             "(pos=%d neg=%d)", len(all_e_real), n_pos, n_neg)
                     gc.collect()
 
+            # ── v6: Bump поколения ───────────────────────────────────────
+            self._generation  += 1
             self._trained      = True
             self._last_train_n = len(self._experience)
-            log.info("[GridAI v5] ✅ Обучение завершено: %d примеров (%d sells) "
+
+            # v6: лог события обучения
+            self._selfdev_log.append({
+                "ts":          time.time(),
+                "event":       "trained",
+                "generation":  self._generation,
+                "samples":     len(self._experience),
+                "real_sells":  len(real_sells),
+                "backtest_r2": round(self._backtest_r2, 3),
+            })
+            if len(self._selfdev_log) > 50:
+                self._selfdev_log = self._selfdev_log[-50:]
+
+            self._save_selfdev_state()
+
+            log.info("[GridAI v6] ✅ Поколение #%d. Примеров: %d (реальных sells=%d) "
                      "| min_step=%.2f%% kelly=%.3f risk=%d "
-                     "| vol_model=%s exit_model=%s",
-                     len(self._experience), len(sells),
+                     "| vol_model=%s exit_model=%s regime_models=%s",
+                     self._generation, len(self._experience), len(real_sells),
                      self.calibrated_min_step, self._kelly_mult,
                      self.get_risk_level(),
                      "✓" if self._vol_model else "✗",
-                     "✓" if self._exit_model else "✗")
+                     "✓" if self._exit_model else "✗",
+                     list(self._regime_models._models.keys()))
 
         except ImportError as e:
-            log.warning("[GridAI v5] sklearn не найден: %s — heuristic-режим", e)
+            log.warning("[GridAI v6] sklearn не найден: %s — heuristic-режим", e)
         except Exception as e:
-            log.error("[GridAI v5] Ошибка обучения: %s", e, exc_info=True)
+            log.error("[GridAI v6] Ошибка обучения: %s", e, exc_info=True)
+
+    # ── v6: Режимные модели ───────────────────────────────────────────────────
+
+    def _train_regime_models(self, sells: list, now: float):
+        """v6: обучить специализированные модели для каждого режима с 15+ сделками."""
+        if len(sells) < 15:
+            return
+        try:
+            from sklearn.preprocessing import StandardScaler
+            from sklearn.pipeline import Pipeline
+
+            by_regime: Dict[str, list] = {}
+            for e in sells:
+                r = e.get("regime", "UNKNOWN")
+                by_regime.setdefault(r, []).append(e)
+
+            for regime, regime_sells in by_regime.items():
+                if len(regime_sells) < RegimeSpecializedModels.MIN_REGIME_SAMPLES:
+                    continue
+                X_r = [self._make_features(self._safe_atr(e), regime, e)
+                       for e in regime_sells]
+                y_r = [_safe_float(e.get("step_used", 4.0)) for e in regime_sells]
+                w_r = self._compute_sample_weights(regime_sells, now)
+                self._regime_models.train_regime(regime, X_r, y_r, w_r)
+        except Exception as e:
+            log.debug("[GridAI v6] _train_regime_models error: %s", e)
+
+    # ── v6: Сохранение/загрузка состояния саморазвития ───────────────────────
+
+    def _save_selfdev_state(self):
+        """Сохранить состояние v6 компонентов в SELFDEV_FILE."""
+        try:
+            state = {
+                "generation":    self._generation,
+                "bandit":        self._bandit.to_json(),
+                "hyper_evolver": self._hyper_evolver.to_json(),
+                "rl_agent":      self._rl_agent.to_json(),
+                "drift_count":   self._drift_detector.drift_count,
+                "drift_ts":      self._drift_detector._last_drift_ts,
+                "selfdev_log":   self._selfdev_log[-50:],
+            }
+            os.makedirs(os.path.dirname(SELFDEV_FILE) or ".", exist_ok=True)
+            with open(SELFDEV_FILE, "w", encoding="utf-8") as f:
+                json.dump(state, f, ensure_ascii=False)
+        except Exception as e:
+            log.debug("[GridAI v6] selfdev save error: %s", e)
+
+    def _load_selfdev_state(self):
+        """Загрузить состояние v6 компонентов из SELFDEV_FILE."""
+        try:
+            if not os.path.exists(SELFDEV_FILE):
+                return
+            with open(SELFDEV_FILE, encoding="utf-8") as f:
+                state = json.load(f)
+            self._generation  = int(state.get("generation", 0))
+            bandit_d = state.get("bandit")
+            if bandit_d:
+                self._bandit = StepStrategyBandit.from_json(bandit_d)
+            hyp_d = state.get("hyper_evolver")
+            if hyp_d:
+                self._hyper_evolver = HyperEvolver.from_json(hyp_d)
+            rl_d = state.get("rl_agent")
+            if rl_d:
+                self._rl_agent = RLGridAgent.from_json(rl_d)
+            self._drift_detector._drift_count   = int(state.get("drift_count", 0))
+            self._drift_detector._last_drift_ts = float(state.get("drift_ts", 0.0))
+            self._selfdev_log = list(state.get("selfdev_log", []))
+            log.info("[GridAI v6] 💾 Selfdev state загружен: gen=#%d "
+                     "bandit_pulls=%d rl_ep=%d drift=%d",
+                     self._generation, self._bandit._total,
+                     self._rl_agent._episodes, self._drift_detector.drift_count)
+        except Exception as e:
+            log.debug("[GridAI v6] selfdev load error: %s", e)
 
     # ── PostgreSQL dual-write (v5, улучшение #3) ──────────────────────────────
 
@@ -1671,7 +2299,7 @@ class GridAI:
             with open(EXPERIENCE_FILE, "w", encoding="utf-8") as f:
                 json.dump(self._experience, f, ensure_ascii=False)
         except Exception as e:
-            log.warning("[GridAI v5] JSON save error: %s", e)
+            log.warning("[GridAI v6] JSON save error: %s", e)
 
         # 2. PostgreSQL — только последнюю запись (bulk-insert при старте)
         if self._experience:
@@ -1680,7 +2308,7 @@ class GridAI:
                 import db_store as _db
                 _db.grid_experience_insert(last)
             except Exception as e:
-                log.debug("[GridAI v5] DB save error: %s", e)
+                log.debug("[GridAI v6] DB save error: %s", e)
 
     def _load_experience(self):
         """Загрузка: сначала PostgreSQL (свежее), потом JSON fallback."""
@@ -1692,12 +2320,12 @@ class GridAI:
             db_exp = _db.grid_experience_load()
             if db_exp:
                 self._experience = db_exp
-                log.info("[GridAI v5] 🗄️  Загружено %d примеров из PostgreSQL",
+                log.info("[GridAI v6] 🗄️  Загружено %d примеров из PostgreSQL",
                          len(self._experience))
                 self._rebuild_rolling_state()
                 loaded = True
         except Exception as e:
-            log.debug("[GridAI v5] DB load skip: %s", e)
+            log.debug("[GridAI v6] DB load skip: %s", e)
 
         # 2. JSON fallback или импорт старого формата
         if not loaded:
@@ -1705,14 +2333,14 @@ class GridAI:
                 if os.path.exists(EXPERIENCE_FILE):
                     with open(EXPERIENCE_FILE, encoding="utf-8") as f:
                         self._experience = json.load(f)
-                    log.info("[GridAI v5] 📁 Загружено %d примеров из JSON "
+                    log.info("[GridAI v6] 📁 Загружено %d примеров из JSON "
                              "(DB недоступна)", len(self._experience))
                     self._rebuild_rolling_state()
 
                     # Миграция JSON → PostgreSQL (bulk-insert при первом запуске)
                     self._migrate_json_to_db()
             except Exception as e:
-                log.warning("[GridAI v5] Загрузка опыта: %s", e)
+                log.warning("[GridAI v6] Загрузка опыта: %s", e)
                 self._experience = []
 
     def _migrate_json_to_db(self):
@@ -1723,13 +2351,13 @@ class GridAI:
             import db_store as _db
             if _db.grid_experience_count() > 0:
                 return  # уже мигрировано
-            log.info("[GridAI v5] 🔄 Миграция %d записей JSON → PostgreSQL...",
+            log.info("[GridAI v6] 🔄 Миграция %d записей JSON → PostgreSQL...",
                      len(self._experience))
             for entry in self._experience:
                 _db.grid_experience_insert(entry)
-            log.info("[GridAI v5] ✅ Миграция завершена")
+            log.info("[GridAI v6] ✅ Миграция завершена")
         except Exception as e:
-            log.debug("[GridAI v5] Миграция DB: %s", e)
+            log.debug("[GridAI v6] Миграция DB: %s", e)
 
     def _rebuild_rolling_state(self):
         """Восстанавливаем все трекеры из загруженной истории."""

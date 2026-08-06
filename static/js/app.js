@@ -1399,20 +1399,30 @@ function renderGridPanel(d) {
     cdEl.textContent = mins > 0 ? `перестройка через ${mins} мин` : 'перестройка готова';
   }
 
-  // ── GridAI v5 stats ──────────────────────────────────────────────
+  // ── GridAI v6 stats ──────────────────────────────────────────────
   const gai = d.grid_ai || {};
   if (gai.trained != null) {
     // Badge обучен/нет
     const v5badge = document.getElementById('grid-ai-v5-badge');
-    if (v5badge) {
-      v5badge.style.display = gai.trained ? '' : 'none';
-    }
+    if (v5badge) v5badge.style.display = gai.trained ? '' : 'none';
+
     // Количество примеров
     const sampEl = document.getElementById('grid-ai-v5-samples');
     if (sampEl) sampEl.textContent = gai.samples != null ? `${gai.samples} примеров` : '';
 
+    // v6: Поколение
+    const genEl = document.getElementById('grid-v6-gen');
+    if (genEl) {
+      const gen = gai.generation != null ? gai.generation : null;
+      if (gen != null) {
+        genEl.textContent = `Gen #${gen}`;
+        genEl.style.display = '';
+        genEl.style.color = gen >= 5 ? 'var(--green)' : gen >= 2 ? '#ffd166' : '#00d4ff';
+      }
+    }
+
     // VolModel / ExitModel
-    const v5models = gai.v5_models || [];
+    const v5models = (gai.ensemble && gai.ensemble.v5_models) ? gai.ensemble.v5_models : [];
     const volEl  = document.getElementById('grid-v5-volmodel');
     const exitEl = document.getElementById('grid-v5-exitmodel');
     if (volEl) {
@@ -1426,6 +1436,57 @@ function renderGridPanel(d) {
       exitEl.textContent = hasExit ? '🎯 ExitModel ✓' : '🎯 ExitModel —';
       exitEl.style.color = hasExit ? '#c084fc' : 'var(--text2)';
       exitEl.style.background = hasExit ? 'rgba(192,132,252,.12)' : 'rgba(255,255,255,.06)';
+    }
+
+    // v6: Дрейф-детектор
+    const driftEl = document.getElementById('grid-v6-drift');
+    if (driftEl) {
+      const dc = gai.drift_count != null ? gai.drift_count : 0;
+      driftEl.textContent = `🚨 Дрейф: ${dc}`;
+      driftEl.style.color = dc > 0 ? 'var(--red)' : 'var(--text2)';
+      driftEl.style.background = dc > 0 ? 'rgba(255,107,107,.15)' : 'rgba(255,107,107,.08)';
+    }
+
+    // v6: Bandit стратегия
+    const banditEl = document.getElementById('grid-v6-bandit');
+    if (banditEl && gai.bandit) {
+      const strat = gai.bandit.last_strategy || '—';
+      const stratLabels = {
+        conservative: 'консерв.',
+        aggressive:   'агресс.',
+        atr_pure:     'ATR',
+        kelly:        'Kelly',
+        ml_only:      'ML',
+      };
+      banditEl.textContent = `🎲 ${stratLabels[strat] || strat}`;
+      banditEl.style.color = strat === 'ml_only' ? '#00d4ff' :
+                             strat === 'aggressive' ? 'var(--green)' :
+                             strat === 'conservative' ? '#ffd166' : '#c084fc';
+    }
+
+    // v6: RL агент
+    const rlEl = document.getElementById('grid-v6-rl');
+    if (rlEl && gai.rl_agent) {
+      const ep  = gai.rl_agent.episodes || 0;
+      const avg = gai.rl_agent.avg_reward != null ? gai.rl_agent.avg_reward.toFixed(3) : '—';
+      rlEl.textContent = `🔄 RL: ${ep} эп. (${avg})`;
+      rlEl.style.color = ep >= 10 ? 'var(--green)' : 'var(--text2)';
+    }
+
+    // v6: Режимные модели
+    const rmContainer = document.getElementById('grid-v6-regime-models');
+    const rmList      = document.getElementById('grid-v6-regime-list');
+    if (rmContainer && rmList && gai.regime_models) {
+      const trained = gai.regime_models.trained_regimes || [];
+      if (trained.length > 0) {
+        rmContainer.style.display = '';
+        rmList.innerHTML = trained.map(r =>
+          `<span style="font-size:8px;padding:1px 5px;border-radius:5px;` +
+          `background:rgba(0,212,255,.12);color:#00d4ff">${r}</span>`
+        ).join('');
+      } else {
+        rmContainer.style.display = 'none';
+      }
     }
 
     // Kelly ×
