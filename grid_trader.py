@@ -970,6 +970,13 @@ class GridTrader:
             except Exception:
                 pass
 
+        # ── v5: Инжектируем рыночный контекст в GridAI ───────────────────
+        if self._grid_ai:
+            try:
+                self._inject_market_context_to_grid_ai(atr_pct, regime)
+            except Exception as _e:
+                log.debug("[Grid] inject_market_ctx error: %s", _e)
+
         # ── AI-сигнал (BrainFusion) ───────────────────────────────────────
         ai_buy_conf, ai_sell_conf = 0.0, 0.0
         try:
@@ -1002,15 +1009,48 @@ class GridTrader:
             log.info("[Grid] 🧊 BUY заморожены — AI SELL %.0f%%", ai_sell_conf)
 
         # ── GridAI: мультикритериальная пауза BUY ─────────────────────────
-        if not buy_frozen and self._grid_ai:
+        _drawdown_pct = 0.0
+        if self._grid_ai:
             try:
                 _center = self._state.center_price_ton or price_ton
-                _drawdown = max(0.0, (1.0 - price_ton / _center) * 100.0) if _center > 0 else 0.0
-                # should_pause_buying ожидает ai_sell_conf как долю 0-1
-                if self._grid_ai.should_pause_buying(regime, _drawdown, ai_sell_conf / 100.0):
+                _drawdown_pct = max(0.0, (1.0 - price_ton / _center) * 100.0) if _center > 0 else 0.0
+                if not buy_frozen and self._grid_ai.should_pause_buying(
+                        regime, _drawdown_pct, ai_sell_conf / 100.0):
                     buy_frozen = True
                     log.info("[Grid] 🛑 GridAI пауза BUY (режим=%s просадка=%.1f%% AI-SELL=%.0f%%)",
-                             regime, _drawdown, ai_sell_conf)
+                             regime, _drawdown_pct, ai_sell_conf)
+            except Exception:
+                pass
+
+        # ── v5: GridAI детектор ловушки ───────────────────────────────────
+        if self._grid_ai and self._state.active:
+            try:
+                trap = self._grid_ai.check_trap_exit(
+                    regime, _drawdown_pct, price_ton,
+                    self._state.center_price_ton or price_ton)
+                if trap.get("trap"):
+                    action = trap.get("action", "HOLD")
+                    reason = trap.get("reason", "")
+                    conf   = trap.get("confidence", 0)
+                    log.warning(
+                        "[Grid] 🚨 GridAI ЛОВУШКА: %s (уверенность=%.0f%%) "
+                        "причина: %s", action, conf, reason)
+                    # REDUCE (≥50% уверенности) — замораживаем BUY
+                    if action in ("REDUCE", "EXIT"):
+                        buy_frozen = True
+                    # EXIT (≥75% уверенности) — сообщаем через socketio
+                    if action == "EXIT":
+                        try:
+                            from app import socketio as _sio
+                            _sio.emit("grid_trap_alert", {
+                                "action":     action,
+                                "confidence": conf,
+                                "reason":     reason,
+                                "regime":     regime,
+                                "drawdown":   round(_drawdown_pct, 1),
+                            })
+                        except Exception:
+                            pass
             except Exception:
                 pass
 
@@ -1461,10 +1501,14 @@ class GridTrader:
                 # ── Обучаем GridAI ─────────────────────────────────────
                 if self._grid_ai:
                     try:
+                        _center_p = self._state.center_price_ton or price_ton
+                        _ddown_fill = (max(0.0, (1.0 - price_ton / _center_p) * 100.0)
+                                       if _center_p > 0 else 0.0)
                         self._grid_ai.record_fill(
                             "sell", self._state.step_pct,
                             atr_pct, regime, profit, profit_pct,
-                            compound_mult=self._state.compound_multiplier)
+                            compound_mult=self._state.compound_multiplier,
+                            drawdown_pct=_ddown_fill)
                     except Exception:
                         pass
 
@@ -2354,6 +2398,126 @@ class GridTrader:
         return profit > 0, round(profit, 4)
 
     # ── Вспомогательные методы ────────────────────────────────────────────────
+
+    def _inject_market_context_to_grid_ai(self, atr_pct: float, regime: str):
+        """v5: Извлечь рыночный контекст из последнего DB-тика и передать в GridAI."""
+        if not self._grid_ai:
+            return
+        try:
+            import db_store as _ds
+            ticks = _ds.ticks_get_recent(3)
+            if not ticks:
+                return
+            t = ticks[0]  # последний тик
+
+            # ── Рыночные фичи из DB-тика ────────────────────────────────
+            rsi      = float(t.get("rsi") or 50.0)
+            bb_pct   = float(t.get("bb_pct") or 0.5)
+            vol_r    = float(t.get("vol_ratio") or 1.0)
+            macd_h   = float(t.get("macd_hist") or 0.0)
+            pump_str = str(t.get("pump") or "NONE")
+            pump_sc  = 0.0
+            if pump_str not in ("NONE", "", "?"):
+                try:
+                    # pump может быть "PUMP:75" или "DISTRIBUTION" или conf числом
+                    pump_sc = float(pump_str.split(":")[-1]) if ":" in pump_str else 60.0
+                except Exception:
+                    pump_sc = 50.0
+
+            # RSI velocity из 3 последних тиков
+            rsi_vel = 0.0
+            if len(ticks) >= 3:
+                try:
+                    rsi_vel = (float(ticks[0].get("rsi") or 50) -
+                               float(ticks[2].get("rsi") or 50))
+                except Exception:
+                    pass
+
+            # Volume trend: сравниваем 2 последних тика
+            vol_trend = 0.0
+            if len(ticks) >= 2:
+                try:
+                    v1 = float(ticks[0].get("vol_ratio") or 1.0)
+                    v2 = float(ticks[1].get("vol_ratio") or 1.0)
+                    vol_trend = max(-1.0, min(1.0, (v1 - v2) / max(v2, 0.1)))
+                except Exception:
+                    pass
+
+            # Order flow из coin_info (если доступен)
+            order_buy = 0.5
+            order_net = 0.0
+            try:
+                from coin_info import get_snapshot as _ci_snap
+                ci = _ci_snap()
+                if ci:
+                    buys = float(ci.get("buy_count") or ci.get("buys_5m") or 0)
+                    sells = float(ci.get("sell_count") or ci.get("sells_5m") or 0)
+                    total = buys + sells
+                    if total > 0:
+                        order_buy = buys / total
+                        order_net = (buys - sells) / total
+            except Exception:
+                pass
+
+            # EMA trend (crude: from regime)
+            ema_cross = {
+                "TREND_UP": 0.03, "VOLATILE": 0.01,
+                "SIDEWAYS": 0.0, "SQUEEZE": 0.0, "RANGING": 0.0,
+                "TREND_DOWN": -0.03, "DOWNTREND": -0.06,
+                "PUMP": 0.08, "POST_PUMP": -0.02, "DISTRIBUTION": -0.02,
+            }.get(regime, 0.0)
+
+            mkt = {
+                "rsi":                   rsi,
+                "rsi_vel":               rsi_vel,
+                "macd_h":                macd_h,
+                "bb_pos":                bb_pct,
+                "bb_width":              abs(macd_h) * 0.01 + 0.05,  # approx
+                "bb_squeeze":            regime in ("SQUEEZE",),
+                "vol_ratio":             vol_r,
+                "vol_trend":             vol_trend,
+                "ema_cross":             ema_cross,
+                "order_flow_buy_ratio":  order_buy,
+                "order_flow_net":        order_net,
+                "pump_score":            pump_sc,
+                "liquidity_score":       50.0,  # default — обновляется через liquidity_guard
+            }
+            self._grid_ai.set_market_context(mkt)
+
+            # ── MTF контекст (оцениваем по нескольким тикам) ─────────────
+            try:
+                ticks_long = _ds.ticks_get_recent(20)
+                if len(ticks_long) >= 5:
+                    regimes_5 = [str(t2.get("regime") or "UNKNOWN")
+                                 for t2 in ticks_long[:5]]
+                    down_count = sum(1 for r in regimes_5
+                                     if r in ("TREND_DOWN", "DOWNTREND",
+                                              "DISTRIBUTION", "POST_PUMP"))
+                    up_count   = sum(1 for r in regimes_5
+                                     if r in ("TREND_UP", "PUMP"))
+
+                    t4h = 1 if up_count >= 3 else (-1 if down_count >= 3 else 0)
+
+                    # 1d trend из более длинной истории
+                    t1d = 0
+                    if len(ticks_long) >= 15:
+                        reg_15 = [str(t2.get("regime") or "UNKNOWN")
+                                  for t2 in ticks_long[:15]]
+                        dn15 = sum(1 for r in reg_15
+                                   if r in ("TREND_DOWN", "DOWNTREND"))
+                        up15 = sum(1 for r in reg_15
+                                   if r in ("TREND_UP", "PUMP"))
+                        t1d = 1 if up15 >= 8 else (-1 if dn15 >= 8 else 0)
+
+                    self._grid_ai.set_mtf_context({
+                        "trend_4h": t4h,
+                        "trend_1d": t1d,
+                    })
+            except Exception:
+                pass
+
+        except Exception as e:
+            log.debug("[Grid] inject_mkt_ctx error: %s", e)
 
     def _get_regime(self) -> tuple:
         """Возвращает (regime: str, atr_pct: float) из последнего DB-тика."""

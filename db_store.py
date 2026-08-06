@@ -194,6 +194,15 @@ CREATE TABLE IF NOT EXISTS bot_user_trades (
     data       JSONB        NOT NULL
 );
 CREATE INDEX IF NOT EXISTS bot_user_trades_token_ts ON bot_user_trades (token, id DESC);
+
+-- GridAI v5: персистентный опыт сеточного трейдера (JSON-файл терялся при
+-- пересборке контейнера). Хранит последние GRID_EXP_KEEP записей.
+CREATE TABLE IF NOT EXISTS bot_grid_experience (
+    id         BIGSERIAL    PRIMARY KEY,
+    ts         DOUBLE PRECISION NOT NULL,
+    data       JSONB        NOT NULL
+);
+CREATE INDEX IF NOT EXISTS bot_grid_exp_ts ON bot_grid_experience (ts DESC);
 """
 
 TICKS_KEEP = 3000
@@ -907,6 +916,70 @@ def ai_examples_export_all():
                     }
     except Exception as e:
         logger.warning(f"[DB] ai_examples_export_all error: {e}")
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+#  GRID AI EXPERIENCE (v5 — персистентный опыт сеточного трейдера)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+GRID_EXP_KEEP = 5000   # максимум записей в таблице
+
+
+def grid_experience_insert(entry: dict):
+    """Записать один fill в bot_grid_experience. Best-effort."""
+    if not _check_available():
+        return
+    try:
+        ts = float(entry.get("ts", 0))
+        with _conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "INSERT INTO bot_grid_experience (ts, data) VALUES (%s, %s)",
+                    (ts, _jdumps(entry))
+                )
+                # Самоочистка: удаляем записи старше GRID_EXP_KEEP
+                cur.execute("""
+                    DELETE FROM bot_grid_experience
+                    WHERE id NOT IN (
+                        SELECT id FROM bot_grid_experience
+                        ORDER BY id DESC LIMIT %s
+                    )
+                """, (GRID_EXP_KEEP,))
+    except Exception as e:
+        logger.warning(f"[DB] grid_experience_insert error: {e}")
+
+
+def grid_experience_load(limit: int = GRID_EXP_KEEP) -> list:
+    """Загрузить последние N записей опыта GridAI из БД."""
+    if not _check_available():
+        return []
+    try:
+        with _conn() as conn:
+            with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+                cur.execute("""
+                    SELECT data FROM bot_grid_experience
+                    ORDER BY id DESC LIMIT %s
+                """, (limit,))
+                rows = cur.fetchall()
+                # Возвращаем в хронологическом порядке (старые первыми)
+                return [row["data"] for row in reversed(rows)]
+    except Exception as e:
+        logger.warning(f"[DB] grid_experience_load error: {e}")
+        return []
+
+
+def grid_experience_count() -> int:
+    """Количество записей в bot_grid_experience."""
+    if not _check_available():
+        return 0
+    try:
+        with _conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute("SELECT COUNT(*) FROM bot_grid_experience")
+                return int(cur.fetchone()[0])
+    except Exception as e:
+        logger.warning(f"[DB] grid_experience_count error: {e}")
+        return 0
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
