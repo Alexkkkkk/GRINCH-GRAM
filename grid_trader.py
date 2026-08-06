@@ -2048,6 +2048,19 @@ class GridTrader:
             if added >= n_add:
                 break
             rounded = round(level_price, 8)
+
+            # ── Зональный ограничитель: не размещаем уровни за пределами ──────
+            # порога перепозиционирования — они всё равно будут отменены в
+            # следующем тике, создавая бесконечный цикл cancel→redeploy.
+            # Уровни идут вглубь монотонно → как только текущий вышел за порог,
+            # все последующие тоже выйдут → break, не continue.
+            if _center > 0 and (_center - rounded) / _center * 100 >= _reposition_thresh:
+                log.debug(
+                    "[Grid] idle-deploy: уровень %.8f (%.1f%% от центра) ≥ порога %.1f%% — остановка",
+                    rounded, (_center - rounded) / _center * 100, _reposition_thresh,
+                )
+                break
+
             # Не дублируем: пропустить если уже есть уровень ближе ±0.5%
             too_close = any(abs(p - rounded) / max(rounded, 1e-12) < 0.005
                             for p in existing_prices)
