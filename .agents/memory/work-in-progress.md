@@ -3,27 +3,25 @@ name: Work In Progress
 description: Что делалось в прошлой сессии — незавершённые задачи и следующие шаги
 ---
 
-## Текущая сессия — 06.08.2026
+## Сессия — 06.08.2026 (вторая часть)
 
 ### Выполнено
 
-- ✅ Исправлен баг дублей ID в grid_trader.py (3 места — compound/DCA/idle-deploy)
-- ✅ Синхронизированы все AI-функции сетки (3 фикса):
-    - `should_pause_buying()` — теперь вызывается в buy_frozen блоке
-    - `get_sell_target_pct()` — теперь используется в _add_cycle_sell (режимо-адаптивная цена)
-    - `_win_streak` приватный доступ → публичное свойство `win_streak`
-- ✅ Задеплоено на VPS: grid_trader.py + grid_ai.py (md5 подтверждены)
-- ✅ Бот запущен: active=True, sell=37, buy=24, dca=1, compound=1.30x, GridAI 41 пример
-
-### Текущее состояние VPS (06.08.2026, ~15:31)
-
-- Бот работает, Grid активна (37 sell + 24 buy уровней)
-- total_profit_ton ≈ 39.72 TON, sell_cycles=24, compound=1.30x
-- Торговля: ⏸ выключена вручную
-- DCA позиция: 583,938 GRINCH @ $0.00084470, сейчас $0.00065140 (-22.88%)
-- TON баланс: 222.53 TON
+- ✅ AI Engine v5 — комплексный апгрейд ai_engine.py (коммит 99d1a67):
+    - BUY_THRESHOLD: 0.43 → 0.52 (меньше ложных входов)
+    - SELL_THRESHOLD: 0.62 → 0.65
+    - PROFIT_BIAS_PCT: 0.030 → 0.060 (labels покрывают DEX fees)
+    - Label generation: endpoint → max(window) (ловит внутридневные пики)
+    - Signal persistence: 2-3 последовательных BUY тика перед входом
+    - EV_MIN_TRADES: 12 → 8 (EV фильтр активируется раньше)
+    - 10 новых признаков: kama_er, rsi_div_bull/bear, up/dn_streak, ema_trend_str, vol_price_mom, stoch_rsi, vwap_dev_z, liq_proxy
+    - Адаптивное мета-блендирование: 45-75% (было 60%)
+    - Kelly: profit_margin = EV минус fee+gas
 
 ### Незавершённое
 
-- ⏳ Торговля выключена вручную — решение за пользователем
-- ⏳ AI советник нужен рабочий Groq API ключ
+- ⛔ VPS SSH недоступен (пароль изменился, VPS_SSH_PASSWORD в секретах устарел)
+- ⛔ GitHub push недоступен (токен read-only)
+- ⏳ AI v5 применён локально, НЕ на VPS — нужен Task #2 для деплоя
+- ⏳ Groq API ключ не установлен — AI советник офлайн (Task #3)
+- ⏳ Торговля на VPS выключена вручную — решение за пользователем
