@@ -496,12 +496,15 @@ class GridTrader:
                  self._state.compound_multiplier)
 
     def _cleanup_stale_idle_levels(self):
-        """Удаляет idle-deploy BUY уровни, у которых цикл заведомо убыточен.
+        """Удаляет все waiting BUY уровни, у которых цикл заведомо убыточен.
 
-        Такие уровни появляются после изменения минимального размера ордера
-        (GridConfig.IDLE_LEVEL_TON или GAS_PER_TRADE_TON).  Каждый тик они
-        пропускаются и спамят лог «цикл убыточен».  Безопасно удалить их при
-        старте — они не были исполнены и не содержат реальных средств.
+        Покрывает два случая:
+        - idle-deploy уровни, появившиеся при изменении IDLE_LEVEL_TON/GAS_PER_TRADE_TON
+        - реинвест-уровни с маленьким amount_ton (возникают когда шаг осциллировал
+          или прибыль от SELL была слишком мала для покрытия gas×2)
+
+        Безопасно удалять: уровни в статусе waiting не исполнены, реальных средств
+        не содержат — TON остаётся в кошельке.
         """
         step_pct = self._state.step_pct or GridConfig.DEFAULT_STEP_PCT
         cycle_factor = (1 + step_pct / 100) * (1 - GridConfig.FEE_PCT) ** 2 - 1
@@ -511,8 +514,7 @@ class GridTrader:
 
         stale = [
             l for l in self._state.buy_levels
-            if "idle-deploy" in (l.note or "")
-            and l.status == "waiting"
+            if l.status == "waiting"
             and l.amount_ton < min_ton
         ]
         if not stale:
@@ -525,9 +527,9 @@ class GridTrader:
         ]
         removed = before - len(self._state.buy_levels)
         log.info(
-            "[Grid] 🧹 Очистка: удалено %d устаревших idle-deploy BUY уровней "
-            "(amount_ton < %.1f TON) — ids=%s",
-            removed, min_ton,
+            "[Grid] 🧹 Очистка: удалено %d убыточных waiting BUY уровней "
+            "(amount_ton < %.1f TON при шаге %.1f%%) — ids=%s",
+            removed, min_ton, step_pct,
             sorted(stale_ids),
         )
         self._save_state()
