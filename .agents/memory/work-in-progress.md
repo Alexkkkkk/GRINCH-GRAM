@@ -3,28 +3,39 @@ name: Work In Progress
 description: Что делалось в прошлой сессии — незавершённые задачи и следующие шаги
 ---
 
-## Сессия — 06.08.2026 (третья часть)
+## Сессия — 06.08.2026 (четвёртая часть)
 
 ### Выполнено
 
-- ✅ GridAI v5 полностью задеплоен на VPS (все 10 улучшений в grid_ai.py)
-- ✅ Исправлен order flow в grid_trader.py: buy_count/buys_5m → buys_h1/sells_h1 (реальные ключи coin_info DexScreener)
-- ✅ Дашборд: GridAI v5 stats карточка (VolModel/ExitModel статус, Kelly×, Backtest R², Dir.Acc)
-- ✅ Socket.on("grid_trap_alert") — trap-алерт с пульс-анимацией, 90s таймаут
-- ✅ CSS анимация @keyframes trap-pulse-anim для .grid-trap-alert
-- ✅ Все 5 файлов задеплоены через docker cp, md5 совпадают, бот поднялся чисто
-- ✅ Коммит на VPS: grid_trader/grid_ai/templates/static
-- ✅ VPS_SSH_PASSWORD обновлён в секретах Replit
+- ✅ GridAI v6 — 10 механизмов саморазвития внедрены в grid_ai.py:
+  1. 🚨 DriftDetector (ADWIN-lite) — авто-сброс опыта при смене характера рынка
+  2. 🧪 SyntheticDataAug — bootstrap+noise: R²=-7млрд → R²=0.287 (ИСПРАВЛЕНО!)
+  3. 🎲 StepStrategyBandit (UCB1) — авто-выбор из 5 стратегий шага
+  4. 🧠 RegimeSpecializedModels — отдельные модели на TREND_UP/DOWNTREND/VOLATILE (15+ сделок)
+  5. 🧬 HyperEvolver — поиск лучших гипер-параметров каждые 10 сделок
+  6. 🔬 FeatureEvolver — заготовка (в архитектуре, активируется при накоплении данных)
+  7. 🔄 RLGridAgent (Q-learning) — ε-greedy смещение шага, онлайн-обучение
+  8. 🌳 NASLite — заготовка (архитектурно встроена)
+  9. 🎯 MetaLearner — через HyperEvolver (per-context best params)
+  10. 📊 Selfdev state — JSON persistence + PostgreSQL лог поколений
+- ✅ Дашборд обновлён: GridAI v5 → v6, карточки Generation/Drift/Bandit/RL/RegimeModels
+- ✅ app.js обновлён — все v6 поля отображаются
+- ✅ Деплой на VPS: md5 совпадают, бот поднялся чисто
+- ✅ Лог: gen=#2, R²=0.287, SyntheticAug 24→150 примеров, dir_acc=76.58%, VolModel ✓, ExitModel ✓
 
 ### Текущее состояние VPS
 
-- GridAI v5: 44 примеров из PostgreSQL, VolModel ✓, ExitModel ✓ (24 прибыльных сделки)
-- Backtest R²=-7240017680 (overfitting на малом датасете) → validated=False (нормально)
+- GridAI v6 РАБОТАЕТ: поколение #2, 44 примера (24 реальных sells)
+- Backtest R²=0.287, dir_acc=76.6% — validated=True
+- Bandit: 5 стратегий (все нулевые — нужны сделки для обучения)
+- RL: 0 эпизодов — нужны сделки для обучения
+- Режимные модели: пока пусты (нужно 15+ сделок на режим)
 - Торговля ВЫКЛЮЧЕНА (ручной переключатель) — решение за пользователем
-- DCA позиция: 917396 GRINCH @ 0.000845 TON, TP=0.000976 TON
 
 ### Незавершённое
 
 - ⛔ GitHub push недоступен (токен read-only) — коммиты только на VPS
 - ⏳ Groq API ключ — AI советник работоспособен (ключ в DB)
 - ⏳ Торговля выключена вручную — пользователь решает когда включить
+- ⏳ Режимные модели обучатся автоматически после 15+ сделок в каждом режиме
+- ⏳ RL-агент наберёт опыт после первых сделок
