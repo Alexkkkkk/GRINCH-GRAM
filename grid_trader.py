@@ -255,17 +255,12 @@ class GridAIManager:
             self._paused_by_ai = True
             decisions.append(f"⏸ авто-пауза ({policy['desc']})")
 
-        # ── 2. Динамический шаг по ATR×policy ────────────────────────────
-        if atr_pct > 0:
-            raw_step   = atr_pct * policy["step_mult"]
-            target_step = max(GridConfig.MIN_STEP_PCT,
-                              min(GridConfig.MAX_STEP_PCT, raw_step))
-            if abs(target_step - step_now) >= self.STEP_CHANGE_MIN_DIFF:
-                with t._lock:
-                    t._state.step_pct = target_step
-                decisions.append(
-                    f"📐 шаг {step_now:.1f}%→{target_step:.1f}% "
-                    f"(ATR={atr_pct:.1f}%×{policy['step_mult']})")
+        # ── 2. Динамический шаг — управляется adjust_step_by_atr() (ML) ───
+        # УБРАНО: GridAI-Mgr не должен менять шаг напрямую через atr*mult —
+        # это конфликтует с adjust_step_by_atr() (GridAI ML-ансамбль),
+        # вызываемым в _tick() до ai_manager.tick(). При VOLATILE-режиме
+        # ML даёт ≥5% (boundary [5,10]), а примитивная формула atr×1.1≈2.4%
+        # → clamped к MIN=4.0% → бесконечная осцилляция 5.5%↔4.0%.
 
         # ── 3. Авто-перестройка ───────────────────────────────────────────
         if grinch_balance > 1000 and price_ton > 0:
