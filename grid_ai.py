@@ -164,6 +164,11 @@ class GridAI:
     # Публичное API
     # ══════════════════════════════════════════════════════════════════════════
 
+    @property
+    def win_streak(self) -> int:
+        """Публичный доступ к текущей серии побед (int атомарен в CPython — lock не нужен)."""
+        return self._win_streak
+
     def get_optimal_step(self, atr_pct: float, regime: str = "SIDEWAYS",
                          min_step: float = None, max_step: float = 10.0) -> float:
         """Предсказать оптимальный шаг сетки.

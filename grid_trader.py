@@ -1001,6 +1001,19 @@ class GridTrader:
         if buy_frozen:
             log.info("[Grid] 🧊 BUY заморожены — AI SELL %.0f%%", ai_sell_conf)
 
+        # ── GridAI: мультикритериальная пауза BUY ─────────────────────────
+        if not buy_frozen and self._grid_ai:
+            try:
+                _center = self._state.center_price_ton or price_ton
+                _drawdown = max(0.0, (1.0 - price_ton / _center) * 100.0) if _center > 0 else 0.0
+                # should_pause_buying ожидает ai_sell_conf как долю 0-1
+                if self._grid_ai.should_pause_buying(regime, _drawdown, ai_sell_conf / 100.0):
+                    buy_frozen = True
+                    log.info("[Grid] 🛑 GridAI пауза BUY (режим=%s просадка=%.1f%% AI-SELL=%.0f%%)",
+                             regime, _drawdown, ai_sell_conf)
+            except Exception:
+                pass
+
         # ── Авто-перецентровка ────────────────────────────────────────────
         try:
             self._maybe_recenter(price_ton, atr_pct, regime)
@@ -1198,7 +1211,7 @@ class GridTrader:
                     _kelly_max = GridConfig.AI_BUY_SIZE_MAX_MULT
                     if self._grid_ai:
                         try:
-                            _streak = getattr(self._grid_ai, "_win_streak", 0)
+                            _streak = self._grid_ai.win_streak
                             if _streak >= GridConfig.AI_BUY_SIZE_KELLY_MIN_WR:
                                 _kb = min(1.0, (_streak - GridConfig.AI_BUY_SIZE_KELLY_MIN_WR) / 10.0)
                                 _kelly_max = GridConfig.AI_BUY_SIZE_MAX_MULT + _kb * (
@@ -1276,7 +1289,7 @@ class GridTrader:
                     _kelly_max_dca = GridConfig.AI_BUY_SIZE_MAX_MULT
                     if self._grid_ai:
                         try:
-                            _streak = getattr(self._grid_ai, "_win_streak", 0)
+                            _streak = self._grid_ai.win_streak
                             if _streak >= GridConfig.AI_BUY_SIZE_KELLY_MIN_WR:
                                 _kb = min(1.0, (_streak - GridConfig.AI_BUY_SIZE_KELLY_MIN_WR) / 10.0)
                                 _kelly_max_dca = GridConfig.AI_BUY_SIZE_MAX_MULT + _kb * (
@@ -1520,7 +1533,8 @@ class GridTrader:
                     f"→ {grinch_received:.0f} GRINCH @ {current_price:.6f}")
                 log.info("[Grid] %s", self._state.last_action)
 
-                self._add_cycle_sell(grinch_received, current_price)
+                self._add_cycle_sell(grinch_received, current_price,
+                                     regime=regime, atr_pct=atr_pct)
 
                 if self._grid_ai:
                     try:
@@ -1570,7 +1584,8 @@ class GridTrader:
 
                 # SELL-уровень для закрытия DCA позиции
                 self._add_cycle_sell(grinch_received, current_price,
-                                     note=f"DCA-цикл от {current_price:.6f}")
+                                     note=f"DCA-цикл от {current_price:.6f}",
+                                     regime=regime, atr_pct=atr_pct)
 
                 if self._grid_ai:
                     try:
@@ -1797,12 +1812,26 @@ class GridTrader:
                 pass
 
     def _add_cycle_sell(self, grinch_amount: float, buy_price: float,
-                        note: str = ""):
-        """После BUY: SELL-уровень на шаг выше для замыкания цикла."""
+                        note: str = "", regime: str = "UNKNOWN", atr_pct: float = 0.0):
+        """После BUY: SELL-уровень на шаг выше для замыкания цикла.
+        Цена адаптируется к режиму через GridAI.get_sell_target_pct().
+        """
         if grinch_amount < 1.0:   # guard: не создавать уровень с нулём/копейками
             log.debug("[Grid] _add_cycle_sell: grinch_amount=%.2f < 1 — пропуск", grinch_amount)
             return
-        sell_price = buy_price * (1 + self._state.step_pct / 100)
+        # Адаптивный целевой %: GridAI учитывает режим и ATR
+        # SQUEEZE/SIDEWAYS → 0.85–0.90× шага (быстрый выход)
+        # VOLATILE/TREND_UP → 1.10–1.15× (дать прибыли расти)
+        # PUMP → 1.30× (максимальная жадность)
+        if self._grid_ai:
+            try:
+                target_pct = self._grid_ai.get_sell_target_pct(
+                    self._state.step_pct, regime, atr_pct)
+            except Exception:
+                target_pct = self._state.step_pct
+        else:
+            target_pct = self._state.step_pct
+        sell_price = buy_price * (1 + target_pct / 100)
         # Уникальный ID: максимальный из cycle-уровней (≥ 100) плюс 1
         cycle_ids = [l.id for l in self._state.sell_levels if l.id >= 100]
         new_id    = (max(cycle_ids) + 1) if cycle_ids else 101
