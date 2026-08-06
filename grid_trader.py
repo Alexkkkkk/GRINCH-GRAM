@@ -2003,6 +2003,20 @@ class GridTrader:
 
         step_pct = self._state.step_pct or GridConfig.DEFAULT_STEP_PCT
 
+        # ── 3b. Безопасный минимум якоря ─────────────────────────────────────
+        # Первый idle-deploy уровень размещается на 1 шаг НИЖЕ anchor:
+        #   first_level = anchor / (1 + step/100)
+        # Чтобы он не попал сразу под перепозиционирование, нужно:
+        #   (center - first_level) / center < reposition_thresh / 100
+        # Отсюда: anchor >= center × (1 + step/100) × (1 - reposition_thresh/100)
+        _safe_anchor_min = _center * (1 + step_pct / 100) * (1 - _reposition_thresh / 100)
+        if anchor_price < _safe_anchor_min:
+            log.debug(
+                "[Grid] idle-deploy якорь %.8f → %.8f (скорректирован вверх до безопасной зоны)",
+                anchor_price, _safe_anchor_min,
+            )
+            anchor_price = _safe_anchor_min
+
         # ── 4. Определяем сколько новых уровней добавить ────────────────────
         # [УЛУЧШ] При очень большом свободном балансе добавляем больше уровней
         _max_levels = (GridConfig.IDLE_DEPLOY_MAX_LEVELS_RICH
