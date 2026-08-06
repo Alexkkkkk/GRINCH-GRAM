@@ -1917,7 +1917,7 @@ class GridTrader:
         # Порог = 2.5×step: уровни на -1×step и -2×step (штатные позиции) не
         # перепозиционируются; только уровни от старого центра (> 2.5×step).
         _ref_price = self._state.center_price_ton or price_ton
-        _reposition_thresh = _step_now * 2.5
+        _reposition_thresh = _step_now * 4.0
         _stale_idle = [
             l for l in self._state.buy_levels
             if l.status == "waiting"
@@ -1930,7 +1930,7 @@ class GridTrader:
                 _sl.status = "cancelled_reposition"
                 log.info(
                     "[Grid] 🔄 idle-deploy L%d @ %.8f перепозиционируется "
-                    "(%.1f%% ниже центра %.8f, > 2.5×%.1f%%=%.1f%%)",
+                    "(%.1f%% ниже центра %.8f, > 4.0×%.1f%%=%.1f%%)",
                     _sl.id, _sl.price_ton,
                     (_ref_price - _sl.price_ton) / _ref_price * 100,
                     _ref_price, _step_now, _reposition_thresh,
