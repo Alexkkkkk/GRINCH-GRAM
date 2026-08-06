@@ -74,6 +74,17 @@ PROVIDER_CONFIGS = {
         "supports_reasoning": False,
         "priority": 1,
     },
+    "groq": {
+        "name":     "Groq LLaMA 3.3-70B (Free)",
+        "base_url": GROQ_BASE_URL,
+        "model":    GROQ_MODEL,
+        "max_tokens": 1200,
+        "temperature": 0.25,
+        "env_key":  "GROQ_API_KEY",
+        "key_file": "groq_key.txt",
+        "supports_reasoning": False,
+        "priority": 2,  # поднят: единственный рабочий (бесплатный); DeepSeek=401, OpenAI=429
+    },
     "deepseek": {
         "name":     "DeepSeek-R1 (Reasoning)",
         "base_url": "https://api.deepseek.com/v1",
@@ -83,7 +94,7 @@ PROVIDER_CONFIGS = {
         "env_key":  "DEEPSEEK_API_KEY",
         "key_file": "deepseek_key.txt",
         "supports_reasoning": True,  # встроенный Chain-of-Thought
-        "priority": 2,
+        "priority": 3,
     },
     "xai": {
         "name":     "xAI Grok-3",
@@ -94,7 +105,7 @@ PROVIDER_CONFIGS = {
         "env_key":  "XAI_API_KEY",
         "key_file": "xai_key.txt",
         "supports_reasoning": False,
-        "priority": 3,
+        "priority": 4,
     },
     "anthropic": {
         "name":     "Anthropic Claude 3.5 Sonnet",
@@ -104,17 +115,6 @@ PROVIDER_CONFIGS = {
         "temperature": 0.2,
         "env_key":  "ANTHROPIC_API_KEY",
         "key_file": "anthropic_key.txt",
-        "supports_reasoning": False,
-        "priority": 4,
-    },
-    "groq": {
-        "name":     "Groq LLaMA 3.3-70B (Free)",
-        "base_url": GROQ_BASE_URL,
-        "model":    GROQ_MODEL,
-        "max_tokens": 1200,
-        "temperature": 0.25,
-        "env_key":  "GROQ_API_KEY",
-        "key_file": "groq_key.txt",
         "supports_reasoning": False,
         "priority": 5,
     },
