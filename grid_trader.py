@@ -67,7 +67,7 @@ class GridConfig:
     DCA_STEP_MULT      = 1.5    # DCA-триггер ниже центра на step * 1.5
     # Compound реинвест
     COMPOUND_RATE      = 0.02   # +2% к размеру reinvest за каждый прибыльный цикл
-    COMPOUND_MAX_MULT  = 2.0    # максимальный множитель размера
+    COMPOUND_MAX_MULT  = 1.3    # максимальный множитель размера (снижено: 268TON>баланс при 2.0)
     # Compound BUY размещается НЕ на полный шаг вниз, а на REINVEST_STEP_MULT×step
     # (0.6 = 60% шага). Меньшее расстояние → BUY заполняется быстрее при откатах.
     REINVEST_STEP_MULT = 0.60   # множитель шага для первого реинвест-BUY
