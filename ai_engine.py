@@ -191,15 +191,17 @@ KELLY_LOOKBACK    = 100                # стабильный Kelly на 100 с�
 # BUY: 50% (раньше было 43% — слишком много ложных входов)
 # SELL: 62% (высокий порог — AI SELL используется только для profit protection)
 # EV_MIN_TRADES: сколько сделок нужно для активации EV-фильтра
-BUY_THRESHOLD     = 0.43    # ≥43% вероятности роста → BUY (активная торговля в плюс)
-SELL_THRESHOLD    = 0.62    # ≥62% вероятности падения → SELL (только profit protection)
-EV_MIN_TRADES     = 12      # минимум сделок для активации EV-фильтра
+BUY_THRESHOLD     = 0.52    # v5: ≥52% — profit-only точность (было 0.43 — слишком много ложных входов)
+SELL_THRESHOLD    = 0.65    # v5: ≥65% — AI SELL только при высокой уверенности (было 0.62)
+EV_MIN_TRADES     = 8       # v5: EV-фильтр активируется раньше — с 8 сделок (было 12)
 VR_TREND_THRESH   = 1.15    # Variance Ratio > 1.15 → трендующий рынок → +буст BUY
 VR_MEAN_REV_THRESH= 0.85    # Variance Ratio < 0.85 → возвратный → -штраф BUY
-# Минимальный размер прибыли для profit-biased разметки (% от цены)
-# GRINCH 21.07.2026: ATR(15m)=3.24% → порог ≈ 1×ATR → label=BUY только при реальном движении
-# DEX round-trip fee 2% + gas → эффективный мин. порог: max(fee, 1×ATR) = 3.24%
-PROFIT_BIAS_PCT   = 0.030   # label=BUY только если ожидаемый рост > 3.0% (≈ 1×ATR 15м)
+SIGNAL_PERSIST_TICKS = 2    # v5: минимум N последовательных BUY тиков (предотвращает шумовые входы)
+# Минимальный размер прибыли для profit-biased разметки (% от цены).
+# v5 FIX: повышен с 3% до 6%. При DEX round-trip fee 2% + gas, целевой NET=13%,
+# модель должна учиться предсказывать реально прибыльные движения.
+# Разметка теперь использует max(window) а не c[i+la] — ловит внутридиапазонные пики.
+PROFIT_BIAS_PCT   = 0.060   # label=BUY только если достижимый рост > 6% (было 3% — не покрывало fees)
 HORIZON_WEIGHTS_DEFAULT = [1.0, 1.5, 2.0, 2.5]  # начальные веса горизонтов [3,5,8,13] — адаптируются по сделкам
 
 
@@ -797,6 +799,13 @@ class AIEngine:
         # Длинные горизонты лучше в тренде; короткие — в боковике.
         # Адаптация через EMA с каждой закрытой сделкой.
         self._horizon_weights: list = list(HORIZON_WEIGHTS_DEFAULT)
+
+        # ── v5: Signal persistence tracker ──────────────────────────────────
+        # Предотвращает входы на одиночных шумовых тиках.
+        # Для GRINCH (частые кратковременные всплески) это критично:
+        # BUY сигнал должен удерживаться 2+ тиков прежде чем торговать.
+        self._signal_streak: int = 0          # кол-во последовательных BUY тиков
+        self._last_signal_dir: str = "HOLD"   # направление прошлого тика
 
         # ── v4.3: Бинарная изотоническая калибровка BUY-вероятности ────────
         # IsotonicRegression: raw_prob_up → calibrated_prob_up.
@@ -1540,6 +1549,34 @@ class AIEngine:
             ai_signal = "BUY"
             self._last_buy_features = df[self._feature_names].iloc[-1].values.copy()
 
+        # ── v5: Signal Persistence Filter ────────────────────────────────
+        # BUY-сигнал должен удержаться N тиков подряд прежде чем открыть сделку.
+        # Это фильтрует кратковременные всплески GRINCH-а (типичны для micro-cap DEX).
+        # Правила:
+        #   conf ≥ 75% → вход с 1-го тика (сигнал очень сильный, не ждём)
+        #   conf 60-75% → требуем 2 последовательных BUY тика
+        #   conf < 60%  → требуем 3 тика (слабый сигнал, нужно подтверждение)
+        if ai_signal == "BUY":
+            self._signal_streak = (self._signal_streak + 1
+                                   if self._last_signal_dir == "BUY" else 1)
+            self._last_signal_dir = "BUY"
+            req_streak = 1 if confidence >= 75 else 2 if confidence >= 60 else 3
+            if self._signal_streak < req_streak:
+                log.debug(
+                    f"[AI v5 Persist] BUY отложен: streak={self._signal_streak}/{req_streak} "
+                    f"conf={confidence:.0f}% → HOLD (ждём подтверждения)"
+                )
+                ai_signal = "HOLD"
+                confidence = min(confidence, 49.0)
+        else:
+            if ai_signal == "SELL":
+                self._signal_streak = 0
+                self._last_signal_dir = "SELL"
+            elif self._last_signal_dir != "BUY":
+                pass  # нейтральный HOLD, не сбрасываем накопленную серию
+            else:
+                self._signal_streak = max(0, self._signal_streak - 1)
+
         # ── v4.4: Decay уверенности при устаревшей модели ────────────────
         # Модель, не обновлявшаяся > 2 часов в изменившемся рынке, ненадёжна.
         # Плавный штраф: 0% при <120 мин, до -10% при >300 мин.
@@ -1580,6 +1617,10 @@ class AIEngine:
             "disagreement": round(_disagreement * 100, 1),
             "ood_score":    round(_ood_score * 100, 1),
             "specialist_adj": _specialist_adj,
+            # v5: signal persistence info
+            "signal_streak":      self._signal_streak,
+            "ev_profitable":      kelly.get("ev_profitable", kelly.get("ev", 0) > 0),
+            "profit_margin_ton":  kelly.get("profit_margin", 0.0),
         }
 
         # ── Сохраняем BASE-результат в кэш (без wallet-корректировок).
@@ -2292,8 +2333,12 @@ class AIEngine:
                 meta_p  = self._meta.predict_proba(meta_X)[0]
                 meta_cls = self._meta.named_steps["clf"].classes_
                 meta_aligned = self._align_proba(meta_p, meta_cls)
-                # Блендинг: 60% мета + 40% базовый
-                base_ens = 0.4 * base_ens + 0.6 * meta_aligned
+                # v5: Адаптивный блендинг — чем увереннее мета, тем больше её вес.
+                # Диапазон: 45-75% мета (было фиксированное 60%).
+                # max(meta_aligned) = уверенность мета-модели в своём предсказании.
+                _meta_conf   = float(meta_aligned.max())
+                _meta_weight = min(0.75, 0.45 + 0.50 * (_meta_conf - 0.33) / 0.67)
+                base_ens = (1.0 - _meta_weight) * base_ens + _meta_weight * meta_aligned
             except Exception:
                 pass
 
@@ -2617,6 +2662,65 @@ class AIEngine:
                 if _hcol not in df.columns:
                     df[_hcol] = 0.0
 
+        # ════════════════════════════════════════════════════════════════
+        # ── v5 NEW FEATURES — дополнительные предикторы ──────────────
+        # ════════════════════════════════════════════════════════════════
+
+        # ── Kaufman Efficiency Ratio (KER/ER) ──────────────────────────
+        # 1.0 = идеальный тренд (рынок движется прямо), 0.0 = случайное блуждание.
+        # Лучший предсказатель условий для трендовых стратегий.
+        _price_chg_10 = (c - c.shift(10)).abs()
+        _path_len_10  = c.diff().abs().rolling(10, min_periods=3).sum()
+        df["kama_er"]  = (_price_chg_10 / (_path_len_10 + 1e-10)).clip(0, 1)
+
+        # ── RSI Divergence (бычья/медвежья дивергенция) ─────────────────
+        # Bullish: цена ниже, RSI выше → скрытая сила (разворот вверх)
+        # Bearish: цена выше, RSI ниже → скрытая слабость (разворот вниз)
+        _c_lag5   = c.shift(5)
+        _rsi_lag5 = df["rsi"].shift(5)
+        df["rsi_div_bull"] = ((c < _c_lag5) & (df["rsi"] > _rsi_lag5)).astype(float)
+        df["rsi_div_bear"] = ((c > _c_lag5) & (df["rsi"] < _rsi_lag5)).astype(float)
+
+        # ── Candle Streak (серия однонаправленных свечей) ────────────────
+        # Растущая серия подтверждает импульс; слишком длинная = перегрев.
+        _c_up_arr = (c > c.shift(1)).astype(int).values
+        _up_str = np.zeros(len(_c_up_arr), dtype=float)
+        _dn_str = np.zeros(len(_c_up_arr), dtype=float)
+        for _si in range(1, len(_c_up_arr)):
+            if _c_up_arr[_si]:
+                _up_str[_si] = _up_str[_si - 1] + 1
+            else:
+                _dn_str[_si] = _dn_str[_si - 1] + 1
+        df["up_streak"] = np.clip(_up_str, 0, 10)
+        df["dn_streak"] = np.clip(_dn_str, 0, 10)
+
+        # ── EMA Trend Strength (сила EMA-тренда) ────────────────────────
+        # Нормализованное расстояние EMA9 от EMA50: >0 = бычий тренд, <0 = медвежий.
+        df["ema_trend_str"] = (df["ema_9"] - df["ema_50"]) / (df["ema_50"] + 1e-10)
+
+        # ── Volume-Price Momentum Quality ────────────────────────────────
+        # Объём + цена растут вместе = качественный импульс, не просто шум.
+        _price_up_3 = (c > c.shift(3)).astype(float)
+        _vol_above  = (v > v.rolling(20, min_periods=5).mean()).astype(float)
+        df["vol_price_mom"] = _price_up_3 * _vol_above
+
+        # ── Stochastic RSI ────────────────────────────────────────────────
+        # Сверхчувствительный осциллятор: RSI RSI.
+        _rsi_lo14 = df["rsi"].rolling(14, min_periods=5).min()
+        _rsi_hi14 = df["rsi"].rolling(14, min_periods=5).max()
+        df["stoch_rsi"] = (df["rsi"] - _rsi_lo14) / (_rsi_hi14 - _rsi_lo14 + 1e-10)
+
+        # ── Price Deviation from VWAP (z-score) ──────────────────────────
+        # Как далеко цена от «справедливой» стоимости (в сигмах).
+        _vwap_dev_mu  = df["vwap_dev"].rolling(50, min_periods=10).mean()
+        _vwap_dev_std = df["vwap_dev"].rolling(50, min_periods=10).std()
+        df["vwap_dev_z"] = (df["vwap_dev"] - _vwap_dev_mu) / (_vwap_dev_std + 1e-10)
+
+        # ── Liquidity Proxy: High-Low Spread Ratio ────────────────────────
+        # Высокий spread = низкая ликвидность = высокий slippage риск.
+        _hl_spread  = (h - l) / (c + 1e-10)
+        df["liq_proxy"] = _hl_spread.rolling(10, min_periods=3).mean()
+
         df.dropna(inplace=True)
         return df
 
@@ -2670,6 +2774,17 @@ class AIEngine:
             "dump_velocity",       # скорость падения за 5 баров (%)
             "vol_collapse",        # коллапс объёма от пикового значения за 20 баров
             "post_pump_dump",      # флаг паттерна: цена -18% от хая + объём -40%
+            # ── v5 NEW: Усиленные предикторы ─────────────────────────────────────
+            "kama_er",             # Kaufman Efficiency Ratio (тренд vs случайное блуждание)
+            "rsi_div_bull",        # RSI бычья дивергенция (разворот вверх)
+            "rsi_div_bear",        # RSI медвежья дивергенция (разворот вниз)
+            "up_streak",           # серия бычьих свечей (подтверждение импульса)
+            "dn_streak",           # серия медвежьих свечей (подтверждение спада)
+            "ema_trend_str",       # сила EMA-тренда (EMA9 vs EMA50)
+            "vol_price_mom",       # качество импульса (объём + цена вместе)
+            "stoch_rsi",           # Stochastic RSI (сверхчувствительный осциллятор)
+            "vwap_dev_z",          # отклонение от VWAP в z-score
+            "liq_proxy",           # прокси ликвидности (HL spread)
             # ── v5 NEW: DataHub — внешние рыночные данные ─────────────────────
             "fg_norm",             # Fear&Greed нормализованный -1..+1
             "btc_trend",           # BTC изм. 24ч / 10 (рыночный ветер)
@@ -2708,10 +2823,20 @@ class AIEngine:
             weighted_sum = 0.0
             total_w = 0.0
             for la, w in zip(LOOK_AHEADS, HORIZON_WEIGHTS):
-                ret = (c[i + la] - c[i]) / (c[i] + 1e-10)
-                if ret > buy_thresh:
+                # v5 FIX: используем max/min в окне, а не endpoint c[i+la].
+                # Реальная торговля ловит внутридневные экстремумы (trailing stop),
+                # поэтому достижимый максимум/минимум — правильная метрика.
+                # Старый подход c[i+la] недооценивал прибыльные BUY-возможности.
+                window_end = min(i + la + 1, n)
+                window = c[i + 1 : window_end]
+                if len(window) == 0:
+                    total_w += w
+                    continue
+                ret_up   = (window.max() - c[i]) / (c[i] + 1e-10)   # лучший достижимый рост
+                ret_down = (window.min() - c[i]) / (c[i] + 1e-10)   # худший провал (отрицательный)
+                if ret_up > buy_thresh:
                     weighted_sum += w
-                elif ret < -sell_thresh:
+                elif ret_down < -sell_thresh:
                     weighted_sum -= w
                 total_w += w
             # Взвешенное решение: >50% веса за сторону → сигнал
@@ -2919,15 +3044,33 @@ class AIEngine:
 
             half_kelly = max(0.1, min(kelly_raw * kelly_mult, 2.0))
             ev = win_rate * avg_win - (1 - win_rate) * avg_loss
+
+            # v5: Profit Certainty Score — вероятность что сделка покроет DEX fees + gas.
+            # Используем Sharpe-based threshold: требуем EV > fee_cost на сделку.
+            try:
+                _stake   = float(getattr(Config, "TRADE_AMOUNT", 100.0))
+                _fee_pct = float(getattr(Config, "FEE_ROUND_TRIP", 2.0)) / 100.0
+                _buy_gas = float(getattr(Config, "BUY_GAS_TON", 0.103))
+                _sell_gas= float(getattr(Config, "SELL_GAS_TON", 0.08))
+                _total_cost = _stake * _fee_pct + _buy_gas + _sell_gas
+                # EV должен быть > полной стоимости сделки (fee + gas) чтобы быть прибыльным
+                ev_profitable = ev > _total_cost
+                profit_margin = round(ev - _total_cost, 4)
+            except Exception:
+                ev_profitable = ev > 0
+                profit_margin = round(ev, 4)
+
             return {
-                "fraction": round(half_kelly, 3),
-                "win_rate": round(win_rate * 100, 1),
-                "rr_ratio": round(rr, 2),
-                "trades":   n,
-                "ev":       round(ev, 4),
-                "avg_win":  round(avg_win, 4),
-                "avg_loss": round(avg_loss, 4),
-                "sharpe":   sharpe,
+                "fraction":      round(half_kelly, 3),
+                "win_rate":      round(win_rate * 100, 1),
+                "rr_ratio":      round(rr, 2),
+                "trades":        n,
+                "ev":            round(ev, 4),
+                "profit_margin": profit_margin,     # v5: EV минус реальные издержки (fee+gas)
+                "ev_profitable": ev_profitable,     # v5: True = EV покрывает ВСЕ издержки
+                "avg_win":       round(avg_win, 4),
+                "avg_loss":      round(avg_loss, 4),
+                "sharpe":        sharpe,
             }
         except Exception:
             return {"fraction": 0.5, "win_rate": 50.0, "rr_ratio": 1.0,
