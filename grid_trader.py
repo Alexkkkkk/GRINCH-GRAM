@@ -2535,10 +2535,20 @@ class GridTrader:
         return "UNKNOWN", self._get_atr_pct()
 
     def _get_ai_signal(self) -> tuple:
-        """Возвращает (buy_conf%, sell_conf%) из последнего DB-тика."""
+        """Возвращает (buy_conf%, sell_conf%) для управления сеткой.
+
+        Основной сигнал берём из BrainFusion: туда AI Advisor передаёт
+        результат выбранного LLM-провайдера (сейчас OpenAI GPT-4o), а также
+        локальные ML/TA/scanner-сигналы. Сырой сигнал из последнего DB-тика
+        остаётся безопасным fallback и сохраняет локальную защиту, если
+        BrainFusion ещё не получил свежий консенсус.
+        """
         try:
             import db_store as _ds
+            # Сначала читаем локальный AI-сигнал: он нужен как fallback и
+            # сохраняет уже существующие защитные пороги Grid.
             ticks = _ds.ticks_get_recent(1)
+            raw_buy, raw_sell = 0.0, 0.0
             if ticks:
                 t         = ticks[0]
                 sig       = t.get("ai_sig") or t.get("final") or "HOLD"
@@ -2547,14 +2557,42 @@ class GridTrader:
                 prob_down = float(t.get("prob_down") or 0.0)
                 if sig == "BUY":
                     # conf — уверенность BUY; prob_down — вероятность падения
-                    buy_val  = conf if conf > 0 else prob_up
-                    return buy_val, prob_down
-                if sig == "SELL":
+                    raw_buy  = conf if conf > 0 else prob_up
+                    raw_sell = prob_down
+                elif sig == "SELL":
                     # conf — уверенность SELL; prob_up — вероятность роста
-                    sell_val = conf if conf > 0 else prob_down
-                    return prob_up, sell_val
-                # HOLD — возвращаем обе вероятности
-                return prob_up, prob_down
+                    raw_buy  = prob_up
+                    raw_sell = conf if conf > 0 else prob_down
+                else:
+                    # HOLD — возвращаем обе вероятности
+                    raw_buy, raw_sell = prob_up, prob_down
+
+            # BrainFusion получает LLM-вердикт из ai_advisor после каждого
+            # запуска советника. Поэтому OpenAI влияет на сетку через
+            # консенсус, но не вызывается на каждом 10–20-секундном тике.
+            try:
+                import brain_fusion as _bf
+                fusion = _bf.get_fusion_signal()
+                action = (getattr(fusion, "action", "") or "").upper()
+                fusion_conf = max(
+                    0.0, min(100.0, float(
+                        getattr(fusion, "consensus_conf", 0.0) or 0.0
+                    ))
+                )
+                if action == "BUY" and fusion_conf > 0:
+                    raw_buy = max(raw_buy, fusion_conf)
+                elif action == "SELL" and fusion_conf > 0:
+                    raw_sell = max(raw_sell, fusion_conf)
+                if action in ("BUY", "SELL") and fusion_conf > 0:
+                    log.debug(
+                        "[Grid] BrainFusion %s %.0f%% включён в AI-фильтр "
+                        "(raw BUY=%.0f%% SELL=%.0f%%)",
+                        action, fusion_conf, raw_buy, raw_sell,
+                    )
+            except Exception as _fusion_err:
+                log.debug("[Grid] BrainFusion signal unavailable: %s", _fusion_err)
+
+            return raw_buy, raw_sell
         except Exception:
             pass
         return 0.0, 0.0
