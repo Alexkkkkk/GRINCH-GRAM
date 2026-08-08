@@ -181,12 +181,22 @@ class GridAIManager:
         # режим         active  step_mult  levels  описание
         "SIDEWAYS":     {"active": True,  "step_mult": 0.85, "levels": 12,
                          "desc": "боковик — плотная сетка"},
+        "SQUEEZE":      {"active": True,  "step_mult": 0.85, "levels": 12,
+                         "desc": "сжатие волатильности — плотная сетка"},
+        "RANGING":      {"active": True,  "step_mult": 0.85, "levels": 12,
+                         "desc": "диапазон — плотная сетка"},
         "MILD_TREND":   {"active": True,  "step_mult": 1.0,  "levels": 10,
                          "desc": "умеренный тренд"},
         "TREND":        {"active": True,  "step_mult": 1.3,  "levels": 8,
                          "desc": "тренд — широкий шаг"},
         "TREND_UP":     {"active": True,  "step_mult": 1.5,  "levels": 7,
                          "desc": "тренд вверх — меньше уровней"},
+        "UPTREND":      {"active": True,  "step_mult": 1.5,  "levels": 7,
+                         "desc": "тренд вверх — меньше уровней"},
+        "TREND_DOWN":   {"active": True,  "step_mult": 1.2,  "levels": 8,
+                         "desc": "тренд вниз — широкая защитная сетка"},
+        "DOWNTREND":    {"active": True,  "step_mult": 1.2,  "levels": 8,
+                         "desc": "тренд вниз — широкая защитная сетка"},
         "VOLATILE":     {"active": True,  "step_mult": 1.1,  "levels": 9,
                          "desc": "волатильность — шаг немного шире"},
         "TRANSITION":   {"active": True,  "step_mult": 1.0,  "levels": 10,
@@ -371,8 +381,11 @@ class GridAIManager:
         )
         if regime_changed:
             # Перестраиваем только при значимой смене
-            meaningful = {"SIDEWAYS", "TREND", "TREND_UP",
-                          "PUMP", "POST_PUMP", "DISTRIBUTION"}
+            meaningful = {
+                "SIDEWAYS", "SQUEEZE", "RANGING", "MILD_TREND",
+                "TREND", "TREND_UP", "UPTREND", "TREND_DOWN", "DOWNTREND",
+                "VOLATILE", "PUMP", "POST_PUMP", "DISTRIBUTION",
+            }
             if regime in meaningful and self._last_regime in meaningful:
                 return f"смена режима {self._last_regime}→{regime}"
 
@@ -2747,7 +2760,9 @@ class GridTrader:
             return 8.0
         if regime in ("DISTRIBUTION", "POST_PUMP"):
             return 6.0
-        if regime == "TREND_UP":
+        if regime in ("TREND_UP", "UPTREND"):
+            return 8.0 if atr_pct >= 4.0 else 6.0
+        if regime in ("TREND_DOWN", "DOWNTREND"):
             return 8.0 if atr_pct >= 4.0 else 6.0
         if atr_pct >= GridConfig.ATR_WIDE_PCT:
             return 8.0
