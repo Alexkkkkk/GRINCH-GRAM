@@ -59,6 +59,7 @@
 - [GridAI DCA feature mismatch](grid-ai-feature-mismatch.md) — _dca_model trains on 5 features; never pass extra=[] to _make_features in get_dca_confidence or inference crashes silently.
 - [GridAI v5 architecture](grid-ai-v5.md) — FEAT_DIM=40 (was 20); 10 upgrades: market ctx, profit-weight, PostgreSQL, vol-model, exit-model, P&L-sim, OOF-meta, MTF, trap-detect, backtest.
 - [Grid режимы и деплой](grid-regimes-deploy.md) — live GridAI использует SQUEEZE/UPTREND/DOWNTREND; self-update должен скачивать grid_trader.py и grid_ai.py.
+- [Grid allocation audit](grid-allocation-audit.md) — waiting SELL inventory must be bounded by free GRINCH and DCA reserve; profit guard must use the actual adaptive SELL target.
 
 - [Gunicorn preload reload gotcha](gunicorn-preload-reload.md) — SIGHUP to --preload gunicorn never picks up new code; needs real process restart; re-verify /api/config settings survived after any VPS restart.
 - [Docker cp deploy — verify after restart](docker-cp-deploy-verify.md) — a docker cp+restart hotfix once silently reverted; always re-check md5sum inside the container AFTER restart completes, not just right after cp.
