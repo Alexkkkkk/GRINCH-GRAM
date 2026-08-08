@@ -217,6 +217,27 @@ def _apply_saved_config():
             _safe_set("DEAD_HOURS_DROP_MULT", v, float)
             applied += 1
 
+        # Приоритет ручных настроек над устаревшим состоянием адаптивного ИИ.
+        # ExperienceManager восстанавливает свой control при импорте и иначе
+        # может вернуть MIN_AI_CONFIDENCE/TRADE_AMOUNT к старым значениям.
+        if "MIN_AI_CONFIDENCE" in saved or "TRADE_AMOUNT" in saved:
+            try:
+                from experience_manager import experience_manager
+                experience_manager.set_baseline(
+                    min_conf=(
+                        Config.MIN_AI_CONFIDENCE
+                        if "MIN_AI_CONFIDENCE" in saved else None
+                    ),
+                    trade_amount=(
+                        Config.TRADE_AMOUNT
+                        if "TRADE_AMOUNT" in saved else None
+                    ),
+                )
+            except Exception as _baseline_err:
+                _startup_log.warning(
+                    f"[Config] ⚠️ Не удалось синхронизировать базу AI: {_baseline_err}"
+                )
+
         _startup_log.info(f"[Config] ✅ Восстановлено {applied} сохранённых настроек из settings_store")
     except Exception as e:
         _startup_log.warning(f"[Config] ⚠️ Не удалось загрузить сохранённые настройки: {e}")
@@ -253,9 +274,10 @@ def _apply_saved_config():
         Config.TRAIL_STAGE2_PCT         = max(Config.TRAIL_STAGE2_PCT,        10.0)
         Config.TRAIL_STAGE3_PCT         = max(Config.TRAIL_STAGE3_PCT,         7.5)
         Config.TRAIL_STAGE4_PCT         = max(Config.TRAIL_STAGE4_PCT,         6.0)
-        # ATR(15m)=2.225% → SHORT_TRAIL ≥ 4×ATR=8.9% → 9%; SMART_TP_TIGHT ≥ 7%
+        # ATR(15m)=2.225% → SHORT_TRAIL ≥ 4×ATR=8.9% → 9%.
+        # Smart TP настраивается отдельно через dashboard/settings_store;
+        # не перезаписываем пользовательский tight trail при старте.
         Config.SHORT_TRAIL_PCT          = max(Config.SHORT_TRAIL_PCT,          9.0)
-        Config.SMART_TP_TIGHT_TRAIL_PCT = max(Config.SMART_TP_TIGHT_TRAIL_PCT, 7.0)
         # SCALP_MAX_ATR_PCT: ATR(15m)=2.225% < 3.0% → скальп уже включён без guard,
         # но держим 3.0 как минимум — запас на случай роста волатильности.
         Config.SCALP_MAX_ATR_PCT        = max(Config.SCALP_MAX_ATR_PCT,        3.0)

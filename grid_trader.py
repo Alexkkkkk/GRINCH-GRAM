@@ -50,6 +50,31 @@ class GridConfig:
     FEE_PCT            = 0.01   # 1% DeDust fee per side
     # Газ на одну сделку (TON)
     GAS_PER_TRADE_TON  = 0.30
+
+    @classmethod
+    def min_profitable_order_ton(cls, step_pct=None):
+        """Минимальный размер BUY/DCA, при котором цикл покрывает газ.
+
+        Статический MIN_ORDER_TON защищает от пыли, но не учитывает, что
+        фиксированный газ съедает весь результат маленького ордера. При
+        шаге 4% на DeDust это около 31 TON; при более широком шаге порог
+        уменьшается. Возвращаем максимум из обоих ограничений.
+        """
+        try:
+            step = float(step_pct)
+        except (TypeError, ValueError):
+            step = cls.DEFAULT_STEP_PCT
+        step = max(step, 0.0)
+        cycle_factor = (
+            (1.0 + step / 100.0) * (1.0 - cls.FEE_PCT) ** 2 - 1.0
+        )
+        if cycle_factor <= 0:
+            return float("inf")
+        gas_min = (cls.GAS_PER_TRADE_TON * 2.0) / cycle_factor
+        # Округление вверх до 0.1 TON, чтобы не создать пограничный
+        # уровень, который после округления снова станет убыточным.
+        gas_min = math.ceil(gas_min * 10.0) / 10.0
+        return max(float(cls.MIN_ORDER_TON), gas_min)
     # ATR-пороги для heuristic-шага
     ATR_WIDE_PCT       = 5.0   # ATR > 5% → шаг 8%
     ATR_NORM_PCT       = 3.0   # ATR 3-5% → шаг 6%
@@ -319,8 +344,11 @@ class GridAIManager:
         original_buys = [l for l in buy_levels_copy if -100 < l.id < 0]
         if original_buys:
             no_funds_buys = [l for l in original_buys if l.status == "no_funds"]
+            _min_order = GridConfig.min_profitable_order_ton(
+                self._trader._state.step_pct or GridConfig.DEFAULT_STEP_PCT
+            )
             if (len(no_funds_buys) == len(original_buys)
-                    and ton_balance > GridConfig.MIN_ORDER_TON * len(original_buys)):
+                    and ton_balance > _min_order * len(original_buys)):
                 return (f"все BUY-уровни no_funds, "
                         f"но TON={ton_balance:.1f} достаточно — активируем BUY")
 
@@ -512,7 +540,7 @@ class GridTrader:
         cycle_factor = (1 + step_pct / 100) * (1 - GridConfig.FEE_PCT) ** 2 - 1
         if cycle_factor <= 0:
             return
-        min_ton = GridConfig.GAS_PER_TRADE_TON * 2 / cycle_factor
+        min_ton = GridConfig.min_profitable_order_ton(step_pct)
 
         stale = [
             l for l in self._state.buy_levels
@@ -544,7 +572,9 @@ class GridTrader:
         bad = [
             l for l in self._state.dca_levels
             if l.status == "waiting"
-            and l.amount_ton < GridConfig.MIN_ORDER_TON
+            and l.amount_ton < GridConfig.min_profitable_order_ton(
+                self._state.step_pct or GridConfig.DEFAULT_STEP_PCT
+            )
         ]
         if not bad:
             return
@@ -554,7 +584,9 @@ class GridTrader:
         ]
         log.info(
             "[Grid] 🧹 Очистка DCA: удалено %d уровней с amount_ton < %.1f TON (ids=%s)",
-            len(bad_ids), GridConfig.MIN_ORDER_TON, sorted(bad_ids),
+            len(bad_ids), GridConfig.min_profitable_order_ton(
+                self._state.step_pct or GridConfig.DEFAULT_STEP_PCT
+            ), sorted(bad_ids),
         )
         self._save_state()
 
@@ -678,9 +710,10 @@ class GridTrader:
             # ── BUY-уровни ─────────────────────────────────────────────
             usable_ton    = max(0.0, ton_balance - GridConfig.GAS_RESERVE_TON)
             ton_per_level = usable_ton / buy_levels if buy_levels > 0 and usable_ton > 0 else 0
+            _min_buy_order = GridConfig.min_profitable_order_ton(step_pct)
             for i in range(1, buy_levels + 1):
                 trigger = current_price_ton / (1 + step_pct / 100) ** i
-                st = "waiting" if ton_per_level >= GridConfig.MIN_ORDER_TON else "no_funds"
+                st = "waiting" if ton_per_level >= _min_buy_order else "no_funds"
                 state.buy_levels.append(GridLevel(
                     id=-i, side="buy",
                     price_ton=round(trigger, 8),
@@ -1218,7 +1251,8 @@ class GridTrader:
                                     key=lambda l: l.price_ton, reverse=True):
                     if level.status != "waiting":
                         continue
-                    if level.amount_ton < GridConfig.MIN_ORDER_TON:
+                    if level.amount_ton < GridConfig.min_profitable_order_ton(
+                            self._state.step_pct or GridConfig.DEFAULT_STEP_PCT):
                         continue
                     if price_ton > level.price_ton:
                         break
@@ -1328,7 +1362,8 @@ class GridTrader:
                                     key=lambda l: l.price_ton, reverse=True):
                     if level.status != "waiting":
                         continue
-                    if level.amount_ton < GridConfig.MIN_ORDER_TON:
+                    if level.amount_ton < GridConfig.min_profitable_order_ton(
+                            self._state.step_pct or GridConfig.DEFAULT_STEP_PCT):
                         continue
                     if price_ton > level.price_ton:
                         break
@@ -1475,7 +1510,8 @@ class GridTrader:
                 _dca_budget = 0.0
                 if GridConfig.DCA_REDUCE_ENABLED and profit >= GridConfig.DCA_REDUCE_MIN_PROFIT:
                     _dca_budget = round(profit * GridConfig.DCA_REDUCE_RATE, 4)
-                    if _dca_budget < GridConfig.MIN_ORDER_TON:
+                    if _dca_budget < GridConfig.min_profitable_order_ton(
+                            self._state.step_pct or GridConfig.DEFAULT_STEP_PCT):
                         _dca_budget = 0.0
 
                 # ── Compound-реинвест ──────────────────────────────────
@@ -1500,13 +1536,15 @@ class GridTrader:
                 # Compound reinvest из net_ton минус DCA-бюджет (координация бюджетов)
                 ton_to_reinvest = (net_ton - GridConfig.GAS_RESERVE_TON - _dca_budget) * \
                                   self._state.compound_multiplier
-                if ton_to_reinvest >= GridConfig.MIN_ORDER_TON:
+                if ton_to_reinvest >= GridConfig.min_profitable_order_ton(
+                        self._state.step_pct or GridConfig.DEFAULT_STEP_PCT):
                     self._add_reinvestment_buy(ton_to_reinvest, current_price)
 
                 # ── DCA-reduce: фоновый поток (не блокирует grid._lock) ─
                 # blocking=False: если предыдущий buy ещё идёт — пропускаем,
                 # чтобы не накапливать очередь блокирующих buy-звонков.
-                if _dca_budget >= GridConfig.MIN_ORDER_TON:
+                if _dca_budget >= GridConfig.min_profitable_order_ton(
+                        self._state.step_pct or GridConfig.DEFAULT_STEP_PCT):
                     if self._dca_reduce_lock.acquire(blocking=False):
                         threading.Thread(
                             target=self._reduce_dca_loss,
@@ -1683,6 +1721,7 @@ class GridTrader:
         REINVEST_STEP_MULT2×step (≈110%) — создаёт дополнительный BUY→SELL цикл.
         """
         step = self._state.step_pct
+        _min_order = GridConfig.min_profitable_order_ton(step)
 
         def _next_compound_id():
             # Диапазон compound: -101 … -999 (не трогаем DCA -1000…-1999 и idle -2000…)
@@ -1707,10 +1746,10 @@ class GridTrader:
 
         # ── Второй BUY: чуть дальше (REINVEST_STEP_MULT2 × step) ────────────
         # Добавляем только если капитал позволяет (≥ 2×MIN_ORDER_TON на каждый)
-        if ton_amount >= GridConfig.MIN_ORDER_TON * 2:
+        if ton_amount >= _min_order * 2:
             # [УЛУЧШ] При compound >= 1.5x: три BUY вместо двух — 40/40/20% капитала
             _use_third = (self._state.compound_multiplier >= 1.5
-                          and ton_amount >= GridConfig.MIN_ORDER_TON * 3)
+                          and ton_amount >= _min_order * 3)
             if _use_third:
                 third = round(ton_amount * 0.20, 4)
                 half  = round((ton_amount - third) / 2, 4)
@@ -1733,7 +1772,7 @@ class GridTrader:
             log.info("[Grid] 📥 Реинвест BUY#2 @ %.6f с %.2f TON (×%.2fшаг)",
                      buy_price2, half, GridConfig.REINVEST_STEP_MULT2)
             # [УЛУЧШ] Третий BUY на глубоком страховании (только при compound >= 1.5x)
-            if _use_third and third >= GridConfig.MIN_ORDER_TON:
+            if _use_third and third >= _min_order:
                 buy_price3 = from_price / (1 + step * GridConfig.REINVEST_STEP_MULT3 / 100)
                 nid3 = _next_compound_id()
                 self._state.buy_levels.append(GridLevel(
@@ -1959,8 +1998,9 @@ class GridTrader:
         dca_num  = active_dca + 1
         size_mult = (self._grid_ai.get_dca_size_multiplier(dca_num, win_rate)
                      if self._grid_ai else 1.0)
-        base_ton  = GridConfig.MIN_ORDER_TON * 1.5  # 22.5 TON базовый DCA-ордер
-        amount_ton = round(max(base_ton * size_mult, GridConfig.MIN_ORDER_TON), 2)
+        _min_order = GridConfig.min_profitable_order_ton(self._state.step_pct)
+        base_ton  = _min_order * 1.5
+        amount_ton = round(max(base_ton * size_mult, _min_order), 2)
 
         # Диапазон DCA: -1001 … -1999 (min существующих - 1)
         _dca_ids = [l.id for l in self._state.dca_levels if l.id <= -1000]
@@ -2185,7 +2225,8 @@ class GridTrader:
             # Поднимаем до минимально прибыльного (газ-inclusive)
             base_amount = max(base_amount, _min_ton_for_profit)
             amount_ton  = round(base_amount * depth_mult, 2)
-            if amount_ton < GridConfig.MIN_ORDER_TON:
+            if amount_ton < GridConfig.min_profitable_order_ton(
+                    self._state.step_pct or GridConfig.DEFAULT_STEP_PCT):
                 break
             # Бюджетный контроль: точная проверка по реально оставшемуся балансу
             if amount_ton > remaining:

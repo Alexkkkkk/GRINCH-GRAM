@@ -168,6 +168,8 @@ class Trader:
         self._last_large_sell_buy_ts = 0.0
         # DCA кулдаун: время последней DCA-докупки (защита от переторговли)
         self._last_dca_entry_ts = 0.0
+        # Дроссель логирования заблокированного первого DCA-входа
+        self._last_dca_entry_block_log_ts = 0.0
         # Кулдаун после убыточного закрытия: не входить сразу в нисходящий тренд
         self._last_loss_ts = 0.0
         # Защита прибыли: пик стоимости портфеля (TON) для детектора разворота
@@ -1072,10 +1074,11 @@ class Trader:
         if not self.profit_protect_activated:
             return False
 
-        # ── Детектор разворота ── 1: тесный трейл 2% от пика портфеля ──
-        # Используем фиксированные 2% (вместо адаптивных 4–12%), чтобы успеть
-        # зафиксировать прибыль до того, как откат съест весь заработок.
-        TIGHT_TRAIL_PCT = 2.0
+        # ── Детектор разворота ── 1: трейл от пика портфеля ───────────
+        # Раньше здесь были жёсткие 2%, из-за чего настройка
+        # PROFIT_PROTECT_DROP_PCT не влияла на живую защиту и нормальный
+        # GRINCH-шум преждевременно закрывал позицию.
+        TIGHT_TRAIL_PCT = max(0.3, float(Config.PROFIT_PROTECT_DROP_PCT))
 
         drop_from_peak = 0.0
         if self.portfolio_high_water_ton > total_value_ton:
@@ -1653,6 +1656,66 @@ class Trader:
                     "INFO"
                 )
                 return
+
+            # ── Confluence для первого DCA-входа ─────────────────────
+            # DCA исторически обходил AI-фильтры полностью и мог открыть
+            # позицию на перекупленности/без объёмного подтверждения.
+            # Существующие позиции и докупки здесь не блокируем: для них
+            # действуют отдельные DCA_DROP_TRIGGER и AI SELL guard.
+            if Config.CONFLUENCE_ENABLED:
+                _dca_ai = self.last_ai or {}
+                _dca_ta = self.last_analysis or {}
+                try:
+                    _dca_rsi = float(
+                        _dca_ai.get("rsi", _dca_ta.get("rsi", 50)) or 50
+                    )
+                except (TypeError, ValueError):
+                    _dca_rsi = 50.0
+                try:
+                    _dca_vol = float(
+                        _dca_ai.get(
+                            "volume_ratio",
+                            _dca_ta.get("vol_ratio", 1.0),
+                        ) or 1.0
+                    )
+                except (TypeError, ValueError):
+                    _dca_vol = 1.0
+                _dca_ai_signal = str(_dca_ai.get("ai_signal", "HOLD") or "HOLD")
+                try:
+                    _dca_ai_conf = float(_dca_ai.get("confidence", 0) or 0)
+                except (TypeError, ValueError):
+                    _dca_ai_conf = 0.0
+
+                _dca_block_reason = None
+                if (
+                    _dca_ai_signal == "SELL"
+                    and _dca_ai_conf >= Config.DCA_AI_SELL_BLOCK_CONF
+                ):
+                    _dca_block_reason = (
+                        f"AI SELL {_dca_ai_conf:.0f}%"
+                        f" >= {Config.DCA_AI_SELL_BLOCK_CONF:.0f}%"
+                    )
+                elif _dca_rsi >= Config.CONFLUENCE_RSI_MAX:
+                    _dca_block_reason = (
+                        f"RSI {_dca_rsi:.1f} >= "
+                        f"{Config.CONFLUENCE_RSI_MAX:.0f}"
+                    )
+                elif _dca_vol < Config.CONFLUENCE_VOL_MIN_RATIO:
+                    _dca_block_reason = (
+                        f"объём {_dca_vol:.2f}x < "
+                        f"{Config.CONFLUENCE_VOL_MIN_RATIO:.1f}x MA20"
+                    )
+
+                if _dca_block_reason:
+                    _now = time.time()
+                    if _now - self._last_dca_entry_block_log_ts >= 60:
+                        self.log(
+                            f"🛡️ DCA: первый вход отложен — {_dca_block_reason}",
+                            "INFO",
+                        )
+                        self._last_dca_entry_block_log_ts = _now
+                    return
+
             # ── EntryOpt: стоит ли входить сейчас? ──────────────────────
             _first_entry_ok = True
             if _entry_opt is not None:
