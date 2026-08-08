@@ -1030,11 +1030,13 @@ class GridTrader:
             try:
                 _center = self._state.center_price_ton or price_ton
                 _drawdown_pct = max(0.0, (1.0 - price_ton / _center) * 100.0) if _center > 0 else 0.0
-                if not self._grid_ai.should_pause_buying(
+                if self._grid_ai.should_pause_buying(
                         regime, _drawdown_pct, ai_sell_conf / 100.0):
                     buy_frozen = True
-                    log.info("[Grid] 🛑 GridAI пауза BUY (режим=%s просадка=%.1f%% AI-SELL=%.0f%%)",
-                             regime, _drawdown_pct, ai_sell_conf)
+                    log.info(
+                        "[Grid] 🛑 GridAI пауза BUY (режим=%s просадка=%.1f%%)",
+                        regime, _drawdown_pct,
+                    )
             except Exception:
                 pass
 
