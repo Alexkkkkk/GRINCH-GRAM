@@ -1,3 +1,10 @@
+### Проверка Grid на VPS — 08.08.2026
+
+- Read-only: `bot-bot-1` healthy, Grid active, шаг 4.0%, накопленная прибыль 41.9533 TON.
+- Grid API: 40 SELL уровней (20 waiting, 14 filled, 6 skipped_small); 23 BUY (2 waiting, 16 filled, 5 cancelled_reposition).
+- GridAI v6: generation 14, 44 samples, R²=0.257, direction accuracy 76.6%, validated=True.
+- Новые сделки заблокированы `manual_trading_disabled`; BUY дополнительно заморожен при AI SELL=97% и режиме TRANSITION.
+- DeDust/swap ошибок не найдено; переключатели VPS не изменялись.
 ---
 name: Work In Progress
 description: Что делалось в прошлой сессии — незавершённые задачи и следующие шаги
