@@ -458,10 +458,10 @@ class GridTrader:
         self._dc      = None    # DeDustClient
         self._ai      = None    # AIEngine
         self._grid_ai = None    # GridAI v3 (самообучающийся оптимизатор)
-        # Сетка работает в том же процессе, что и основной Trader, поэтому
-        # обязана уважать его ручной kill-switch.
+        # Сетка работает в том же процессе, что и основной Trader, но имеет
+        # собственный lifecycle через GridState.active. Переключатель DCA
+        # (trader.trading_enabled) не должен останавливать независимую сетку.
         self._trader_ref = None
-        self._last_manual_block_log_ts = 0.0
         self._ai_manager = GridAIManager(self)   # ← полное AI-управление
 
         # История цен для momentum (последние 20 тиков = ~10 мин при 30с)
@@ -578,22 +578,6 @@ class GridTrader:
         if trader_ref is not None:
             self._trader_ref = trader_ref
             log.info("[Grid] Ручной переключатель синхронизирован с Trader")
-
-    def _manual_trading_enabled(self) -> bool:
-        """True только когда общий ручной переключатель разрешает сделки.
-
-        При отсутствии ссылки на основной Trader блокируем исполнение
-        (fail-closed), оставляя доступными мониторинг и статус сетки.
-        """
-        trader = self._trader_ref
-        enabled = bool(getattr(trader, "trading_enabled", False)) if trader else False
-        if not enabled:
-            now = time.time()
-            if now - self._last_manual_block_log_ts >= 300:
-                log.info("[Grid] ⏸ Торговля выключена ручным переключателем — "
-                         "уровни не исполняются")
-                self._last_manual_block_log_ts = now
-        return enabled
 
     # ── Запуск фонового потока ────────────────────────────────────────────────
 
@@ -816,11 +800,16 @@ class GridTrader:
             return {
                 "active":             s.active,
                 "paused_reason":      s.paused_reason,
-                "manual_trading_enabled": self._manual_trading_enabled(),
-                "blocked_reason": (
-                    "manual_trading_disabled"
-                    if not self._manual_trading_enabled() else ""
+                # DCA и Grid имеют независимые переключатели. Поле
+                # manual_trading_enabled оставлено для совместимости UI и
+                # теперь означает разрешение самой сетки.
+                "manual_trading_enabled": bool(s.active),
+                "grid_trading_enabled": bool(s.active),
+                "dca_trading_enabled": (
+                    bool(getattr(self._trader_ref, "trading_enabled", False))
+                    if self._trader_ref is not None else None
                 ),
+                "blocked_reason": "",
                 "center_price_ton":   s.center_price_ton,
                 "step_pct":           s.step_pct,
                 "total_profit_ton":   round(s.total_profit_ton, 4),
@@ -1027,11 +1016,6 @@ class GridTrader:
         self._ai_manager.tick(
             regime, atr_pct, ai_buy_conf, ai_sell_conf,
             price_ton, grinch_bal, ton_bal)
-
-        # Общий ручной kill-switch имеет приоритет над собственной активностью
-        # сетки: ни BUY, ни SELL не должны обходить кнопку Trader.
-        if not self._manual_trading_enabled():
-            return
 
         # ── Если сетка неактивна — дальше не идём (торговля заморожена) ───
         if not self._state.active:
