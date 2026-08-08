@@ -17,6 +17,7 @@ grid_trader.py — AI-управляемая сеточная торговля G
 import os
 import json
 import math
+import tempfile
 import time
 import threading
 import logging
@@ -2706,13 +2707,42 @@ class GridTrader:
     # ── Персистентность ───────────────────────────────────────────────────────
 
     def _save_state(self):
+        """Атомарно сохраняет состояние сетки.
+
+        Нельзя писать прямо в STATE_FILE через ``open(..., "w")``: при
+        перезаписи файл сначала обнуляется, и читатель (или рестарт
+        контейнера) может увидеть пустой/неполный JSON. Кроме того, часть
+        вызовов сохранения происходит из фонового потока, поэтому снимок
+        состояния нужно делать под тем же lock, что и его изменение.
+        """
+        tmp_path = f"{STATE_FILE}.tmp"
         try:
-            os.makedirs(os.path.dirname(STATE_FILE) or ".", exist_ok=True)
-            with open(STATE_FILE, "w", encoding="utf-8") as f:
-                json.dump(self._state.to_dict(), f, indent=2,
-                          ensure_ascii=False, default=str)
+            state_dir = os.path.dirname(STATE_FILE) or "."
+            os.makedirs(state_dir, exist_ok=True)
+            with self._lock:
+                payload = self._state.to_dict()
+            # NamedTemporaryFile в том же каталоге гарантирует, что
+            # os.replace() останется атомарным даже на mounted volume.
+            with tempfile.NamedTemporaryFile(
+                mode="w",
+                encoding="utf-8",
+                dir=state_dir,
+                prefix=".grid_state.",
+                suffix=".tmp",
+                delete=False,
+            ) as f:
+                tmp_path = f.name
+                json.dump(payload, f, indent=2, ensure_ascii=False, default=str)
+                f.flush()
+                os.fsync(f.fileno())
+            os.replace(tmp_path, STATE_FILE)
         except Exception as e:
             log.warning("[Grid] Сохранение state: %s", e)
+            try:
+                if os.path.exists(tmp_path):
+                    os.unlink(tmp_path)
+            except OSError:
+                pass
 
     def _load_state(self):
         try:
