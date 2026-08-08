@@ -236,6 +236,30 @@ class StepStrategyBandit:
         self._rewards[s] += profit
         self._total      += 1
 
+    def seed_baseline_from_history(self, experience: list) -> int:
+        """Восстановить безопасную базовую статистику после старого рестарта.
+
+        До v6 стратегия, выбранная bandit, не сохранялась в каждом fill, поэтому
+        нельзя честно раздать старые сделки между стратегиями. Все исторические
+        SELL считаем baseline ``ml_only`` — это поведение v5 без ложной
+        атрибуции. Новые тики продолжат UCB-исследование остальных стратегий.
+        """
+        if self._total > 0 or not isinstance(experience, list):
+            return 0
+        sells = [
+            e for e in experience
+            if isinstance(e, dict) and e.get("side") == "sell"
+        ]
+        if not sells:
+            return 0
+        profit = sum(_safe_float(e.get("profit_ton", 0.0)) for e in sells)
+        self._counts["ml_only"] = len(sells)
+        self._rewards["ml_only"] = profit
+        self._total = len(sells)
+        self._last_strategy = "ml_only"
+        self._pending_strategy = "ml_only"
+        return len(sells)
+
     def apply_strategy(self, strategy: str, ml_pred: float,
                        heuristic: float, kelly_mult: float,
                        eff_min: float, eff_max: float) -> float:
@@ -601,6 +625,11 @@ class GridAI:
 
         self._load_experience()
         self._load_selfdev_state()
+        seeded = self._bandit.seed_baseline_from_history(self._experience)
+        if seeded:
+            self._save_selfdev_state()
+            log.info("[GridAI v6] 🧭 Bandit baseline восстановлен: "
+                     "%d исторических SELL → ml_only", seeded)
         if len(self._experience) >= MIN_SAMPLES:
             self._train()
         log.info("[GridAI v6] Инициализирован. Примеров: %d, обучен: %s, "

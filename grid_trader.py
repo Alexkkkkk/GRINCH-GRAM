@@ -2241,6 +2241,19 @@ class GridTrader:
         if near_sells:
             return  # Уже есть — ничего делать не нужно
 
+        # Не создаём дубликат на той же цене после быстрого исполнения.
+        # Иначе при неизменной цене каждый тик мог брать ещё 35% у дальнего
+        # уровня и складывать новые SELL с одним и тем же триггером.
+        near_price = price_ton * (1 + step / 100)
+        same_price_level = any(
+            l.status not in ("cancelled_reposition", "skipped_small")
+            and l.price_ton > 0
+            and abs(l.price_ton / near_price - 1.0) < 0.005
+            for l in self._state.sell_levels
+        )
+        if same_price_level:
+            return
+
         # Ищем самый крупный дальний уровень (> 3× step от цены)
         far_limit = price_ton * (1 + step * 3 / 100)
         far_sells = [
@@ -2260,7 +2273,6 @@ class GridTrader:
             return
 
         source.amount_grinch = round(source.amount_grinch - split_grinch, 2)
-        near_price = price_ton * (1 + step / 100)
 
         cycle_ids = [l.id for l in self._state.sell_levels if l.id >= 100]
         new_id = (max(cycle_ids) + 1) if cycle_ids else 101
