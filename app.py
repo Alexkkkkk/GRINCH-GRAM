@@ -772,7 +772,8 @@ def start_background():
                         or getattr(trader, '_dc', None)
                         or getattr(getattr(trader, 'exchange', None), '_dedust', None))
             _ai      = getattr(trader, 'ai', None)
-            _grid.inject(dedust_client=_dc, ai_engine=_ai, grid_ai=_grid_ai)
+            _grid.inject(dedust_client=_dc, ai_engine=_ai, grid_ai=_grid_ai,
+                         trader_ref=trader)
             _grid.start_poller()
             print('[Grid] Grid-trader v2 поллер запущен (GridAI примеров: %d)' %
                   len(_grid_ai._experience))
