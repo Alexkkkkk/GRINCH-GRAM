@@ -56,7 +56,9 @@ class GridConfig:
     # AI-пороги (% уверенности)
     AI_SKIP_SELL_BUY_CONF  = 75.0   # пропустить SELL если AI BUY ≥ 75%
     AI_SKIP_BUY_SELL_CONF  = 60.0   # пропустить BUY если AI SELL ≥ 60%
-    AI_FREEZE_BUY_SELL     = 80.0   # заморозить все BUY если AI SELL ≥ 80%
+    # Оставлено для совместимости со старыми настройками/UI. AI SELL
+    # проверяется на каждом BUY/DCA-уровне отдельно, глобальной заморозки нет.
+    AI_FREEZE_BUY_SELL     = 80.0
     # ── Только-в-плюс под AI ──────────────────────────────────────────
     AI_MIN_BUY_CONF        = 55.0   # минимальный BUY-сигнал для открытия любой покупки
     AI_BUY_SIZE_MIN_MULT   = 0.7    # множитель суммы при AI BUY = AI_MIN_BUY_CONF
@@ -145,7 +147,7 @@ class GridAIManager:
       • Авто-активация/деактивация по режиму рынка
       • Авто-перестройка при смене режима или исчерпании уровней
       • Динамический выбор шага и количества уровней по ATR×policy
-      • Заморозка при сильном AI SELL-сигнале (≥80%)
+      • Индивидуальный пропуск BUY/DCA-уровня при сильном AI SELL-сигнале
     """
 
     # Политика для каждого режима рынка
@@ -236,11 +238,6 @@ class GridAIManager:
 
         # ── 1. Активация / деактивация ────────────────────────────────────
         should_active = policy["active"]
-
-        # Сильный AI-SELL перекрывает "активен по режиму"
-        if ai_sell_conf >= 80.0 and should_active:
-            should_active = False
-            decisions.append(f"⏸ AI SELL {ai_sell_conf:.0f}% → пауза")
 
         has_levels = bool(t._state.sell_levels or t._state.buy_levels)
         if should_active and not currently_active and (self._paused_by_ai or has_levels):
@@ -1021,10 +1018,11 @@ class GridTrader:
         if not self._state.active:
             return
 
-        # ── Заморозка BUY при сильном SELL-сигнале ────────────────────────
-        buy_frozen = ai_sell_conf >= GridConfig.AI_FREEZE_BUY_SELL
-        if buy_frozen:
-            log.info("[Grid] 🧊 BUY заморожены — AI SELL %.0f%%", ai_sell_conf)
+        # ── AI SELL применяется на уровне конкретной операции ───────────
+        # Не замораживаем весь BUY-проход: каждый waiting BUY/DCA-уровень
+        # отдельно проверит AI_SKIP_BUY_SELL_CONF в своей ветке. SELL-уровни
+        # всегда продолжают обрабатываться независимо от AI SELL.
+        buy_frozen = False
 
         # ── GridAI: мультикритериальная пауза BUY ─────────────────────────
         _drawdown_pct = 0.0
@@ -1032,7 +1030,7 @@ class GridTrader:
             try:
                 _center = self._state.center_price_ton or price_ton
                 _drawdown_pct = max(0.0, (1.0 - price_ton / _center) * 100.0) if _center > 0 else 0.0
-                if not buy_frozen and self._grid_ai.should_pause_buying(
+                if not self._grid_ai.should_pause_buying(
                         regime, _drawdown_pct, ai_sell_conf / 100.0):
                     buy_frozen = True
                     log.info("[Grid] 🛑 GridAI пауза BUY (режим=%s просадка=%.1f%% AI-SELL=%.0f%%)",

@@ -1109,9 +1109,6 @@ class GridAI:
         if self.get_risk_level() >= 2 and drawdown_pct > 25.0:
             return True
 
-        if ai_sell_conf >= 0.75 and drawdown_pct > 15.0:
-            return True
-
         if self._consecutive_losses >= 5:
             return True
 
