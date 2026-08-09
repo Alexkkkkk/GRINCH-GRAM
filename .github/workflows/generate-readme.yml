@@ -1,0 +1,111 @@
+name: AI README Generator
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '**.py'
+      - 'Dockerfile'
+      - 'requirements.txt'
+      - 'config.py'
+      - '.github/workflows/generate-readme.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  generate-readme:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Generate README with AI
+        env:
+          OPENAI_KEY: ${{ secrets.OPENAI_KEY }}
+        run: |
+          python << 'EOF'
+          import os, glob, json, urllib.request
+
+          # Собираем ключевые файлы проекта
+          key_files = []
+          patterns = ['*.py', 'Dockerfile', 'requirements.txt', 'config.py']
+          for pattern in patterns:
+              for f in glob.glob(pattern):
+                  try:
+                      with open(f, 'r', encoding='utf-8') as file:
+                          content = file.read()
+                      key_files.append(f"=== {f} ===\n{content[:2500]}")
+                  except Exception:
+                      pass
+
+          project_info = "\n\n".join(key_files)
+
+          prompt = f"""Ты senior technical writer. Напиши профессиональный README.md для криптотрейдингового проекта на русском языке.
+
+Информация о проекте:
+- Название: GRINCH-GRAM
+- Язык: Python
+- Назначение: криптотрейдинговая система с AI-аналитикой, grid-trading, блокчейн-интеграция
+
+Ключевые файлы проекта:
+{project_info[:10000]}
+
+Требования к README:
+1. # Заголовок с кратким описанием и шильдиками (Python, Docker, CI/CD)
+2. ## Возможности — список ключевых фич (AI-аналитика, grid trading, risk management, блокчейн)
+3. ## Структура проекта — таблица с основными файлами и их назначением
+4. ## Установка — пошаговая инструкция (клонирование, env, pip, запуск)
+5. ## Переменные окружения — список ключевых переменных
+6. ## Docker — команды для сборки и запуска
+7. ## CI/CD — описание автоматических проверок и AI-ревью
+8. ## Лицензия
+
+Формат: Markdown. Только содержимое README, без пояснений."""
+
+          data = {
+              "model": "gpt-4o-mini",
+              "messages": [{"role": "user", "content": prompt}],
+              "temperature": 0.7
+          }
+
+          req = urllib.request.Request(
+              "https://api.openai.com/v1/chat/completions",
+              data=json.dumps(data).encode(),
+              headers={
+                  "Authorization": f"Bearer {os.environ['OPENAI_KEY']}",
+                  "Content-Type": "application/json"
+              }
+          )
+
+          with urllib.request.urlopen(req) as resp:
+              result = json.loads(resp.read())
+              readme = result["choices"][0]["message"]["content"]
+
+          # Убираем обёртку ```markdown если есть
+          readme = readme.strip()
+          if readme.startswith("```markdown"):
+              readme = readme[len("```markdown"):].strip()
+          elif readme.startswith("```"):
+              readme = readme[len("```"):].strip()
+          if readme.endswith("```"):
+              readme = readme[:-3].strip()
+
+          with open("README.md", "w", encoding="utf-8") as f:
+              f.write(readme)
+
+          print("README.md generated successfully")
+          print(f"Length: {len(readme)} chars")
+          EOF
+
+      - name: Commit README
+        uses: stefanzweifel/git-auto-commit-action@v5
+        with:
+          commit_message: "docs: auto-generate README.md via AI 🤖"
+          file_pattern: README.md
