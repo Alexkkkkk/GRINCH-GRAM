@@ -26,17 +26,15 @@ jobs:
         with:
           python-version: '3.11'
 
-      - name: Generate README with AI
+      - name: Generate README with AI (Groq)
         env:
-          OPENAI_KEY: ${{ secrets.OPENAI_KEY }}
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
         run: |
           python << 'EOF'
           import os, glob, json, urllib.request
 
-          # Собираем ключевые файлы проекта
           key_files = []
-          patterns = ['*.py', 'Dockerfile', 'requirements.txt', 'config.py']
-          for pattern in patterns:
+          for pattern in ['*.py', 'Dockerfile', 'requirements.txt', 'config.py']:
               for f in glob.glob(pattern):
                   try:
                       with open(f, 'r', encoding='utf-8') as file:
@@ -59,27 +57,28 @@ jobs:
 
 Требования к README:
 1. # Заголовок с кратким описанием и шильдиками (Python, Docker, CI/CD)
-2. ## Возможности — список ключевых фич (AI-аналитика, grid trading, risk management, блокчейн)
-3. ## Структура проекта — таблица с основными файлами и их назначением
-4. ## Установка — пошаговая инструкция (клонирование, env, pip, запуск)
-5. ## Переменные окружения — список ключевых переменных
-6. ## Docker — команды для сборки и запуска
-7. ## CI/CD — описание автоматических проверок и AI-ревью
+2. ## Возможности — список ключевых фич
+3. ## Структура проекта — таблица с файлами
+4. ## Установка — пошаговая инструкция
+5. ## Переменные окружения
+6. ## Docker — команды
+7. ## CI/CD — описание автоматических проверок
 8. ## Лицензия
 
 Формат: Markdown. Только содержимое README, без пояснений."""
 
           data = {
-              "model": "gpt-4o-mini",
+              "model": "llama-3.1-70b-versatile",
               "messages": [{"role": "user", "content": prompt}],
-              "temperature": 0.7
+              "temperature": 0.7,
+              "max_tokens": 4000
           }
 
           req = urllib.request.Request(
-              "https://api.openai.com/v1/chat/completions",
+              "https://api.groq.com/openai/v1/chat/completions",
               data=json.dumps(data).encode(),
               headers={
-                  "Authorization": f"Bearer {os.environ['OPENAI_KEY']}",
+                  "Authorization": f"Bearer {os.environ['GROQ_API_KEY']}",
                   "Content-Type": "application/json"
               }
           )
@@ -88,7 +87,6 @@ jobs:
               result = json.loads(resp.read())
               readme = result["choices"][0]["message"]["content"]
 
-          # Убираем обёртку ```markdown если есть
           readme = readme.strip()
           if readme.startswith("```markdown"):
               readme = readme[len("```markdown"):].strip()
@@ -107,5 +105,5 @@ jobs:
       - name: Commit README
         uses: stefanzweifel/git-auto-commit-action@v5
         with:
-          commit_message: "docs: auto-generate README.md via AI 🤖"
+          commit_message: "docs: auto-generate README.md via AI (Groq)"
           file_pattern: README.md
