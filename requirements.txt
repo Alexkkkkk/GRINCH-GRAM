@@ -34,7 +34,7 @@ dedust==1.1.4
 cryptography
 
 # ── HTTP / Async ──────────────────────────────────────────────────────────────
-requests==2.31.0
+requests==2.34.2
 aiohttp==3.9.5
 
 # ── Misc ──────────────────────────────────────────────────────────────────────
@@ -68,7 +68,7 @@ python-dotenv==1.1.0
 python-telegram-bot==21.1.1
 pytoniq==0.1.43
 pytoniq-core
-requests==2.31.0
+requests==2.34.2
 scikit-learn==1.5.0
 sqlalchemy==2.0.41
 ta==0.11.0
