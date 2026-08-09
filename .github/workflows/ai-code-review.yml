@@ -1,0 +1,22 @@
+name: AI Code Review
+on:
+  pull_request:
+    types: [opened, reopened, synchronize, ready_for_review]
+    paths-ignore: ['**/*.md', 'docs/**', '**/*.lock', 'static/**', 'templates/**']
+concurrency:
+  group: ai-review-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+permissions:
+  contents: read
+  pull-requests: write
+jobs:
+  review:
+    if: github.event.pull_request.draft == false
+    runs-on: ubuntu-latest
+    steps:
+      - uses: qodo-ai/pr-agent@main
+        env:
+          OPENAI_KEY: ${{ secrets.OPENAI_KEY }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_REVIEWER.EXTRA_INSTRUCTIONS: |
+            Ты senior-разработчик криптотрейдинговых систем. Проверяй: финансовые расчёты (TP/SL, комиссии DEX 1%), race conditions в grid_trader.py и ai_engine.py, блокчейн-операции (pytoniq, dedust), ML data leakage, управление рисками (MAX_OPEN_TRADES, AI_SIZE_MULT). Пиши на русском.
