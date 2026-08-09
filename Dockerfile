@@ -1,4 +1,4 @@
-FROM python:3.11-slim
+FROM python:3.14-slim
 
 # Системные зависимости для pytoniq / cryptography / psycopg2
 RUN apt-get update && apt-get install -y --no-install-recommends \
