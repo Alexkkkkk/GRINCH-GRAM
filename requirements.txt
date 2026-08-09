@@ -35,7 +35,7 @@ cryptography
 
 # ── HTTP / Async ──────────────────────────────────────────────────────────────
 requests==2.31.0
-aiohttp==3.9.5
+aiohttp==3.14.3
 
 # ── Misc ──────────────────────────────────────────────────────────────────────
 python-dotenv==1.1.0
@@ -44,7 +44,7 @@ openai
 email-validator
 apscheduler==3.11.3
 psutil
-aiohttp==3.9.5
+aiohttp==3.14.3
 apscheduler==3.11.3
 ccxt
 cryptography
