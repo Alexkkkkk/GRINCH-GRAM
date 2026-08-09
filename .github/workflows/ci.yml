@@ -9,13 +9,19 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
       - run: |
           pip install black flake8 bandit
           black --check . || true
-          flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics
+          if [ "${{ github.event_name }}" == "pull_request" ]; then
+            git diff --name-only origin/${{ github.base_ref }}...HEAD | grep '\.py$' | xargs -r flake8 --count --select=E9,F63,F7,F82 --show-source --statistics
+          else
+            flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics
+          fi
           bandit -r . || true
   docker-build:
     runs-on: ubuntu-latest

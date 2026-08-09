@@ -2,21 +2,117 @@ name: AI Code Review
 on:
   pull_request:
     types: [opened, reopened, synchronize, ready_for_review]
-    paths-ignore: ['**/*.md', 'docs/**', '**/*.lock', 'static/**', 'templates/**']
-concurrency:
-  group: ai-review-${{ github.event.pull_request.number }}
-  cancel-in-progress: true
-permissions:
-  contents: read
-  pull-requests: write
+    paths-ignore:
+      - '**.md'
+      - 'docs/**'
+      - '**.lock'
+      - 'static/**'
+      - 'templates/**'
+
 jobs:
   review:
-    if: github.event.pull_request.draft == false
     runs-on: ubuntu-latest
+    if: github.event.pull_request.draft == false
     steps:
-      - uses: qodo-ai/pr-agent@main
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: AI Code Review via Groq
         env:
-          OPENAI_KEY: ${{ secrets.OPENAI_KEY }}
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          PR_REVIEWER.EXTRA_INSTRUCTIONS: |
-            Ты senior-разработчик криптотрейдинговых систем. Проверяй: финансовые расчёты (TP/SL, комиссии DEX 1%), race conditions в grid_trader.py и ai_engine.py, блокчейн-операции (pytoniq, dedust), ML data leakage, управление рисками (MAX_OPEN_TRADES, AI_SIZE_MULT). Пиши на русском.
+        run: |
+          python << 'EOF'
+          import os, json, urllib.request
+
+          # Получаем номер PR из GitHub event
+          with open(os.environ['GITHUB_EVENT_PATH']) as f:
+              event = json.load(f)
+          pr_number = event['pull_request']['number']
+          repo = event['pull_request']['base']['repo']['full_name']
+          token = os.environ['GITHUB_TOKEN']
+
+          # Получаем изменённые файлы
+          req = urllib.request.Request(
+              f"https://api.github.com/repos/{repo}/pulls/{pr_number}/files",
+              headers={"Authorization": f"token {token}", "Accept": "application/vnd.github.v3+json"}
+          )
+          with urllib.request.urlopen(req) as resp:
+              files = json.loads(resp.read())
+
+          if not files:
+              print("No files to review")
+              exit(0)
+
+          # Собираем diff только для Python файлов
+          review_content = []
+          for f in files:
+              if f['filename'].endswith('.py'):
+                  review_content.append(
+                      f"=== {f['filename']} ===\n"
+                      f"Status: {f['status']} | +{f['additions']}/-{f['deletions']}\n"
+                      f"Patch:\n{f.get('patch', 'No patch available')[:3000]}"
+                  )
+
+          if not review_content:
+              print("No Python files to review")
+              exit(0)
+
+          diff_text = "\n\n".join(review_content)[:8000]
+
+          prompt = f"""Ты senior-разработчик криптотрейдинговых систем на Python. Проведи code review следующих изменений.
+
+Изменённые файлы:
+{diff_text}
+
+Проверь:
+1. Финансовые расчёты (TP/SL, комиссии DEX 1%)
+2. Race conditions в grid_trader.py и ai_engine.py
+3. Блокчейн-операции (pytoniq, dedust)
+4. ML data leakage
+5. Управление рисками (MAX_OPEN_TRADES, AI_SIZE_MULT)
+6. Синтаксические ошибки и баги
+7. Производительность и оптимизацию
+
+Напиши ревью на русском языке. Будь конкретным: указывай строки и файлы."""
+
+          data = {
+              "model": "llama-3.1-70b-versatile",
+              "messages": [{"role": "user", "content": prompt}],
+              "temperature": 0.3,
+              "max_tokens": 4000
+          }
+
+          req = urllib.request.Request(
+              "https://api.groq.com/openai/v1/chat/completions",
+              data=json.dumps(data).encode(),
+              headers={
+                  "Authorization": f"Bearer {os.environ['GROQ_API_KEY']}",
+                  "Content-Type": "application/json"
+              }
+          )
+
+          with urllib.request.urlopen(req) as resp:
+              result = json.loads(resp.read())
+              review = result["choices"][0]["message"]["content"]
+
+          # Публикуем комментарий в PR
+          comment_data = {"body": f"## 🤖 AI Code Review (Groq)\\n\\n{review}"}
+          req = urllib.request.Request(
+              f"https://api.github.com/repos/{repo}/issues/{pr_number}/comments",
+              data=json.dumps(comment_data).encode(),
+              headers={
+                  "Authorization": f"token {token}",
+                  "Accept": "application/vnd.github.v3+json",
+                  "Content-Type": "application/json"
+              }
+          )
+          with urllib.request.urlopen(req) as resp:
+              print(f"Comment posted: {resp.status}")
+              print(review[:500])
+          EOF
