@@ -20,6 +20,7 @@ import math
 import logging
 import queue
 import threading
+import time
 from datetime import datetime
 from typing import Dict, List, Optional
 
@@ -36,14 +37,30 @@ _tick_writer_lock = threading.Lock()
 
 
 def _tick_writer_loop():
-    """Фоновый поток: сливает очередь тиков в БД без блокировки трейдера."""
+    """Фоновый поток: сливает очередь тиков в БД без блокировки трейдера.
+
+    Собираем до 20 тиков или ждём не более 250 мс. Так внешняя PostgreSQL
+    получает одну транзакцию вместо отдельного соединения на каждый тик.
+    """
     while True:
-        entry = _tick_q.get()
+        batch = []
         try:
-            _db.ticks_insert(entry)
+            batch.append(_tick_q.get())
+            deadline = time.monotonic() + 0.25
+            while len(batch) < 20:
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    break
+                try:
+                    batch.append(_tick_q.get(timeout=remaining))
+                except queue.Empty:
+                    break
+            _db.ticks_insert_batch(batch)
         except Exception:
             pass
-        _tick_q.task_done()
+        finally:
+            for _ in batch:
+                _tick_q.task_done()
 
 
 def _ensure_tick_writer():

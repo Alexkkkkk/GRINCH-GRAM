@@ -1871,7 +1871,10 @@
   const lastEl = document.getElementById("chart-last-price");
   function fmtP(p) { return p==null?"—":Number(p).toFixed(8).replace(/0+$/,"").replace(/\.$/,"")+" TON"; }
   function toEpoch(ts) { const ms=Date.parse(String(ts).replace(" ","T")+"Z"); return isNaN(ms)?null:Math.floor(ms/1000); }
+  let refreshBusy = false;
   async function refresh() {
+    if (refreshBusy) return;
+    refreshBusy = true;
     try {
       const d = await fetch("/api/candles").then(r=>r.json());
       const candles = d.candles||[];
@@ -1884,9 +1887,12 @@
       const last = sorted[sorted.length-1][1];
       if (lastEl) { lastEl.textContent=fmtP(last.close); lastEl.style.color=last.close>=last.open?"#00d18f":"#ff5a78"; }
     } catch(e) { console.warn("[Chart]",e); }
+    finally { refreshBusy = false; }
   }
   refresh();
-  setInterval(refresh, 3000);
+  // Серверный кэш свечей — 30с; не создаём 9 лишних запросов между
+  // обновлениями и не запускаем новый fetch поверх медленного предыдущего.
+  setInterval(refresh, 30000);
   window.addEventListener("resize", ()=>chart.timeScale().fitContent());
 })();
 </script>
@@ -2863,8 +2869,6 @@ window.refreshTon = function() {
     const err = document.getElementById('ton-error');
     if (err) { err.textContent='⚠️ '+e; err.style.display='block'; }
   });
-  // полный снимок
-  refreshWalletFull();
 };
 
 window.copyTon = function() {
@@ -2886,7 +2890,7 @@ function _startWalletAutoRefresh() {
     if (tab && !tab.classList.contains('tab-hidden')) {
       refreshWalletFull();
     }
-  }, 6000);
+  }, 15000);
 }
 
 // ── hook into tab switch ──────────────────────────────────────────────────────
