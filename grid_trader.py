@@ -423,6 +423,27 @@ class GridLevel:
     profit_ton:     float = 0.0
     tx_hash:        str   = ""
     note:           str   = ""
+    owner:          str   = "grid"
+
+    @staticmethod
+    def from_dict(raw: dict) -> "GridLevel":
+        """Load current and legacy levels without breaking old state JSON."""
+        data = dict(raw or {})
+        raw_owner = data.pop("owner", None)
+        owner = raw_owner or (
+            "dca" if data.get("side") == "dca"
+            or "dca" in str(data.get("note", "")).lower()
+            else "grid"
+        )
+        fields = {
+            "id", "side", "price_ton", "amount_grinch", "amount_ton",
+            "status", "filled_at", "fill_price_ton", "profit_ton",
+            "tx_hash", "note",
+        }
+        return GridLevel(
+            **{key: value for key, value in data.items() if key in fields},
+            owner=str(owner),
+        )
 
 
 @dataclass
@@ -442,6 +463,7 @@ class GridState:
     compound_multiplier:  float = 1.0   # растёт с каждым прибыльным SELL
     total_compound_bonus: float = 0.0   # доп. TON от compound-эффекта
     compound_win_streak:  int   = 0     # серия подряд прибыльных SELL (dynamic compound rate)
+    grid_reserved_grinch: float = 0.0   # persistent snapshot of Grid-owned GRINCH
     # Служебные поля
     created_at:           float = 0.0
     last_tick_ts:         float = 0.0
@@ -463,13 +485,13 @@ class GridState:
         s = GridState()
         for k, v in d.items():
             if k == "sell_levels":
-                s.sell_levels     = [GridLevel(**l) for l in (v or [])]
+                s.sell_levels     = [GridLevel.from_dict(l) for l in (v or [])]
             elif k == "buy_levels":
-                s.buy_levels      = [GridLevel(**l) for l in (v or [])]
+                s.buy_levels      = [GridLevel.from_dict(l) for l in (v or [])]
             elif k == "dca_levels":
-                s.dca_levels      = [GridLevel(**l) for l in (v or [])]
+                s.dca_levels      = [GridLevel.from_dict(l) for l in (v or [])]
             elif k == "completed_fills":
-                s.completed_fills = [GridLevel(**l) for l in (v or [])]
+                s.completed_fills = [GridLevel.from_dict(l) for l in (v or [])]
             else:
                 try:
                     setattr(s, k, v)
@@ -481,6 +503,13 @@ class GridState:
             s.completed_fills = [
                 l for l in s.sell_levels if l.status == "filled"
             ]
+        if not s.grid_reserved_grinch:
+            s.grid_reserved_grinch = round(sum(
+                max(0.0, float(l.amount_grinch or 0))
+                for l in s.sell_levels
+                if l.owner == "grid"
+                and l.status in ("waiting", "skipped_dca", "skipped_small")
+            ), 2)
         return s
 
 
@@ -666,6 +695,7 @@ class GridTrader:
 
         with self._lock:
             # Сохраняем compound_multiplier при перестройке
+            old_state     = self._state
             old_mult      = self._state.compound_multiplier
             old_profit    = self._state.total_profit_ton
             old_sell_c    = self._state.total_sell_cycles
@@ -673,6 +703,22 @@ class GridTrader:
             old_dca_c     = self._state.total_dca_cycles
             old_cb        = self._state.total_compound_bonus
             old_completed = list(self._state.completed_fills)  # сохраняем историю через rebuild
+            # Rebuild не должен уничтожать уже выделенные средства. Оставляем
+            # незаполненные SELL/BUY и все DCA-уровни; новые уровни добавляются
+            # только при отсутствии близкого триггера.
+            preserved_sell = [
+                l for l in old_state.sell_levels
+                if l.status in ("waiting", "skipped_dca", "skipped_small")
+                and (l.amount_grinch or 0) > 0
+            ]
+            preserved_buy = [
+                l for l in old_state.buy_levels
+                if l.status == "waiting" and (l.amount_ton or 0) > 0
+            ]
+            preserved_dca = [
+                l for l in old_state.dca_levels
+                if l.status not in ("cancelled", "cancelled_reposition")
+            ]
 
             state = GridState()
             state.center_price_ton    = current_price_ton
@@ -685,6 +731,9 @@ class GridTrader:
             state.total_dca_cycles    = old_dca_c
             state.total_compound_bonus = old_cb
             state.completed_fills     = old_completed
+            state.sell_levels         = list(preserved_sell)
+            state.buy_levels          = list(preserved_buy)
+            state.dca_levels          = list(preserved_dca)
 
             # ── SELL-уровни (пирамидальное распределение) ─────────────
             # GridAI v3: нижние уровни получают больше GRINCH → больше
@@ -698,20 +747,35 @@ class GridTrader:
             # чтобы не продавать то, что DCA держит до своей TP.
             dca_reserved    = self._get_dca_reserved_grinch()
             free_grinch     = max(0.0, grinch_balance - dca_reserved)
+            preserved_grid_grinch = sum(
+                max(0.0, float(l.amount_grinch or 0))
+                for l in preserved_sell if l.owner == "grid"
+            )
+            free_grinch_for_new = max(0.0, free_grinch - preserved_grid_grinch)
             if dca_reserved > 0:
                 log.info("[Grid] build_grid: кошелёк %.0f GRINCH, "
                          "DCA резерв %.0f, свободно %.0f",
                          grinch_balance, dca_reserved, free_grinch)
-            base_grinch = free_grinch / sell_levels if sell_levels > 0 else 0
+            base_grinch = free_grinch_for_new / sell_levels if sell_levels > 0 else 0
             grinch_per_level = base_grinch  # для обратной совместимости отчёта
+            existing_sell_prices = {
+                round(float(l.price_ton), 8) for l in state.sell_levels
+                if l.price_ton > 0
+            }
+            used_sell_ids = {l.id for l in state.sell_levels}
+            next_sell_id = max(used_sell_ids or {0}) + 1
             for i in range(1, sell_levels + 1):
                 trigger = current_price_ton * (1 + step_pct / 100) ** i
                 w = pyramid_weights[i - 1] if i - 1 < len(pyramid_weights) else 1.0
                 amount = round(base_grinch * w, 2)
-                if amount * trigger < GridConfig.MIN_ORDER_TON:
+                if (amount * trigger
+                        < GridConfig.min_profitable_order_ton(step_pct)):
+                    continue
+                if any(abs(p / trigger - 1) < 0.005
+                       for p in existing_sell_prices if trigger > 0):
                     continue
                 state.sell_levels.append(GridLevel(
-                    id=i, side="sell",
+                    id=next_sell_id, side="sell",
                     price_ton=round(trigger, 8),
                     amount_grinch=amount,
                     amount_ton=0.0,
@@ -719,6 +783,9 @@ class GridTrader:
                     note=(f"+{round((trigger/current_price_ton-1)*100, 1)}% от центра"
                           f" | вес×{w:.2f}"),
                 ))
+                used_sell_ids.add(next_sell_id)
+                next_sell_id += 1
+                existing_sell_prices.add(round(trigger, 8))
 
             # ── BUY-уровни ─────────────────────────────────────────────
             usable_ton    = max(0.0, ton_balance - GridConfig.GAS_RESERVE_TON)
@@ -737,6 +804,7 @@ class GridTrader:
                 ))
 
             self._state = state
+            self._sync_grid_reserved()
             self._save_state()
 
         sell_ok = sum(1 for l in state.sell_levels if l.status == "waiting")
@@ -856,6 +924,10 @@ class GridTrader:
                 "blocked_reason": "",
                 "center_price_ton":   s.center_price_ton,
                 "step_pct":           s.step_pct,
+                "grid_reserved_grinch": round(
+                    self._grid_reserved_grinch(), 2),
+                "dca_reserved_grinch": round(
+                    self._get_dca_reserved_grinch(), 2),
                 "total_profit_ton":   round(s.total_profit_ton, 4),
                 "total_sell_cycles":  s.total_sell_cycles,
                 "total_buy_cycles":   s.total_buy_cycles,
@@ -893,6 +965,7 @@ class GridTrader:
                 "sell_levels": [
                     {"id": l.id, "price_ton": l.price_ton,
                      "amount_grinch": l.amount_grinch, "status": l.status,
+                     "owner": l.owner,
                      "profit_ton": round(l.profit_ton, 4),
                      "note": l.note, "filled_at": l.filled_at}
                     for l in s.sell_levels
@@ -900,6 +973,7 @@ class GridTrader:
                 "completed_fills": [
                     {"id": l.id, "price_ton": l.price_ton,
                      "amount_grinch": l.amount_grinch,
+                     "owner": l.owner,
                      "profit_ton": round(l.profit_ton, 4),
                      "fill_price_ton": l.fill_price_ton,
                      "note": l.note, "filled_at": l.filled_at}
@@ -908,12 +982,14 @@ class GridTrader:
                 "buy_levels": [
                     {"id": l.id, "price_ton": l.price_ton,
                      "amount_ton": l.amount_ton, "status": l.status,
+                     "owner": l.owner,
                      "note": l.note, "filled_at": l.filled_at}
                     for l in s.buy_levels
                 ],
                 "dca_levels": [
                     {"id": l.id, "price_ton": l.price_ton,
                      "amount_ton": l.amount_ton, "status": l.status,
+                     "owner": l.owner,
                      "note": l.note, "filled_at": l.filled_at,
                      "profit_ton": round(l.profit_ton, 4)}
                     for l in s.dca_levels
@@ -1166,13 +1242,10 @@ class GridTrader:
                         _dca_raw2 = self._get_dca_reserved_grinch()
                         from dedust_client import get_shared_balance as _gsb2
                         _w2 = float(_gsb2().get("GRINCH", 0))
-                        # та же поправка: grid sell alloc вычитаем из DCA резерва
-                        _grid_alloc2 = sum(
-                            l.amount_grinch for l in self._state.sell_levels
-                            if l.status in ("waiting", "skipped_dca", "skipped_small", "dca")
-                            and l.amount_grinch > 0
-                        )
-                        _free2 = max(0.0, _w2 - max(0.0, _dca_raw2 - _grid_alloc2))
+                        if _lv.owner == "dca":
+                            _free2 = _dca_raw2
+                        else:
+                            _free2 = max(0.0, _w2 - _dca_raw2)
                         dca_freed = _free2 >= _lv.amount_grinch
                     except Exception:
                         dca_freed = False
@@ -1192,6 +1265,7 @@ class GridTrader:
                         _lv.status = "waiting"
                         _lv.note   = reason
                     restored_n += 1
+            self._sync_grid_reserved()
             if restored_n:
                 log.info("[Grid] ♻️ Восстановлено %d SELL → waiting/skipped_small", restored_n)
 
@@ -1461,33 +1535,26 @@ class GridTrader:
                 cost_ton = level.amount_grinch * (level.price_ton / (1 + step / 100))
 
             # ── Координация Grid ↔ DCA: runtime-guard ─────────────────────
-            # Проверяем прямо перед свопом: не залезаем ли в GRINCH DCA.
-            # ВАЖНО: GRINCH, уже выделенный на sell-уровни сетки (status=waiting/
-            # skipped_dca/skipped_small), принадлежит сетке, а не DCA. Вычитаем
-            # его из DCA-резерва, иначе guard всегда блокирует когда DCA держит
-            # весь кошелёк (grid_alloc был вырезан ещё при build_grid).
+            # Разделяем физический кошелёк по владельцу: Grid может продавать
+            # только wallet-DCA_reserve, а DCA-уровень — только DCA reserve.
             try:
                 from dedust_client import get_shared_balance as _gsb
                 _bal      = _gsb()
                 _wallet_g = float(_bal.get("GRINCH", _bal.get("grinch", 0)))
                 _dca_raw  = self._get_dca_reserved_grinch()
-                # GRINCH уже выделенный на sell-уровни сетки — он наш, не DCA
-                _grid_sell_alloc = sum(
-                    l.amount_grinch for l in self._state.sell_levels
-                    if l.status in ("waiting", "skipped_dca", "skipped_small", "dca")
-                    and l.amount_grinch > 0
-                )
-                _reserved = max(0.0, _dca_raw - _grid_sell_alloc)
-                _free_g   = max(0.0, _wallet_g - _reserved)
+                if level.owner == "dca":
+                    _free_g = max(0.0, _dca_raw)
+                else:
+                    _free_g = max(0.0, _wallet_g - _dca_raw)
                 if _free_g < level.amount_grinch:
                     log.warning(
                         "[Grid] ⛔ SELL L%d заблокирован: "
-                        "свободно %.0f GRINCH (кошелёк %.0f − DCA %.0f − grid_alloc %.0f), "
+                        "свободно %.0f GRINCH (owner=%s, кошелёк %.0f − DCA %.0f), "
                         "нужно %.0f — пропуск",
-                        level.id, _free_g, _wallet_g, _dca_raw,
-                        _grid_sell_alloc, level.amount_grinch)
+                        level.id, _free_g, level.owner, _wallet_g, _dca_raw,
+                        level.amount_grinch)
                     level.status = "skipped_dca"
-                    level.note   = (f"DCA резерв: свободно {_free_g:.0f} "
+                    level.note   = (f"Резерв {level.owner}: свободно {_free_g:.0f} "
                                     f"< нужно {level.amount_grinch:.0f}")
                     return {"ok": False, "error": "dca_reserved"}
             except Exception as _ge:
@@ -1506,6 +1573,7 @@ class GridTrader:
                 level.fill_price_ton = current_price
                 level.profit_ton     = round(profit, 4)
                 level.tx_hash        = result.get("tx_hash", "")
+                self._sync_grid_reserved()
 
                 self._state.total_profit_ton  += level.profit_ton
                 self._state.total_sell_cycles += 1
@@ -1699,7 +1767,8 @@ class GridTrader:
                 # SELL-уровень для закрытия DCA позиции
                 self._add_cycle_sell(grinch_received, current_price,
                                      note=f"DCA-цикл от {current_price:.6f}",
-                                     regime=regime, atr_pct=atr_pct)
+                                     regime=regime, atr_pct=atr_pct,
+                                     owner="dca")
 
                 if self._grid_ai:
                     try:
@@ -1927,7 +1996,8 @@ class GridTrader:
                 pass
 
     def _add_cycle_sell(self, grinch_amount: float, buy_price: float,
-                        note: str = "", regime: str = "UNKNOWN", atr_pct: float = 0.0):
+                        note: str = "", regime: str = "UNKNOWN",
+                        atr_pct: float = 0.0, owner: str = "grid"):
         """После BUY: SELL-уровень на шаг выше для замыкания цикла.
         Цена адаптируется к режиму через GridAI.get_sell_target_pct().
         """
@@ -1957,6 +2027,7 @@ class GridTrader:
             amount_ton=0.0,
             status="waiting",
             note=note or f"цикл от BUY @ {buy_price:.6f}",
+            owner=owner,
         ))
         log.info("[Grid] 📤 Цикловый SELL @ %.6f с %.0f GRINCH",
                  sell_price, grinch_amount)
@@ -2024,6 +2095,7 @@ class GridTrader:
             amount_grinch=0.0,
             amount_ton=amount_ton,
             status="waiting",
+            owner="dca",
             note=(f"DCA #{dca_num} | conf={effective_conf:.0f}% | "
                   f"size={size_mult:.2f}x | regime={regime}"),
         ))
@@ -2253,6 +2325,7 @@ class GridTrader:
                 amount_grinch=0.0,
                 amount_ton=amount_ton,
                 status="waiting",
+                owner="grid",
                 note=(f"idle-deploy | free={free_ton:.1f} TON | "
                       f"AI BUY={ai_buy_conf:.0f}% | regime={regime}"),
             ))
@@ -2323,7 +2396,7 @@ class GridTrader:
         split_grinch = round(source.amount_grinch * 0.35, 2)
 
         # Проверяем минимальный размер ордера
-        if split_grinch * price_ton < GridConfig.MIN_ORDER_TON:
+        if split_grinch * price_ton < GridConfig.min_profitable_order_ton(step):
             return
 
         source.amount_grinch = round(source.amount_grinch - split_grinch, 2)
@@ -2338,6 +2411,7 @@ class GridTrader:
             amount_ton=0.0,
             status="waiting",
             note=f"near-density (35% от L{source.id}) @ {near_price:.6f}",
+            owner="grid",
         ))
         log.info("[Grid] 🎯 Near-density SELL L%d @ %.6f (+%.1f%%) с %.0f GRINCH ← L%d",
                  new_id, near_price, step, split_grinch, source.id)
@@ -2399,7 +2473,8 @@ class GridTrader:
             freed_grinch = 0.0
             reset = 0
             for l in self._state.sell_levels:
-                if l.status == "waiting" and l.price_ton < price_ton:
+                if (l.owner == "grid" and l.status == "waiting"
+                        and l.price_ton < price_ton):
                     freed_grinch += l.amount_grinch
                     l.amount_grinch = 0.0
                     l.status = "skipped_ai"
@@ -2428,7 +2503,8 @@ class GridTrader:
                     )
                     if clash:
                         continue
-                    if grinch_per_new * trigger < GridConfig.MIN_ORDER_TON:
+                    if (grinch_per_new * trigger
+                            < GridConfig.min_profitable_order_ton(step_pct)):
                         continue
                     self._state.sell_levels.append(GridLevel(
                         id=new_id, side="sell",
@@ -2437,6 +2513,7 @@ class GridTrader:
                         amount_ton=0.0,
                         status="waiting",
                         note=f"recenter-rebuild +{i}шаг @ {trigger:.6f}",
+                        owner="grid",
                     ))
                     added += 1
                     if added >= reset:
@@ -2724,16 +2801,16 @@ class GridTrader:
         return round(max(-20.0, min(20.0, mom_pct)), 4)
 
     def _get_balances(self) -> tuple:
-        """Возвращает (grinch_balance, ton_balance). GRINCH берём из DCA-позиции если кошелёк = 0."""
+        """Возвращает только физический кошелёк (GRINCH, TON).
+
+        Открытые DCA-позиции не являются балансом Grid и не подставляются
+        вместо on-chain GRINCH при пустом кошельке.
+        """
         try:
             from dedust_client import get_shared_balance
             bal = get_shared_balance()
             ton_bal    = float(bal.get("TON", bal.get("ton", 0)))
             grinch_bal = float(bal.get("GRINCH", bal.get("grinch", 0)))
-            if grinch_bal < 1000:
-                import db_store as _ds
-                _trades    = _ds.open_trades_get()
-                grinch_bal = sum(float(t.get("amount", 0)) for t in _trades)
             return grinch_bal, ton_bal
         except Exception:
             return 0.0, 0.0
@@ -2753,6 +2830,20 @@ class GridTrader:
                              if t.get("symbol", "GRINCH") and "GRINCH" in str(t.get("symbol", "GRINCH"))))
         except Exception:
             return 0.0
+
+    def _grid_reserved_grinch(self) -> float:
+        """Текущий резерв GRINCH по waiting SELL уровням, принадлежащим Grid."""
+        return sum(
+            max(0.0, float(l.amount_grinch or 0))
+            for l in self._state.sell_levels
+            if l.owner == "grid"
+            and l.status in ("waiting", "skipped_dca", "skipped_small")
+        )
+
+    def _sync_grid_reserved(self):
+        """Обновляет сохраняемый снимок Grid-резерва после подтверждённых действий."""
+        self._state.grid_reserved_grinch = round(
+            self._grid_reserved_grinch(), 2)
 
     def _heuristic_step(self, atr_pct: float, regime: str = "UNKNOWN") -> float:
         """Эвристический шаг без GridAI."""

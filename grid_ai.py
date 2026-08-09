@@ -66,8 +66,10 @@ REGIME_STEP_BOUNDS: Dict[str, Tuple[float, float]] = {
     "RANGING":      (3.5,  7.0),
     "VOLATILE":     (5.0, 10.0),
     "TREND_UP":     (6.0, 10.0),
+    "UPTREND":      (6.0, 10.0),
     "TREND_DOWN":   (4.0,  8.0),
     "DOWNTREND":    (4.0,  8.0),
+    "TRANSITION":   (3.5,  7.0),
     "PUMP":         (7.0, 10.0),
     "DISTRIBUTION": (6.0, 10.0),
     "POST_PUMP":    (5.0,  8.5),
@@ -93,6 +95,7 @@ def _regime_enc(regime: str) -> int:
     """Целочисленное кодирование режима."""
     return {
         "TREND_UP":     2,
+        "UPTREND":      2,
         "VOLATILE":     1,
         "SIDEWAYS":     0,
         "SQUEEZE":      0,
