@@ -7,12 +7,12 @@ description: How to connect to the production VPS from Replit shell commands
 
 **Host:** 2.27.25.126  
 **User:** root  
-**Auth:** password stored in secret `VPS_SSH_KEY` (yes, the key name holds the password — that's how the user saved it)
+**Auth:** password stored in Replit Secret `VPS_SSH_PASSWORD`.
 
 ## How to run commands on VPS
 
 ```bash
-sshpass -p "$VPS_SSH_KEY" ssh -o StrictHostKeyChecking=no root@2.27.25.126 "COMMAND"
+sshpass -p "$VPS_SSH_PASSWORD" ssh -o StrictHostKeyChecking=no root@2.27.25.126 "COMMAND"
 ```
 
 ## Key paths on VPS
@@ -41,6 +41,6 @@ docker cp /opt/bot/file.py bot-bot-1:/usr/src/app/file.py
 docker exec bot-bot-1 python3 -c "..."
 ```
 
-**Why:** SSH credentials were added 2026-07-28 via Replit Secrets (VPS_SSH_KEY, VPS_SSH_PASSWORD).
+**Why:** The VPS password is managed through Replit Secrets and must never be copied into chat or workspace files.
 
 **How to apply:** Any time user asks to deploy, check logs, or run commands on VPS — use sshpass pattern above.
