@@ -18,9 +18,15 @@ jobs:
           pip install black flake8 bandit
           black --check . || true
           if [ "${{ github.event_name }}" == "pull_request" ]; then
-            git diff --name-only origin/${{ github.base_ref }}...HEAD | grep '\.py$' | xargs -r flake8 --count --select=E9,F63,F7,F82 --show-source --statistics
+            base="origin/${{ github.base_ref }}"
           else
-            flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics
+            base="${{ github.event.before }}"
+          fi
+          files="$(git diff --name-only "$base" HEAD -- '*.py')"
+          if [ -n "$files" ]; then
+            printf '%s\n' "$files" | xargs flake8 --count --select=E9,F63,F7,F82 --show-source --statistics
+          else
+            echo "No changed Python files to lint"
           fi
           bandit -r . || true
   docker-build:
