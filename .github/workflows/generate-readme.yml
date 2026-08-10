@@ -45,7 +45,7 @@ jobs:
 
           project_info = "\n\n".join(key_files)
 
-                    prompt = (
+          prompt = (
               "Ты senior technical writer. Напиши профессиональный README.md для криптотрейдингового проекта на русском языке.\n\n"
               "Информация о проекте:\n"
               "- Название: GRINCH-GRAM\n"
