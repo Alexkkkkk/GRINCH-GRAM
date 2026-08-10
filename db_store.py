@@ -469,7 +469,12 @@ def trades_get_all(limit: int = 1000) -> list:
                     "SELECT data FROM bot_trades ORDER BY closed_at ASC NULLS LAST LIMIT %s",
                     (limit,)
                 )
-                return [row["data"] for row in cur.fetchall()]
+                records = []
+                for row in cur.fetchall():
+                    trade = dict(row["data"] or {})
+                    trade.setdefault("trade_type", trade.get("side", "long") or "long")
+                    records.append(trade)
+                return records
     except Exception as e:
         logger.warning(f"[DB] trades_get_all error: {e}")
         return []
@@ -501,7 +506,12 @@ def trades_get_recent(limit: int = 30) -> list:
                     "SELECT data FROM bot_trades ORDER BY closed_at DESC NULLS LAST LIMIT %s",
                     (limit,)
                 )
-                return [row["data"] for row in cur.fetchall()]
+                records = []
+                for row in cur.fetchall():
+                    trade = dict(row["data"] or {})
+                    trade.setdefault("trade_type", trade.get("side", "long") or "long")
+                    records.append(trade)
+                return records
     except Exception as e:
         logger.warning(f"[DB] trades_get_recent error: {e}")
         return []
@@ -654,7 +664,12 @@ def open_trades_get() -> list:
         with _conn() as conn:
             with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
                 cur.execute("SELECT data FROM bot_open_trades ORDER BY updated_at ASC")
-                return [row["data"] for row in cur.fetchall()]
+                records = []
+                for row in cur.fetchall():
+                    trade = dict(row["data"] or {})
+                    trade.setdefault("trade_type", trade.get("side", "long") or "long")
+                    records.append(trade)
+                return records
     except Exception as e:
         logger.warning(f"[DB] open_trades_get error: {e}")
         return []

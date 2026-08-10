@@ -742,6 +742,14 @@ def _make_pipeline(clf):
     return Pipeline([("scaler", StandardScaler()), ("clf", clf)])
 
 
+def _safe_polyfit(x, y, deg):
+    """Линейная аппроксимация без падения на константном/невалидном ряду."""
+    values = np.asarray(y, dtype=float)
+    if values.size == 0 or not np.isfinite(values).all() or np.std(values) == 0:
+        return np.zeros(int(deg) + 1, dtype=float)
+    return np.polyfit(x, values, deg)
+
+
 class AIEngine:
     """
     Главный AI-движок. Thread-safe.
@@ -2076,7 +2084,9 @@ class AIEngine:
 
     def _align_proba(self, proba: np.ndarray, classes) -> np.ndarray:
         """Выравнивает вектор вероятностей к индексам [P(-1), P(0), P(1)]."""
-        out = np.array([1/3, 1/3, 1/3])
+        # Если модель не обучила один из классов, его вероятность должна быть
+        # нулевой, а не искусственно равной 1/3.
+        out = np.zeros(3, dtype=float)
         cls_list = list(classes)
         mapping  = {-1: 0, 0: 1, 1: 2}
         for j, c in enumerate(cls_list):
@@ -2232,7 +2242,7 @@ class AIEngine:
                 else:
                     y_ = c.values[i-win+1:i+1]
                     x_ = np.arange(win, dtype=float)
-                    m  = np.polyfit(x_, y_, 1)[0]
+                    m  = _safe_polyfit(x_, y_, 1)[0]
                     slopes.append(m / (c.values[i] + 1e-10))
             df[f"slope_{win}"] = slopes
 
@@ -2573,7 +2583,7 @@ class AIEngine:
         c     = df["close"].values;  price = float(c[-1])
         atr   = float(df["atr"].iloc[-1])
         x     = np.arange(10, dtype=float);  y = c[-10:]
-        slope = np.polyfit(x, y, 1)[0]
+        slope = _safe_polyfit(x, y, 1)[0]
         s_pct = slope / (price + 1e-10) * 100
         return {
             "t1": round(price + slope,   8),

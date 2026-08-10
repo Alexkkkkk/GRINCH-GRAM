@@ -1363,7 +1363,16 @@ class Trader:
                     Config.SHORT_TRADING_ENABLED or self.open_short_trades
                 ) else 0.0
                 sweepable = max(0.0, real_grinch - reserve)
-                if sweepable > sell_amount:
+                # Никогда не отправляем больше фактического on-chain баланса.
+                # Это защищает от устаревшей/завышенной записи open_trades.
+                if sweepable < sell_amount:
+                    self.log(
+                        f"🛡️ DCA: ограничиваем продажу фактическим балансом "
+                        f"{sweepable:.4f} GRINCH вместо {sell_amount:.4f}",
+                        "WARN",
+                    )
+                    sell_amount = sweepable
+                elif sweepable > sell_amount:
                     self.log(
                         f"🧹 Консолидация: на балансе {real_grinch:.4f} GRINCH "
                         f"(учтено {total_grinch:.4f}) — продаём всё "
@@ -1371,6 +1380,9 @@ class Trader:
                         "INFO"
                     )
                     sell_amount = sweepable
+                if sell_amount <= 0:
+                    self.log("⚠️ DCA: фактический баланс GRINCH равен нулю — продажа отменена", "WARN")
+                    return False
             except Exception as _sw_e:
                 self.log(f"⚠️ Не удалось сверить баланс для консолидации DCA: {_sw_e}", "WARN")
 

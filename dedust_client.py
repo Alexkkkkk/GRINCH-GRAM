@@ -937,8 +937,9 @@ class DedustClient:
             # ── Preflight: хватает ли TON на газ? ──────────────────────────
             state = await provider.get_account_state(wallet.address)
             ton_nano = getattr(state, "balance", 0) or 0
-            # Минимум: gas_nano + 0.01 TON на сетевую комиссию wallet.transfer
-            needed_nano = gas_nano + int(0.01 * TON)
+            # gas_nano уже включает достаточный резерв для wallet.transfer;
+            # дополнительный буфер здесь дважды учитывал сетевой газ.
+            needed_nano = gas_nano
             if ton_nano < needed_nano:
                 return {
                     "ok": False,
@@ -953,19 +954,23 @@ class DedustClient:
                 }
 
             # ── Адрес GRINCH jetton-кошелька ────────────────────────────────
-            # TonCenter v3 → TonAPI; SDK намеренно последний резерв.
+            # TonCenter v3 → TonAPI. Если API не вернул безопасный адрес,
+            # продажу отменяем: неверный SDK fallback может отправить токены
+            # не туда.
             owner_addr_str = self._clean_addr_str(wallet.address)
             jw_addr_str = self._grinch_jetton_wallet_addr_via_api(owner_addr_str)
-            if jw_addr_str:
-                from pytoniq_core import Address as _CoreAddr
-                grinch_jw_address = _CoreAddr(jw_addr_str)
-                log.info(f"[DeDust] GRINCH jetton wallet: {jw_addr_str}")
-            else:
-                # Оба API не ответили → SDK fallback (адрес может быть неверным!)
-                grinch_root   = JettonRoot.create_from_address(Config.GRINCH_TOKEN_ADDRESS)
-                grinch_wallet = await grinch_root.get_wallet(wallet.address, provider)
-                grinch_jw_address = grinch_wallet.address
-                log.warning(f"[DeDust] GRINCH jetton wallet (SDK FALLBACK): {grinch_jw_address}")
+            if not jw_addr_str:
+                return {
+                    "ok": False,
+                    "side": "sell",
+                    "error": (
+                        "Безопасный адрес GRINCH jetton-кошелька не получен "
+                        "через TonCenter/TonAPI — продажа отменена."
+                    ),
+                }
+            from pytoniq_core import Address as _CoreAddr
+            grinch_jw_address = _CoreAddr(jw_addr_str)
+            log.info(f"[DeDust] GRINCH jetton wallet: {jw_addr_str}")
 
             # ── Точный GRINCH-баланс on-chain ДО свопа ──────────────────────
             # КРИТИЧНО: используем on-chain нано-баланс, а НЕ float grinch_amount!

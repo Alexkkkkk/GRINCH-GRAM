@@ -342,10 +342,19 @@ class BrainFusion:
 
         # Требуем ПОЛНОГО консенсуса: AI+TA+LLM все согласны
         # (не только AI — чтобы не давать преждевременные BUY)
-        ai_agrees  = not ai_fresh  or self._ai.signal == fs.action
-        ta_agrees  = not ta_fresh  or self._ta.signal in (fs.action, "HOLD")
-        adv_agrees = (not adv_fresh
-                      or adv_num * (1 if fs.action == "BUY" else -1 if fs.action == "SELL" else 0) >= 0)
+        # Источник без свежего сигнала не считается согласившимся. Это
+        # особенно важно при rate-limit Groq: старый BUY/SELL не должен
+        # усиливать новый консенсус.
+        ai_agrees  = ai_fresh and self._ai.signal == fs.action
+        ta_agrees  = ta_fresh and self._ta.signal in (fs.action, "HOLD")
+        adv_agrees = (
+            adv_fresh
+            and adv_num * (
+                1 if fs.action == "BUY"
+                else -1 if fs.action == "SELL"
+                else 0
+            ) >= 0
+        )
         all_agree = ai_agrees and ta_agrees and adv_agrees
 
         # Для пропуска нужно: AI свежий + уверенность ≥ порога + все согласны + EV OK

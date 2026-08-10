@@ -243,6 +243,8 @@ class ExperienceManager:
             tmp = self.path + ".tmp"
             with open(tmp, "w", encoding="utf-8") as f:
                 _jdump(self.data, f, ensure_ascii=False)
+                f.flush()
+                os.fsync(f.fileno())
             os.replace(tmp, self.path)
         except Exception as e:
             print(f"[Experience] ошибка записи {self.path}: {e}")
@@ -275,6 +277,11 @@ class ExperienceManager:
             # ВОССТАНАВЛИВАЕМ открытые позиции: цена покупки + цель продажи —
             # чтобы после перезапуска бот знал почём купил и НЕ продал дешевле.
             all_open = [dict(t) for t in (self.data.get("open_trades") or [])]
+            for _trade_rec in all_open:
+                _trade_rec.setdefault(
+                    "trade_type",
+                    _trade_rec.get("side", "long") or "long",
+                )
             # LONG и SHORT хранятся вместе в одной таблице (bot_open_trades) —
             # разделяем их обратно по trade_type, иначе SHORT-позиции терялись
             # при каждом рестарте бота.
@@ -559,6 +566,9 @@ class ExperienceManager:
             # — просадка от пика капитала —
             peak = ctrl.get("peak_equity", 0) or 0
             cur_eq = equity[-1]["equity_ton"] if equity else peak
+            if peak <= 0 and cur_eq > 0:
+                peak = cur_eq
+                ctrl["peak_equity"] = round(cur_eq, 6)
             drawdown = ((peak - cur_eq) / peak * 100) if peak > 0 else 0.0
             drawdown = max(0.0, drawdown)
 
