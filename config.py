@@ -128,6 +128,10 @@ class Config:
     SMART_BUY_PULLBACK_PCT  = float(os.getenv("SMART_BUY_PULLBACK_PCT", "0.2"))  # супер агрессия: почти сразу по рынку
     SMART_BUY_MAX_WAIT_TICKS = int(os.getenv("SMART_BUY_MAX_WAIT_TICKS", "2"))   # супер агрессия: макс 2 тика (~60 сек)
     SMART_BUY_SKIP_CONF     = float(os.getenv("SMART_BUY_SKIP_CONF", "88.0"))    # ≥88% → сразу
+    SMART_BUY_GRADE_A_CONFIRM = int(os.getenv("SMART_BUY_GRADE_A_CONFIRM", "1"))
+    SMART_BUY_GRADE_A_PULLBACK = float(os.getenv("SMART_BUY_GRADE_A_PULLBACK", "0.3"))
+    SMART_BUY_GRADE_C_CONFIRM = int(os.getenv("SMART_BUY_GRADE_C_CONFIRM", "3"))
+    SMART_BUY_GRADE_C_PULLBACK = float(os.getenv("SMART_BUY_GRADE_C_PULLBACK", "1.5"))
 
     # ── Smart TP: умная продажа с ИИ ─────────────────────────────────────
     # Когда позиция достигает минимального порога прибыли, бот проверяет сигнал

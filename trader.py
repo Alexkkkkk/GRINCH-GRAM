@@ -78,6 +78,9 @@ class Trader:
         # Сериализация закрытия позиций: не даём торговому циклу и ручному
         # закрытию продать одну и ту же позицию дважды.
         self._close_lock = threading.Lock()
+        # Синхронизация списка открытых LONG-позиций между торговым циклом,
+        # DCA, ручным закрытием и фоновым сохранением.
+        self._ot_lock = threading.RLock()
         # Счётчик подтверждений BUY-сигнала (требуем 2 последовательных)
         self._buy_confirm_count = 0
         # Smart BUY: ожидаем откат к лучшей цене перед входом
@@ -489,7 +492,9 @@ class Trader:
             self.log(f"Восстановление опыта ИИ: {e}", "WARN")
 
         _last_db_sync = 0.0
+        _consec_errors = 0
         while self.running:
+            _loop_wait = 15
             try:
                 self._tick()
                 self._record_equity()
@@ -500,10 +505,17 @@ class Trader:
                     _last_db_sync = now
                 self.last_tick_ts = time.time()
                 self.last_tick_ok = True
+                _consec_errors = 0
             except Exception as e:
                 self.log(f"Ошибка в цикле: {e}", "ERROR")
                 self.last_tick_ts = time.time()
                 self.last_tick_ok = False
+                _consec_errors += 1
+                _loop_wait = min(2 ** (_consec_errors + 1), 16)
+                self.log(
+                    f"Повтор после ошибки #{_consec_errors} через {_loop_wait}с",
+                    "WARN",
+                )
             # На маломощных хостах (LOW_MEMORY_MODE) периодически отдаём ОС
             # память, освобождённую GC (glibc malloc иначе держит её в аренах).
             if os.getenv("LOW_MEMORY_MODE", "1") == "1":
@@ -513,7 +525,7 @@ class Trader:
                 except Exception:
                     pass
             # Прерываемый сон: stop() немедленно разбудит через _loop_stop_event
-            self._loop_stop_event.wait(timeout=15)
+            self._loop_stop_event.wait(timeout=_loop_wait)
 
     def _record_equity(self):
         """Снимок капитала кошелька в память (троттлинг внутри менеджера)."""
@@ -602,7 +614,8 @@ class Trader:
 
         # Оставляем SHORT-позиции, заменяем все LONG на одну объединённую
         shorts = [t for t in self.open_trades if t.get("side") != "buy"]
-        self.open_trades = shorts + [merged]
+        with self._ot_lock:
+            self.open_trades = shorts + [merged]
 
         # Обновляем запись в полном журнале сделок
         for t in self.trades:
@@ -1221,7 +1234,8 @@ class Trader:
                 "entry_bo_score":  0.0,
                 "entry_mom_signal": "CALM",
             }
-            self.open_trades.append(trade)
+            with self._ot_lock:
+                self.open_trades.append(trade)
             self.trades.append(trade)
             self.stats["total_trades"] += 1
             # Объединяем с уже открытыми LONG-позициями в одну
@@ -1735,9 +1749,15 @@ class Trader:
         #   B (≥3 очков) — стандарт:    2 подтверждения, откат -0.8%
         #   C (<3 очков) — слабый:      3 подтверждения, откат -1.5%
         _grade_params = {
-            "A": {"confirm": 1, "pullback": 0.3},
+            "A": {
+                "confirm": Config.SMART_BUY_GRADE_A_CONFIRM,
+                "pullback": Config.SMART_BUY_GRADE_A_PULLBACK,
+            },
             "B": {"confirm": 2, "pullback": Config.SMART_BUY_PULLBACK_PCT},
-            "C": {"confirm": 3, "pullback": 1.5},
+            "C": {
+                "confirm": Config.SMART_BUY_GRADE_C_CONFIRM,
+                "pullback": Config.SMART_BUY_GRADE_C_PULLBACK,
+            },
         }
         _gp = _grade_params.get(entry_quality, _grade_params["B"])
         confirm_needed = _gp["confirm"]
@@ -2429,7 +2449,8 @@ class Trader:
             "entry_mom_signal": str((ai_snap_entry.get("momentum") or {}).get("signal") or "CALM"),
             "entry_mom_score":  _sf((ai_snap_entry.get("momentum") or {}).get("score")),
         }
-        self.open_trades.append(trade)
+        with self._ot_lock:
+            self.open_trades.append(trade)
         self.trades.append(dict(trade))
         self.stats["total_trades"] += 1
         # Если уже есть другие LONG-позиции — объединяем всё в одну
@@ -2885,8 +2906,9 @@ class Trader:
                           if str(t.get("id")) == str(trade_id)), None)
             if not trade:
                 return {"ok": False, "error": "Позиция не найдена или уже удалена"}
-            self.open_trades = [t for t in self.open_trades
-                                if str(t.get("id")) != str(trade_id)]
+            with self._ot_lock:
+                self.open_trades = [t for t in self.open_trades
+                                    if str(t.get("id")) != str(trade_id)]
             self.trades = [t for t in self.trades
                            if str(t.get("id")) != str(trade_id)]
         self.log(f"🗑 Позиция {trade_id} удалена вручную (без продажи)", "WARNING")
@@ -2948,7 +2970,10 @@ class Trader:
                     self.stats["winning_trades"] = self.stats.get("winning_trades", 0) + 1
                 self.stats["total_trades"] = self.stats.get("total_trades", 0) + 1
             # Удаляем лонги из открытых
-            self.open_trades = [t for t in self.open_trades if t.get("side") == "short"]
+            with self._ot_lock:
+                self.open_trades = [
+                    t for t in self.open_trades if t.get("side") == "short"
+                ]
             self.dca_entries_count = 0
             self.dca_total_stake   = 0.0
         self.log(
@@ -3082,7 +3107,10 @@ class Trader:
         if pnl > 0:
             self.stats["winning_trades"] += 1
 
-        self.open_trades = [t for t in self.open_trades if t["id"] != trade["id"]]
+        with self._ot_lock:
+            self.open_trades = [
+                t for t in self.open_trades if t["id"] != trade["id"]
+            ]
         for t in self.trades:
             if t["id"] == trade["id"]:
                 t.update(trade)

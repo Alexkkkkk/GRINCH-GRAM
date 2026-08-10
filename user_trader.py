@@ -121,22 +121,48 @@ class UserTradingManager:
             u = self._users.get(token)
             if not u:
                 return False
-            u["balance_ton"] = round(u["balance_ton"] + amount_ton, 6)
-            self._log(u, f"💰 Депозит {amount_ton:.4f} TON зачислен (баланс: {u['balance_ton']:.4f} TON)", "INFO")
-
-        if app:
-            try:
+            if app:
                 from models import UserWallet
                 from database import db
+                from sqlalchemy import update, func
                 with app.app_context():
+                    # Атомарно увеличиваем баланс на уровне SQL, чтобы
+                    # параллельные зачисления не теряли одно из значений.
+                    result = db.session.execute(
+                        update(UserWallet)
+                        .where(UserWallet.token == token)
+                        .values(
+                            virtual_ton_balance=(
+                                func.coalesce(UserWallet.virtual_ton_balance, 0.0)
+                                + amount_ton
+                            ),
+                            total_deposited=(
+                                func.coalesce(UserWallet.total_deposited, 0.0)
+                                + amount_ton
+                            ),
+                            last_deposit_at=datetime.utcnow(),
+                        )
+                    )
+                    if result.rowcount != 1:
+                        db.session.rollback()
+                        return False
                     uw = UserWallet.query.filter_by(token=token).first()
                     if uw:
-                        uw.virtual_ton_balance = u["balance_ton"]
-                        uw.total_deposited = (uw.total_deposited or 0) + amount_ton
-                        uw.last_deposit_at = datetime.utcnow()
+                        u["balance_ton"] = round(
+                            uw.virtual_ton_balance or 0.0, 6
+                        )
                         db.session.commit()
-            except Exception as e:
-                log.error(f"[UserTrader] credit_deposit DB ошибка: {e}")
+                    else:
+                        db.session.rollback()
+                        return False
+            else:
+                u["balance_ton"] = round(u["balance_ton"] + amount_ton, 6)
+            self._log(
+                u,
+                f"💰 Депозит {amount_ton:.4f} TON зачислен "
+                f"(баланс: {u['balance_ton']:.4f} TON)",
+                "INFO",
+            )
         return True
 
     # ── Вывод ────────────────────────────────────────────────────────────────
