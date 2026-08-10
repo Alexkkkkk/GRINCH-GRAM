@@ -17,6 +17,8 @@ _DATA_DIR = os.getenv("DATA_DIR", os.path.join(os.path.dirname(os.path.abspath(_
 os.makedirs(_DATA_DIR, exist_ok=True)
 _SETTINGS_FILE = os.getenv("SETTINGS_FILE", os.path.join(_DATA_DIR, "settings.json"))
 _lock = threading.Lock()
+_migration_lock = threading.Lock()
+_migration_done = False
 
 
 def _db():
@@ -84,20 +86,34 @@ def update_section(section: str, updates: dict) -> dict:
 # ─── Migration: JSON → DB при первом запуске с PostgreSQL ────────────────────
 def migrate_to_db():
     """Если в DB нет настроек, но JSON существует — переносим однократно."""
+    global _migration_done
+    if _migration_done:
+        return
+    with _migration_lock:
+        if _migration_done:
+            return
+        _migrate_to_db_locked()
+
+
+def _migrate_to_db_locked():
+    global _migration_done
     db = _db()
     if not db:
         return
     try:
         existing = db.settings_get_all()
         if existing:
+            _migration_done = True
             return
         data = _load_json()
         if not data:
+            _migration_done = True
             return
         for section, updates in data.items():
             if isinstance(updates, dict) and updates:
                 db.settings_update_section(section, updates)
         logger.info("[Settings] ✅ Настройки мигрированы JSON → PostgreSQL")
+        _migration_done = True
     except Exception as e:
         logger.warning(f"[Settings] migrate_to_db error: {e}")
 

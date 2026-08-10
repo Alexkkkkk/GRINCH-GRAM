@@ -129,10 +129,20 @@ class ExperienceManager:
                 stats_raw   = ai_state.get("stats")
                 ai_raw      = ai_state.get("ai_export")
 
-                if trades or equity or control_raw:
-                    if trades:      self.data["trades"]      = trades
+                if trades or equity or open_trades or control_raw or stats_raw or ai_raw:
+                    if trades:
+                        self.data["trades"] = [
+                            dict(t, trade_type=t.get("trade_type", t.get("side", "long")))
+                            if isinstance(t, dict) else t
+                            for t in trades
+                        ]
                     if equity:      self.data["equity"]      = equity
-                    if open_trades: self.data["open_trades"] = open_trades
+                    if open_trades:
+                        self.data["open_trades"] = [
+                            dict(t, trade_type=t.get("trade_type", t.get("side", "long")))
+                            if isinstance(t, dict) else t
+                            for t in open_trades
+                        ]
                     if control_raw: self.data["control"]     = control_raw if isinstance(control_raw, dict) else json.loads(control_raw)
                     if stats_raw:
                         _s = stats_raw if isinstance(stats_raw, dict) else json.loads(stats_raw)
@@ -142,10 +152,12 @@ class ExperienceManager:
                         _tt = int(_s.get("total_trades", 0) or 0)
                         if _wt > _tt:
                             _s = dict(_s)
-                            _s["winning_trades"] = _tt
+                            # Победы уже подтверждены закрытыми сделками.
+                            # Восстанавливаем заниженный total, не выбрасываем wins.
+                            _s["total_trades"] = _wt
                             logger.warning(
                                 f"[Experience] 🔧 _load: winning_trades ({_wt}) > total_trades ({_tt})"
-                                f" — исправлено до {_tt} при загрузке из DB"
+                                f" — total расширен до {_wt} при загрузке из DB"
                             )
                         self.data["stats"] = _s
                     if ai_raw:      self.data["ai"]          = ai_raw if isinstance(ai_raw, dict) else json.loads(ai_raw)
@@ -168,6 +180,23 @@ class ExperienceManager:
                 for k in ("trades", "open_trades", "equity", "stats", "ai", "control", "created"):
                     if k in disk and disk[k] is not None:
                         self.data[k] = disk[k]
+                self.data["trades"] = [
+                    dict(t, trade_type=t.get("trade_type", t.get("side", "long")))
+                    if isinstance(t, dict) else t
+                    for t in (self.data.get("trades") or [])
+                ]
+                self.data["open_trades"] = [
+                    dict(t, trade_type=t.get("trade_type", t.get("side", "long")))
+                    if isinstance(t, dict) else t
+                    for t in (self.data.get("open_trades") or [])
+                ]
+                if isinstance(self.data.get("stats"), dict):
+                    _s = dict(self.data["stats"])
+                    _wt = int(_s.get("winning_trades", 0) or 0)
+                    _tt = int(_s.get("total_trades", 0) or 0)
+                    if _wt > _tt:
+                        _s["total_trades"] = _wt
+                        self.data["stats"] = _s
                 ctrl = self._default_control()
                 ctrl.update(self.data.get("control") or {})
                 self.data["control"] = ctrl
@@ -218,6 +247,10 @@ class ExperienceManager:
             tmp = self.path + ".tmp"
             with open(tmp, "w", encoding="utf-8") as f:
                 _jdump(self.data, f, ensure_ascii=False)
+                f.flush()
+                os.fsync(f.fileno())
+                f.flush()
+                os.fsync(f.fileno())
             os.replace(tmp, self.path)
         except Exception as e:
             print(f"[Experience] ошибка записи {self.path}: {e}")
@@ -235,7 +268,7 @@ class ExperienceManager:
                     _wt = int(stats.get("winning_trades", 0) or 0)
                     if _wt > _tt:
                         stats = dict(stats)
-                        stats["winning_trades"] = _tt
+                        stats["total_trades"] = _wt
                         self.data["stats"] = stats
                 if ctrl:  db.ai_state_set("control", ctrl)
                 if stats: db.ai_state_set("stats", stats)
@@ -519,10 +552,10 @@ class ExperienceManager:
                 _wt2 = int(_s.get("winning_trades", 0) or 0)
                 _tt2 = int(_s.get("total_trades", 0) or 0)
                 if _wt2 > _tt2:
-                    _s["winning_trades"] = _tt2
+                    _s["total_trades"] = _wt2
                     logger.warning(
                         f"[Experience] record_trade sanitize: winning({_wt2})>total({_tt2})"
-                        f" — winning исправлено до {_tt2}"
+                        f" — total расширен до {_wt2}"
                     )
                 self.data["stats"] = _s
             if ai is not None:

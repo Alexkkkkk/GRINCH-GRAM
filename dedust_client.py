@@ -41,9 +41,19 @@ _BAL_CACHE: dict         = {}          # {"TON": float, "GRINCH": float}
 _BAL_CACHE_TS: float     = 0.0         # timestamp последнего успешного обновления
 _BAL_CACHE_TTL: float    = 150.0       # секунды
 _BAL_CACHE_LOCK          = threading.Lock()
+_BAL_FETCH_LOCK          = threading.Lock()  # один refresh HTTP за раз
 _BAL_BACKOFF_UNTIL: float = 0.0        # не стучать раньше этого timestamp при 429
 
 
+def _serialized_balance_fetch(fn):
+    """Сериализует весь refresh баланса, включая HTTP-запросы."""
+    def _wrapped(*args, **kwargs):
+        with _BAL_FETCH_LOCK:
+            return fn(*args, **kwargs)
+    return _wrapped
+
+
+@_serialized_balance_fetch
 def get_shared_balance(force: bool = False) -> dict:
     """Возвращает кешированный баланс {TON, GRINCH} из глобального кеша.
 
@@ -53,13 +63,10 @@ def get_shared_balance(force: bool = False) -> dict:
     global _BAL_CACHE, _BAL_CACHE_TS, _BAL_BACKOFF_UNTIL
     now = time.time()
 
-    # Если backoff ещё не истёк — возвращаем кеш без запроса
-    if not force and now < _BAL_BACKOFF_UNTIL:
-        with _BAL_CACHE_LOCK:
-            return dict(_BAL_CACHE) if _BAL_CACHE else {}
-
-    # Если кеш свежий — возвращаем без запроса
+    # Быстрый путь для свежего кеша и backoff.
     with _BAL_CACHE_LOCK:
+        if not force and now < _BAL_BACKOFF_UNTIL:
+            return dict(_BAL_CACHE) if _BAL_CACHE else {}
         if not force and _BAL_CACHE and (now - _BAL_CACHE_TS) < _BAL_CACHE_TTL:
             return dict(_BAL_CACHE)
 
@@ -938,7 +945,8 @@ class DedustClient:
             state = await provider.get_account_state(wallet.address)
             ton_nano = getattr(state, "balance", 0) or 0
             # Минимум: gas_nano + 0.01 TON на сетевую комиссию wallet.transfer
-            needed_nano = gas_nano + int(0.01 * TON)
+            # gas_nano уже содержит подтверждённый attach для sell.
+            needed_nano = gas_nano
             if ton_nano < needed_nano:
                 return {
                     "ok": False,
@@ -961,11 +969,12 @@ class DedustClient:
                 grinch_jw_address = _CoreAddr(jw_addr_str)
                 log.info(f"[DeDust] GRINCH jetton wallet: {jw_addr_str}")
             else:
-                # Оба API не ответили → SDK fallback (адрес может быть неверным!)
-                grinch_root   = JettonRoot.create_from_address(Config.GRINCH_TOKEN_ADDRESS)
-                grinch_wallet = await grinch_root.get_wallet(wallet.address, provider)
-                grinch_jw_address = grinch_wallet.address
-                log.warning(f"[DeDust] GRINCH jetton wallet (SDK FALLBACK): {grinch_jw_address}")
+                # Небезопасный SDK fallback запрещён: неправильный адрес
+                # jetton-wallet может необратимо потерять GRINCH.
+                raise RuntimeError(
+                    "GRINCH jetton wallet не найден через TonCenter/TonAPI; "
+                    "unsafe SDK fallback отключён, продажа отменена"
+                )
 
             # ── Точный GRINCH-баланс on-chain ДО свопа ──────────────────────
             # КРИТИЧНО: используем on-chain нано-баланс, а НЕ float grinch_amount!

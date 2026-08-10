@@ -251,14 +251,17 @@ class Trader:
             tt = int(self.stats.get("total_trades", 0) or 0)
             wt = int(self.stats.get("winning_trades", 0) or 0)
             if wt > tt:
-                self.stats["winning_trades"] = tt
+                # Не теряем подтверждённые победы: если старый счётчик
+                # total_trades был занижен после рестарта, восстанавливаем его
+                # до количества wins.
+                self.stats["total_trades"] = wt
                 try:
                     self.exp.data["stats"] = dict(self.stats)
                     self.exp._save_locked()
                 except Exception:
                     pass
                 self.log(
-                    f"🔧 Санитайз статистики: winning_trades ({wt}) > total_trades ({tt}) — исправлено",
+                    f"🔧 Санитайз статистики: total_trades ({tt}) < winning_trades ({wt}) — total восстановлен",
                     "WARN",
                 )
         except Exception:

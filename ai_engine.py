@@ -52,6 +52,22 @@ import warnings
 import concurrent.futures as _cf
 warnings.filterwarnings("ignore")
 
+
+def safe_polyfit(x, y, deg: int):
+    """Безопасный polyfit для плоских/неполных рядов цен."""
+    x_arr = np.asarray(x, dtype=float)
+    y_arr = np.asarray(y, dtype=float)
+    if len(x_arr) < deg + 1 or len(y_arr) < deg + 1:
+        return np.zeros(deg + 1, dtype=float)
+    if not np.all(np.isfinite(x_arr)) or not np.all(np.isfinite(y_arr)):
+        return np.zeros(deg + 1, dtype=float)
+    if np.ptp(y_arr) == 0:
+        return np.zeros(deg + 1, dtype=float)
+    try:
+        return np.polyfit(x_arr, y_arr, deg)
+    except (ValueError, np.linalg.LinAlgError):
+        return np.zeros(deg + 1, dtype=float)
+
 # ─── Режим для маломощных хостов (Bothost и т.п.) ────────────────────────────
 # LOW_MEMORY_MODE=1 → урезанный ансамбль (3 модели вместо 6) + меньше буферов.
 # glibc malloc не всегда возвращает освобождённую gc.collect() память ОС —
@@ -2097,7 +2113,8 @@ class AIEngine:
 
     def _align_proba(self, proba: np.ndarray, classes) -> np.ndarray:
         """Выравнивает вектор вероятностей к индексам [P(-1), P(0), P(1)]."""
-        out = np.array([1/3, 1/3, 1/3])
+        # Отсутствующий класс имеет вероятность 0, а не ложные 1/3.
+        out = np.zeros(3, dtype=float)
         cls_list = list(classes)
         mapping  = {-1: 0, 0: 1, 1: 2}
         for j, c in enumerate(cls_list):
@@ -2253,7 +2270,7 @@ class AIEngine:
                 else:
                     y_ = c.values[i-win+1:i+1]
                     x_ = np.arange(win, dtype=float)
-                    m  = np.polyfit(x_, y_, 1)[0]
+                    m  = safe_polyfit(x_, y_, 1)[0]
                     slopes.append(m / (c.values[i] + 1e-10))
             df[f"slope_{win}"] = slopes
 
@@ -2594,7 +2611,7 @@ class AIEngine:
         c     = df["close"].values;  price = float(c[-1])
         atr   = float(df["atr"].iloc[-1])
         x     = np.arange(10, dtype=float);  y = c[-10:]
-        slope = np.polyfit(x, y, 1)[0]
+        slope = safe_polyfit(x, y, 1)[0]
         s_pct = slope / (price + 1e-10) * 100
         return {
             "t1": round(price + slope,   8),
