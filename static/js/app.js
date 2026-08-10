@@ -1261,6 +1261,12 @@ function renderGridPanel(d) {
   _gtxt('grid-center', d.center_price_ton ? d.center_price_ton.toFixed(6) + ' TON' : '—');
   _gtxt('grid-step',   d.step_pct != null ? d.step_pct.toFixed(1) + '%' : '—');
   _gtxt('grid-cycles', d.total_sell_cycles != null ? d.total_sell_cycles : '—');
+  const gridReserve = Number(d.grid_reserved_grinch);
+  const dcaReserve  = Number(d.dca_reserved_grinch);
+  _gtxt('grid-reserved-grinch',
+    Number.isFinite(gridReserve) ? gridReserve.toLocaleString('ru-RU', {maximumFractionDigits: 0}) + ' GRINCH' : '— GRINCH');
+  _gtxt('dca-reserved-grinch',
+    Number.isFinite(dcaReserve) ? dcaReserve.toLocaleString('ru-RU', {maximumFractionDigits: 0}) + ' GRINCH' : '— GRINCH');
 
   const sells   = d.sell_levels || [];
   const waiting = sells.filter(l => l.status === 'waiting');
@@ -1312,6 +1318,9 @@ function renderGridPanel(d) {
         const clr  = isFilled ? 'var(--green)' : isWaiting ? 'var(--text)' : 'var(--text2)';
         const priceStr  = l.price_ton ? l.price_ton.toFixed(6) : '—';
         const amtStr    = l.amount_grinch ? (l.amount_grinch / 1000).toFixed(0) + 'k GRN' : '';
+        const ownerStr  = l.owner === 'dca'
+          ? '<span style="font-size:9px;color:#c084fc">DCA</span>'
+          : '<span style="font-size:9px;color:#00d4ff">Grid</span>';
         const profitStr = isFilled && l.profit_ton ? `<span style="color:var(--green);font-size:10px">+${l.profit_ton.toFixed(3)} TON</span>` : '';
         const bar = isWaiting ? _gridLevelBar(curPrice, l.price_ton, 'sell') : '';
         return `<div style="padding:3px 6px;background:rgba(255,255,255,.025);border-radius:4px;font-size:11px">
@@ -1319,6 +1328,7 @@ function renderGridPanel(d) {
             <span style="width:14px;flex-shrink:0">${icon}</span>
             <span style="font-family:var(--mono);color:${clr};flex:1">${priceStr} TON</span>
             <span style="color:var(--text2);font-size:10px">${amtStr}</span>
+            ${ownerStr}
             ${profitStr}
           </div>
           ${bar}
