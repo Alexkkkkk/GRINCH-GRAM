@@ -338,8 +338,6 @@ def _conn():
     3. При OperationalError соединение помечается broken, пул перестраивается
        асинхронно — не блокируя вызывающий поток.
     """
-    global _pool, _available
-
     # Lazy reconnect: БД была недоступна, но backoff прошёл — пробуем снова.
     if not _available or _pool is None:
         _try_rebuild_pool()   # синхронно; торговый цикл — фоновый поток, блок ок

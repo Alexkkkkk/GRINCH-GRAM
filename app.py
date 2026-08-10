@@ -14,6 +14,7 @@ logging.basicConfig(
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
     datefmt="%Y-%m-%d %H:%M:%S",
 )
+logger = logging.getLogger(__name__)
 _startup_log = logging.getLogger("startup")
 _startup_log.info("=== APP IMPORT START ===")
 
@@ -1901,7 +1902,6 @@ def api_ai_deep_retrain():
     """Запускает глубокое переобучение ИИ вручную (не ждём 2 дня).
     Не блокирует ответ — работает в фоновом потоке. Повторный вызов
     во время активного запуска возвращает статус already_running."""
-    global _deep_retrain_manual_state
     with _deep_retrain_manual_lock:
         if _deep_retrain_manual_state["running"]:
             return jsonify({"ok": False, "status": "already_running",
@@ -1910,7 +1910,6 @@ def api_ai_deep_retrain():
         _deep_retrain_manual_state["error"]   = None
 
     def _run():
-        global _deep_retrain_manual_state
         try:
             # 1) Лёгкие модели в оперативной памяти
             ai = getattr(trader, "ai", None)
