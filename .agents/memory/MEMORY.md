@@ -74,3 +74,4 @@
 - [Circuit Breaker & Performance System](circuit-breaker-perf.md) — daily auto-pause (CIRCUIT_BREAKER_DAILY_LOSS_PCT=15%), _record_trade_pnl() extended stats, BrainFusion dynamic weights by source accuracy, /api/performance endpoint.
 - [GRINCH market tuning](grinch-market-tuning.md) — ATR recalibrated 20.07 evening: 2.225%→4.67%(15m), 12 params updated; on-chain whale balance added to wallet_tracker. VPS=port 80.
 - [Security rate-limit thresholds](security-rate-limit.md) — RATE_API_MAX≥300/AUTO_BAN≥500 или дашборд баннит самого владельца (120-150 req/min на вкладку).
+- [GitHub ruleset checks](github-ruleset-checks.md) — required checks must match workflow-published check-run names exactly, not workflow/name prefixes.

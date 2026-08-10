@@ -14,6 +14,7 @@ logging.basicConfig(
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
     datefmt="%Y-%m-%d %H:%M:%S",
 )
+logger = logging.getLogger(__name__)
 _startup_log = logging.getLogger("startup")
 _startup_log.info("=== APP IMPORT START ===")
 
@@ -576,6 +577,26 @@ def _safe_status():
 # обработчике запроса). Это убирает подвисания и лишние повторные вычисления.
 _status_snapshot = None
 _snapshot_lock   = threading.Lock()
+
+# Короткий кэш для read-only виджетов дашборда. Эти endpoints вызываются
+# несколькими таймерами одновременно, но не участвуют в торговых решениях.
+# Кэш уменьшает повторную сериализацию/агрегацию и не скрывает изменения
+# дольше нескольких секунд.
+_READ_API_CACHE = {}
+_READ_API_CACHE_LOCK = threading.Lock()
+
+def _read_api_cache_get(name: str, ttl: float):
+    now = time.time()
+    with _READ_API_CACHE_LOCK:
+        item = _READ_API_CACHE.get(name)
+        if item and (now - item["ts"]) < ttl:
+            return item["payload"]
+    return None
+
+def _read_api_cache_put(name: str, payload: dict):
+    with _READ_API_CACHE_LOCK:
+        _READ_API_CACHE[name] = {"ts": time.time(), "payload": payload}
+    return payload
 
 def _get_snapshot():
     """Последний готовый снимок статуса (или None, пока буфер не прогрет)."""
@@ -1276,6 +1297,10 @@ def api_performance():
     Рассчитывает упрощённый Sharpe Ratio по истории сделок сессии.
     Annualized = (mean_pnl / std_pnl) × √252 (252 торговых дня в году).
     """
+    cached = _read_api_cache_get("performance", 10)
+    if cached is not None:
+        return jsonify(cached), 200
+
     stats = getattr(trader, "stats", {}) or {}
     total = int(stats.get("total_trades",   0))
     wins  = int(stats.get("winning_trades", 0))
@@ -1334,7 +1359,7 @@ def api_performance():
     except Exception:
         pass
 
-    return jsonify({
+    payload = {
         "ok":                 True,
         "total_trades":       total,
         "winning_trades":     wins,
@@ -1349,7 +1374,9 @@ def api_performance():
         "sharpe_ratio":       sharpe_ratio,
         "max_drawdown_ton":   max_drawdown_ton,
         "source_accuracy":    source_accuracy,
-    }), 200
+    }
+    _read_api_cache_put("performance", payload)
+    return jsonify(payload), 200
 
 
 @app.route("/api/security/stats")
@@ -1567,15 +1594,21 @@ def api_market_hub():
 @app.route("/api/organism")
 def api_organism():
     """Состояние живого организма QuantumBrain (7 биосистем)."""
+    cached = _read_api_cache_get("organism", 5)
+    if cached is not None:
+        return jsonify(cached)
     try:
         from organism import organism as _org
-        return jsonify(_org.get_state())
+        return jsonify(_read_api_cache_put("organism", _org.get_state()))
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
 @app.route("/api/ai-modules")
 def api_ai_modules():
     """Статус всех AI-модулей: entry optimizer, TP optimizer, market scanner."""
+    cached = _read_api_cache_get("ai-modules", 15)
+    if cached is not None:
+        return jsonify(cached)
     result = {}
     try:
         import ai_entry_optimizer as _eo
@@ -1594,7 +1627,7 @@ def api_ai_modules():
         result["market_scanner"]["active_signal"] = sig
     except Exception as e:
         result["market_scanner"] = {"error": str(e)}
-    return jsonify(result)
+    return jsonify(_read_api_cache_put("ai-modules", result))
 
 _CANDLES_CACHE = {"ts": 0.0, "payload": None}
 _CANDLES_CACHE_TTL = 30  # сек — свечи 15м, пересчёт чаще 30с бессмысленен
@@ -1869,7 +1902,6 @@ def api_ai_deep_retrain():
     """Запускает глубокое переобучение ИИ вручную (не ждём 2 дня).
     Не блокирует ответ — работает в фоновом потоке. Повторный вызов
     во время активного запуска возвращает статус already_running."""
-    global _deep_retrain_manual_state
     with _deep_retrain_manual_lock:
         if _deep_retrain_manual_state["running"]:
             return jsonify({"ok": False, "status": "already_running",
@@ -1878,7 +1910,6 @@ def api_ai_deep_retrain():
         _deep_retrain_manual_state["error"]   = None
 
     def _run():
-        global _deep_retrain_manual_state
         try:
             # 1) Лёгкие модели в оперативной памяти
             ai = getattr(trader, "ai", None)
@@ -2173,9 +2204,12 @@ def api_manual_sell_all():
 @app.route("/api/wallet/full")
 def api_wallet_full():
     """Полный статус кошелька: баланс TON + GRINCH, цены, P&L, потенциал, история."""
+    cached = _read_api_cache_get("wallet-full", 5)
+    if cached is not None:
+        return jsonify(cached)
     try:
         status = _wallet_mgr.get_full_status()
-        return jsonify({"ok": True, **status})
+        return jsonify(_read_api_cache_put("wallet-full", {"ok": True, **status}))
     except Exception as e:
         return jsonify({"ok": False, "error": str(e)}), 500
 

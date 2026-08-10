@@ -338,8 +338,6 @@ def _conn():
     3. При OperationalError соединение помечается broken, пул перестраивается
        асинхронно — не блокируя вызывающий поток.
     """
-    global _pool, _available
-
     # Lazy reconnect: БД была недоступна, но backoff прошёл — пробуем снова.
     if not _available or _pool is None:
         _try_rebuild_pool()   # синхронно; торговый цикл — фоновый поток, блок ок
@@ -1008,6 +1006,36 @@ def ticks_insert(data: dict):
                     """, (TICKS_KEEP,))
     except Exception as e:
         logger.warning(f"[DB] ticks_insert error: {e}")
+
+
+def ticks_insert_batch(entries: list):
+    """Пакетно сохраняет тики одним соединением и одной транзакцией.
+
+    Вызывается только фоновым writer-потоком. Пакетирование снижает число
+    checkout/commit к внешней PostgreSQL, но не меняет содержимое истории.
+    """
+    if not _check_available() or not entries:
+        return
+    try:
+        import random
+        rows = [(_jdumps(entry, ensure_ascii=False),) for entry in entries]
+        with _conn() as conn:
+            with conn.cursor() as cur:
+                psycopg2.extras.execute_values(
+                    cur,
+                    "INSERT INTO bot_ticks (data) VALUES %s",
+                    rows,
+                    template="(%s)",
+                    page_size=100,
+                )
+                if random.random() < 0.02:
+                    cur.execute("""
+                        DELETE FROM bot_ticks WHERE id NOT IN (
+                            SELECT id FROM bot_ticks ORDER BY id DESC LIMIT %s
+                        )
+                    """, (TICKS_KEEP,))
+    except Exception as e:
+        logger.warning(f"[DB] ticks_insert_batch error: {e}")
 
 
 def ticks_get_recent(limit: int = 100) -> list:
