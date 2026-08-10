@@ -479,9 +479,20 @@ class GridState:
             if owner not in ("grid", "dca"):
                 side = item.get("side", "sell")
                 note = str(item.get("note") or "")
-                owner = "dca" if side == "dca" or note.startswith("DCA-") else "grid"
-            item["owner"] = owner
-            return GridLevel(**item)
+                owner = "dca" if (
+                    side == "dca" or "dca" in note.lower()
+                ) else "grid"
+            # Older snapshots and experimental versions may contain extra
+            # bookkeeping keys.  Do not pass those into the dataclass
+            # constructor: a restart must remain compatible with them.
+            fields = {
+                "id", "side", "price_ton", "amount_grinch", "amount_ton",
+                "status", "filled_at", "fill_price_ton", "profit_ton",
+                "tx_hash", "note",
+            }
+            data = {key: item[key] for key in fields if key in item}
+            data["owner"] = owner
+            return GridLevel(**data)
 
         for k, v in d.items():
             if k == "sell_levels":
@@ -739,13 +750,13 @@ class GridTrader:
                 if l.status != "filled" and (l.amount_grinch or 0) > 0
             ]
             old_dca_levels = list(self._state.dca_levels)
+            # dca_levels records the lifecycle of DCA orders, so a filled
+            # level can already have its matching SELL filled as well.  It
+            # is not a live balance by itself.  The persistent reserve is
+            # decremented only after a confirmed DCA SELL and is the source
+            # of truth for the next rebuild.
             old_dca_reserved = max(
-                float(self._state.dca_reserved_grinch or 0),
-                sum(
-                    float(l.amount_grinch or 0)
-                    for l in old_dca_levels
-                    if l.owner == "dca" and l.status == "filled"
-                ),
+                0.0, float(self._state.dca_reserved_grinch or 0)
             )
             old_total_dca_reserved = max(
                 0.0,
@@ -2435,6 +2446,7 @@ class GridTrader:
         far_sells = [
             l for l in self._state.sell_levels
             if l.status == "waiting"
+            and l.owner == "grid"
             and l.price_ton > far_limit
             and l.amount_grinch >= 100_000     # минимум 100К GRINCH для донорства
         ]
