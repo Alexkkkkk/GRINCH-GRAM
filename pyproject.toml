@@ -26,3 +26,20 @@ dependencies = [
     "sqlalchemy>=2.0.51",
     "ta>=0.11.0",
 ]
+
+[tool.ruff]
+target-version = "py311"
+line-length = 100
+extend-exclude = [
+    "attached_assets",
+    "backups",
+    "data",
+    ".git",
+    "__pycache__",
+]
+
+[tool.ruff.lint]
+# The initial blocking gate targets correctness failures. Broader style
+# cleanup is prepared by auto-fix.yml as a reviewable PR instead of being
+# silently pushed into the trading branch.
+select = ["E9", "F63", "F7", "F82"]
