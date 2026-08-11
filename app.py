@@ -605,6 +605,12 @@ def _load_users_bg():
     # Было 3с — было нужно «подождать пока Flask поднимется», но Flask уже
     # слушает к этому моменту. 0.5с достаточно для finalization init-цикла.
     time.sleep(0.5)
+    # В demo/локальном workflow Flask-SQLAlchemy намеренно не инициализируется.
+    # Не запускать пользовательский DB-поток в этом режиме: db_store имеет
+    # отдельный JSON/DB fallback и не является признаком готовности SQLAlchemy.
+    if not _db_available:
+        _startup_log.info("User DB features disabled — skipping user/deposit workers")
+        return
     user_mgr.load_from_db(app)
     deposit_monitor.start(app, user_mgr)
 
