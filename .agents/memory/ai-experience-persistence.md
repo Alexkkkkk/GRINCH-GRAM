@@ -13,7 +13,15 @@ and adaptive `control` params. Atomic temp-file write under an RLock.
   lived only in-memory (`_confirmed_X/y/w`, slot accuracy) and was **wiped on every
   restart** — that was the core gap. Fixed via `ai_engine.export_experience()` /
   `import_experience()` (numpy↔JSON, guarded by feature-dim match; refits on load).
-  `import_experience` must run AFTER `pretrain` (needs `_feature_names`).
+`import_experience` must run AFTER `pretrain` (needs `_feature_names`).
+
+For DCA, preserve a feature snapshot for each entry and pass it explicitly to
+`feedback()` when a merged position closes. A single shared last-buy context
+cannot represent several DCA entries closed by one sell-all.
+**Why:** otherwise only the most recent DCA decision trains the model and
+earlier real decisions silently disappear.
+**How to apply:** carry per-entry contexts through merge and split aggregate
+close P&L by entry stake before recording feedback.
 
 **"Программа правит код для управления" = adaptive parameter tuning, NOT literal
 source rewriting.** `analyze_and_adapt()` reads loss-streak / recent net PnL /

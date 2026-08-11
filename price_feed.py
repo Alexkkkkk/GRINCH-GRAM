@@ -1,3 +1,4 @@
+import os
 import time
 import threading
 import requests
@@ -7,7 +8,7 @@ from config import Config
 
 def _tc_headers() -> dict:
     """Заголовки для TonCenter API (X-API-Key, если задан в TONCENTER_API_KEY)."""
-    key = Config.TONCENTER_API_KEY
+    key = os.getenv("TONCENTER_API_KEY", "")
     return {"X-API-Key": key} if key else {}
 
 # Соответствие тикера → ID в CoinGecko (бесплатный API без ключа)
@@ -28,7 +29,7 @@ COINGECKO_IDS = {
 class PriceFeed:
     """Реальные цены через бесплатные API (CoinGecko + DexScreener). С кэшем по TTL."""
 
-    def __init__(self, ttl=15):
+    def __init__(self, ttl=4):
         self.ttl = ttl
         self._cache = {}   # base -> (price, ts)
         self._lock = threading.Lock()
@@ -49,7 +50,21 @@ class PriceFeed:
             entry = self._cache.get(base)
             if entry and now - entry[1] < self.ttl:
                 return entry[0]
-        price = self._fetch(base)
+            # FIX#23: cache stampede — если уже идёт запрос для этого тикера,
+            # возвращаем stale-значение вместо параллельных дублирующих запросов.
+            if not hasattr(self, '_fetching_keys'):
+                self._fetching_keys = set()
+            if base in self._fetching_keys:
+                if entry:
+                    if max_stale is None or (now - entry[1]) <= max_stale:
+                        return entry[0]
+                return None
+            self._fetching_keys.add(base)
+        try:
+            price = self._fetch(base)
+        finally:
+            with self._lock:
+                self._fetching_keys.discard(base)
         if price and price > 0:
             with self._lock:
                 self._cache[base] = (price, now)
@@ -222,9 +237,9 @@ price_feed = PriceFeed()
 
 
 def _start_price_prefetch():
-    """Фоновый поток: обновляет цены TON и GRINCH каждые 12 секунд.
+    """Фоновый поток: обновляет цены TON и GRINCH каждые 5 секунд.
 
-    TTL кэша = 15с, prefetch-интервал = 12с → кэш ВСЕГДА свежий.
+    TTL кэша = 6с, prefetch-интервал = 5с → кэш ВСЕГДА свежий.
     Торговый тик (price_feed.get / get_grinch_ton_price) гарантированно
     читает из памяти без блокирующего HTTP-запроса — 0 ms вместо 50–200 ms.
     Оба запроса (DexScreener + TonCenter) идут параллельно через ThreadPool.
@@ -238,14 +253,14 @@ def _start_price_prefetch():
             f1 = _executor.submit(price_feed.get, "GRINCH")
             f2 = _executor.submit(price_feed.get, "TON")
             f3 = _executor.submit(price_feed.get_grinch_ton_price)
-            concurrent.futures.wait([f1, f2, f3], timeout=12)
+            concurrent.futures.wait([f1, f2, f3], timeout=5)
         except Exception:
             pass
 
     def _loop():
         while True:
             _warm()
-            threading.Event().wait(timeout=12)
+            threading.Event().wait(timeout=3)
 
     t = threading.Thread(target=_loop, name="price-prefetch", daemon=True)
     t.start()

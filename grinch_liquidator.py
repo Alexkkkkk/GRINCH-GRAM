@@ -70,6 +70,10 @@ class GrinchLiquidator:
         self._last_sell_at   = None
         self._sell_count     = 0
         self._logs           = []
+        # Флаг in-flight: True пока _execute_sell выполняется.
+        # Предотвращает дублирование продажи если два тика пройдут
+        # проверку порога до того, как первая продажа завершится.
+        self._sell_in_flight = False
         # Порог роста для продажи — можно менять через API.
         # Загружаем сохранённое значение из settings.json (если есть), иначе
         # дефолт = нетто-цель + комиссия цикла (≈22% gross → ≥20% нетто).
@@ -342,13 +346,27 @@ class GrinchLiquidator:
                     "WARN"
                 )
                 return
+
+            # ── Anti-duplicate: атомарно устанавливаем флаг in-flight ────────
+            # Без флага два тика могут оба пройти проверку выше (lock снят)
+            # и одновременно запустить _execute_sell → двойная продажа.
+            with self._lock:
+                if self._sell_in_flight:
+                    self._log("⏳ Продажа уже выполняется — пропуск дублирующего тика", "WARN")
+                    return
+                self._sell_in_flight = True
+
             self._log(
                 f"🚀 Цена выросла на {rise_pct:+.2f}%! "
                 f"${ref:.8f} → ${current:.8f} (цель: ${target:.8f}) | "
                 f"Продаём {grinch:.4f} GRINCH...",
                 "INFO"
             )
-            self._execute_sell(grinch, current)
+            try:
+                self._execute_sell(grinch, current)
+            finally:
+                with self._lock:
+                    self._sell_in_flight = False
         else:
             pct_to_go = ((target - current) / current) * 100
             self._log(
@@ -386,10 +404,23 @@ class GrinchLiquidator:
                     self._ref_time      = None
                 # Обновим баланс через 60 сек
                 self._last_bal_check = time.time() - BAL_CHECK_INTERVAL + 60
-                # Закрываем ghost-позицию в трейдере (если GRINCH был в открытой позиции)
+                # Закрываем ghost-позицию в трейдере (если GRINCH был в открытой позиции).
+                # Трейдер-синглтон живёт в app.py, не в trader.py — используем sys.modules
+                # чтобы избежать ошибки "cannot import name 'trader' from 'trader'".
                 try:
-                    from trader import trader as _trader
-                    _trader.acknowledge_liquidator_sell(current_price)
+                    import sys as _sys
+                    _app_mod = _sys.modules.get("app") or _sys.modules.get("__main__")
+                    _tr = getattr(_app_mod, "trader", None)
+                    if _tr is not None:
+                        _tr.acknowledge_liquidator_sell(current_price)
+                    else:
+                        # Fallback: напрямую очищаем открытые позиции в DB
+                        import db_store as _ds
+                        with _ds._conn() as _conn:
+                            with _conn.cursor() as _cur:
+                                _cur.execute("DELETE FROM bot_open_trades")
+                            _conn.commit()
+                        self._log("Позиция очищена через DB (app ещё не загружен)", "INFO")
                 except Exception as _te:
                     self._log(f"⚠️ Не удалось оповестить трейдер о продаже ликвидатором: {_te}", "WARN")
                 return {"ok": True, "grinch_sold": grinch_amount, "price": current_price}
@@ -403,24 +434,82 @@ class GrinchLiquidator:
             return {"ok": False, "error": str(e)}
 
     def force_sell_now(self) -> dict:
-        """Немедленная продажа (вызывается вручную через кнопку в UI)."""
+        """Немедленная продажа (вызывается вручную через кнопку в UI).
+
+        Уважает ONLY_PROFIT_EXIT: даже ручная продажа не исполняется, если
+        текущая цена ниже безубыточности (опорная × (1 + required_gross_pct%)).
+        Логика идентична _check_and_maybe_sell(), так убыточная продажа
+        абсолютно невозможна ни в авто-, ни в ручном режиме.
+        """
         with self._lock:
             grinch = self._grinch_bal
+            ref    = self._ref_price
 
         if grinch < MIN_GRINCH_TO_SELL:
             # Попробуем получить актуальный баланс
             self._refresh_balance()
             with self._lock:
                 grinch = self._grinch_bal
+                ref    = self._ref_price
 
         if grinch < MIN_GRINCH_TO_SELL:
             return {"ok": False, "error": f"GRINCH баланс {grinch:.4f} < мин. {MIN_GRINCH_TO_SELL}"}
 
         current = price_feed.get("GRINCH") or 0.0
+        if current <= 0:
+            return {"ok": False, "error": "Нет цены GRINCH — продажа отклонена"}
+
+        # ── ONLY_PROFIT_EXIT: проверяем безубыточность перед ручной продажей ──
+        # Используем ту же логику что и авто-режим (_check_and_maybe_sell).
+        if ref is not None and ref > 0:
+            min_break_even = ref * (1 + Config.required_gross_pct() / 100)
+            if current < min_break_even:
+                gap_pct = (min_break_even - current) / current * 100
+                msg = (
+                    f"🔒 ONLY_PROFIT_EXIT: ручная продажа отклонена — "
+                    f"цена ${current:.8f} < безубыток ${min_break_even:.8f} "
+                    f"(нужно ещё +{gap_pct:.2f}%). Держим."
+                )
+                self._log(msg, "WARN")
+                return {"ok": False, "error": msg}
+        else:
+            # Опорная цена неизвестна — берём текущую как ref и требуем рост
+            # хотя бы на required_gross_pct%, чтобы не продать в ноль по комиссиям.
+            self._log(
+                "⚠️ force_sell_now: опорная цена неизвестна — "
+                "устанавливаем текущую как ref, продажа в этот раз отклонена. "
+                "Повторите через тик когда ref будет зафиксирована.",
+                "WARN"
+            )
+            with self._lock:
+                if self._ref_price is None:
+                    self._ref_price = current
+                    self._ref_time  = datetime.utcnow().isoformat()
+            return {
+                "ok": False,
+                "error": (
+                    f"Опорная цена не была зафиксирована. "
+                    f"Установлена: ${current:.8f}. "
+                    f"Продажа возможна при цене ≥ "
+                    f"${current * (1 + Config.required_gross_pct() / 100):.8f}."
+                )
+            }
+
+        # ── Anti-duplicate: не позволяем параллельным HTTP-запросам
+        # нажать «продать» дважды пока первый ещё не завершился.
+        with self._lock:
+            if self._sell_in_flight:
+                return {"ok": False, "error": "Продажа уже выполняется — подождите"}
+            self._sell_in_flight = True
+
         self._log(f"🔴 РУЧНАЯ продажа {grinch:.4f} GRINCH @ ${current:.8f}")
         # Возвращаем РЕАЛЬНЫЙ результат свопа (ok только при подтверждённом
         # списании GRINCH on-chain), а не безусловный успех.
-        return self._execute_sell(grinch, current)
+        try:
+            return self._execute_sell(grinch, current)
+        finally:
+            with self._lock:
+                self._sell_in_flight = False
 
 
 # ── Синглтон — запускается при импорте модуля ────────────────────────────────

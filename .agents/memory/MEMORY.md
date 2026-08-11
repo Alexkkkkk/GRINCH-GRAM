@@ -1,3 +1,5 @@
+- [Health check threshold](health-check-threshold.md) — /health stalled threshold = 180s (not 90s); ticks legitimately take 60-120s due to TonCenter; M3 backoff added to _loop.
+- [wallet_tracker _seen LRU dict](wallet-tracker-lru-seen.md) — _seen must be dict not set; trim removes oldest keys (front), not random half; db_store.wallets_load returns dict.
 - [Open-trades startup self-heal](open-trades-self-heal.md) — 3 checks at init: auto-clear if GRINCH=0, scale amount+stake_ton if mismatch >1%, clamp winning_trades≤total_trades.
 - [BrainFusion integration](brain-fusion-integration.md) — central consensus brain; use RLock not Lock (get_state calls get_wallet_analysis recursively); wrap import in try/except stub; coerce ai_conf to float in should_skip_confirmation; restore Config params in BOTH pending-buy and immediate-open paths.
 - [Gunicorn background threads](gunicorn-background-threads.md) — start pollers at module import (not __main__), or they silently never run in the deployed app.
@@ -29,7 +31,8 @@
 - [QuantumBrain v4 AI engine](quantumbrain-v4.md) — 6 models (RF+ET+GB+HGB+XGB+MLP); BUY≥50%/SELL≥62% asymmetric thresholds; EV-filter blocks BUY when EV≤0; profit-biased labels (max(ATR×0.7,2.5%)); Kalman/VR/GK-vol/pump_score features (+10 new); GRINCHPumpDetector class; LightGBM blocked by libgomp on NixOS.
 - [Profit protection](profit-protection.md) — _check_profit_protection() in trader.py: triggers when profit_ton>=PROFIT_PROTECT_TON AND (drop from portfolio high-water >= DROP_PCT OR AI SELL ≥55%). Calls _dca_sell_all, resets portfolio_high_water_ton. Runs in both DCA and AI ticks BEFORE large-sell check.
 - [Full AI adaptation](full-ai-adaptation.md) — experience_manager.py adapts DCA_TARGET_PROFIT_PCT (only UP, based on avg_win_pct) and PROFIT_PROTECT_TON (only DOWN, to 50% of avg_win_ton); both after the existing TP-only-up block; gated on AI_TP_ADAPT_MIN_TRADES.
-- [Data fetch speed](data-fetch-speed.md) — trader.py tick sleep 30→15s; wallet_tracker POLL_SEC 30→15; exchange _OHLCV_TTL 180→60s, _OHLCV_BACKOFF 120→45s.
+- [Data fetch speed](data-fetch-speed.md) — current tick/poll/cache intervals across the whole pipeline; safe limits before squeezing further.
+- [VPS git drift & broken auto-deploy](vps-git-drift.md) — VPS `/opt/bot` has uncommitted hotfixes + its git pull deploy key is broken; origin/main ≠ what's running, don't git-reset it.
 - [Groq AI Advisor](groq-ai-advisor.md) — key entered via dashboard, stored in settings_store (DB-first); must read key lazily per-call, not once at import (startup race made it look "unset"); external pghost.ru DB holds settings, not Replit's DB.
 - [Liquidity guard](liquidity-guard.md) — continuous pool liquidity monitor auto-pauses BUY (never SELL) on sharp drop from peak; started at import time; feeds ai_advisor snapshot read-only.
 - [Analytics buffer](analytics-buffer.md) — analytics_buffer.py uses PostgreSQL bot_ticks/bot_trades (no in-memory deque); push_tick() → db_store.ticks_insert(); get_advisor_summary() reads DB with defensive _norm() per row (KeyError-safe for legacy rows); advisor window reduced 100→50 ticks to avoid Groq 413.
@@ -47,9 +50,28 @@
 - [RAM floor и оптимизации скорости](ram-floor-speed.md) — numpy+pandas+sklearn+flask=173MB пол; 180MB недостижимо без замены sklearn; LOW_MEMORY_MODE=1 по умолч.
 - [AI Engine v4.2 upgrades](ai-engine-v4-2.md) — 2GB сервер: LOW_MEMORY_MODE=0, regime_enc фича, адаптивные пороги, EV-блок имеет приоритет над адаптивными порогами.
 - [Post-Pump Distribution v4.5](post-pump-distribution.md) — новый режим POST_PUMP (-3 в regime_enc); 4 новые фичи (ath_dist_20/dump_velocity/vol_collapse/post_pump_dump); штраф BUY до -28%; GRINCHPumpDetector возвращает DISTRIBUTION/DUMP_PATTERN с отриц. conf_boost; vol_r НЕ существует до line~2211 в _build_features — использовать _vol_r_pp временный расчёт.
+- [AI-модули — тройка оптимизаторов](ai-modules-triad.md) — EntryOpt+TPOpt+Scanner: пусты при старте, обучаются на реальных сделках; динамический TP не ниже Config; scanner = 4-й источник BrainFusion.
+- [VPS SSH Access](vps-ssh-access.md) — пароль root в секрете VPS_SSH_PASSWORD (обновлён 2026-08-06); sshpass -p "$VPS_SSH_PASSWORD" ssh root@2.27.25.126; контейнер bot-bot-1; код в /opt/bot.
+- [GridAI-Mgr step oscillation](grid-step-oscillation.md) — GridAI-Mgr._manage() НЕ должен менять step напрямую; adjust_step_by_atr() (ML) уже делает это в _tick() раньше — двойное управление даёт петлю 5.5%↔4.0%.
+- [Price zero-division guards](price-guard-fixes.md) — _open_trade/_check_short_positions/_close_short_trade: guard `if not price or price <= 0` before any division; _check_short_positions: use .get("entry_price",0)+continue on 0.
+- [Work In Progress](work-in-progress.md) — ЧТО ДЕЛАЛОСЬ В ПРОШЛОЙ СЕССИИ: файлы, незавершённые задачи, следующие шаги. Читать в начале каждой сессии, обновлять в конце.
+- [Grid Trading System](grid-trading.md) — grid_trader.py: recovery-grid + реинвест + AI-фильтр; API /api/grid/*; состояние в /app/data/grid_state.json; координация с DCA trader.
+- [GridAI DCA feature mismatch](grid-ai-feature-mismatch.md) — _dca_model trains on 5 features; never pass extra=[] to _make_features in get_dca_confidence or inference crashes silently.
+- [GridAI v5 architecture](grid-ai-v5.md) — FEAT_DIM=40 (was 20); 10 upgrades: market ctx, profit-weight, PostgreSQL, vol-model, exit-model, P&L-sim, OOF-meta, MTF, trap-detect, backtest.
+- [Grid режимы и деплой](grid-regimes-deploy.md) — live GridAI использует SQUEEZE/UPTREND/DOWNTREND; self-update должен скачивать grid_trader.py и grid_ai.py.
+- [Grid allocation audit](grid-allocation-audit.md) — waiting SELL inventory must be bounded by free GRINCH and DCA reserve; profit guard must use the actual adaptive SELL target.
+- [Grid zero SELL levels](grid-zero-sell-levels.md) — active poller can have zero SELL levels when DCA reserves all GRINCH; inspect inventory split before rebuilding.
 
 - [Gunicorn preload reload gotcha](gunicorn-preload-reload.md) — SIGHUP to --preload gunicorn never picks up new code; needs real process restart; re-verify /api/config settings survived after any VPS restart.
 - [Docker cp deploy — verify after restart](docker-cp-deploy-verify.md) — a docker cp+restart hotfix once silently reverted; always re-check md5sum inside the container AFTER restart completes, not just right after cp.
 - [VPS data folder ↔ DB sync](vps-data-sync.md) — db_backup.py already dumps DB→/app/data/backups on the VPS; check freshness there before building a new export path. VPS root password has leaked into chat more than once — always insist on the secure secrets form.
 - [VPS GitOps deploy pipeline](vps-gitops-deploy.md) — cron deploy.sh git-resets /opt/bot to origin/main + rebuilds; docker cp hotfixes are lost on next recreate unless also committed+pushed to origin/main.
-- [Safe Replit demo workflow](safe-replit-demo-workflow.md) — preview must unset both DB URLs and use DEMO_MODE=true to avoid a second writer against the VPS database.
+- [Corrupted balance snapshots](balance-cache-corruption.md) — TON=0 read while GRINCH>0 is almost always an API glitch, not real state; reject it at both get_shared_balance() and record_balance(), or it corrupts the equity chart and trading balance.
+- [Settings JSON/DB drift](settings-json-db-drift.md) — always write settings via settings_store.update_section() (DB+JSON), never db_store.settings_update_section() directly, or the section only exists in DB and is lost if DB is unreachable.
+
+- [Checkpoint backup captures gitignored secrets](checkpoint-backup-secrets.md) — a locally-generated private key in a .gitignore'd dir can still land in an internal Replit backup branch; rotate if it does.
+- [Living Organism AI](living-organism.md) — organism.py singleton; 7 bio-systems; JS IIFE must declare its own `const _el = id => document.getElementById(id)` since _el defined in another IIFE scope; /api/organism endpoint; all hooks wrapped in try/except so failure never crashes trader.
+- [Circuit Breaker & Performance System](circuit-breaker-perf.md) — daily auto-pause (CIRCUIT_BREAKER_DAILY_LOSS_PCT=15%), _record_trade_pnl() extended stats, BrainFusion dynamic weights by source accuracy, /api/performance endpoint.
+- [GRINCH market tuning](grinch-market-tuning.md) — ATR recalibrated 20.07 evening: 2.225%→4.67%(15m), 12 params updated; on-chain whale balance added to wallet_tracker. VPS=port 80.
+- [Security rate-limit thresholds](security-rate-limit.md) — RATE_API_MAX≥300/AUTO_BAN≥500 или дашборд баннит самого владельца (120-150 req/min на вкладку).
+- [GitHub ruleset checks](github-ruleset-checks.md) — required checks must match workflow-published check-run names exactly, not workflow/name prefixes.

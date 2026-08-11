@@ -13,7 +13,9 @@ alerts.py — оповещения о состоянии торгового бо
   и обратно на healthy), чтобы не заспамить чат одним и тем же сообщением
   каждые 20 секунд.
 """
+import html as _html
 import logging
+import os
 import threading
 import time
 
@@ -33,39 +35,77 @@ _MIN_RESEND_GAP = 300      # не слать повторно то же незд
 
 def _get_creds():
     sec = settings_store.get_section("alerts")
-    token   = (sec.get("telegram_bot_token") or "").strip()
-    chat_id = (sec.get("telegram_chat_id") or "").strip()
+    # Fallback to environment variables if settings_store has no value.
+    # This covers the common case where TELEGRAM_BOT_TOKEN is set in .env
+    # but has not yet been synced into the DB / settings.json via the dashboard.
+    token   = (sec.get("telegram_bot_token") or os.getenv("TELEGRAM_BOT_TOKEN") or "").strip()
+    chat_id = (sec.get("telegram_chat_id")   or os.getenv("TELEGRAM_CHAT_ID")   or "").strip()
     enabled = bool(sec.get("enabled", True)) and bool(token) and bool(chat_id)
     return token, chat_id, enabled
 
 
-def send_alert(text: str) -> dict:
-    """Отправить сообщение в Telegram. Возвращает {"ok": bool, "error"?: str}."""
+def _safe_html(text: str) -> str:
+    """M7 fix: экранирует динамический контент для parse_mode=HTML.
+    Теги <b>, <i> и т.п. должны быть добавлены явно в шаблонах алертов,
+    а пользовательский текст всегда экранируется.
+    """
+    return _html.escape(text)
+
+
+def send_alert(text: str, retries: int = 2) -> dict:
+    """Отправить сообщение в Telegram. Возвращает {"ok": bool, "error"?: str}.
+    M7 fix: добавлен retry с backoff при временных ошибках сети.
+    """
     token, chat_id, enabled = _get_creds()
     if not token or not chat_id:
         return {"ok": False, "error": "Telegram не настроен (нет токена/chat_id)"}
-    try:
-        resp = SESSION.post(
-            f"https://api.telegram.org/bot{token}/sendMessage",
-            json={"chat_id": chat_id, "text": text, "parse_mode": "HTML"},
-            timeout=10,
-        )
-        data = resp.json()
-        if not data.get("ok"):
-            return {"ok": False, "error": data.get("description", "неизвестная ошибка Telegram")}
-        return {"ok": True}
-    except Exception as e:
-        logger.warning(f"[Alerts] Telegram send error: {e}")
-        return {"ok": False, "error": str(e)}
+    last_err = ""
+    for attempt in range(retries + 1):
+        try:
+            resp = SESSION.post(
+                f"https://api.telegram.org/bot{token}/sendMessage",
+                json={"chat_id": chat_id, "text": text, "parse_mode": "HTML"},
+                timeout=10,
+            )
+            data = resp.json()
+            if data.get("ok"):
+                return {"ok": True}
+            last_err = data.get("description", "неизвестная ошибка Telegram")
+            # 429 Too Many Requests — ждём Retry-After
+            if resp.status_code == 429:
+                wait = int(resp.headers.get("Retry-After", 5))
+                time.sleep(min(wait, 30))
+            elif resp.status_code >= 500:
+                time.sleep(2 ** attempt)
+            else:
+                break   # клиентская ошибка — не повторяем
+        except Exception as e:
+            last_err = str(e)
+            logger.warning(f"[Alerts] Telegram send error (attempt {attempt+1}): {e}")
+            if attempt < retries:
+                time.sleep(2 ** attempt)
+    return {"ok": False, "error": last_err}
 
+
+_pretrain_start_ts: float = 0.0  # когда впервые увидели running=True + last_tick_ts==0
 
 def _compute_state():
     """Определить текущее состояние торгового цикла (та же логика, что в /health)."""
+    global _pretrain_start_ts
     from app import trader
     if not trader.running:
+        _pretrain_start_ts = 0.0
         return "ok"
     if trader.last_tick_ts == 0:
-        return "ok"  # предобучение
+        # Предобучение в процессе — следим, не завис ли он
+        now = time.time()
+        if _pretrain_start_ts == 0.0:
+            _pretrain_start_ts = now
+        elif (now - _pretrain_start_ts) > 600:  # >10 мин = предобучение зависло
+            return "degraded"
+        return "ok"
+    else:
+        _pretrain_start_ts = 0.0  # обучение завершено, сбрасываем таймер
     age = time.time() - trader.last_tick_ts
     if age > _STALL_THRESHOLD_SEC:
         return "unhealthy"
@@ -129,3 +169,209 @@ def stop_monitor():
     with _monitor_lock:
         _monitor_started = False
     _monitor_stop.set()
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+#  HOURLY REPORT — раз в час пишет полный снимок состояния бота в лог и файл
+# ══════════════════════════════════════════════════════════════════════════════
+
+_REPORT_INTERVAL_SEC = 3600   # раз в час
+_REPORT_FILE = None           # устанавливается в start_hourly_report()
+_hourly_stop = threading.Event()
+_hourly_started = False
+_hourly_lock = threading.Lock()
+
+
+def _build_report() -> str:
+    """Собирает полный снимок состояния бота. Никогда не кидает исключений."""
+    lines = []
+    try:
+        import os, resource
+        from db_store import ai_state_get_all, open_trades_get
+        from price_feed import price_feed
+
+        lines.append("═" * 50)
+        lines.append(f"📊 HOURLY REPORT  {time.strftime('%Y-%m-%d %H:%M:%S')}")
+        lines.append("═" * 50)
+
+        # ── Статистика ─────────────────────────────────────────────────
+        ai  = ai_state_get_all() or {}
+        stats = ai.get("stats") or {}
+        total   = int(stats.get("total_trades") or 0)
+        winning = int(stats.get("winning_trades") or 0)
+        pnl     = float(stats.get("total_pnl") or 0)
+        winrate = round(winning / total * 100, 1) if total else 0
+        lines.append(f"📈 Сделок: {total}  |  Побед: {winning} ({winrate}%)  |  PnL: {pnl:+.4f} TON")
+
+        # ── Открытые позиции ────────────────────────────────────────────
+        ots = open_trades_get() or []
+        if ots:
+            for t in ots:
+                spot     = price_feed.get("GRINCH") or 0
+                gton     = price_feed.get_grinch_ton_price() or 0
+                amount   = float(t.get("amount") or 0)
+                entry    = float(t.get("entry_price") or 0)
+                stake    = float(t.get("stake_ton") or 0)
+                val_ton  = amount * gton
+                net      = float(t.get("net_pct_now") or 0)
+                peak     = float(t.get("high_water") or entry)
+                move_pct = (spot / entry - 1) * 100 if entry else 0
+                lines.append(
+                    f"📌 ЛОНГ {amount:,.0f} GRINCH @ ${entry:.8f}"
+                    f"  |  сейчас ${spot:.8f} ({move_pct:+.2f}%)"
+                )
+                lines.append(
+                    f"   Ставка {stake:.2f} TON  |  Стоит {val_ton:.4f} TON"
+                    f"  |  Нетто {net:+.2f}%"
+                )
+                lines.append(f"   Пик: ${peak:.8f}  |  dca_entry:{t.get('dca_entry')} idx:{t.get('dca_index')}")
+        else:
+            lines.append("📌 Открытых позиций нет")
+
+        # ── DCA состояние ───────────────────────────────────────────────
+        try:
+            from app import trader
+            lines.append(
+                f"🔄 DCA: entries={trader.dca_entries_count}"
+                f"  stake={trader.dca_total_stake:.2f} TON"
+                f"  wait_pullback={trader.dca_wait_pullback}"
+                f"  peak=${trader.dca_peak_price:.8f}"
+            )
+            age = time.time() - trader.last_tick_ts if trader.last_tick_ts else 0
+            lines.append(f"⏱  Последний тик: {age:.1f} сек назад  |  ok={trader.last_tick_ok}")
+        except Exception as _e:
+            lines.append(f"⚠️  DCA/tick: {_e}")
+
+        # ── TON gas balance ─────────────────────────────────────────────
+        try:
+            from wallet_manager import wallet_manager as _wm
+            _wsnap = _wm.get_snapshot() if _wm else {}
+            _ton = float(_wsnap.get("ton_balance") or 0)
+            if _ton < 0.5:
+                lines.append(f"🔴 TON БАЛАНС: {_ton:.4f} TON — КРИТИЧЕСКИ МАЛО! Продажа невозможна без газа!")
+                token, chat_id, _ = _get_creds()
+                if token and chat_id:
+                    # внеплановый срочный алерт
+                    send_alert(
+                        f"🔴 <b>КРИТИЧНО: TON кошелёк почти пуст!</b>\n"
+                        f"Баланс: <b>{_ton:.4f} TON</b>\n"
+                        f"Для продажи GRINCH нужно ≥0.25 TON газа.\n"
+                        f"Пополните кошелёк немедленно!"
+                    )
+            elif _ton < 2.0:
+                lines.append(f"⚠️  TON баланс: {_ton:.4f} TON — мало газа (нужно ≥2 TON для безопасной торговли)")
+            else:
+                lines.append(f"💰 TON баланс: {_ton:.4f} TON")
+        except Exception as _we:
+            lines.append(f"💰 TON баланс: н/д ({_we})")
+
+        # ── RAM ─────────────────────────────────────────────────────────
+        try:
+            rss_mb = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1024
+            lines.append(f"💾 RAM: {rss_mb:.1f} MB")
+        except Exception:
+            pass
+
+        # ── Health ──────────────────────────────────────────────────────
+        # Не делаем HTTP-запрос к localhost:3000 из самого контейнера:
+        # во время краткого gunicorn-рестарта он даёт ложную ошибку
+        # "connection refused", хотя торговый поток продолжает работать.
+        # Состояние берём из того же объекта trader, который использует /health.
+        try:
+            from app import trader
+            age = time.time() - trader.last_tick_ts if trader.last_tick_ts else 0
+            if not trader.running:
+                health_status = "ok"
+            elif trader.last_tick_ts == 0:
+                health_status = "starting"
+            elif age > _STALL_THRESHOLD_SEC or trader.last_tick_ok is False:
+                health_status = "degraded"
+            else:
+                health_status = "ok"
+            lines.append(
+                f"🏥 Health: {health_status}  |  tick_age={age:.1f}s"
+            )
+        except Exception as _e:
+            lines.append(f"🏥 Health: недоступен ({_e})")
+
+    except Exception as _outer:
+        lines.append(f"⚠️  report build error: {_outer}")
+
+    lines.append("═" * 50)
+    return "\n".join(lines)
+
+
+def _hourly_loop():
+    """Фоновый поток: собирает отчёт раз в час, пишет в лог + файл + Telegram."""
+    # Первый отчёт через 60 сек после старта (не сразу — дать боту прогреться)
+    _hourly_stop.wait(timeout=60)
+    while not _hourly_stop.is_set():
+        try:
+            report = _build_report()
+
+            # 1) В стандартный лог бота (видно в дашборде)
+            for line in report.split("\n"):
+                logger.info(line)
+
+            # 2) В файл на диске (переживёт рестарт)
+            # FIX#30: ротация файла при превышении 5 МБ — предотвращаем исчерпание диска
+            if _REPORT_FILE:
+                try:
+                    os.makedirs(os.path.dirname(_REPORT_FILE), exist_ok=True)
+                    _MAX_REPORT_BYTES = 5 * 1024 * 1024  # 5 MB
+                    try:
+                        if os.path.getsize(_REPORT_FILE) > _MAX_REPORT_BYTES:
+                            _bak = _REPORT_FILE + ".bak"
+                            if os.path.exists(_bak):
+                                os.remove(_bak)
+                            os.rename(_REPORT_FILE, _bak)
+                    except OSError:
+                        pass
+                    with open(_REPORT_FILE, "a", encoding="utf-8") as f:
+                        f.write(report + "\n")
+                except Exception as _fe:
+                    logger.warning(f"[HourlyReport] file write error: {_fe}")
+
+            # 3) В Telegram (если настроен)
+            # FIX#29: обрезаем отчёт до 4096 символов (лимит Telegram)
+            token, chat_id, enabled = _get_creds()
+            if enabled:
+                _MAX_TG = 4096
+                _report_tg = report if len(report) <= _MAX_TG else report[:_MAX_TG - 20] + "\n…(обрезано)"
+                send_alert(_report_tg)
+
+        except Exception as _e:
+            logger.warning(f"[HourlyReport] ошибка: {_e}")
+
+        _hourly_stop.wait(timeout=_REPORT_INTERVAL_SEC)
+
+
+def start_hourly_report(data_dir: str = "/app/data"):
+    """Запускает фоновый поток hourly report. Вызывается один раз из app.py."""
+    global _hourly_started, _REPORT_FILE
+    with _hourly_lock:
+        if _hourly_started:
+            return
+        _hourly_started = True
+    import os
+    # В некоторых старых compose-конфигурациях DATA_DIR ошибочно был равен
+    # "/app", а корень контейнера read-only. Всегда пишем runtime-отчёт в
+    # персистентный volume /app/data, не в кодовую директорию.
+    if os.path.normpath(data_dir) == "/app":
+        data_dir = "/app/data"
+    # Если указанный каталог не существует или недоступен для записи
+    # (например, на Replit, где /app — read-only), используем локальный каталог logs/.
+    try:
+        os.makedirs(data_dir, exist_ok=True)
+        test_f = os.path.join(data_dir, ".write_test")
+        with open(test_f, "w") as _tf:
+            _tf.write("ok")
+        os.unlink(test_f)
+    except Exception:
+        data_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "logs")
+        os.makedirs(data_dir, exist_ok=True)
+    _REPORT_FILE = os.path.join(data_dir, "hourly_report.log")
+    _hourly_stop.clear()
+    threading.Thread(target=_hourly_loop, daemon=True,
+                     name="hourly-report").start()
+    logger.info(f"[HourlyReport] ✅ Запущен (каждые 60 мин → {_REPORT_FILE})")

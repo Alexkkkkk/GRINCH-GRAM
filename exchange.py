@@ -4,7 +4,7 @@ import random
 import threading
 import time
 from config import Config
-from http_client import SESSION as _HTTP_EX
+from http_client import SESSION as _HTTP_EX, RATE_LIMITED_SESSION as _HTTP_RATE_LIMITED
 from datetime import datetime
 from price_feed import price_feed
 
@@ -134,8 +134,9 @@ class ExchangeClient:
     #   {"ts": время успеха, "bars": свечи, "fail_ts": время последней ошибки}
     _ohlcv_cache = {}
     _ohlcv_lock     = threading.Lock()
-    _OHLCV_TTL      = 60   # сек — обновлять свечи раз в минуту (быстрый сигнал)
-    _OHLCV_BACKOFF  = 45   # сек — после ошибки ждём меньше, чтобы не пропустить сигнал
+    _OHLCV_TTL      = 45   # сек — GeckoTerminal даёт 429 при TTL<30с
+    _OHLCV_BACKOFF  = 8    # сек — обычная ошибка внешнего API
+    _OHLCV_429_BACKOFF = 60  # сек — после 429 не штурмуем бесплатный лимит
 
     def get_real_ohlcv(self, limit=100, currency="usd", token="base", tf="hour", aggregate=1):
         """Реальные свечи пула GRINCH/GRAM (Toncoin) с GeckoTerminal.
@@ -170,6 +171,9 @@ class ExchangeClient:
             if bars and (now - entry.get("ts", 0)) < self._OHLCV_TTL:
                 return bars[-limit:]
             # Недавняя ошибка — не штурмуем API, отдаём устаревшие данные (если есть)
+            retry_at = entry.get("retry_at", 0)
+            if retry_at and now < retry_at:
+                return bars[-limit:] if bars else None
             if (now - entry.get("fail_ts", 0)) < self._OHLCV_BACKOFF:
                 return bars[-limit:] if bars else None
 
@@ -181,10 +185,21 @@ class ExchangeClient:
                 )
                 # SESSION переиспользует keep-alive соединение к GeckoTerminal —
                 # нет повторного TCP/TLS handshake, каждый вызов на ~100–300 ms быстрее.
-                r = _HTTP_EX.get(url, timeout=8, headers={
+                # Для GeckoTerminal отключаем автоматические повторы 429:
+                # бесплатный API считает каждый повтор новым запросом.
+                r = _HTTP_RATE_LIMITED.get(url, timeout=8, headers={
                     "Accept": "application/json",
                     "User-Agent": "Mozilla/5.0 (compatible; GrinchGram/1.0)",
                 })
+                if r.status_code == 429:
+                    entry["fail_ts"] = now
+                    entry["retry_at"] = now + self._OHLCV_429_BACKOFF
+                    ExchangeClient._ohlcv_cache[key] = entry
+                    print(
+                        "[Exchange] GeckoTerminal 429 — "
+                        f"повтор через {self._OHLCV_429_BACKOFF}с"
+                    )
+                    return bars[-limit:] if bars else None
                 r.raise_for_status()
                 data = r.json()
                 raw = data["data"]["attributes"]["ohlcv_list"]  # newest-first, ts в секундах
@@ -194,13 +209,14 @@ class ExchangeClient:
                 ]
                 if not fresh:
                     return bars[-limit:] if bars else None
-                new_entry = {"ts": now, "bars": fresh, "fail_ts": 0}
+                new_entry = {"ts": now, "bars": fresh, "fail_ts": 0, "retry_at": 0}
                 ExchangeClient._ohlcv_cache[key] = new_entry
                 self._save_disk_ohlcv(key, new_entry)
                 return fresh[-limit:]
             except Exception as e:
                 print(f"[Exchange] get_real_ohlcv error: {e}")
                 entry["fail_ts"] = now
+                entry["retry_at"] = 0
                 ExchangeClient._ohlcv_cache[key] = entry
                 return bars[-limit:] if bars else None
 
@@ -267,14 +283,16 @@ class ExchangeClient:
             print(f"[Exchange] get_balance error: {e}")
             return {"USDT": 0.0}
 
-    def place_order(self, side, amount, price=None, ton_stake=None):
+    def place_order(self, side, amount, price=None, ton_stake=None, min_net_ton=None):
         """
         side: "buy" | "sell"
         amount: количество базового актива (GRINCH)
         ton_stake: для DeDust-режима — сколько TON тратим на покупку (опционально)
+        min_net_ton: для sell — минимум TON нетто после газа; если AMM вернёт меньше,
+                     транзакция блокируется ДО отправки в сеть (amm_blocked=True в ответе).
         """
         if self._dedust:
-            return self._dedust_order(side, amount, price, ton_stake=ton_stake)
+            return self._dedust_order(side, amount, price, ton_stake=ton_stake, min_net_ton=min_net_ton)
         if self.demo_mode:
             return self._fake_order(side, amount, price)
         try:
@@ -289,7 +307,7 @@ class ExchangeClient:
 
     # ──────────────────────────── DeDust order ──────────────────────────
 
-    def _dedust_order(self, side, amount, price=None, ton_stake=None):
+    def _dedust_order(self, side, amount, price=None, ton_stake=None, min_net_ton=None):
         """Реальный своп через DeDust DEX."""
         fill_price = price or self.get_live_price()
         try:
@@ -298,11 +316,31 @@ class ExchangeClient:
                 ton_amount = ton_stake if ton_stake is not None else amount * fill_price
                 result = self._dedust.buy(ton_amount)
             else:
-                result = self._dedust.sell(amount)
+                result = self._dedust.sell(amount, min_net_ton=min_net_ton)
 
             if not result.get("ok"):
-                print(f"[DeDust] Ошибка ордера: {result.get('error')}")
-                return None
+                err_msg = result.get("error", "нет ответа от DeDust")
+                print(f"[DeDust] Ошибка ордера ({side}): {err_msg}")
+                if side == "sell":
+                    # Для SELL — возвращаем структурированный dict, чтобы вызывающий
+                    # код мог проверить amm_blocked=True и не делать бессмысленный retry.
+                    return {
+                        "error":         err_msg,
+                        "amm_blocked":   result.get("amm_blocked", False),
+                        "expected_ton":  result.get("expected_ton"),
+                        "net_ton":       result.get("net_ton"),
+                        "min_net_ton":   result.get("min_net_ton"),
+                        "shortfall_ton": result.get("shortfall_ton"),
+                    }
+                # BUY: возвращаем dict с реальной ошибкой (ранее было None —
+                # это скрывало причину сбоя, показывая только "нет ответа").
+                # Caller-ы проверяют `if not order or order.get("error")` — совместимо.
+                return {
+                    "error":      err_msg,
+                    "broadcast":  result.get("broadcast", False),
+                    "need_ton":   result.get("need_ton"),
+                    "have_ton":   result.get("have_ton"),
+                }
 
             return {
                 "id":       f"dedust_{int(time.time())}",

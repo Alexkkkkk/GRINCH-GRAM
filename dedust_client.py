@@ -22,7 +22,7 @@ from price_feed import price_feed
 
 def _tc_headers() -> dict:
     """Возвращает заголовки для TonCenter API (X-API-Key, если задан)."""
-    key = Config.TONCENTER_API_KEY
+    key = os.getenv("TONCENTER_API_KEY", "")
     return {"X-API-Key": key} if key else {}
 
 log = logging.getLogger(__name__)
@@ -41,19 +41,12 @@ _BAL_CACHE: dict         = {}          # {"TON": float, "GRINCH": float}
 _BAL_CACHE_TS: float     = 0.0         # timestamp последнего успешного обновления
 _BAL_CACHE_TTL: float    = 150.0       # секунды
 _BAL_CACHE_LOCK          = threading.Lock()
-_BAL_FETCH_LOCK          = threading.Lock()  # один refresh HTTP за раз
 _BAL_BACKOFF_UNTIL: float = 0.0        # не стучать раньше этого timestamp при 429
+# C4-fix: сериализуем HTTP-запросы к API баланса — только один поток
+# одновременно делает fetch. Остальные ждут его результата (double-checked).
+_BAL_FETCH_LOCK          = threading.Lock()
 
 
-def _serialized_balance_fetch(fn):
-    """Сериализует весь refresh баланса, включая HTTP-запросы."""
-    def _wrapped(*args, **kwargs):
-        with _BAL_FETCH_LOCK:
-            return fn(*args, **kwargs)
-    return _wrapped
-
-
-@_serialized_balance_fetch
 def get_shared_balance(force: bool = False) -> dict:
     """Возвращает кешированный баланс {TON, GRINCH} из глобального кеша.
 
@@ -63,14 +56,35 @@ def get_shared_balance(force: bool = False) -> dict:
     global _BAL_CACHE, _BAL_CACHE_TS, _BAL_BACKOFF_UNTIL
     now = time.time()
 
-    # Быстрый путь для свежего кеша и backoff.
-    with _BAL_CACHE_LOCK:
-        if not force and now < _BAL_BACKOFF_UNTIL:
+    # Если backoff ещё не истёк — возвращаем кеш без запроса
+    if not force and now < _BAL_BACKOFF_UNTIL:
+        with _BAL_CACHE_LOCK:
             return dict(_BAL_CACHE) if _BAL_CACHE else {}
+
+    # Если кеш свежий — возвращаем без запроса (быстрый путь без fetch-lock)
+    with _BAL_CACHE_LOCK:
         if not force and _BAL_CACHE and (now - _BAL_CACHE_TS) < _BAL_CACHE_TTL:
             return dict(_BAL_CACHE)
 
-    # Нужно обновить — делаем HTTP запросы
+    # C4-fix: сериализуем fetch — только один поток стучит в API.
+    # Остальные блокируются на _BAL_FETCH_LOCK и после разблокировки
+    # находят свежий кеш во втором (double-checked) чтении.
+    with _BAL_FETCH_LOCK:
+        # Двойная проверка: пока мы ждали lock — другой поток уже обновил кеш
+        now = time.time()
+        with _BAL_CACHE_LOCK:
+            if not force and _BAL_CACHE and (now - _BAL_CACHE_TS) < _BAL_CACHE_TTL:
+                return dict(_BAL_CACHE)
+
+        # Нужно обновить — делаем HTTP запросы
+        return _fetch_balance_and_update(force, now)
+
+
+def _fetch_balance_and_update(force: bool, now: float) -> dict:
+    """Внутренняя функция: делает HTTP-запросы и обновляет кеш.
+    Вызывается только из get_shared_balance под _BAL_FETCH_LOCK.
+    """
+    global _BAL_CACHE, _BAL_CACHE_TS, _BAL_BACKOFF_UNTIL
     wallet = Config.TON_WALLET
     token  = Config.GRINCH_TOKEN_ADDRESS
 
@@ -147,7 +161,17 @@ def get_shared_balance(force: bool = False) -> dict:
         with _BAL_CACHE_LOCK:
             _BAL_BACKOFF_UNTIL = now + 90.0
             log.warning("[Balance] 429 от TonCenter/TonAPI — пауза 90с, возвращаем кеш")
-            return dict(_BAL_CACHE) if _BAL_CACHE else {"TON": 0.0, "GRINCH": 0.0}
+            return dict(_BAL_CACHE) if _BAL_CACHE else {}
+
+    # Защита от «битого» ответа API: TON=0 при ненулевом кеше = сбой API
+    with _BAL_CACHE_LOCK:
+        _prev_ton = _BAL_CACHE.get("TON")
+    if ton_val == 0.0 and _prev_ton and _prev_ton > 0.05:
+        log.warning(
+            f"[Balance] Подозрительный ответ TON=0 (был {_prev_ton}) — "
+            "игнорируем, используем предыдущее значение"
+        )
+        ton_val = None
 
     # Обновляем кеш только если получили хотя бы одно реальное значение
     if ton_val is not None or grn_val > 0:
@@ -160,9 +184,9 @@ def get_shared_balance(force: bool = False) -> dict:
             _BAL_CACHE_TS = now
         return dict(new_cache)
 
-    # Ничего не получили, но и 429 не было — возвращаем старый кеш
+    # Ничего не получили — возвращаем старый кеш (или {} при холодном старте)
     with _BAL_CACHE_LOCK:
-        return dict(_BAL_CACHE) if _BAL_CACHE else {"TON": 0.0, "GRINCH": 0.0}
+        return dict(_BAL_CACHE) if _BAL_CACHE else {}
 
 
 def _run(coro):
@@ -192,16 +216,19 @@ class DedustClient:
         self._error: Optional[str] = None
         self._last_price: Optional[float] = None
 
-        mnemonic_raw = mnemonic_override or Config.TON_MNEMONIC
+        mnemonic_raw = mnemonic_override or os.getenv("TON_MNEMONIC", "")
         if not mnemonic_raw:
             self._error = "TON_MNEMONIC не задан — DeDust-режим недоступен"
             log.warning(self._error)
             return
 
         words = mnemonic_raw.strip().split()
+        # C3 fix: сразу стираем raw-строку мнемоники из локальной переменной
+        mnemonic_raw = None  # noqa
         if len(words) not in (24,):
             self._error = f"Мнемоника должна содержать 24 слова, получено: {len(words)}"
             log.error(self._error)
+            words = []  # scrub
             return
 
         self._mnemonic = words
@@ -258,9 +285,31 @@ class DedustClient:
             log.warning(f"[DeDust] Не удалось вывести адрес из мнемоники: {e}")
 
     async def _make_provider(self) -> LiteBalancer:
-        provider = LiteBalancer.from_mainnet_config(trust_level=1, timeout=15)
-        await provider.start_up()
-        return provider
+        """Создаёт LiteBalancer с retry — pytoniq иногда падает с KeyError в listener."""
+        last_exc = None
+        for attempt in range(3):
+            provider = None
+            try:
+                provider = LiteBalancer.from_mainnet_config(trust_level=1, timeout=15)
+                await provider.start_up()
+                return provider
+            except Exception as e:
+                last_exc = e
+                if isinstance(e, KeyError):
+                    log.warning(
+                        f"[DeDust] LiteClient KeyError на попытке {attempt+1}/3 — "
+                        "перезапускаем провайдер"
+                    )
+                else:
+                    log.warning(f"[DeDust] _make_provider попытка {attempt+1}/3 провалилась: {e}")
+                if provider is not None:
+                    try:
+                        await provider.close_all()
+                    except Exception:
+                        pass
+                import asyncio as _aio
+                await _aio.sleep(1)
+        raise last_exc
 
     async def _wallet_and_provider(self):
         provider = await self._make_provider()
@@ -373,7 +422,15 @@ class DedustClient:
 
         str(pytoniq_core.Address) возвращает 'Address<EQ...>' — этот формат
         TonCenter v3 не принимает (422). Метод извлекает чистый адрес.
+        Если addr является объектом Address, использует to_str() напрямую,
+        чтобы не зависеть от формата __str__.
         """
+        try:
+            import pytoniq_core as _ptc
+            if isinstance(addr, _ptc.Address):
+                return addr.to_str(is_user_friendly=True, is_bounceable=False)
+        except Exception:
+            pass
         s = str(addr)
         if s.startswith("Address<") and s.endswith(">"):
             return s[8:-1]
@@ -473,6 +530,58 @@ class DedustClient:
             log.debug(f"[DeDust] grinch balance SDK: {e}")
         return 0
 
+    async def _ensure_wallet_deployed(self, wallet, provider) -> bool:
+        """Проверяет и при необходимости деплоит кошелёк WalletV5R1 на блокчейне.
+
+        Возвращает True если кошелёк активен (или успешно задеплоен),
+        False если деплой не удался или кошелёк заморожен.
+
+        Вызывать ПЕРЕД wallet.transfer() — иначе seqno-вызов падает с exit_code=-256
+        для uninit-кошелька (нет кода на чейне).
+        """
+        try:
+            state = await provider.get_account_state(wallet.address)
+            state_type = getattr(getattr(state, "state", None), "type_", None)
+            if state_type == "active":
+                return True  # уже задеплоен
+
+            # uninit или frozen — пробуем задеплоить
+            log.warning(
+                f"[DeDust] 🚀 Кошелёк {wallet.address} не инициализирован "
+                f"(state={state_type}). Отправляем deploy транзакцию..."
+            )
+            try:
+                await wallet.deploy_via_external()
+            except Exception as deploy_err:
+                # deploy_via_external может отсутствовать в старых версиях
+                try:
+                    await wallet.send_init_external()
+                except Exception as init_err:
+                    log.error(
+                        f"[DeDust] deploy failed: deploy_via_external={deploy_err} "
+                        f"send_init_external={init_err}"
+                    )
+                    return False
+
+            # Ждём подтверждения деплоя на чейне (до 45 сек)
+            log.info("[DeDust] ⏳ Ожидаем активации кошелька на блокчейне...")
+            for _ in range(9):
+                await asyncio.sleep(5)
+                try:
+                    st2 = await provider.get_account_state(wallet.address)
+                    if getattr(getattr(st2, "state", None), "type_", None) == "active":
+                        log.info("[DeDust] ✅ Кошелёк задеплоен и активен!")
+                        return True
+                except Exception:
+                    pass
+
+            log.error("[DeDust] ❌ Кошелёк не стал активным за 45 сек после деплоя")
+            return False
+
+        except Exception as e:
+            log.warning(f"[DeDust] _ensure_wallet_deployed ошибка: {e}")
+            return False
+
     async def _wait_for_settlement(self, provider, addr, *, direction: str,
                                    baseline_nano: int, min_delta_nano: int,
                                    timeout: int = 75, interval: int = 7):
@@ -491,6 +600,13 @@ class DedustClient:
                 cur = await self._grinch_balance_nano(provider, addr)
             except Exception as e:
                 log.debug(f"[DeDust] settlement poll error: {e}")
+                continue
+            # Защита от ложного "своп подтверждён": если все три провайдера вернули 0,
+            # но baseline > 0 — это API-сбой, а не реальное нулевание баланса.
+            # Без этой проверки direction="decrease" давал True при любом API-отказе,
+            # заставляя бот считать продажу исполненной когда она отскочила.
+            if cur == 0 and baseline_nano > min_delta_nano:
+                log.debug("[DeDust] settlement: cur=0 при baseline>0 — API-сбой, пропускаем итерацию")
                 continue
             if direction == "increase" and (cur - baseline_nano) >= min_delta_nano:
                 return cur
@@ -590,9 +706,15 @@ class DedustClient:
     # ─────────────────────── защита от проскальзывания ─────────────────────
 
     # Максимальная допустимая «протухлость» цены для исполнения свопа (сек).
-    # Прайс-фид кэширует 30 сек; на исполнение допускаем до 120 сек, иначе
-    # сделка отклоняется — чтобы не торговать по устаревшей котировке.
-    _PRICE_MAX_STALE = 120
+    # GRINCH — 39-дневный мем-коин с ATR ~3-8%/свеча: 120 сек — слишком долго.
+    # За 2 минуты цена может сдвинуться на 5-10%, что делает min-out неадекватным.
+    # Снижено до 60 сек: прайс-фид обновляется каждые ~30 сек, запас ×2.
+    _PRICE_MAX_STALE = 60
+
+    # Максимальный допустимый ценовой импакт одной сделки на пул (% от резервов TON).
+    # При $42K пуле: 100 TON = ~0.15% → ОК. При больших суммах — предупреждение.
+    # Порог 3% = ~2000 TON (≈$1240): нереалистично для текущего баланса, но страхует.
+    _MAX_POOL_IMPACT_PCT = 3.0
 
     @classmethod
     def _external_prices(cls) -> tuple:
@@ -611,6 +733,7 @@ class DedustClient:
     # Комиссия пула GRINCH/TON на DeDust нестандартная — 1% (CPMM v2).
     _POOL_FEE = 0.01
     _RESERVES_TIMEOUT = 8
+    _RESERVES_CACHE_TTL = 120.0   # увеличен с 45→120с чтобы реже долбить API
 
     @staticmethod
     def _same_addr(a: str, b: str) -> bool:
@@ -622,38 +745,109 @@ class DedustClient:
             return (a or "").lower() == (b or "").lower()
 
     def _pool_reserves(self):
-        """Читает РЕАЛЬНЫЕ резервы пула (ton_reserve, grinch_reserve) через TonAPI.
+        """Читает РЕАЛЬНЫЕ резервы пула (ton_reserve, grinch_reserve).
 
-        Это единственный надёжный способ узнать фактический курс именно нашего
-        1%-пула: типизированные get-методы DeDust SDK на этом CPMM-v2 контракте
-        падают (exit 11), а внешний USD/priceNative-фид систематически расходится
-        с пулом — из-за чего min-out оказывался завышен и пул отклонял свопы
-        (exit 65535, bounce). По резервам считаем выход свопа точной формулой CPMM.
+        Приоритет источников:
+          1) TonCenter runGetMethod → get_pool_data (точные резервы без газа/ренты)
+          2) TonAPI account/jettons (fallback, ~3% off из-за gas/rent остатка)
 
         Возвращает (ton_reserve, grinch_reserve) в обычных единицах или None.
+        Кэш: 120с. 429-backoff: 300с.
         """
+        now = time.time()
+        cached = getattr(self, "_pool_reserves_cache", None)
+        cached_ts = getattr(self, "_pool_reserves_cache_ts", 0.0)
+        if cached and (now - cached_ts) < self._RESERVES_CACHE_TTL:
+            return cached
+
+        # ── 429-backoff (только для TonAPI fallback) ─────────────────────────
+        backoff_until = getattr(self, "_pool_reserves_backoff_until", 0.0)
+
         pool = Config.GRINCH_POOL_ADDRESS
+
+        # ── 1. TonCenter runGetMethod: get_pool_data (точные резервы) ─────────
+        try:
+            r = _HTTP.post(
+                "https://toncenter.com/api/v2/runGetMethod",
+                headers={**_tc_headers(), "Content-Type": "application/json"},
+                json={"address": pool, "method": "get_pool_data", "stack": []},
+                timeout=self._RESERVES_TIMEOUT,
+            )
+            if r.status_code == 200:
+                data = r.json()
+                result = data.get("result", {}) if data.get("ok") else {}
+                if result.get("exit_code") == 0:
+                    stack = result.get("stack", [])
+                    # DeDust CPMM get_pool_data стек (19 элементов):
+                    # [9]  = TON reserve (nanoton)
+                    # [10] = GRINCH reserve (nano, 9 decimals)
+                    if len(stack) >= 11:
+                        def _parse_stack_num(item):
+                            # item: ["num","0x..."] или {"value":"0x..."}
+                            raw = item[1] if isinstance(item, list) else item.get("value", "0")
+                            s = str(raw)
+                            if s.startswith("-0x"):
+                                return -int(s[3:], 16)
+                            if s.startswith("0x"):
+                                return int(s, 16)
+                            return int(s)
+                        r0 = _parse_stack_num(stack[9])   # TON nanoton
+                        r1 = _parse_stack_num(stack[10])  # GRINCH nano
+                        ton_r    = r0 / TON
+                        grinch_r = r1 / TON
+                        if ton_r > 0 and grinch_r > 0:
+                            reserves = (ton_r, grinch_r)
+                            self._pool_reserves_cache    = reserves
+                            self._pool_reserves_cache_ts = now
+                            self._pool_reserves_backoff_until = 0.0
+                            return reserves
+        except Exception as e:  # noqa: BLE001
+            log.debug(f"[DeDust] get_pool_data TonCenter: {e}")
+
+        # ── 2. TonAPI account/jettons (fallback) ──────────────────────────────
+        if now < backoff_until:
+            return cached  # TonAPI на паузе — вернуть последний удачный курс
+
         try:
             r1 = _HTTP.get(
                 f"https://tonapi.io/v2/accounts/{pool}",
                 headers={"Accept": "application/json"}, timeout=self._RESERVES_TIMEOUT,
             )
-            ton_reserve = (r1.json().get("balance", 0) or 0) / TON
+            if r1.status_code == 429:
+                self._pool_reserves_backoff_until = now + 300.0  # пауза 5 минут
+                log.warning("dedust_client: 429 от TonAPI (pool/balance) — пауза 300с")
+                return cached
+            r1.raise_for_status()
+            r1_data = r1.json() if r1.headers.get("content-type", "").startswith("application/json") else {}
+            ton_reserve = (r1_data.get("balance", 0) or 0) / TON
             r2 = _HTTP.get(
                 f"https://tonapi.io/v2/accounts/{pool}/jettons",
                 headers={"Accept": "application/json"}, timeout=self._RESERVES_TIMEOUT,
             )
+            if r2.status_code == 429:
+                self._pool_reserves_backoff_until = now + 300.0
+                log.warning("dedust_client: 429 от TonAPI (pool/jettons) — пауза 300с")
+                return cached
+            r2.raise_for_status()
+            r2_data = r2.json() if r2.headers.get("content-type", "").startswith("application/json") else {}
             grinch_reserve = None
-            for b in r2.json().get("balances", []):
-                jaddr = (b.get("jetton", {}) or {}).get("address", "")
-                if self._same_addr(jaddr, Config.GRINCH_TOKEN_ADDRESS):
+            for b in r2_data.get("balances", []):
+                jetton  = b.get("jetton", {}) or {}
+                jaddr   = jetton.get("address", "")
+                jsymbol = (jetton.get("symbol", "") or "").upper()
+                if self._same_addr(jaddr, Config.GRINCH_TOKEN_ADDRESS) or jsymbol == "GRINCH":
                     grinch_reserve = float(b.get("balance", 0)) / TON
                     break
             if ton_reserve > 0 and grinch_reserve and grinch_reserve > 0:
-                return ton_reserve, grinch_reserve
+                reserves = (ton_reserve, grinch_reserve)
+                self._pool_reserves_cache    = reserves
+                self._pool_reserves_cache_ts = now
+                self._pool_reserves_backoff_until = 0.0
+                return reserves
         except Exception as e:  # noqa: BLE001
             log.warning(f"Не удалось прочитать резервы пула: {e}")
-        return None
+
+        return cached
 
     def _cpmm_out(self, amount_in: float, reserve_in: float, reserve_out: float) -> float:
         """Точный выход свопа по формуле постоянного произведения (с комиссией 1%)."""
@@ -673,6 +867,16 @@ class DedustClient:
         reserves = self._pool_reserves()
         if reserves:
             rt, rg = reserves
+            # ── Pool impact guard (GRINCH/TON пул ~$42K) ─────────────────────
+            # При низкой ликвидности большая покупка значимо двигает цену.
+            # Предупреждаем, если наша сделка > _MAX_POOL_IMPACT_PCT% от пула TON.
+            impact_pct = ton_amount / rt * 100.0 if rt > 0 else 0.0
+            if impact_pct > self._MAX_POOL_IMPACT_PCT:
+                log.warning(
+                    f"[DeDust] ⚠️ Высокий pool impact: {ton_amount:.1f} TON = "
+                    f"{impact_pct:.1f}% от резерва пула ({rt:.0f} TON). "
+                    f"Slippage может превысить {Config.SLIPPAGE_PCT:.0f}%."
+                )
             expected_grinch = self._cpmm_out(ton_amount, rt, rg)
         else:
             ton_per_grinch = price_feed.get_grinch_ton_price(max_stale=self._PRICE_MAX_STALE)
@@ -812,6 +1016,21 @@ class DedustClient:
             # укладываются в ~0.2 TON; берём 0.3 TON с запасом.
             gas_nano    = int(0.3 * TON)
 
+            # ── Preflight: деплой кошелька если uninit ───────────────────────
+            # WalletV5R1 может быть uninit если на адрес уже пришли TON,
+            # но первый исходящий tx (deploy) ещё не был отправлен.
+            # В этом случае get_seqno() падает с exit_code=-256.
+            if not await self._ensure_wallet_deployed(wallet, provider):
+                return {
+                    "ok": False,
+                    "side": "buy",
+                    "error": (
+                        "Кошелёк не инициализирован на блокчейне — "
+                        "автодеплой не удался. Отправьте 0.05 TON самому себе "
+                        "из TonKeeper/mytonwallet чтобы активировать кошелёк."
+                    ),
+                }
+
             # ── Preflight: хватает ли TON на сумму свопа + газ? ──────────────
             # Покупка отправляет amount_nano (на своп) + gas_nano (газ/комиссии).
             # Если на кошельке меньше — НЕ отправляем операцию вовсе, чтобы не
@@ -910,11 +1129,14 @@ class DedustClient:
 
     # ─────────────────────────── swap: sell ────────────────────────────────
 
-    async def _sell_async(self, grinch_amount: float) -> dict:
+    async def _sell_async(self, grinch_amount: float, min_net_ton: float = None) -> dict:
         """GRINCH → TON: jetton-transfer GRINCH НАПРЯМУЮ в пул с forward-payload свопа.
 
         Газ: 0.35 TON прикладывается к сообщению; 0.25 TON форвардится в пул на
         исполнение свопа. Излишек возвращается на кошелёк.
+
+        min_net_ton — минимум TON нетто (после газа), который должна вернуть продажа.
+        Если ожидаемый выход ниже — своп блокируется ДО отправки транзакции в сеть.
         """
         # Защита от проскальзывания: считаем min-out TON ДО перевода жеттонов.
         min_out_nano, expected_ton = self._min_out_sell_ton(grinch_amount)
@@ -929,6 +1151,44 @@ class DedustClient:
                 ),
             }
 
+        # ── AMM preflight: проверка прибыльности по реальному выходу свопа ──────
+        # expected_ton — то что придёт из пула (CPMM с учётом price impact).
+        # Вычитаем реальный net-gas продажи (подтверждён on-chain: ~0.253 TON).
+        # Если нетто < min_net_ton — блокируем ДО отправки транзакции в блокчейн.
+        if min_net_ton is not None and min_net_ton > 0:
+            sell_gas = Config.SELL_GAS_TON
+            net_received = expected_ton - sell_gas
+            if net_received < min_net_ton:
+                shortfall = min_net_ton - net_received
+                log.warning(
+                    f"[DeDust] 🛡️ AMM preflight BLOCKED: ожидаем {net_received:.4f} TON нетто "
+                    f"(из пула {expected_ton:.4f} − газ {sell_gas:.3f}), "
+                    f"нужно ≥ {min_net_ton:.4f} TON. Дефицит {shortfall:.4f} TON."
+                )
+                return {
+                    "ok": False,
+                    "side": "sell",
+                    "amm_blocked": True,
+                    "error": (
+                        f"🛡️ AMM preflight: продажа заблокирована — "
+                        f"пул вернёт {expected_ton:.3f} TON (price impact учтён), "
+                        f"за вычетом газа {sell_gas:.3f} = {net_received:.3f} TON нетто. "
+                        f"Нужно ≥ {min_net_ton:.3f} TON чтобы выйти без убытка. "
+                        f"Дефицит: {shortfall:.3f} TON. "
+                        f"Транзакция НЕ отправлена в сеть."
+                    ),
+                    "expected_ton":  round(expected_ton, 4),
+                    "net_ton":       round(net_received, 4),
+                    "min_net_ton":   round(min_net_ton, 4),
+                    "shortfall_ton": round(shortfall, 4),
+                }
+            else:
+                surplus = net_received - min_net_ton
+                log.info(
+                    f"[DeDust] ✅ AMM preflight OK: ожидаем {net_received:.4f} TON нетто "
+                    f"(нужно ≥ {min_net_ton:.4f}, запас +{surplus:.4f} TON)"
+                )
+
         wallet, provider = await self._wallet_and_provider()
         try:
             pool, _, grinch_asset = await self._get_pool(provider)
@@ -941,11 +1201,23 @@ class DedustClient:
             gas_nano = int(0.25 * TON)
             fwd_nano = int(0.18 * TON)
 
+            # ── Preflight: деплой кошелька если uninit ───────────────────────
+            if not await self._ensure_wallet_deployed(wallet, provider):
+                return {
+                    "ok": False,
+                    "side": "sell",
+                    "error": (
+                        "Кошелёк не инициализирован на блокчейне — "
+                        "автодеплой не удался. Отправьте 0.05 TON самому себе "
+                        "из TonKeeper/mytonwallet чтобы активировать кошелёк."
+                    ),
+                }
+
             # ── Preflight: хватает ли TON на газ? ──────────────────────────
             state = await provider.get_account_state(wallet.address)
             ton_nano = getattr(state, "balance", 0) or 0
-            # Минимум: gas_nano + 0.01 TON на сетевую комиссию wallet.transfer
-            # gas_nano уже содержит подтверждённый attach для sell.
+            # L4-fix: gas_nano уже включает все расходы; extra 0.01 TON создавал
+            # ложную блокировку при пограничном балансе → убираем двойной счёт.
             needed_nano = gas_nano
             if ton_nano < needed_nano:
                 return {
@@ -969,12 +1241,18 @@ class DedustClient:
                 grinch_jw_address = _CoreAddr(jw_addr_str)
                 log.info(f"[DeDust] GRINCH jetton wallet: {jw_addr_str}")
             else:
-                # Небезопасный SDK fallback запрещён: неправильный адрес
-                # jetton-wallet может необратимо потерять GRINCH.
-                raise RuntimeError(
-                    "GRINCH jetton wallet не найден через TonCenter/TonAPI; "
-                    "unsafe SDK fallback отключён, продажа отменена"
-                )
+                # H1: Оба API не ответили → прерываем продажу (SDK fallback даёт неверный
+                # адрес для GRINCH и мог привести к безвозвратной потере токенов).
+                log.error("[DeDust] SELL ABORTED: не удалось получить адрес GRINCH jetton-кошелька "
+                          "ни через TonCenter, ни через TonAPI. Продажа отменена для защиты токенов.")
+                return {
+                    "ok": False,
+                    "side": "sell",
+                    "error": (
+                        "Не удалось получить адрес GRINCH jetton-кошелька (TonCenter и TonAPI недоступны). "
+                        "Продажа отменена — GRINCH в безопасности. Повторите позже."
+                    ),
+                }
 
             # ── Точный GRINCH-баланс on-chain ДО свопа ──────────────────────
             # КРИТИЧНО: используем on-chain нано-баланс, а НЕ float grinch_amount!
@@ -1046,15 +1324,20 @@ class DedustClient:
         finally:
             await provider.close_all()
 
-    def sell(self, grinch_amount: float) -> dict:
-        """Продажа GRINCH за TON через DeDust. Блокирует до завершения транзакции."""
+    def sell(self, grinch_amount: float, min_net_ton: float = None) -> dict:
+        """Продажа GRINCH за TON через DeDust. Блокирует до завершения транзакции.
+
+        min_net_ton — минимум TON нетто (после газа) для разрешения продажи.
+        Если AMM вернёт меньше — транзакция НЕ отправляется, возвращается ошибка
+        с amm_blocked=True и деталями (expected_ton, net_ton, shortfall_ton).
+        """
         if not self._ready:
             return {"ok": False, "error": self._error}
         # Сериализуем свопы (см. комментарий в buy): один своп за раз, иначе
         # параллельные операции исказят проверку GRINCH-баланса.
         with self._lock:
             try:
-                result = _run(self._sell_async(grinch_amount))
+                result = _run(self._sell_async(grinch_amount, min_net_ton=min_net_ton))
             except Exception as e:
                 log.error(f"[DeDust] sell ошибка: {e}")
                 return {"ok": False, "error": str(e)}

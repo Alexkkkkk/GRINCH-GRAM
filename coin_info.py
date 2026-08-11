@@ -149,6 +149,12 @@ class CoinInfo:
         return data or []
 
     def _pool(self, base):
+        # Bug-fix #6: для GRINCH используем адрес пула из конфига как приоритетный
+        # источник — DexScreener может быть недоступен, а адрес у нас уже известен
+        if base == "GRINCH":
+            pool_from_config = getattr(Config, "GRINCH_POOL_ADDRESS", None)
+            if pool_from_config:
+                return pool_from_config
         with self._lock:
             entry = self._pool_cache.get(base)
             if entry and time.time() - entry[1] < 600:
@@ -337,14 +343,28 @@ class CoinInfo:
             e = cache.get(key)
             if e and now - e[1] < ttl:
                 return e[0]
-        val = fetch(key)
-        if val is not None:
+            # FIX#23: cache stampede — если уже идёт запрос по этому ключу,
+            # возвращаем stale-значение вместо параллельного дублирующего запроса.
+            if not hasattr(self, '_fetching_keys'):
+                self._fetching_keys = set()
+            if key in self._fetching_keys:
+                return e[0] if e else None
+            self._fetching_keys.add(key)
+        try:
+            val = fetch(key)
             with self._lock:
-                cache[key] = (val, now)
-            return val
-        with self._lock:
-            e = cache.get(key)
-            return e[0] if e else None
+                self._fetching_keys.discard(key)
+                if val is not None:
+                    cache[key] = (val, now)
+            if val is not None:
+                return val
+            with self._lock:
+                e = cache.get(key)
+                return e[0] if e else None
+        except Exception:
+            with self._lock:
+                self._fetching_keys.discard(key)
+            raise
 
 
 coin_info = CoinInfo()

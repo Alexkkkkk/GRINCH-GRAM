@@ -1,0 +1,118 @@
+name: AI README Generator
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '**.py'
+      - 'Dockerfile'
+      - 'requirements.txt'
+      - 'config.py'
+      - '.github/workflows/generate-readme.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  generate-readme:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Generate README with AI (Groq)
+        env:
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+        run: |
+          python << 'EOF'
+          import os, glob, json, urllib.request, urllib.error
+
+          groq_key = os.environ.get('GROQ_API_KEY', '')
+          if not groq_key:
+              print("ERROR: GROQ_API_KEY не задан")
+              exit(1)
+
+          key_files = []
+          for pattern in ['*.py', 'Dockerfile', 'requirements.txt', 'config.py']:
+              for f in glob.glob(pattern):
+                  try:
+                      with open(f, 'r', encoding='utf-8') as file:
+                          content = file.read()
+                      key_files.append("=== " + f + " ===\n" + content[:2500])
+                  except Exception:
+                      pass
+
+          if not key_files:
+              print("WARNING: Нет файлов для анализа")
+              exit(0)
+
+          project_info = "\n\n".join(key_files)
+
+          prompt = (
+              "Ты senior technical writer. Напиши профессиональный README.md для криптотрейдингового проекта на русском языке.\n\n"
+              "Информация о проекте:\n"
+              "- Название: GRINCH-GRAM\n"
+              "- Язык: Python\n"
+              "- Назначение: криптотрейдинговая система с AI-аналитикой, grid-trading, блокчейн-интеграция\n\n"
+              "Ключевые файлы проекта:\n" + project_info[:10000] + "\n\n"
+              "Требования к README:\n"
+              "1. # Заголовок с кратким описанием и шильдиками (Python, Docker, CI/CD)\n"
+              "2. ## Возможности — список ключевых фич\n"
+              "3. ## Структура проекта — таблица с файлами\n"
+              "4. ## Установка — пошаговая инструкция\n"
+              "5. ## Переменные окружения\n"
+              "6. ## Docker — команды\n"
+              "7. ## CI/CD — описание автоматических проверок\n"
+              "8. ## Лицензия\n\n"
+              "Формат: Markdown. Только содержимое README, без пояснений."
+          )
+
+          data = {
+              "model": "llama-3.1-70b-versatile",
+              "messages": [{"role": "user", "content": prompt}],
+              "temperature": 0.7,
+              "max_tokens": 4000
+          }
+
+          try:
+              req = urllib.request.Request(
+                  "https://api.groq.com/openai/v1/chat/completions",
+                  data=json.dumps(data).encode(),
+                  headers={
+                      "Authorization": f"Bearer {groq_key}",
+                      "Content-Type": "application/json"
+                  }
+              )
+              with urllib.request.urlopen(req) as resp:
+                  result = json.loads(resp.read())
+                  readme = result["choices"][0]["message"]["content"]
+          except urllib.error.HTTPError as e:
+              print(f"Groq API error: {e.code} - {e.read().decode()}")
+              exit(1)
+
+          readme = readme.strip()
+          if readme.startswith("```markdown"):
+              readme = readme[len("```markdown"):].strip()
+          elif readme.startswith("```"):
+              readme = readme[len("```"):].strip()
+          if readme.endswith("```"):
+              readme = readme[:-3].strip()
+
+          with open("README.md", "w", encoding="utf-8") as f:
+              f.write(readme)
+
+          print("README.md generated successfully")
+          print(f"Length: {len(readme)} chars")
+          EOF
+
+      - name: Commit README
+        uses: stefanzweifel/git-auto-commit-action@v5
+        with:
+          commit_message: "docs: auto-generate README.md via AI (Groq)"
+          file_pattern: README.md

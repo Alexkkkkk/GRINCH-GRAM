@@ -69,6 +69,9 @@ CREATE TABLE IF NOT EXISTS bot_trades (
     data       JSONB        NOT NULL,
     closed_at  TIMESTAMP
 );
+-- Индекс для быстрой сортировки/фильтрации закрытых сделок по времени.
+-- Без него ORDER BY closed_at на большой таблице делает seq-scan.
+CREATE INDEX IF NOT EXISTS bot_trades_closed_at ON bot_trades (closed_at DESC NULLS LAST);
 
 CREATE TABLE IF NOT EXISTS bot_equity (
     id         BIGSERIAL    PRIMARY KEY,
@@ -132,6 +135,8 @@ CREATE TABLE IF NOT EXISTS bot_ai_examples (
     created_at TIMESTAMP    DEFAULT NOW()
 );
 CREATE INDEX IF NOT EXISTS bot_ai_examples_created ON bot_ai_examples (created_at);
+-- Индекс по label ускоряет выборку примеров с весом для ребалансировки классов.
+CREATE INDEX IF NOT EXISTS bot_ai_examples_label ON bot_ai_examples (label);
 
 -- Скользящая история рыночных тиков для AI-советника. Заменяет прежний
 -- in-memory analytics_buffer (deque, терялся при рестарте) — теперь снимки
@@ -163,9 +168,22 @@ CREATE TABLE IF NOT EXISTS bot_wallet_snapshots (
     entry_price_usd   DOUBLE PRECISION,
     pnl_ton           DOUBLE PRECISION,
     pnl_pct           DOUBLE PRECISION,
-    pnl_usd           DOUBLE PRECISION
+    pnl_usd           DOUBLE PRECISION,
+    tracked_amount    DOUBLE PRECISION,
+    tracked_entries   INTEGER,
+    tracked_stake     DOUBLE PRECISION
 );
 CREATE INDEX IF NOT EXISTS bot_wallet_snapshots_ts ON bot_wallet_snapshots (ts);
+-- Миграция для существующих БД: добавляем tracked_* если ещё нет
+DO $$ BEGIN
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns
+                   WHERE table_name='bot_wallet_snapshots' AND column_name='tracked_amount') THEN
+        ALTER TABLE bot_wallet_snapshots
+            ADD COLUMN tracked_amount  DOUBLE PRECISION,
+            ADD COLUMN tracked_entries INTEGER,
+            ADD COLUMN tracked_stake   DOUBLE PRECISION;
+    END IF;
+END $$;
 
 -- Персистентная история виртуальных сделок мультипользовательской платформы
 -- (ранее хранилась только в памяти UserTradingManager и терялась при рестарте).
@@ -176,6 +194,15 @@ CREATE TABLE IF NOT EXISTS bot_user_trades (
     data       JSONB        NOT NULL
 );
 CREATE INDEX IF NOT EXISTS bot_user_trades_token_ts ON bot_user_trades (token, id DESC);
+
+-- GridAI v5: персистентный опыт сеточного трейдера (JSON-файл терялся при
+-- пересборке контейнера). Хранит последние GRID_EXP_KEEP записей.
+CREATE TABLE IF NOT EXISTS bot_grid_experience (
+    id         BIGSERIAL    PRIMARY KEY,
+    ts         DOUBLE PRECISION NOT NULL,
+    data       JSONB        NOT NULL
+);
+CREATE INDEX IF NOT EXISTS bot_grid_exp_ts ON bot_grid_experience (ts DESC);
 """
 
 TICKS_KEEP = 3000
@@ -311,18 +338,17 @@ def _conn():
     3. При OperationalError соединение помечается broken, пул перестраивается
        асинхронно — не блокируя вызывающий поток.
     """
-    global _pool, _available
-
     # Lazy reconnect: БД была недоступна, но backoff прошёл — пробуем снова.
     if not _available or _pool is None:
         _try_rebuild_pool()   # синхронно; торговый цикл — фоновый поток, блок ок
 
-    if not _available or _pool is None:
-        raise RuntimeError("DB not available")
-
-    # Захватываем ссылку на пул ДО getconn(), чтобы putconn() всегда шёл
-    # в тот же объект пула — даже если _try_rebuild_pool() заменит _pool.
-    pool_ref = _pool
+    # H3-fix: захватываем ссылку на пул под _pool_lock, чтобы исключить
+    # состояние гонки между чтением _pool и его заменой в _try_rebuild_pool().
+    with _pool_lock:
+        if not _available or _pool is None:
+            raise RuntimeError("DB not available")
+        # pool_ref фиксируется под локом — putconn() всегда идёт в тот же объект
+        pool_ref = _pool
     conn = pool_ref.getconn()
 
     # Если соединение помечено закрытым — вернуть в pool_ref и взять свежее
@@ -422,6 +448,21 @@ def settings_get(section: str, key: str):
         return None
 
 
+def settings_delete_key(section: str, key: str):
+    """Удаляет один ключ из bot_settings (используется для чистки артефактов)."""
+    if not _check_available():
+        return
+    try:
+        with _conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "DELETE FROM bot_settings WHERE section=%s AND key=%s",
+                    (section, key)
+                )
+    except Exception as e:
+        logger.warning(f"[DB] settings_delete_key error: {e}")
+
+
 def settings_get_all() -> dict:
     if not _check_available():
         return {}
@@ -443,6 +484,67 @@ def settings_get_all() -> dict:
 #  TRADES (закрытые сделки)
 # ═══════════════════════════════════════════════════════════════════════════════
 
+def _normalize_trade_fields(trade: dict) -> dict:
+    """Добавляет алиасы полей для совместимости дашборда и запросов к БД.
+
+    Трейдер хранит прибыль в ключах pnl/pnl_pct/exit_price, а дашборд и аналитика
+    ожидают profit_ton/profit_pct/close_price/avg_price/dca_entries_count.
+    Нормализуем при записи — один раз тут, вместо правок в 20 местах.
+    """
+    t = dict(trade)
+    # profit_ton / profit_pct
+    if "profit_ton" not in t or t["profit_ton"] is None:
+        t["profit_ton"] = t.get("pnl") or t.get("dca_profit_ton") or 0.0
+    if "profit_pct" not in t or t["profit_pct"] is None:
+        t["profit_pct"] = t.get("pnl_pct") or t.get("dca_profit_pct") or 0.0
+    # close_price (USD)
+    if "close_price" not in t or t["close_price"] is None:
+        t["close_price"] = t.get("exit_price") or t.get("close_price_usd") or 0.0
+    # open_price (USD) — цена входа; алиас entry_price, который пишет trader.py
+    if not t.get("open_price"):
+        t["open_price"] = t.get("entry_price") or t.get("avg_entry_usd") or 0.0
+    # avg_price (TON) — средняя цена входа после слияния DCA-позиций
+    if "avg_price" not in t or t["avg_price"] is None:
+        t["avg_price"] = t.get("entry_price_ton") or t.get("avg_entry_ton") or 0.0
+    # dca_entries_count — сколько DCA-входов было в цикле
+    if "dca_entries_count" not in t or t["dca_entries_count"] is None:
+        t["dca_entries_count"] = t.get("merged_count") or t.get("dca_index") or 1
+    # profit_pct — если 0 но profit_ton есть — пересчитываем от stake_ton
+    stake = float(t.get("stake_ton") or 0.0)
+    pnl   = t.get("profit_ton")
+    if stake > 0 and pnl is not None and not t.get("profit_pct"):
+        t["profit_pct"] = round(float(pnl) / stake * 100, 4)
+    return t
+
+
+def backfill_trade_fields():
+    """Одноразовая нормализация старых записей в bot_trades, которые были созданы
+    до добавления _normalize_trade_fields().  Запускается при старте — безопасно
+    вызывать повторно (только обновляет записи у которых нет profit_ton)."""
+    if not _check_available():
+        return
+    try:
+        with _conn() as conn:
+            with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+                cur.execute("SELECT id, data FROM bot_trades")
+                rows = cur.fetchall()
+        patched = 0
+        for row in rows:
+            trade = row["data"]
+            if not isinstance(trade, dict):
+                continue
+            # Только те записи, у которых нет хотя бы одного нормализованного поля
+            if all(k in trade and trade[k] is not None
+                   for k in ("profit_ton", "profit_pct", "close_price", "avg_price")):
+                continue
+            trades_upsert(trade)   # _normalize_trade_fields вызывается внутри
+            patched += 1
+        if patched:
+            logger.info(f"[DB] backfill_trade_fields: нормализовано {patched} записей в bot_trades")
+    except Exception as e:
+        logger.warning(f"[DB] backfill_trade_fields error: {e}")
+
+
 def trades_upsert(trade: dict):
     if not _check_available():
         return
@@ -456,6 +558,9 @@ def trades_upsert(trade: dict):
             closed_at = datetime.fromisoformat(str(closed_at_str))
         except Exception:
             pass
+    # Нормализуем поля перед записью (добавляем алиасы для дашборда)
+    trade = _normalize_trade_fields(trade)
+    TRADES_KEEP = 500   # храним не более 500 закрытых сделок (защита от бесконечного роста)
     try:
         with _conn() as conn:
             with conn.cursor() as cur:
@@ -465,6 +570,16 @@ def trades_upsert(trade: dict):
                     ON CONFLICT (id) DO UPDATE
                       SET data = EXCLUDED.data, closed_at = EXCLUDED.closed_at
                 """, (trade_id, _jdumps(trade, ensure_ascii=False), closed_at))
+                # Авто-очистка: оставляем только последние TRADES_KEEP сделок.
+                # Вторичная сортировка по id — стабильный тай-брейкер при одинаковом
+                # closed_at (batch-закрытие нескольких позиций за один тик).
+                cur.execute("""
+                    DELETE FROM bot_trades WHERE id NOT IN (
+                        SELECT id FROM bot_trades
+                        ORDER BY closed_at DESC NULLS LAST, id DESC
+                        LIMIT %s
+                    )
+                """, (TRADES_KEEP,))
     except Exception as e:
         logger.warning(f"[DB] trades_upsert error: {e}")
 
@@ -577,7 +692,7 @@ def equity_get_all(limit: int = 3000) -> list:
             with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
                 cur.execute(
                     "SELECT ts, ton, grinch, grinch_usd, equity_ton FROM bot_equity"
-                    " ORDER BY ts ASC LIMIT %s",
+                    " ORDER BY ts DESC LIMIT %s",
                     (limit,)
                 )
                 result = []
@@ -589,6 +704,7 @@ def equity_get_all(limit: int = 3000) -> list:
                         "grinch_usd": row["grinch_usd"],
                         "equity_ton": row["equity_ton"],
                     })
+                result.reverse()  # вернуть хронологический порядок (старые→новые)
                 return result
     except Exception as e:
         logger.warning(f"[DB] equity_get_all error: {e}")
@@ -640,7 +756,7 @@ def open_trades_save(trades: list):
         return
     try:
         rows = [
-            (str(t.get("id") or ""), _jdumps(t, ensure_ascii=False))
+            (str(t.get("id") or ""), _jdumps(_normalize_trade_fields(t), ensure_ascii=False))
             for t in trades if t.get("id")
         ]
         with _conn() as conn:
@@ -801,6 +917,70 @@ def ai_examples_export_all():
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
+#  GRID AI EXPERIENCE (v5 — персистентный опыт сеточного трейдера)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+GRID_EXP_KEEP = 5000   # максимум записей в таблице
+
+
+def grid_experience_insert(entry: dict):
+    """Записать один fill в bot_grid_experience. Best-effort."""
+    if not _check_available():
+        return
+    try:
+        ts = float(entry.get("ts", 0))
+        with _conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "INSERT INTO bot_grid_experience (ts, data) VALUES (%s, %s)",
+                    (ts, _jdumps(entry))
+                )
+                # Самоочистка: удаляем записи старше GRID_EXP_KEEP
+                cur.execute("""
+                    DELETE FROM bot_grid_experience
+                    WHERE id NOT IN (
+                        SELECT id FROM bot_grid_experience
+                        ORDER BY id DESC LIMIT %s
+                    )
+                """, (GRID_EXP_KEEP,))
+    except Exception as e:
+        logger.warning(f"[DB] grid_experience_insert error: {e}")
+
+
+def grid_experience_load(limit: int = GRID_EXP_KEEP) -> list:
+    """Загрузить последние N записей опыта GridAI из БД."""
+    if not _check_available():
+        return []
+    try:
+        with _conn() as conn:
+            with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+                cur.execute("""
+                    SELECT data FROM bot_grid_experience
+                    ORDER BY id DESC LIMIT %s
+                """, (limit,))
+                rows = cur.fetchall()
+                # Возвращаем в хронологическом порядке (старые первыми)
+                return [row["data"] for row in reversed(rows)]
+    except Exception as e:
+        logger.warning(f"[DB] grid_experience_load error: {e}")
+        return []
+
+
+def grid_experience_count() -> int:
+    """Количество записей в bot_grid_experience."""
+    if not _check_available():
+        return 0
+    try:
+        with _conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute("SELECT COUNT(*) FROM bot_grid_experience")
+                return int(cur.fetchone()[0])
+    except Exception as e:
+        logger.warning(f"[DB] grid_experience_count error: {e}")
+        return 0
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
 #  TICKS (скользящая история рынка для AI-советника, замена analytics_buffer)
 # ═══════════════════════════════════════════════════════════════════════════════
 
@@ -826,6 +1006,36 @@ def ticks_insert(data: dict):
                     """, (TICKS_KEEP,))
     except Exception as e:
         logger.warning(f"[DB] ticks_insert error: {e}")
+
+
+def ticks_insert_batch(entries: list):
+    """Пакетно сохраняет тики одним соединением и одной транзакцией.
+
+    Вызывается только фоновым writer-потоком. Пакетирование снижает число
+    checkout/commit к внешней PostgreSQL, но не меняет содержимое истории.
+    """
+    if not _check_available() or not entries:
+        return
+    try:
+        import random
+        rows = [(_jdumps(entry, ensure_ascii=False),) for entry in entries]
+        with _conn() as conn:
+            with conn.cursor() as cur:
+                psycopg2.extras.execute_values(
+                    cur,
+                    "INSERT INTO bot_ticks (data) VALUES %s",
+                    rows,
+                    template="(%s)",
+                    page_size=100,
+                )
+                if random.random() < 0.02:
+                    cur.execute("""
+                        DELETE FROM bot_ticks WHERE id NOT IN (
+                            SELECT id FROM bot_ticks ORDER BY id DESC LIMIT %s
+                        )
+                    """, (TICKS_KEEP,))
+    except Exception as e:
+        logger.warning(f"[DB] ticks_insert_batch error: {e}")
 
 
 def ticks_get_recent(limit: int = 100) -> list:
@@ -878,8 +1088,9 @@ def wallet_snapshot_insert(snap: dict):
                         (ts, ton_balance, grinch_balance, grinch_price_ton, grinch_price_usd,
                          ton_price_usd, grinch_value_ton, grinch_value_usd,
                          total_equity_ton, total_equity_usd,
-                         entry_price_ton, entry_price_usd, pnl_ton, pnl_pct, pnl_usd)
-                    VALUES (NOW(),%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+                         entry_price_ton, entry_price_usd, pnl_ton, pnl_pct, pnl_usd,
+                         tracked_amount, tracked_entries, tracked_stake)
+                    VALUES (NOW(),%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
                 """, (
                     snap.get("ton_balance"),
                     snap.get("grinch_balance"),
@@ -895,6 +1106,9 @@ def wallet_snapshot_insert(snap: dict):
                     snap.get("pnl_ton"),
                     snap.get("pnl_pct"),
                     snap.get("pnl_usd"),
+                    snap.get("tracked_amount"),
+                    snap.get("tracked_entries"),
+                    snap.get("tracked_stake"),
                 ))
                 if random.random() < 0.05:
                     cur.execute("""
@@ -917,7 +1131,8 @@ def wallet_snapshots_get_recent(limit: int = 200) -> list:
                     SELECT ts, ton_balance, grinch_balance, grinch_price_ton, grinch_price_usd,
                            ton_price_usd, grinch_value_ton, grinch_value_usd,
                            total_equity_ton, total_equity_usd,
-                           entry_price_ton, entry_price_usd, pnl_ton, pnl_pct, pnl_usd
+                           entry_price_ton, entry_price_usd, pnl_ton, pnl_pct, pnl_usd,
+                           tracked_amount, tracked_entries, tracked_stake
                     FROM bot_wallet_snapshots
                     ORDER BY id DESC LIMIT %s
                 """, (limit,))
@@ -939,6 +1154,9 @@ def wallet_snapshots_get_recent(limit: int = 200) -> list:
                         "pnl_ton":          row["pnl_ton"],
                         "pnl_pct":          row["pnl_pct"],
                         "pnl_usd":          row["pnl_usd"],
+                        "tracked_amount":   row["tracked_amount"],
+                        "tracked_entries":  row["tracked_entries"],
+                        "tracked_stake":    row["tracked_stake"],
                     }
                     for row in reversed(rows)
                 ]
@@ -958,7 +1176,8 @@ def wallet_snapshot_get_latest() -> dict:
                     SELECT ts, ton_balance, grinch_balance, grinch_price_ton, grinch_price_usd,
                            ton_price_usd, grinch_value_ton, grinch_value_usd,
                            total_equity_ton, total_equity_usd,
-                           entry_price_ton, entry_price_usd, pnl_ton, pnl_pct, pnl_usd
+                           entry_price_ton, entry_price_usd, pnl_ton, pnl_pct, pnl_usd,
+                           tracked_amount, tracked_entries, tracked_stake
                     FROM bot_wallet_snapshots ORDER BY id DESC LIMIT 1
                 """)
                 row = cur.fetchone()
@@ -980,6 +1199,9 @@ def wallet_snapshot_get_latest() -> dict:
                     "pnl_ton":          row["pnl_ton"],
                     "pnl_pct":          row["pnl_pct"],
                     "pnl_usd":          row["pnl_usd"],
+                    "tracked_amount":   row["tracked_amount"],
+                    "tracked_entries":  row["tracked_entries"],
+                    "tracked_stake":    row["tracked_stake"],
                 }
     except Exception as e:
         logger.warning(f"[DB] wallet_snapshot_get_latest error: {e}")
@@ -1144,7 +1366,7 @@ def wallets_save(wallets: dict, events: list, seen: list, last_poll: float):
         logger.warning(f"[DB] wallets_save error: {e}")
 
 
-def wallets_load() -> tuple[dict, list, set, float]:
+def wallets_load() -> tuple[dict, list, dict, float]:
     """Возвращает (wallets, events, seen_set, last_poll)."""
     if not _check_available():
         return {}, [], set(), 0.0
@@ -1157,7 +1379,8 @@ def wallets_load() -> tuple[dict, list, set, float]:
                 meta = {row["key"]: row["value"] for row in cur.fetchall()}
 
         events    = json.loads(meta.get("events", "[]"))
-        seen      = set(json.loads(meta.get("seen", "[]")))
+        # Возвращаем dict вместо set — сохраняет порядок вставки для LRU-дедупликации
+        seen      = {k: 1 for k in json.loads(meta.get("seen", "[]"))}
         last_poll = float(meta.get("last_poll", "0") or 0)
         return wallets, events, seen, last_poll
     except Exception as e:
