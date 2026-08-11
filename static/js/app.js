@@ -1268,7 +1268,16 @@ function renderGridPanel(d) {
   _gtxt('dca-reserved-grinch',
     Number.isFinite(dcaReserve) ? dcaReserve.toLocaleString('ru-RU', {maximumFractionDigits: 0}) + ' GRINCH' : '— GRINCH');
 
-  const sells   = d.sell_levels || [];
+  // Показываем SELL-уровни по возрастанию цены: от ближайшего к текущей
+  // цене до самого высокого. Копия массива важна — порядок ордеров в
+  // состоянии Grid и порядок их исполнения при этом не меняются.
+  const sells   = [...(d.sell_levels || [])].sort((a, b) => {
+    const priceA = Number(a.price_ton);
+    const priceB = Number(b.price_ton);
+    if (!Number.isFinite(priceA)) return 1;
+    if (!Number.isFinite(priceB)) return -1;
+    return priceA - priceB;
+  });
   const waiting = sells.filter(l => l.status === 'waiting');
   _gtxt('grid-sell-waiting', `${waiting.length} / ${sells.length}`);
 
@@ -1553,7 +1562,13 @@ async function renderHistory(trades) {
     const fills = (gr.completed_fills && gr.completed_fills.length)
       ? gr.completed_fills
       : (gr.sell_levels || []).filter(l => l.status === "filled"); // fallback
-    fills.forEach(l => {
+    [...fills].sort((a, b) => {
+      const priceA = Number(a.fill_price_ton ?? a.price_ton);
+      const priceB = Number(b.fill_price_ton ?? b.price_ton);
+      if (!Number.isFinite(priceA)) return 1;
+      if (!Number.isFinite(priceB)) return -1;
+      return priceA - priceB;
+    }).forEach(l => {
       gridFills.push({
         _ts:         l.filled_at ? l.filled_at * 1000 : 0,
         pnl:         l.profit_ton || 0,
