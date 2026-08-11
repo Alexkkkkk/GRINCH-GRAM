@@ -112,7 +112,7 @@ jobs:
           EOF
 
       - name: Commit README
-        uses: stefanzweifel/git-auto-commit-action@v5
+        uses: stefanzweifel/git-auto-commit-action@v7
         with:
           commit_message: "docs: auto-generate README.md via AI (Groq)"
           file_pattern: README.md
