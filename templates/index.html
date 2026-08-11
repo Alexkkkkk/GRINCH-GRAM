@@ -1062,6 +1062,55 @@
         </div>
       </div>
 
+      <!-- Grid Strategy Card -->
+      <div class="card card-c" id="grid-settings-card">
+        <div class="card-title ctit">
+          🧮 Grid-сетка GRINCH/TON
+          <span id="grid-status-badge" style="margin-left:auto;font-size:10px;padding:3px 8px;border-radius:10px;background:rgba(255,255,255,.08);color:#8892b0">не активна</span>
+        </div>
+        <div class="settings-form">
+          <div class="cfg-section-title" style="color:#00d4ff">
+            Сетка работает независимо от AI/DCA: уровни BUY ниже центра и SELL выше центра.
+          </div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+            <label>Шаг сетки (%)
+              <input type="number" id="grid-step" value="5" min="4" max="10" step="0.5">
+            </label>
+            <label>SELL уровней
+              <input type="number" id="grid-sell-levels" value="9" min="1" max="30" step="1">
+            </label>
+            <label>BUY уровней
+              <input type="number" id="grid-buy-levels" value="5" min="1" max="30" step="1">
+            </label>
+            <div style="display:flex;align-items:end;font-size:10px;color:#8892b0;padding-bottom:8px">
+              <span id="grid-poller-status">Опрос: —</span>
+            </div>
+          </div>
+          <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:4px">
+            <button class="btn btn-blue" onclick="buildGrid()">🔨 Построить сетку</button>
+            <button class="btn btn-green" onclick="activateGrid()">▶ Запустить</button>
+            <button class="btn btn-red" onclick="deactivateGrid()">⏹ Пауза</button>
+            <button class="btn-tiny" onclick="resetGridErrors()">↻ Сбросить ошибки</button>
+          </div>
+          <div id="grid-error-msg" style="display:none;margin-top:8px;padding:7px 10px;border-radius:7px;background:rgba(255,71,87,.1);border:1px solid rgba(255,71,87,.25);color:#ff8a96;font-size:10px"></div>
+          <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin-top:10px">
+            <div style="padding:8px;text-align:center;background:rgba(0,212,255,.06);border-radius:7px">
+              <div style="font-size:9px;color:#6a7d9f">Центр</div><strong id="grid-center">—</strong>
+            </div>
+            <div style="padding:8px;text-align:center;background:rgba(0,255,136,.06);border-radius:7px">
+              <div style="font-size:9px;color:#6a7d9f">SELL</div><strong id="grid-sell-count">—</strong>
+            </div>
+            <div style="padding:8px;text-align:center;background:rgba(255,209,102,.06);border-radius:7px">
+              <div style="font-size:9px;color:#6a7d9f">BUY</div><strong id="grid-buy-count">—</strong>
+            </div>
+            <div style="padding:8px;text-align:center;background:rgba(167,139,250,.06);border-radius:7px">
+              <div style="font-size:9px;color:#6a7d9f">P&amp;L</div><strong id="grid-profit">—</strong>
+            </div>
+          </div>
+          <div id="grid-levels-summary" style="margin-top:9px;font-size:10px;color:#8892b0;line-height:1.65"></div>
+        </div>
+      </div>
+
       <!-- Profit Protection Card -->
       <div class="card card-c" id="profit-protect-card">
         <div class="card-title ctit">🛡️ Защита прибыли — Фиксация при развороте</div>
