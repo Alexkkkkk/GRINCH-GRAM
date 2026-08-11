@@ -52,3 +52,5 @@
 - [Docker cp deploy — verify after restart](docker-cp-deploy-verify.md) — a docker cp+restart hotfix once silently reverted; always re-check md5sum inside the container AFTER restart completes, not just right after cp.
 - [VPS data folder ↔ DB sync](vps-data-sync.md) — db_backup.py already dumps DB→/app/data/backups on the VPS; check freshness there before building a new export path. VPS root password has leaked into chat more than once — always insist on the secure secrets form.
 - [New read-only engines (Block 2)](new-engines-block2.md) — backtest/paper-trading/LLM-agent/RAG/explainability/alerts/multi-agent must use only strategy.py, never the live ai_engine singleton or brain_fusion (would corrupt production models).
+- [VPS GitOps deploy pipeline](vps-gitops-deploy.md) — cron deploy.sh git-resets /opt/bot to origin/main + rebuilds; docker cp hotfixes are lost on next recreate unless also committed+pushed to origin/main.
+- [Safe Replit demo workflow](safe-replit-demo-workflow.md) — preview must unset both DB URLs and use DEMO_MODE=true to avoid a second writer against the VPS database.

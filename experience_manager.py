@@ -129,12 +129,37 @@ class ExperienceManager:
                 stats_raw   = ai_state.get("stats")
                 ai_raw      = ai_state.get("ai_export")
 
-                if trades or equity or control_raw:
-                    if trades:      self.data["trades"]      = trades
+                if trades or equity or open_trades or control_raw or stats_raw or ai_raw:
+                    if trades:
+                        self.data["trades"] = [
+                            dict(t, trade_type=t.get("trade_type", t.get("side", "long")))
+                            if isinstance(t, dict) else t
+                            for t in trades
+                        ]
                     if equity:      self.data["equity"]      = equity
-                    if open_trades: self.data["open_trades"] = open_trades
+                    if open_trades:
+                        self.data["open_trades"] = [
+                            dict(t, trade_type=t.get("trade_type", t.get("side", "long")))
+                            if isinstance(t, dict) else t
+                            for t in open_trades
+                        ]
                     if control_raw: self.data["control"]     = control_raw if isinstance(control_raw, dict) else json.loads(control_raw)
-                    if stats_raw:   self.data["stats"]       = stats_raw if isinstance(stats_raw, dict) else json.loads(stats_raw)
+                    if stats_raw:
+                        _s = stats_raw if isinstance(stats_raw, dict) else json.loads(stats_raw)
+                        # Санитайз при загрузке: winning_trades ≤ total_trades (атомарно,
+                        # до того как любой фоновый поток успеет прочитать self.data["stats"])
+                        _wt = int(_s.get("winning_trades", 0) or 0)
+                        _tt = int(_s.get("total_trades", 0) or 0)
+                        if _wt > _tt:
+                            _s = dict(_s)
+                            # Победы уже подтверждены закрытыми сделками.
+                            # Восстанавливаем заниженный total, не выбрасываем wins.
+                            _s["total_trades"] = _wt
+                            logger.warning(
+                                f"[Experience] 🔧 _load: winning_trades ({_wt}) > total_trades ({_tt})"
+                                f" — total расширен до {_wt} при загрузке из DB"
+                            )
+                        self.data["stats"] = _s
                     if ai_raw:      self.data["ai"]          = ai_raw if isinstance(ai_raw, dict) else json.loads(ai_raw)
                     ctrl = self._default_control()
                     ctrl.update(self.data.get("control") or {})
@@ -155,6 +180,23 @@ class ExperienceManager:
                 for k in ("trades", "open_trades", "equity", "stats", "ai", "control", "created"):
                     if k in disk and disk[k] is not None:
                         self.data[k] = disk[k]
+                self.data["trades"] = [
+                    dict(t, trade_type=t.get("trade_type", t.get("side", "long")))
+                    if isinstance(t, dict) else t
+                    for t in (self.data.get("trades") or [])
+                ]
+                self.data["open_trades"] = [
+                    dict(t, trade_type=t.get("trade_type", t.get("side", "long")))
+                    if isinstance(t, dict) else t
+                    for t in (self.data.get("open_trades") or [])
+                ]
+                if isinstance(self.data.get("stats"), dict):
+                    _s = dict(self.data["stats"])
+                    _wt = int(_s.get("winning_trades", 0) or 0)
+                    _tt = int(_s.get("total_trades", 0) or 0)
+                    if _wt > _tt:
+                        _s["total_trades"] = _wt
+                        self.data["stats"] = _s
                 ctrl = self._default_control()
                 ctrl.update(self.data.get("control") or {})
                 self.data["control"] = ctrl
@@ -205,6 +247,10 @@ class ExperienceManager:
             tmp = self.path + ".tmp"
             with open(tmp, "w", encoding="utf-8") as f:
                 _jdump(self.data, f, ensure_ascii=False)
+                f.flush()
+                os.fsync(f.fileno())
+                f.flush()
+                os.fsync(f.fileno())
             os.replace(tmp, self.path)
         except Exception as e:
             print(f"[Experience] ошибка записи {self.path}: {e}")
@@ -222,7 +268,7 @@ class ExperienceManager:
                     _wt = int(stats.get("winning_trades", 0) or 0)
                     if _wt > _tt:
                         stats = dict(stats)
-                        stats["winning_trades"] = _tt
+                        stats["total_trades"] = _wt
                         self.data["stats"] = stats
                 if ctrl:  db.ai_state_set("control", ctrl)
                 if stats: db.ai_state_set("stats", stats)
@@ -324,6 +370,28 @@ class ExperienceManager:
                     trader.trades.append(dict(t))
         if open_short_trades:
             trader.open_short_trades = open_short_trades
+        # ── Восстанавливаем ЗАКРЫТЫЕ сделки в trader.trades ──────────────────
+        # trader.trades — чисто оперативный список (обнуляется в self.trades = []
+        # при каждом запуске Trader()), а дашборд ("История сделок") берёт
+        # recent_trades именно из него, а не из журнала на диске/в БД.
+        # Раньше сюда попадали только открытые позиции → после КАЖДОГО
+        # рестарта уже закрытые (и прибыльные) сделки пропадали из истории на
+        # дашборде, хотя счётчики (Сделок/Win Rate/P&L) их учитывали.
+        try:
+            with self._lock:
+                journal_closed = [dict(t) for t in (self.data.get("trades") or [])
+                                   if t.get("status") == "closed" or t.get("closed_at")]
+            existing_ids2 = {t.get("id") for t in trader.trades}
+            restored_closed = 0
+            for t in journal_closed[-50:]:
+                if t.get("id") not in existing_ids2:
+                    trader.trades.append(t)
+                    existing_ids2.add(t.get("id"))
+                    restored_closed += 1
+            if restored_closed:
+                trader.log(f"🗂️ История сделок восстановлена: {restored_closed} закрытых сделок", "INFO")
+        except Exception as _hist_err:
+            logger.warning(f"[Experience] restore closed trades error: {_hist_err}")
         try:
             note = (
                 f"🧠 Память загружена: {len(self.data['trades'])} сделок"
@@ -478,7 +546,18 @@ class ExperienceManager:
             if len(self.data["trades"]) > MAX_TRADES_KEPT:
                 self.data["trades"] = self.data["trades"][-MAX_TRADES_KEPT:]
             if stats:
-                self.data["stats"] = dict(stats)
+                _s = dict(stats)
+                # Инвариант: winning_trades ≤ total_trades (защита от race condition
+                # когда запись_trade вызывается с устаревшими/некорректными stats)
+                _wt2 = int(_s.get("winning_trades", 0) or 0)
+                _tt2 = int(_s.get("total_trades", 0) or 0)
+                if _wt2 > _tt2:
+                    _s["total_trades"] = _wt2
+                    logger.warning(
+                        f"[Experience] record_trade sanitize: winning({_wt2})>total({_tt2})"
+                        f" — total расширен до {_wt2}"
+                    )
+                self.data["stats"] = _s
             if ai is not None:
                 try:
                     self.data["ai"] = ai.export_experience()

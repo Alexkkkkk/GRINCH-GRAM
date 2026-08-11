@@ -64,7 +64,6 @@ class Trader:
             "total_trades":   0,
             "winning_trades": 0,
             "total_pnl":      0.0,
-            "start_balance":  10000.0,
         }
         self._thread = None
         # ── Ручной выключатель торговли ──────────────────────────────────
@@ -252,14 +251,17 @@ class Trader:
             tt = int(self.stats.get("total_trades", 0) or 0)
             wt = int(self.stats.get("winning_trades", 0) or 0)
             if wt > tt:
-                self.stats["winning_trades"] = tt
+                # Не теряем подтверждённые победы: если старый счётчик
+                # total_trades был занижен после рестарта, восстанавливаем его
+                # до количества wins.
+                self.stats["total_trades"] = wt
                 try:
                     self.exp.data["stats"] = dict(self.stats)
                     self.exp._save_locked()
                 except Exception:
                     pass
                 self.log(
-                    f"🔧 Санитайз статистики: winning_trades ({wt}) > total_trades ({tt}) — исправлено",
+                    f"🔧 Санитайз статистики: total_trades ({tt}) < winning_trades ({wt}) — total восстановлен",
                     "WARN",
                 )
         except Exception:
@@ -1246,6 +1248,10 @@ class Trader:
             self.open_trades.append(trade)
             self.trades.append(trade)
             self.stats["total_trades"] += 1
+            # Синхронизируем stats в experience_manager немедленно — иначе при
+            # рестарте до закрытия позиции этот инкремент теряется, и при закрытии
+            # winning_trades оказывается > total_trades (накопительный баг).
+            self.exp.data["stats"] = dict(self.stats)
             # Объединяем с уже открытыми LONG-позициями в одну
             self._merge_long_trades()
 
@@ -1358,6 +1364,26 @@ class Trader:
         except Exception:
             pass
 
+        # ── Постоянная история сделок (bot_trades) — иначе счётчик total_pnl
+        # растёт, а аудиторского следа "откуда взялась прибыль" не остаётся.
+        try:
+            now_iso = datetime.utcnow().isoformat()
+            self.exp.record_trade({
+                "id":           f"cascade1_{int(time.time())}",
+                "side":         "sell_partial",
+                "amount":       sell_amount,
+                "entry_price":  None,
+                "exit_price":   price_usd,
+                "pnl":          partial_pnl,
+                "opened_at":    None,
+                "closed_at":    now_iso,
+                "close_reason": f"dca_cascade_level1_{portfolio_pct:.1f}pct",
+                "status":       "closed",
+                "outcome":      "win" if partial_pnl > 0 else "loss",
+            }, self.stats, self.ai)
+        except Exception as e:
+            self.log(f"Запись сделки в историю (каскад Ур.1): {e}", "WARN")
+
         self.log(
             f"✅ Каскад Ур.1 зафиксирован: PNL ≈ {partial_pnl:+.4f} TON | "
             f"остаток {total_grinch*(1-sell_fraction):.4f} GRINCH ждёт +{Config.DCA_CASCADE_LEVEL2_PCT:.0f}%",
@@ -1440,6 +1466,10 @@ class Trader:
             trade["outcome"]      = "win" if pnl_ton > 0 else "loss"
             total_pnl            += pnl_ton
             self.stats["total_pnl"] = round(self.stats["total_pnl"] + pnl_ton, 6)
+            # total_trades раньше не увеличивался в этой функции — winning_trades
+            # рос сам по себе, что могло дать winrate>100% или расхождение со
+            # счётчиком сделок. Считаем total_trades вместе с winning_trades.
+            self.stats["total_trades"] = self.stats.get("total_trades", 0) + 1
             if pnl_ton > 0:
                 self.stats["winning_trades"] += 1
             # AI feedback
@@ -1456,6 +1486,12 @@ class Trader:
                 if t["id"] == trade["id"]:
                     t.update(trade)
                     break
+            # ── Постоянная история сделок (bot_trades) — единственный источник
+            # аудиторского следа "откуда взялась прибыль" на дашборде.
+            try:
+                self.exp.record_trade(dict(trade), self.stats, self.ai)
+            except Exception as e:
+                self.log(f"Запись сделки в историю (DCA sell-all): {e}", "WARN")
 
         # ── Компаундирование: накапливаем бонус к следующей ставке ──────
         if Config.DCA_COMPOUND_ENABLED and total_pnl > 0:
@@ -2475,6 +2511,9 @@ class Trader:
         self.open_trades.append(trade)
         self.trades.append(dict(trade))
         self.stats["total_trades"] += 1
+        # Синхронизируем stats немедленно — без этого рестарт между открытием
+        # и закрытием позиции обнуляет total_trades, создавая winning > total.
+        self.exp.data["stats"] = dict(self.stats)
         # Если уже есть другие LONG-позиции — объединяем всё в одну
         self._merge_long_trades()
         # АВТО-СОХРАНЕНИЕ: цена покупки + цель продажи на диск, чтобы после
@@ -2653,6 +2692,8 @@ class Trader:
         }
         self.open_short_trades.append(trade)
         self.stats["total_trades"] += 1
+        # Синхронизируем stats немедленно — без этого total_trades теряется при рестарте.
+        self.exp.data["stats"] = dict(self.stats)
         try:
             self.exp.save_open_trades(self._combined_open_trades())
         except Exception as e:  # noqa: BLE001
@@ -3006,6 +3047,19 @@ class Trader:
         try:
             import db_store
             db_store.open_trades_save(self._combined_open_trades())
+        except Exception:
+            pass
+        # ── Записываем каждую закрытую сделку в журнал (bot_trades) ──────────
+        # Без этого закрытые позиции не попадают в историю сделок и не
+        # учитываются в analyze_and_adapt (AI learning loop).
+        for trade in long_trades:
+            try:
+                self.exp.record_trade(dict(trade), dict(self.stats), None)
+                self.trades.append(dict(trade))
+            except Exception as _rt_err:
+                self.log(f"⚠️ record_trade (liquidator): {_rt_err}", "WARN")
+        try:
+            self.exp.save()
         except Exception:
             pass
 

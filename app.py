@@ -396,6 +396,28 @@ _startup_log.info("SocketIO OK")
 _startup_log.info("Trader() init start")
 trader = Trader()
 _startup_log.info("Trader() OK")
+
+# ── Независимая сеточная стратегия DeDust ────────────────────────────────────
+# GridTrader живёт рядом с основным Trader, но имеет собственное состояние,
+# poller и переключатель. Если DeDust недоступен, модуль остаётся безопасно
+# неактивным и не мешает запуску основного приложения.
+try:
+    from grid_trader import get_grid_trader
+    grid_trader = get_grid_trader()
+    grid_trader.inject(
+        dedust_client=getattr(trader.exchange, "_dedust", None),
+        ai_engine=getattr(trader, "ai", None),
+        trader_ref=trader,
+    )
+    _startup_log.info(
+        "GridTrader OK: active=%s sell=%d buy=%d",
+        grid_trader.get_status().get("active"),
+        grid_trader.get_status().get("sell", {}).get("total", 0),
+        grid_trader.get_status().get("buy", {}).get("total", 0),
+    )
+except Exception as _grid_init_err:
+    grid_trader = None
+    _startup_log.warning("GridTrader setup FAILED: %s", _grid_init_err)
 ton    = TONTracker(Config.TON_WALLET)
 _startup_log.info("TONTracker OK")
 
@@ -424,6 +446,11 @@ _startup_log.info("WalletManager OK")
 
 def _safe_status():
     raw = trader.get_status()
+    if grid_trader is not None:
+        try:
+            raw["grid"] = grid_trader.get_status()
+        except Exception as _grid_status_err:
+            raw["grid"] = {"active": False, "error": str(_grid_status_err)}
     # orjson сериализует numpy-типы нативно и в 5–10× быстрее обхода _walk.
     # Fallback на рекурсивный _walk только если orjson недоступен.
     if orjson is not None:
@@ -578,6 +605,12 @@ def _load_users_bg():
     # Было 3с — было нужно «подождать пока Flask поднимется», но Flask уже
     # слушает к этому моменту. 0.5с достаточно для finalization init-цикла.
     time.sleep(0.5)
+    # В demo/локальном workflow Flask-SQLAlchemy намеренно не инициализируется.
+    # Не запускать пользовательский DB-поток в этом режиме: db_store имеет
+    # отдельный JSON/DB fallback и не является признаком готовности SQLAlchemy.
+    if not _db_available:
+        _startup_log.info("User DB features disabled — skipping user/deposit workers")
+        return
     user_mgr.load_from_db(app)
     deposit_monitor.start(app, user_mgr)
 
@@ -602,6 +635,14 @@ def start_background():
         trader.on_training_progress = push_training_progress
         # Авто-старт торговли (обучение → торговля)
         trader.start()
+        # Сетка запускается отдельно от DCA/AI-трейдера. Сам поток ничего не
+        # делает, пока нет DeDust-клиента или сетка не активирована.
+        if grid_trader is not None:
+            try:
+                grid_trader.start_poller()
+                _startup_log.info("GridTrader poller started")
+            except Exception as _grid_start_err:
+                _startup_log.warning("GridTrader poller FAILED: %s", _grid_start_err)
         # Критические UI-потоки под наблюдением супервайзера —
         # при падении перезапускаются автоматически через 5с.
         _supervise("push_updates", push_updates)
@@ -1041,6 +1082,96 @@ def api_status():
     # Отдаём готовый снимок из буфера — мгновенно, без ожидания сети/блокчейна.
     # Пока буфер не прогрет (самый первый запрос) — считаем напрямую один раз.
     return jsonify(_status_for_response())
+
+
+# ════════════════════════════════════════════════════════════════════════════
+#  Grid trading — отдельный lifecycle и API
+# ════════════════════════════════════════════════════════════════════════════
+
+@app.route("/api/grid/status")
+def api_grid_status():
+    """Текущий статус сетки и её уровни."""
+    if grid_trader is None:
+        return jsonify({"ok": False, "active": False,
+                        "error": "GridTrader не инициализирован"}), 503
+    try:
+        return jsonify({"ok": True, **grid_trader.get_status()})
+    except Exception as e:
+        return jsonify({"ok": False, "active": False, "error": str(e)}), 500
+
+
+@app.route("/api/grid/build", methods=["POST"])
+def api_grid_build():
+    """Построить/перестроить сетку по текущим on-chain балансам."""
+    if grid_trader is None:
+        return jsonify({"ok": False, "error": "GridTrader не инициализирован"}), 503
+    try:
+        data = request.get_json(silent=True) or {}
+        step = data.get("step_pct")
+        sell_levels = data.get("sell_levels")
+        buy_levels = data.get("buy_levels")
+
+        step = float(step) if step not in (None, "") else None
+        sell_levels = int(sell_levels) if sell_levels not in (None, "") else None
+        buy_levels = int(buy_levels) if buy_levels not in (None, "") else None
+        if sell_levels is not None and not 1 <= sell_levels <= 30:
+            raise ValueError("sell_levels должен быть от 1 до 30")
+        if buy_levels is not None and not 1 <= buy_levels <= 30:
+            raise ValueError("buy_levels должен быть от 1 до 30")
+
+        from price_feed import price_feed
+        current_price_ton = float(price_feed.get_grinch_ton_price() or 0)
+        if current_price_ton <= 0:
+            return jsonify({"ok": False, "error": "Нет актуальной цены GRINCH/TON"}), 503
+
+        balance = trader.exchange.get_balance() or {}
+        if balance.get("error"):
+            return jsonify({"ok": False, "error": str(balance.get("error"))}), 503
+        grinch_balance = float(balance.get("GRINCH", balance.get("grinch", 0)) or 0)
+        ton_balance = float(balance.get("TON", balance.get("ton", 0)) or 0)
+        result = grid_trader.build_grid(
+            current_price_ton=current_price_ton,
+            grinch_balance=grinch_balance,
+            ton_balance=ton_balance,
+            step_pct=step,
+            sell_levels=sell_levels,
+            buy_levels=buy_levels,
+        )
+        return jsonify(result), (200 if result.get("ok") else 400)
+    except (TypeError, ValueError) as e:
+        return jsonify({"ok": False, "error": str(e)}), 400
+    except Exception as e:
+        _startup_log.exception("Grid build failed")
+        return jsonify({"ok": False, "error": str(e)}), 500
+
+
+@app.route("/api/grid/activate", methods=["POST"])
+def api_grid_activate():
+    if grid_trader is None:
+        return jsonify({"ok": False, "error": "GridTrader не инициализирован"}), 503
+    result = grid_trader.activate()
+    return jsonify(result), (200 if result.get("ok") else 400)
+
+
+@app.route("/api/grid/deactivate", methods=["POST"])
+def api_grid_deactivate():
+    if grid_trader is None:
+        return jsonify({"ok": False, "error": "GridTrader не инициализирован"}), 503
+    data = request.get_json(silent=True) or {}
+    result = grid_trader.deactivate(str(data.get("reason") or "manual")[:120])
+    return jsonify(result)
+
+
+@app.route("/api/grid/reset-errors", methods=["POST"])
+def api_grid_reset_errors():
+    if grid_trader is None:
+        return jsonify({"ok": False, "error": "GridTrader не инициализирован"}), 503
+    data = request.get_json(silent=True) or {}
+    level_ids = data.get("level_ids")
+    if level_ids is not None and not isinstance(level_ids, list):
+        return jsonify({"ok": False, "error": "level_ids должен быть списком"}), 400
+    result = grid_trader.reset_error_levels(level_ids)
+    return jsonify(result), (200 if result.get("ok") else 400)
 
 _CANDLES_CACHE = {"ts": 0.0, "payload": None}
 _CANDLES_CACHE_TTL = 8  # сек — свечи обновляются раз в 15м, считать индикаторы на каждый опрос (10с) незачем

@@ -1,4 +1,5 @@
 modules = ["python-3.11", "web", "nodejs-20", "postgresql-16"]
+
 [agent]
 expertMode = true
 stack = "FLASK_VANILLA_JS"
@@ -9,16 +10,7 @@ channel = "stable-25_05"
 packages = ["cargo", "glibcLocales", "iana-etc", "libiconv", "libxcrypt", "ocl-icd", "opencl-headers", "openssl", "pkg-config", "postgresql", "rustc"]
 
 [workflows]
-runButton = "Project"
-
-[[workflows.workflow]]
-name = "Project"
-mode = "parallel"
-author = "agent"
-
-[[workflows.workflow.tasks]]
-task = "workflow.run"
-args = "web"
+runButton = "web"
 
 [[workflows.workflow]]
 name = "web"
@@ -26,7 +18,7 @@ author = "agent"
 
 [[workflows.workflow.tasks]]
 task = "shell.exec"
-args = "python3 main.py"
+args = "env -u EXTERNAL_DATABASE_URL -u DATABASE_URL DEMO_MODE=true PORT=5000 python3 main.py"
 waitForPort = 5000
 
 [workflows.workflow.metadata]

@@ -290,7 +290,85 @@ function updateUI(data) {
 
   // DCA стратегия — статус текущего цикла
   if (data.dca_mode) renderDcaState(data.dca_state || null, data.dca_mode);
+
+  // Grid-сетка — независимый lifecycle и статус
+  if (data.grid) renderGridState(data.grid);
 }
+
+function renderGridState(st) {
+  const g = id => document.getElementById(id);
+  if (!st) return;
+  const active = !!st.active;
+  const badge = g("grid-status-badge");
+  if (badge) {
+    badge.textContent = active ? "АКТИВНА" : (st.paused_reason ? "ПАУЗА" : "не активна");
+    badge.style.color = active ? "#00ff88" : "#8892b0";
+    badge.style.background = active ? "rgba(0,255,136,.12)" : "rgba(255,255,255,.08)";
+  }
+  const poller = g("grid-poller-status");
+  if (poller) {
+    const tick = Number(st.last_tick || 0);
+    poller.textContent = tick > 0
+      ? "Последний тик: " + new Date(tick * 1000).toLocaleTimeString()
+      : "Опрос: ожидает";
+  }
+  if (g("grid-center")) g("grid-center").textContent =
+    st.center_price_ton > 0 ? Number(st.center_price_ton).toFixed(8) + " TON" : "—";
+  if (g("grid-sell-count")) g("grid-sell-count").textContent =
+    `${st.sell?.waiting ?? 0}/${st.sell?.total ?? 0}`;
+  if (g("grid-buy-count")) g("grid-buy-count").textContent =
+    `${st.buy?.waiting ?? 0}/${st.buy?.total ?? 0}`;
+  if (g("grid-profit")) g("grid-profit").textContent =
+    st.total_profit_ton != null ? Number(st.total_profit_ton).toFixed(4) + " TON" : "—";
+
+  const sell = st.sell || {}, buy = st.buy || {};
+  const summary = [];
+  if (st.step_pct != null) summary.push(`Шаг: <b>${Number(st.step_pct).toFixed(1)}%</b>`);
+  if (sell.next_price_ton) summary.push(`Ближайший SELL: <b>${Number(sell.next_price_ton).toFixed(8)} TON</b>`);
+  if (buy.next_price_ton) summary.push(`Ближайший BUY: <b>${Number(buy.next_price_ton).toFixed(8)} TON</b>`);
+  if (st.grid_reserved_grinch != null) summary.push(`Резерв Grid: <b>${Number(st.grid_reserved_grinch).toLocaleString("en-US", {maximumFractionDigits:0})} GRINCH</b>`);
+  const levels = g("grid-levels-summary");
+  if (levels) levels.innerHTML = summary.length ? summary.join(" · ") : "Сетка ещё не построена.";
+  const err = g("grid-error-msg");
+  if (err) {
+    const msg = st.error || st.paused_reason || "";
+    err.textContent = msg;
+    err.style.display = msg ? "" : "none";
+  }
+}
+
+async function _gridAction(path, body = {}) {
+  try {
+    const r = await fetch(path, {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify(body),
+    });
+    const d = await r.json();
+    if (!d.ok) throw new Error(d.error || d.message || "Ошибка Grid");
+    showToast("✅ " + (d.message || "Готово"), "ok");
+    const s = await fetch("/api/grid/status").then(x => x.json());
+    renderGridState(s);
+    return s;
+  } catch (e) {
+    showToast("❌ " + e.message, "err");
+    const err = document.getElementById("grid-error-msg");
+    if (err) { err.textContent = e.message; err.style.display = ""; }
+    return null;
+  }
+}
+
+function buildGrid() {
+  const n = id => Number(document.getElementById(id)?.value);
+  return _gridAction("/api/grid/build", {
+    step_pct: n("grid-step"),
+    sell_levels: n("grid-sell-levels"),
+    buy_levels: n("grid-buy-levels"),
+  });
+}
+function activateGrid() { return _gridAction("/api/grid/activate"); }
+function deactivateGrid() { return _gridAction("/api/grid/deactivate"); }
+function resetGridErrors() { return _gridAction("/api/grid/reset-errors"); }
 
 function renderDcaState(st, active) {
   const panel = document.getElementById("dca-status-panel");
