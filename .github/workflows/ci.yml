@@ -1,31 +1,65 @@
 name: CI
+
 on:
   push:
-    branches: [main, develop]
+    branches: [main, master, develop]
   pull_request:
-    branches: [main]
+    branches: [main, master]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
-  lint:
+  quality:
+    name: Python quality gate
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v4
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
         with:
-          fetch-depth: 0
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-      - run: |
-          pip install black flake8 bandit
-          black --check . || true
-          flake8 . --count --select=E9,F63,F7,F82,W,E --show-source --statistics --exit-zero
-          bandit -r . || true
-  docker-build:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install static-analysis tools
+        run: python -m pip install --disable-pip-version-check "ruff==0.12.10"
+
+      - name: Compile every Python module
+        run: |
+          python -m compileall -q \
+            -x '(^|/)(\.git|__pycache__|attached_assets|data|backups)(/|$)' \
+            .
+
+      - name: Run blocking Ruff checks
+        run: |
+          ruff check . \
+            --select E9,F63,F7,F82 \
+            --output-format github
+
+  docker:
+    name: Docker build
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v4
-      - uses: docker/setup-buildx-action@v3
-      - uses: docker/build-push-action@v5
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build image (no push)
+        uses: docker/build-push-action@v6
         with:
           context: .
           push: false
-          tags: grinch-gram:test
+          tags: grinch-gram:ci
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

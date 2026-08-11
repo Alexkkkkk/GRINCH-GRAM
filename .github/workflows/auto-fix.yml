@@ -1,0 +1,61 @@
+name: Automatic safe fixes
+
+on:
+  push:
+    branches: [main, master]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: auto-fix-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  fix:
+    name: Prepare a reviewable fix PR
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out default branch
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install Ruff
+        run: python -m pip install --disable-pip-version-check "ruff==0.12.10"
+
+      - name: Apply safe lint fixes
+        run: |
+          ruff check . \
+            --fix \
+            --extend-select E4,E7,E9,F \
+            --output-format github
+          ruff format .
+
+      - name: Open or update an auto-fix PR
+        uses: peter-evans/create-pull-request@v7
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          branch: automation/ruff-safe-fixes
+          delete-branch: true
+          title: "chore: apply safe Ruff fixes"
+          commit-message: "chore: apply safe Ruff fixes"
+          body: |
+            ## Automated safe fixes
+
+            Ruff applied only its default safe lint fixes and formatting.
+            No unsafe fixes or direct writes to `main` are used.
+
+            Please review the diff, run the full CI/security checks, and merge
+            only if the changes are appropriate for the trading system.
+          labels: |
+            automation
+            code-quality
