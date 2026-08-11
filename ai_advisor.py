@@ -172,7 +172,6 @@ def _get_best_provider() -> Tuple[str, dict]:
     """Возвращает (provider_id, config) лучшего доступного провайдера.
     Если пользователь выбрал конкретный — используем его (если ключ есть).
     Иначе — авто: по приоритету от лучшего к фолбэку."""
-    global _selected_provider
 
     # Восстанавливаем ключ Groq в новую систему для обратной совместимости
     if GROQ_API_KEY and not _provider_keys.get("groq"):
@@ -241,7 +240,16 @@ def _load_provider_keys():
 AUTO_INTERVAL_MIN    = 150  # минимум 150 мин: защищает бесплатный Groq TPD-лимит
 AUTO_TRADES_TRIGGER  = 2    # авто-запуск после закрытых сделок (было 1 — слишком часто жгло токены)
 
-# Восстанавливаем сохранённые настройки интервала (переживают перезапуск)
+# Восстанавливаем сохранённые настройки интервала (переживают перезапуск).
+# Загружаем секцию перед чтением: при старте без этого значения импорт
+# падал с NameError и приложение не запускалось.
+try:
+    from settings_store import get_section as _get_settings_section
+    _adv_sec = _get_settings_section("advisor") or {}
+except Exception as _e:
+    logger.debug("[Advisor] Не удалось загрузить настройки при старте: %s", _e)
+    _adv_sec = {}
+
 try:
     if _adv_sec.get("interval_min"):
         AUTO_INTERVAL_MIN = max(150, min(360, int(_adv_sec["interval_min"])))
@@ -1868,7 +1876,7 @@ def _rate_limit_status() -> Optional[dict]:
 # ──────────────────────────────────────────────────────────────────────────
 def notify_trade_closed(pnl: float = 0.0, trade_data: dict = None):
     """Вызывается при каждом закрытии сделки. Сохраняет данные и триггерит советника."""
-    global _trades_since_last_run, _last_trade_data, _session_stats
+    global _trades_since_last_run, _last_trade_data
     outcome = "win" if pnl >= 0 else "loss"
 
     # ── Сохраняем данные последней сделки ────────────────────────────────────

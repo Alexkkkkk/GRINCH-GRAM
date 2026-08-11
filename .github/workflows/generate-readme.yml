@@ -27,6 +27,7 @@ jobs:
           python-version: '3.11'
 
       - name: Generate README with AI (Groq)
+        id: generate
         env:
           GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
         run: |
@@ -35,8 +36,10 @@ jobs:
 
           groq_key = os.environ.get('GROQ_API_KEY', '')
           if not groq_key:
-              print("ERROR: GROQ_API_KEY не задан")
-              exit(1)
+              print("GROQ_API_KEY не задан — AI-генерация README пропущена")
+              with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as output:
+                  output.write("generated=false\n")
+              exit(0)
 
           key_files = []
           for pattern in ['*.py', 'Dockerfile', 'requirements.txt', 'config.py']:
@@ -107,11 +110,14 @@ jobs:
           with open("README.md", "w", encoding="utf-8") as f:
               f.write(readme)
 
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as output:
+              output.write("generated=true\n")
           print("README.md generated successfully")
           print(f"Length: {len(readme)} chars")
           EOF
 
       - name: Commit README
+        if: steps.generate.outputs.generated == 'true'
         uses: stefanzweifel/git-auto-commit-action@v7
         with:
           commit_message: "docs: auto-generate README.md via AI (Groq)"
