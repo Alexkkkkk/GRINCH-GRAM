@@ -13,6 +13,7 @@ on:
 
 permissions:
   contents: write
+  pull-requests: write
 
 jobs:
   generate-readme:
@@ -116,9 +117,20 @@ jobs:
           print(f"Length: {len(readme)} chars")
           EOF
 
-      - name: Commit README
+      - name: Open or update README PR
         if: steps.generate.outputs.generated == 'true'
-        uses: stefanzweifel/git-auto-commit-action@v7
+        uses: peter-evans/create-pull-request@v7
         with:
-          commit_message: "docs: auto-generate README.md via AI (Groq)"
-          file_pattern: README.md
+          token: ${{ secrets.GITHUB_TOKEN }}
+          branch: automation/ai-readme
+          delete-branch: true
+          title: "docs: refresh README with AI"
+          commit-message: "docs: refresh README with AI"
+          body: |
+            ## Automated README proposal
+
+            This PR was generated from the current project structure.
+            Review all technical claims before merging.
+          labels: |
+            documentation
+            automation

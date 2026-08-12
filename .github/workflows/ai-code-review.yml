@@ -9,6 +9,11 @@ on:
       - 'static/**'
       - 'templates/**'
 
+permissions:
+  contents: read
+  pull-requests: read
+  issues: write
+
 jobs:
   review:
     runs-on: ubuntu-latest
@@ -33,8 +38,8 @@ jobs:
           # Проверяем наличие ключа
           groq_key = os.environ.get('GROQ_API_KEY', '')
           if not groq_key:
-              print("ERROR: GROQ_API_KEY не задан. Добавьте секрет в Settings → Secrets and variables → Actions")
-              exit(1)
+              print("SKIP: GROQ_API_KEY не задан; обязательные проверки выполняются в CI.")
+              exit(0)
 
           # Получаем номер PR из GitHub event
           with open(os.environ['GITHUB_EVENT_PATH']) as f:

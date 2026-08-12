@@ -76,3 +76,4 @@
 - [GRINCH market tuning](grinch-market-tuning.md) — ATR recalibrated 20.07 evening: 2.225%→4.67%(15m), 12 params updated; on-chain whale balance added to wallet_tracker. VPS=port 80.
 - [Security rate-limit thresholds](security-rate-limit.md) — RATE_API_MAX≥300/AUTO_BAN≥500 или дашборд баннит самого владельца (120-150 req/min на вкладку).
 - [GitHub ruleset checks](github-ruleset-checks.md) — required checks must match workflow-published check-run names exactly, not workflow/name prefixes.
+- [GitHub CI quality gates](github-ci-quality.md) — auto-fixes and AI-generated docs must arrive as reviewable PRs, never direct pushes to the trading branch.
