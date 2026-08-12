@@ -34,17 +34,17 @@ dedust==1.1.4
 cryptography
 
 # ── HTTP / Async ──────────────────────────────────────────────────────────────
-requests==2.31.0
-aiohttp==3.9.5
+requests==2.32.4
+aiohttp==3.14.1
 
 # ── Misc ──────────────────────────────────────────────────────────────────────
-python-dotenv==1.1.0
+python-dotenv==1.2.2
 python-telegram-bot==21.1.1
 openai
 email-validator
 apscheduler==3.11.3
 psutil
-aiohttp==3.9.5
+aiohttp==3.14.1
 apscheduler==3.11.3
 ccxt
 cryptography
@@ -64,11 +64,11 @@ orjson
 pandas==2.2.2
 psutil
 psycopg2-binary==2.9.12
-python-dotenv==1.1.0
+python-dotenv==1.2.2
 python-telegram-bot==21.1.1
 pytoniq==0.1.43
 pytoniq-core
-requests==2.31.0
+requests==2.32.4
 scikit-learn==1.5.0
 sqlalchemy==2.0.41
 ta==0.11.0

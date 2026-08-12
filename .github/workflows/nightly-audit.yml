@@ -1,0 +1,60 @@
+name: Nightly security and supply-chain audit
+
+on:
+  schedule:
+    - cron: "17 4 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  security-events: write
+
+concurrency:
+  group: nightly-audit
+  cancel-in-progress: true
+
+jobs:
+  dependencies:
+    name: dependency-audit
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install pip-audit
+        run: python -m pip install --disable-pip-version-check "pip-audit==2.9.0"
+
+      - name: Audit pinned runtime dependencies
+        run: pip-audit -r requirements.txt
+
+  container:
+    name: container-audit
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Build image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          load: true
+          push: false
+          tags: grinch-gram:nightly
+
+      - name: Scan image for high and critical vulnerabilities
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          image-ref: grinch-gram:nightly
+          format: table
+          exit-code: "1"
+          ignore-unfixed: true
+          vuln-type: "os,library"
+          severity: "HIGH,CRITICAL"

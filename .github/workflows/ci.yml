@@ -15,8 +15,8 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  quality:
-    name: Python quality gate
+  lint:
+    name: lint
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -44,10 +44,10 @@ jobs:
             --select E9,F63,F7,F82 \
             --output-format github
 
-  docker:
-    name: Docker build
+  docker-build:
+    name: docker-build
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 25
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
@@ -59,7 +59,27 @@ jobs:
         uses: docker/build-push-action@v6
         with:
           context: .
-          push: false
+          load: true
           tags: grinch-gram:ci
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+      - name: Run container smoke test
+        run: |
+          set -euo pipefail
+          docker run --detach \
+            --name grinch-gram-ci \
+            --publish 3000:3000 \
+            --env PORT=3000 \
+            --env LOW_MEMORY_MODE=1 \
+            --env DATA_DIR=/tmp/data \
+            grinch-gram:ci
+          trap 'docker logs grinch-gram-ci || true; docker rm -f grinch-gram-ci || true' EXIT
+          for attempt in $(seq 1 24); do
+            if curl --fail --silent --show-error http://127.0.0.1:3000/health; then
+              exit 0
+            fi
+            sleep 5
+          done
+          echo "Container did not become healthy in time"
+          exit 1
