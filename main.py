@@ -1,5 +1,7 @@
 import os
 import stat
+import errno
+import time
 
 # ── Восстанавливаем GitHub deploy key из workspace-файла при каждом старте ──
 _key_src = os.path.join(os.path.dirname(__file__), ".local", "keys", "github_deploy")
@@ -27,8 +29,32 @@ try:
 except Exception as _e:
     pass  # не ломаем запуск бота если что-то пошло не так
 
-from app import app, socketio
+from app import app, socketio, start_background, _free_port
 
 if __name__ == "__main__":
+    # Workflow запускает main.py, поэтому используем ту же защиту от
+    # зависшего экземпляра, что и standalone-запуск app.py.
     port = int(os.environ.get("PORT", 5000))
-    socketio.run(app, host="0.0.0.0", port=port, debug=False, allow_unsafe_werkzeug=True)
+    start_background()
+    _free_port(port)
+    for attempt in range(1, 11):
+        try:
+            socketio.run(
+                app,
+                host="0.0.0.0",
+                port=port,
+                debug=False,
+                allow_unsafe_werkzeug=True,
+            )
+            break
+        except OSError as error:
+            if error.errno != errno.EADDRINUSE:
+                raise
+            print(
+                f"[startup] порт {port} занят "
+                f"(попытка {attempt}/10): {error} — освобождаю и повторяю…"
+            )
+            _free_port(port)
+            time.sleep(2)
+    else:
+        raise SystemExit(f"[startup] порт {port} так и не освободился")

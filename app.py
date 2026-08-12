@@ -3142,7 +3142,10 @@ def _free_port(port: int):
                 cmd = f.read().replace(b"\x00", b" ").decode("utf-8", "ignore")
         except OSError:
             return False
-        return "app.py" in cmd
+        # Preview запускает main.py, а standalone-запуск может быть app.py.
+        # Оба процесса принадлежат этому приложению и безопасны для
+        # завершения при рестарте workflow.
+        return "app.py" in cmd or "main.py" in cmd
 
     pids = set()
     for fd_link in glob.glob("/proc/[0-9]*/fd/*"):

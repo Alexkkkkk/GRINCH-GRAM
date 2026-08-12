@@ -53,7 +53,6 @@ def get_shared_balance(force: bool = False) -> dict:
     force=True обновляет даже если TTL не истёк (используется после свопа).
     При 429-backoff возвращает последний известный кеш не долбя API.
     """
-    global _BAL_CACHE, _BAL_CACHE_TS, _BAL_BACKOFF_UNTIL
     now = time.time()
 
     # Если backoff ещё не истёк — возвращаем кеш без запроса
