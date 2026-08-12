@@ -48,7 +48,7 @@ jobs:
           fetch-depth: 0
 
       - name: Scan repository for leaked secrets
-        uses: gitleaks/gitleaks-action@v2
+        uses: gitleaks/gitleaks-action@v3
         with:
           args: detect --source . --no-git --redact --exit-code 1
         env:
