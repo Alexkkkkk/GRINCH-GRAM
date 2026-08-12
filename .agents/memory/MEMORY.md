@@ -54,3 +54,4 @@
 - [New read-only engines (Block 2)](new-engines-block2.md) — backtest/paper-trading/LLM-agent/RAG/explainability/alerts/multi-agent must use only strategy.py, never the live ai_engine singleton or brain_fusion (would corrupt production models).
 - [VPS GitOps deploy pipeline](vps-gitops-deploy.md) — cron deploy.sh git-resets /opt/bot to origin/main + rebuilds; docker cp hotfixes are lost on next recreate unless also committed+pushed to origin/main.
 - [Safe Replit demo workflow](safe-replit-demo-workflow.md) — preview must unset both DB URLs and use DEMO_MODE=true to avoid a second writer against the VPS database.
+- [VPS code/data rollback](vps-code-data-rollback.md) — restore repository code separately from persistent trading data unless a timestamp-matched data snapshot exists.
