@@ -44,6 +44,9 @@ jobs:
             --select E9,F63,F7,F82 \
             --output-format github
 
+      - name: Run repository smoke checks
+        run: python scripts/ci_smoke.py
+
   docker-build:
     name: docker-build
     runs-on: ubuntu-latest
