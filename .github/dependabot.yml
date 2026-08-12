@@ -11,6 +11,15 @@ updates:
     labels:
       - "dependencies"
       - "security"
+    groups:
+      python-runtime:
+        patterns:
+          - "*"
+        exclude-patterns:
+          - "pytoniq*"
+          - "dedust"
+          - "ccxt"
+          - "cryptography"
     allow:
       - dependency-name: "ccxt"
       - dependency-name: "cryptography"
@@ -28,6 +37,10 @@ updates:
     labels:
       - "docker"
       - "dependencies"
+    groups:
+      docker-dependencies:
+        patterns:
+          - "*"
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule:
@@ -35,3 +48,7 @@ updates:
     labels:
       - "ci"
       - "dependencies"
+    groups:
+      github-actions:
+        patterns:
+          - "*"

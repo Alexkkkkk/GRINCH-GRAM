@@ -3,6 +3,12 @@ name: Automatic safe fixes
 on:
   push:
     branches: [main, master]
+    paths:
+      - "**.py"
+      - "pyproject.toml"
+      - ".github/workflows/auto-fix.yml"
+  schedule:
+    - cron: "11 5 * * 1"
   workflow_dispatch:
 
 permissions:
@@ -39,6 +45,13 @@ jobs:
             --extend-select E4,E7,E9,F \
             --output-format github
           ruff format .
+
+      - name: Verify the proposed changes
+        run: |
+          python -m compileall -q \
+            -x '(^|/)(\.git|__pycache__|attached_assets|data|backups)(/|$)' \
+            .
+          python scripts/ci_smoke.py
 
       - name: Open or update an auto-fix PR
         uses: peter-evans/create-pull-request@v7
