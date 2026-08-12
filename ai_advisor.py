@@ -241,11 +241,11 @@ AUTO_INTERVAL_MIN    = 150  # минимум 150 мин: защищает бес
 AUTO_TRADES_TRIGGER  = 2    # авто-запуск после закрытых сделок (было 1 — слишком часто жгло токены)
 
 # Восстанавливаем сохранённые настройки интервала (переживают перезапуск).
-# Загружаем секцию перед чтением: при старте без этого значения импорт
-# падал с NameError и приложение не запускалось.
+# Секция должна быть загружена до чтения значений, иначе импорт может
+# завершиться NameError и приложение не запустится.
 try:
-    from settings_store import get_section as _get_settings_section
-    _adv_sec = _get_settings_section("advisor") or {}
+    from settings_store import get_section as _get_advisor_section
+    _adv_sec = _get_advisor_section("advisor") or {}
 except Exception as _e:
     logger.debug("[Advisor] Не удалось загрузить настройки при старте: %s", _e)
     _adv_sec = {}

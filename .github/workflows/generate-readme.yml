@@ -1,136 +1,107 @@
-name: AI README Generator
+name: AI README proposal
 
 on:
-  push:
-    branches: [main]
-    paths:
-      - '**.py'
-      - 'Dockerfile'
-      - 'requirements.txt'
-      - 'config.py'
-      - '.github/workflows/generate-readme.yml'
   workflow_dispatch:
+  schedule:
+    - cron: "17 3 1 * *"
 
 permissions:
   contents: write
   pull-requests: write
 
+concurrency:
+  group: ai-readme
+  cancel-in-progress: true
+
 jobs:
   generate-readme:
+    name: Generate reviewable README proposal
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
+      - name: Check out default branch
+        uses: actions/checkout@v4
         with:
+          ref: main
           fetch-depth: 0
 
-      - uses: actions/setup-python@v5
+      - name: Set up Python
+        uses: actions/setup-python@v5
         with:
-          python-version: '3.11'
+          python-version: "3.11"
 
-      - name: Generate README with AI (Groq)
-        id: generate
+      - name: Generate README with AI when configured
         env:
           GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
         run: |
-          python << 'EOF'
-          import os, glob, json, urllib.request, urllib.error
+          if [ -z "${GROQ_API_KEY:-}" ]; then
+            echo "GROQ_API_KEY is not configured; skipping optional AI proposal."
+            exit 0
+          fi
+          python - <<'PY'
+          import glob
+          import json
+          import os
+          import urllib.error
+          import urllib.request
 
-          groq_key = os.environ.get('GROQ_API_KEY', '')
-          if not groq_key:
-              print("GROQ_API_KEY не задан — AI-генерация README пропущена")
-              with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as output:
-                  output.write("generated=false\n")
-              exit(0)
-
-          key_files = []
-          for pattern in ['*.py', 'Dockerfile', 'requirements.txt', 'config.py']:
-              for f in glob.glob(pattern):
+          files = []
+          for pattern in ("*.py", "Dockerfile", "requirements.txt", "config.py"):
+              for path in glob.glob(pattern):
                   try:
-                      with open(f, 'r', encoding='utf-8') as file:
-                          content = file.read()
-                      key_files.append("=== " + f + " ===\n" + content[:2500])
-                  except Exception:
+                      with open(path, encoding="utf-8") as handle:
+                          files.append(f"=== {path} ===\n{handle.read()[:2500]}")
+                  except OSError:
                       pass
-
-          if not key_files:
-              print("WARNING: Нет файлов для анализа")
-              exit(0)
-
-          project_info = "\n\n".join(key_files)
+          if not files:
+              raise SystemExit("No project files available for the optional proposal")
 
           prompt = (
-              "Ты senior technical writer. Напиши профессиональный README.md для криптотрейдингового проекта на русском языке.\n\n"
-              "Информация о проекте:\n"
-              "- Название: GRINCH-GRAM\n"
-              "- Язык: Python\n"
-              "- Назначение: криптотрейдинговая система с AI-аналитикой, grid-trading, блокчейн-интеграция\n\n"
-              "Ключевые файлы проекта:\n" + project_info[:10000] + "\n\n"
-              "Требования к README:\n"
-              "1. # Заголовок с кратким описанием и шильдиками (Python, Docker, CI/CD)\n"
-              "2. ## Возможности — список ключевых фич\n"
-              "3. ## Структура проекта — таблица с файлами\n"
-              "4. ## Установка — пошаговая инструкция\n"
-              "5. ## Переменные окружения\n"
-              "6. ## Docker — команды\n"
-              "7. ## CI/CD — описание автоматических проверок\n"
-              "8. ## Лицензия\n\n"
-              "Формат: Markdown. Только содержимое README, без пояснений."
+              "Создай технический README.md для GRINCH-GRAM на русском языке. "
+              "Не выдумывай возможности: используй только переданный контекст. "
+              "Укажи, что автоматические изменения проходят через pull request. "
+              "Верни только Markdown.\n\n" + "\n\n".join(files)[:10000]
           )
-
-          data = {
+          payload = {
               "model": "llama-3.1-70b-versatile",
               "messages": [{"role": "user", "content": prompt}],
-              "temperature": 0.7,
-              "max_tokens": 4000
+              "temperature": 0.2,
+              "max_tokens": 4000,
           }
-
+          request = urllib.request.Request(
+              "https://api.groq.com/openai/v1/chat/completions",
+              data=json.dumps(payload).encode(),
+              headers={
+                  "Authorization": f"Bearer {os.environ['GROQ_API_KEY']}",
+                  "Content-Type": "application/json",
+              },
+          )
           try:
-              req = urllib.request.Request(
-                  "https://api.groq.com/openai/v1/chat/completions",
-                  data=json.dumps(data).encode(),
-                  headers={
-                      "Authorization": f"Bearer {groq_key}",
-                      "Content-Type": "application/json"
-                  }
-              )
-              with urllib.request.urlopen(req) as resp:
-                  result = json.loads(resp.read())
-                  readme = result["choices"][0]["message"]["content"]
-          except urllib.error.HTTPError as e:
-              print(f"Groq API error: {e.code} - {e.read().decode()}")
-              exit(1)
+              with urllib.request.urlopen(request, timeout=60) as response:
+                  result = json.loads(response.read())
+          except urllib.error.HTTPError as error:
+              print(f"Optional AI proposal skipped: Groq HTTP {error.code}")
+              raise SystemExit(0)
+          content = result.get("choices", [{}])[0].get("message", {}).get("content", "")
+          if not content.strip():
+              raise SystemExit("Optional AI proposal returned no content")
+          with open("README.md", "w", encoding="utf-8") as readme:
+              readme.write(content.rstrip() + "\n")
+          PY
 
-          readme = readme.strip()
-          if readme.startswith("```markdown"):
-              readme = readme[len("```markdown"):].strip()
-          elif readme.startswith("```"):
-              readme = readme[len("```"):].strip()
-          if readme.endswith("```"):
-              readme = readme[:-3].strip()
-
-          with open("README.md", "w", encoding="utf-8") as f:
-              f.write(readme)
-
-          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as output:
-              output.write("generated=true\n")
-          print("README.md generated successfully")
-          print(f"Length: {len(readme)} chars")
-          EOF
-
-      - name: Open or update README PR
-        if: steps.generate.outputs.generated == 'true'
+      - name: Open or update a documentation PR
         uses: peter-evans/create-pull-request@v7
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
           branch: automation/ai-readme
           delete-branch: true
-          title: "docs: refresh README with AI"
-          commit-message: "docs: refresh README with AI"
+          title: "docs: refresh README proposal"
+          commit-message: "docs: refresh README proposal"
           body: |
-            ## Automated README proposal
+            ## Automated documentation proposal
 
-            This PR was generated from the current project structure.
-            Review all technical claims before merging.
+            This PR was generated by an optional AI job. Review every
+            technical claim before merging. No direct write to `main` is used.
           labels: |
             documentation
             automation

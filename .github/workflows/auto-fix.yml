@@ -1,27 +1,28 @@
 name: Automatic safe fixes
 
 on:
-  push:
-    branches: [main, master]
   workflow_dispatch:
+  schedule:
+    - cron: "23 2 * * 6"
 
 permissions:
   contents: write
   pull-requests: write
 
 concurrency:
-  group: auto-fix-${{ github.ref }}
+  group: auto-fix
   cancel-in-progress: true
 
 jobs:
   fix:
     name: Prepare a reviewable fix PR
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 15
     steps:
       - name: Check out default branch
         uses: actions/checkout@v4
         with:
+          ref: main
           fetch-depth: 0
 
       - name: Set up Python
@@ -32,7 +33,7 @@ jobs:
       - name: Install Ruff
         run: python -m pip install --disable-pip-version-check "ruff==0.12.10"
 
-      - name: Apply safe lint fixes
+      - name: Apply safe Ruff fixes only
         run: |
           ruff check . \
             --fix \
@@ -51,11 +52,11 @@ jobs:
           body: |
             ## Automated safe fixes
 
-            Ruff applied only its default safe lint fixes and formatting.
-            No unsafe fixes or direct writes to `main` are used.
+            Ruff applied only safe lint fixes and formatting.
+            This workflow never pushes directly to `main`.
 
-            Please review the diff, run the full CI/security checks, and merge
-            only if the changes are appropriate for the trading system.
+            Review the diff carefully, especially if it touches trading,
+            wallet, blockchain, or background-thread code.
           labels: |
             automation
             code-quality
