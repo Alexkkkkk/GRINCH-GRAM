@@ -18,7 +18,7 @@ author = "agent"
 
 [[workflows.workflow.tasks]]
 task = "shell.exec"
-args = "env -u EXTERNAL_DATABASE_URL -u DATABASE_URL DEMO_MODE=true PORT=5000 python3 main.py"
+args = "python3 main.py"
 waitForPort = 5000
 
 [workflows.workflow.metadata]
@@ -29,14 +29,16 @@ localPort = 5000
 externalPort = 80
 
 [deployment]
-deploymentTarget = "autoscale"
-run = ["gunicorn", "--bind", "0.0.0.0:5000", "main:app"]
+# vm-деплой обязателен: бот хранит состояние в памяти (AI-engine, trader, фоновые потоки).
+# autoscale/multi-instance дублируют процессы и теряют состояние при scale-to-zero.
+deploymentTarget = "vm"
+run = ["gunicorn", "--bind", "0.0.0.0:5000", "--worker-class", "gthread", "--threads", "4", "--workers", "1", "main:app"]
 
 [userenv]
 
 [userenv.shared]
 TRADE_MODE = "dedust"
-DEMO_MODE = "false"
+DEMO_MODE = "true"
 MIN_STAKE_TON = "5"
 SMART_TP_ENABLED = "1"
 SMART_TP_MIN_CONF = "68"
@@ -44,4 +46,3 @@ SMART_TP_TIGHT_TRAIL_PCT = "1.0"
 TRAIL_STAGE4_AT = "20"
 TRAIL_STAGE4_PCT = "1.5"
 TRAIL_TREND_WIDEN = "3.0"
-ADMIN_USERNAME = "kank49799@gmail.com"

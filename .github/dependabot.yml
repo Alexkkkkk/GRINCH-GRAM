@@ -1,0 +1,47 @@
+version: 2
+updates:
+  - package-ecosystem: "pip"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    open-pull-requests-limit: 10
+    reviewers:
+      - "Alexkkkkk"
+    labels:
+      - "dependencies"
+      - "security"
+    groups:
+      python-patch-and-minor:
+        update-types:
+          - "patch"
+          - "minor"
+    allow:
+      - dependency-name: "ccxt"
+      - dependency-name: "cryptography"
+      - dependency-name: "pytoniq*"
+      - dependency-name: "requests"
+      - dependency-name: "aiohttp"
+    commit-message:
+      prefix: "deps"
+      include: "scope"
+  - package-ecosystem: "docker"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 5
+    labels:
+      - "docker"
+      - "dependencies"
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "monthly"
+    labels:
+      - "ci"
+      - "dependencies"
+    groups:
+      actions-minor-and-patch:
+        update-types:
+          - "patch"
+          - "minor"

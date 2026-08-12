@@ -1,10 +1,11 @@
 """
-BrainFusion v1 — единый интеллект торгового бота GRINCH/TON.
+BrainFusion v2 — единый интеллект торгового бота GRINCH/TON.
 
-Объединяет три источника сигналов в один консенсусный «организм»:
+Объединяет четыре источника сигналов в один консенсусный «организм»:
   1. AI-движок (ML ансамбль: RF/ET/GB/HGB/XGB/MLP)
   2. Технический анализ (RSI/EMA/MACD/ATR/BB)
-  3. LLM-советник (Groq — рыночный контекст + долгосрочная стратегия)
+  3. LLM-советник (мульти-провайдер — рыночный контекст + стратегия)
+  4. Market Scanner (паттерны: двойное дно, накопление, пробой сжатия)
 
 Возможности:
   • Консенсусный сигнал с весовым объединением источников
@@ -37,14 +38,16 @@ import time
 import logging
 from dataclasses import dataclass, field
 from typing import Optional
+from config import Config
 
 log = logging.getLogger("brain_fusion")
 
 # ─── Параметры ──────────────────────────────────────────────────────────────
 # Вес каждого источника в консенсусном сигнале
-_W_AI       = 0.70   # ML ансамбль — наибольший вес (быстро, объективно)
-_W_TA       = 0.20   # Технический анализ — традиционные фильтры
-_W_ADVISOR  = 0.10   # LLM советник — контекст и стратегия
+_W_AI       = 0.65   # ML ансамбль — наибольший вес (быстро, объективно)
+_W_TA       = 0.18   # Технический анализ — традиционные фильтры
+_W_ADVISOR  = 0.09   # LLM советник — контекст и стратегия
+_W_SCANNER  = 0.08   # Market Scanner — паттерны (двойное дно, накопление, пробой)
 
 # Порог консенсуса для «пропуска подтверждения»
 FUSION_SKIP_CONFIRM_CONF = 68.0   # все согласны ≥68% → входим сразу
@@ -150,9 +153,25 @@ class BrainFusion:
         self._fusion_wins:   int = 0
         self._fusion_total:  int = 0
 
+        # ── Динамические веса: точность каждого источника за последние сделки ─
+        # Позволяет автоматически усиливать лучший источник сигнала и
+        # ослаблять худший на основе реальных торговых результатов.
+        self._ai_wins:   int = 0    # ML-движок: сколько раз его сигнал совпал с прибылью
+        self._ai_total:  int = 0    # ML-движок: всего оценок
+        self._ta_wins:   int = 0    # TA: сколько раз его сигнал совпал с прибылью
+        self._ta_total:  int = 0    # TA: всего оценок
+        self._adv_wins:  int = 0    # LLM советник: побед
+        self._adv_total: int = 0    # LLM советник: всего оценок
+
         # Состояние скальп-серии (сколько скальпов подряд)
         self._scalp_streak:  int = 0
         self._scalp_profit:  float = 0.0  # накопленная прибыль скальп-серии (TON)
+
+        # ── Снимок сигналов на момент ВХОДА в позицию ───────────────────────
+        # on_trade_closed() должен оценивать точность источников по сигналам
+        # на момент ОТКРЫТИЯ, а не закрытия сделки (на закрытии всё HOLD).
+        # Обновляется в log_decision() при каждом открытии.
+        self._entry_snapshot: dict = {}   # {"ai_sig": ..., "ta_sig": ..., "adv_sig": ...}
 
         # Восстанавливаем самообучение (fusion_wins/total, скальп-серия, журнал
         # решений) из БД — раньше эта статистика полностью терялась при каждом
@@ -172,13 +191,23 @@ class BrainFusion:
             self._fusion_total = int(state.get("fusion_total", 0) or 0)
             self._scalp_streak = int(state.get("scalp_streak", 0) or 0)
             self._scalp_profit = float(state.get("scalp_profit", 0.0) or 0.0)
+            # Динамические веса: точность каждого источника
+            self._ai_wins   = int(state.get("ai_wins",   0) or 0)
+            self._ai_total  = int(state.get("ai_total",  0) or 0)
+            self._ta_wins   = int(state.get("ta_wins",   0) or 0)
+            self._ta_total  = int(state.get("ta_total",  0) or 0)
+            self._adv_wins  = int(state.get("adv_wins",  0) or 0)
+            self._adv_total = int(state.get("adv_total", 0) or 0)
             log_data = state.get("decision_log")
             if isinstance(log_data, list):
                 self._decision_log = log_data[-50:]
             log.info(
                 f"[BrainFusion] Самообучение восстановлено из БД: "
                 f"точность={self._fusion_wins}/{self._fusion_total}, "
-                f"серия скальпов={self._scalp_streak}"
+                f"серия скальпов={self._scalp_streak} | "
+                f"точность источников: AI={self._ai_wins}/{self._ai_total} "
+                f"TA={self._ta_wins}/{self._ta_total} "
+                f"LLM={self._adv_wins}/{self._adv_total}"
             )
         except Exception as e:
             log.warning(f"[BrainFusion] _load_state ошибка: {e}")
@@ -196,6 +225,13 @@ class BrainFusion:
                 "scalp_streak":  self._scalp_streak,
                 "scalp_profit":  self._scalp_profit,
                 "decision_log":  self._decision_log[-50:],
+                # Динамические веса — точность источников
+                "ai_wins":   self._ai_wins,
+                "ai_total":  self._ai_total,
+                "ta_wins":   self._ta_wins,
+                "ta_total":  self._ta_total,
+                "adv_wins":  self._adv_wins,
+                "adv_total": self._adv_total,
             })
         except Exception as e:
             log.warning(f"[BrainFusion] _save_state ошибка: {e}")
@@ -264,7 +300,9 @@ class BrainFusion:
             w.grinch_price_ton = grinch_price_ton
             w.total_value_ton  = ton_bal + grinch_bal * grinch_price_ton
             w.open_pnl_pct     = open_pnl_pct
-            w.has_position     = grinch_bal > 100  # > 100 GRINCH = открытая позиция
+            # FIX#27: вместо хардкодного 100 — порог из Config (с fallback 100)
+            _grinch_pos_threshold = getattr(Config, "GRINCH_MIN_POSITION_HOLD", 100)
+            w.has_position     = grinch_bal > _grinch_pos_threshold
             w.updated_at       = time.time()
 
     # ── Основной метод: консенсусный сигнал ─────────────────────────────────
@@ -297,16 +335,48 @@ class BrainFusion:
         ta_num  = _sig_to_num(self._ta.signal)     if ta_fresh  else 0.0
         adv_num = _sig_to_num(self._advisor.verdict) if adv_fresh else 0.0
 
+        # ── Market Scanner — 4-й источник сигналов ───────────────────────
+        scanner_num    = 0.0
+        scanner_fresh  = False
+        scanner_conf_n = 0.5
+        scanner_label  = None
+        try:
+            import ai_market_scanner as _sc
+            sc_sig = _sc.get_last_signal()
+            if sc_sig:
+                scanner_num    = _sig_to_num(sc_sig.get("signal", "HOLD"))
+                scanner_conf_n = float(sc_sig.get("confidence", 0.5))
+                scanner_fresh  = True
+                scanner_label  = sc_sig.get("label")
+        except Exception:
+            pass
+
         # Нормализованная уверенность (0-1) для взвешивания
         ai_conf_n  = self._ai.confidence / 100.0   if ai_fresh  else 0.5
         adv_conf_n = self._advisor.confidence       if adv_fresh else 0.5
         ta_conf_n  = min(1.0, (self._ta.entry_score or 0) / 10.0) if ta_fresh else 0.5
 
-        # ── Взвешенный консенсус ──────────────────────────────────────────
-        w_ai  = _W_AI  * ai_conf_n   if ai_fresh  else 0.0
-        w_ta  = _W_TA  * ta_conf_n   if ta_fresh  else 0.0
-        w_adv = _W_ADVISOR * adv_conf_n if adv_fresh else 0.0
-        w_sum = w_ai + w_ta + w_adv
+        # ── Динамическая корректировка базовых весов по точности источника ──
+        # После ≥5 оценок каждый источник получает поправочный коэффициент:
+        # точность 60% → +25% к весу; 40% → -25%; при <5 оценках — без изменений.
+        # Ни один источник не опускается ниже 30% от своего базового веса.
+        def _dyn_base_w(base_w: float, wins: int, total: int) -> float:
+            if total < 5:
+                return base_w
+            accuracy = wins / total          # [0..1]
+            factor   = 1.0 + (accuracy - 0.5) * 0.5   # [0.75..1.25]
+            return max(base_w * 0.30, min(base_w * 1.50, base_w * factor))
+
+        dyn_w_ai  = _dyn_base_w(_W_AI,      self._ai_wins,  self._ai_total)
+        dyn_w_ta  = _dyn_base_w(_W_TA,      self._ta_wins,  self._ta_total)
+        dyn_w_adv = _dyn_base_w(_W_ADVISOR, self._adv_wins, self._adv_total)
+
+        # ── Взвешенный консенсус (4 источника) ───────────────────────────
+        w_ai      = dyn_w_ai  * ai_conf_n      if ai_fresh      else 0.0
+        w_ta      = dyn_w_ta  * ta_conf_n      if ta_fresh      else 0.0
+        w_adv     = dyn_w_adv * adv_conf_n     if adv_fresh     else 0.0
+        w_scanner = _W_SCANNER * scanner_conf_n if scanner_fresh else 0.0
+        w_sum = w_ai + w_ta + w_adv + w_scanner
 
         if w_sum < 0.01:
             # Нет данных — нейтральный сигнал
@@ -315,7 +385,8 @@ class BrainFusion:
             fs.reasoning = "Нет актуальных сигналов"
             return fs
 
-        weighted = (w_ai * ai_num + w_ta * ta_num + w_adv * adv_num) / w_sum
+        weighted = (w_ai * ai_num + w_ta * ta_num + w_adv * adv_num
+                    + w_scanner * scanner_num) / w_sum
         # weighted: от -1 (сильный SELL) до +1 (сильный BUY)
 
         if weighted >= 0.15:
@@ -388,11 +459,13 @@ class BrainFusion:
 
         # Требуем ПОЛНОГО консенсуса: AI+TA+LLM все согласны
         # (не только AI — чтобы не давать преждевременные BUY)
-        # Устаревший AI-сигнал не может считаться согласием с новым fusion.
-        ai_agrees  = ai_fresh and self._ai.signal == fs.action
-        ta_agrees  = not ta_fresh  or self._ta.signal in (fs.action, "HOLD")
-        adv_agrees = (not adv_fresh
-                      or adv_num * (1 if fs.action == "BUY" else -1 if fs.action == "SELL" else 0) >= 0)
+        # H5-fix: "not ai_fresh" давало ai_agrees=True для устаревших данных,
+        # что позволяло пропустить подтверждение на основе stale-сигнала.
+        # Теперь: нет свежего сигнала — нет согласия (консенсус требует данных).
+        ai_agrees  = ai_fresh  and self._ai.signal == fs.action
+        ta_agrees  = ta_fresh  and self._ta.signal in (fs.action, "HOLD")
+        adv_agrees = (adv_fresh
+                      and adv_num * (1 if fs.action == "BUY" else -1 if fs.action == "SELL" else 0) >= 0)
         all_agree = ai_agrees and ta_agrees and adv_agrees
 
         # Для пропуска нужно: AI свежий + уверенность ≥ порога + все согласны + EV OK
@@ -406,16 +479,20 @@ class BrainFusion:
 
         # ── Вклад источников (для лога) ───────────────────────────────────
         fs.sources = {
-            "ai":      {"signal": self._ai.signal,      "conf": round(self._ai.confidence, 1),   "fresh": ai_fresh},
-            "ta":      {"signal": self._ta.signal,      "score": self._ta.entry_score,            "fresh": ta_fresh},
-            "advisor": {"signal": self._advisor.verdict,"conf": round(self._advisor.confidence*100,1), "fresh": adv_fresh},
+            "ai":      {"signal": self._ai.signal,       "conf": round(self._ai.confidence, 1),        "fresh": ai_fresh},
+            "ta":      {"signal": self._ta.signal,       "score": self._ta.entry_score,                "fresh": ta_fresh},
+            "advisor": {"signal": self._advisor.verdict, "conf": round(self._advisor.confidence*100,1),"fresh": adv_fresh},
+            "scanner": {"signal": ("BUY" if scanner_num > 0 else "SELL" if scanner_num < 0 else "HOLD"),
+                        "conf": round(scanner_conf_n * 100, 1), "fresh": scanner_fresh,
+                        "label": scanner_label},
         }
 
         # ── Рассуждение для лога ──────────────────────────────────────────
         parts = []
-        if ai_fresh:  parts.append(f"AI={self._ai.signal}({self._ai.confidence:.0f}%)")
-        if ta_fresh:  parts.append(f"TA={self._ta.signal}(Q={self._ta.entry_quality})")
-        if adv_fresh: parts.append(f"LLM={self._advisor.verdict}({self._advisor.confidence*100:.0f}%)")
+        if ai_fresh:      parts.append(f"AI={self._ai.signal}({self._ai.confidence:.0f}%)")
+        if ta_fresh:      parts.append(f"TA={self._ta.signal}(Q={self._ta.entry_quality})")
+        if adv_fresh:     parts.append(f"LLM={self._advisor.verdict}({self._advisor.confidence*100:.0f}%)")
+        if scanner_fresh: parts.append(f"SCAN={scanner_label or 'pattern'}({scanner_conf_n*100:.0f}%)")
         mode = []
         if is_scalp:     mode.append(f"СКАЛЬП({fs.scalp_tp_pct:.1f}%TP)")
         if is_pump:      mode.append(f"ПАМП(×{fs.position_boost:.2f})")
@@ -548,30 +625,83 @@ class BrainFusion:
             }
 
     def on_trade_closed(self, pnl_ton: float, was_scalp: bool = False):
-        """Обратная связь после закрытой сделки — самообучение мозга."""
+        """Обратная связь после закрытой сделки — самообучение мозга.
+        Обновляет точность каждого источника (AI/TA/LLM) для динамических весов."""
         with self._lock:
             self._fusion_total += 1
-            if pnl_ton > 0:
+            is_win = pnl_ton > 0
+            if is_win:
                 self._fusion_wins += 1
 
+            # ── Динамические веса: записываем точность каждого источника ────────
+            # Правило: BUY + прибыль = верно; SELL/HOLD + убыток тоже = верно.
+            # ВАЖНО: используем сигналы на момент ВХОДА (entry_snapshot), а не
+            # текущие — на закрытии рынок почти всегда показывает HOLD, из-за
+            # чего ta_total и adv_total никогда не обновляются без этого фикса.
+            snap    = self._entry_snapshot
+            ai_sig  = snap.get("ai_sig",  self._ai.signal)
+            ta_sig  = snap.get("ta_sig",  self._ta.signal)
+            adv_sig = snap.get("adv_sig", self._advisor.verdict)
+
+            # Скользящее окно точности: при total > 100 применяем коэффициент затухания,
+            # чтобы старые результаты не доминировали вечно.
+            # Эффективное окно ≈ 100 последних сделок.
+            _ACCURACY_WINDOW = 100
+
+            def _decay_source(wins: float, total: float) -> tuple:
+                if total >= _ACCURACY_WINDOW:
+                    ratio = _ACCURACY_WINDOW / (total + 1)
+                    wins  = wins  * ratio
+                    total = total * ratio
+                return wins, total
+
+            if ai_sig in ("BUY", "SELL"):
+                self._ai_wins, self._ai_total = _decay_source(self._ai_wins, self._ai_total)
+                self._ai_total += 1
+                if (ai_sig == "BUY" and is_win) or (ai_sig == "SELL" and not is_win):
+                    self._ai_wins += 1
+
+            if ta_sig in ("BUY", "SELL"):
+                self._ta_wins, self._ta_total = _decay_source(self._ta_wins, self._ta_total)
+                self._ta_total += 1
+                if (ta_sig == "BUY" and is_win) or (ta_sig == "SELL" and not is_win):
+                    self._ta_wins += 1
+
+            adv_is_buy = adv_sig in ("ПОКУПАТЬ", "BUY")
+            adv_is_sell = adv_sig in ("ПРОДАВАТЬ", "SELL")
+            if adv_is_buy or adv_is_sell:
+                self._adv_wins, self._adv_total = _decay_source(self._adv_wins, self._adv_total)
+                self._adv_total += 1
+                if (adv_is_buy and is_win) or (adv_is_sell and not is_win):
+                    self._adv_wins += 1
+
             if was_scalp:
-                if pnl_ton > 0:
+                if is_win:
                     self._scalp_streak += 1
                     self._scalp_profit += pnl_ton
                 else:
                     self._scalp_streak = 0
 
-            # Логируем результат
             log.info(
                 f"[BrainFusion] Сделка закрыта: PnL={pnl_ton:+.3f} TON | "
-                f"скальп={was_scalp} | серия скальпов={self._scalp_streak} | "
-                f"точность fusion={self._fusion_wins}/{self._fusion_total}"
+                f"скальп={was_scalp} | серия={self._scalp_streak} | "
+                f"fusion={self._fusion_wins}/{self._fusion_total} | "
+                f"AI={self._ai_wins}/{self._ai_total} "
+                f"TA={self._ta_wins}/{self._ta_total} "
+                f"LLM={self._adv_wins}/{self._adv_total}"
             )
             self._save_state()
 
     def log_decision(self, decision: dict):
-        """Сохраняет решение в кольцевой буфер."""
+        """Сохраняет решение в кольцевой буфер.
+        Попутно фиксирует снимок сигналов на момент входа (для on_trade_closed)."""
         with self._lock:
+            # ── Фиксируем сигналы ВХОДА — on_trade_closed использует именно их ─
+            self._entry_snapshot = {
+                "ai_sig":  self._ai.signal,
+                "ta_sig":  self._ta.signal,
+                "adv_sig": self._advisor.verdict,
+            }
             self._decision_log.append({**decision, "t": time.time()})
             if len(self._decision_log) > 50:
                 self._decision_log.pop(0)

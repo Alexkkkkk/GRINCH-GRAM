@@ -63,15 +63,14 @@ def _ts_to_epoch(iso):
 
 
 class WalletTracker:
-    POLL_SEC = 15           # как часто опрашиваем ленту пула
+    POLL_SEC = 5            # как часто опрашиваем ленту пула
     START_DELAY = 12        # расфазировка с остальными пуллерами
     SIGNAL_WINDOW_SEC = 3600        # окно «прямо сейчас» для сигнала умных денег (1 ч)
     MIN_FLOW_TON = 5.0      # минимальный оборот в окне, чтобы доверять сигналу
     MAX_EVENTS = 2000       # сколько последних сделок храним на диске
-    # GeckoTerminal возвращает только ограниченное окно истории. Держим
-    # достаточно большой дедупликационный набор, чтобы старые сделки не
-    # начали повторно зачисляться после обычной ротации.
-    MAX_SEEN = 12000        # размер набора уже учтённых trade id
+    MAX_SEEN = 12000        # C2-fix: увеличен с 6000 → 12000 чтобы снизить частоту
+                            # обрезки dict-LRU и тем самым уменьшить вероятность
+                            # повторной обработки «забытых» транзакций
     SMART_MIN_TRADES = 2    # минимум сделок, чтобы считать кошелёк «умным»
 
     def __init__(self):
@@ -83,10 +82,13 @@ class WalletTracker:
         self.last_error  = None
         # адрес -> агрегат
         self.wallets = {}
-        # дедупликация увиденных сделок
-        self._seen = set()
+        # дедупликация увиденных сделок (dict как LRU-set: порядок вставки сохранён,
+        # при обрезке удаляются самые старые — не случайные, как было с set())
+        self._seen: dict = {}
         # последние сделки (для сигнала и отображения)
         self.events = []
+        self._on_chain_balances: dict = {}
+        self._last_balance_poll: float = 0.0
         self._load()
 
     # ----------------------------------------------------------------- запуск
@@ -109,6 +111,9 @@ class WalletTracker:
         while self._running and not self._stop_event.is_set():
             try:
                 self._poll_once()
+                _wp_interval = getattr(Config, "WHALE_BALANCE_POLL_SEC", 300)
+                if time.time() - self._last_balance_poll >= _wp_interval:
+                    self._poll_whale_balances()
                 self.last_error = None
                 self._backoff = self.POLL_SEC
                 self._stop_event.wait(timeout=self.POLL_SEC)
@@ -170,9 +175,12 @@ class WalletTracker:
 
     def _record(self, tx, addr, kind, ton_amt, grinch_amt, price, ts, usd_vol=0.0):
         with self._lock:
-            self._seen.add(tx)
+            self._seen[tx] = 1  # dict-LRU: insertion order preserved
             if len(self._seen) > self.MAX_SEEN:
-                self._seen = set(list(self._seen)[self.MAX_SEEN // 2:])
+                # Удаляем MAX_SEEN//2 самых СТАРЫХ записей (в порядке вставки)
+                oldest = list(self._seen.keys())[:self.MAX_SEEN // 2]
+                for k in oldest:
+                    del self._seen[k]
 
             w = self.wallets.get(addr)
             if w is None:
@@ -231,6 +239,71 @@ class WalletTracker:
             if (w["buys"] + w["sells"]) >= self.SMART_MIN_TRADES and self._realized_pnl(w) > 0:
                 out.add(addr)
         return out
+
+    def _poll_whale_balances(self):
+        """Проверяет on-chain GRINCH-баланс топ-N кошельков (tonapi.io)."""
+        try:
+            jetton_addr = Config.GRINCH_TOKEN_ADDRESS
+            top_n = getattr(Config, "WHALE_TOP_N", 25)
+            min_g = getattr(Config, "WHALE_MIN_GRINCH", 100000)
+            if not jetton_addr:
+                return
+            with self._lock:
+                wallets_copy = dict(self.wallets)
+            ranked = sorted(
+                wallets_copy.items(),
+                key=lambda x: x[1].get("grinch_bought", 0) + x[1].get("grinch_sold", 0),
+                reverse=True,
+            )[:top_n]
+            new_bal = {}
+            for addr, _ in ranked:
+                if not addr or addr == "—":
+                    continue
+                try:
+                    url = "https://tonapi.io/v2/accounts/" + addr + "/jettons/" + jetton_addr
+                    r = _HTTP.get(url, timeout=8)
+                    if r.status_code in (404, 422):
+                        new_bal[addr] = 0.0
+                        continue
+                    r.raise_for_status()
+                    raw = r.json().get("balance", "0") or "0"
+                    new_bal[addr] = int(raw) / 1e9
+                except Exception:
+                    pass
+            # FIX#21: не заменяем весь словарь при частичном сбое API.
+            # Если new_bal пустой (все запросы упали) — оставляем старые данные.
+            if new_bal:
+                with self._lock:
+                    self._on_chain_balances = new_bal
+                    self._last_balance_poll = time.time()
+            else:
+                logger.debug("[WalletTracker] _poll_whale_balances: все запросы неудачны, оставляем старый кэш")
+            whales = sum(1 for v in new_bal.values() if v >= min_g)
+            logger.debug("[WalletTracker] on-chain: %d кошельков, %d китов", len(new_bal), whales)
+        except Exception as e:
+            logger.debug("[WalletTracker] _poll_whale_balances: %s", e)
+
+    def get_whale_hold_score(self) -> dict:
+        """whale_hold_score [-1..+1]: >0 киты держат, <0 вышли."""
+        with self._lock:
+            balances = dict(self._on_chain_balances)
+            last_poll = self._last_balance_poll
+        if not balances or time.time() - last_poll > 600:
+            return {"whale_hold_score": 0.0, "whale_count": 0,
+                    "whale_grinch_total": 0.0, "whale_data_age_sec": 9999}
+        min_g = getattr(Config, "WHALE_MIN_GRINCH", 100000)
+        whale_addrs = [a for a, v in balances.items() if v >= min_g]
+        whale_g = sum(balances[a] for a in whale_addrs)
+        total_g = sum(balances.values())
+        max_p = max(balances.values()) * len(balances) if balances else 1
+        score = max(-1.0, min(1.0, (whale_g / max_p) * 2 - 1))
+        return {
+            "whale_hold_score": round(score, 3),
+            "whale_count": len(whale_addrs),
+            "whale_grinch_total": round(whale_g / 1e6, 3),
+            "total_tracked_grinch": round(total_g / 1e6, 3),
+            "whale_data_age_sec": round(time.time() - last_poll),
+        }
 
     def get_signal(self):
         """
@@ -409,7 +482,8 @@ class WalletTracker:
                 if wallets or events:
                     self.wallets   = wallets
                     self.events    = events
-                    self._seen     = seen
+                    # seen из DB может быть set или dict — нормализуем в dict-LRU
+                    self._seen     = seen if isinstance(seen, dict) else {k: 1 for k in seen}
                     self.last_poll = last_poll
                     loaded_from_db = True
                     logger.info(f"[WalletTracker] Загружено из DB: {len(wallets)} кошельков")
@@ -425,7 +499,7 @@ class WalletTracker:
                     data = json.load(fh)
                 self.wallets   = data.get("wallets", {}) or {}
                 self.events    = data.get("events", []) or []
-                self._seen     = set(data.get("seen", []) or [])
+                self._seen     = {k: 1 for k in (data.get("seen", []) or [])}
                 self.last_poll = data.get("last_poll", 0.0) or 0.0
                 logger.info(f"[WalletTracker] Загружено из JSON: {len(self.wallets)} кошельков")
                 # Миграция в DB
@@ -441,7 +515,7 @@ class WalletTracker:
                     except Exception as e:
                         logger.warning(f"[WalletTracker] migrate_to_db error: {e}")
             except Exception:
-                self.wallets, self.events, self._seen = {}, [], set()
+                self.wallets, self.events, self._seen = {}, [], {}
 
     def _save(self):
         with self._lock:
@@ -473,7 +547,8 @@ class WalletTracker:
                 with open(tmp, "w", encoding="utf-8") as fh:
                     json.dump(payload, fh, ensure_ascii=False)
                 os.replace(tmp, STORE_PATH)
-            except Exception:
-                pass
+            except Exception as _je:
+                # FIX#35: не подавляем молча — логируем, чтобы потеря бэкапа была заметна
+                logger.warning(f"[WalletTracker] JSON backup write error: {_je}")
         threading.Thread(target=_write_json, daemon=True,
                          name="wt-json-save").start()

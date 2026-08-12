@@ -13,3 +13,4 @@ Dashboard-editable settings persist across restarts through `settings.json` (wri
 - `config.py` applies the `config` section at import time with **type coercion to the default's type** (guards a corrupted file from injecting bad types). Recompute derived values (e.g. `FEE_ROUND_TRIP`) after overrides.
 - Any NEW dashboard-tunable setting must: (1) be persisted in its POST handler via `update_section`, and (2) be loaded/applied at startup — otherwise it silently resets on restart.
 - Keep secrets OUT of settings.json (it is committed alongside code).
+- When a setting is also adapted by `experience_manager`, startup must sync the persisted manual value into the controller baseline; otherwise stale adaptive state can overwrite it immediately after restore.

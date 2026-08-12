@@ -1,11 +1,29 @@
 version: "3.9"
 
 services:
+  # ── nginx reverse-proxy: rate-limit, DDoS, scanner-block ──────────────
+  nginx:
+    image: nginx:1.27-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+    volumes:
+      - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./nginx_proxy_params.conf:/etc/nginx/proxy_params.conf:ro
+    depends_on:
+      - bot
+    healthcheck:
+      test: ["CMD", "nginx", "-t"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  # ── Торговый бот (порт НЕ выставляем наружу — только nginx) ───────────
   bot:
     build: .
     restart: unless-stopped
-    ports:
-      - "80:3000"
+    expose:
+      - "3000"
     volumes:
       - bot_data:/app/data
     env_file:

@@ -15,7 +15,7 @@ from datetime import datetime
 
 log = logging.getLogger(__name__)
 
-POLL_SEC = 30   # опрос баланса каждые 30 секунд
+POLL_SEC = 5    # опрос баланса каждые 5 секунд
 
 
 class WalletManager:
@@ -30,6 +30,14 @@ class WalletManager:
         self._running   = False
         self._stop_event = threading.Event()   # мгновенная остановка
         self._trader    = None         # ссылка на Trader для чтения open_trades
+        # Защита от аномального сброса tracked_stake: храним последнее
+        # достоверное значение. Если новое чтение < 20% от предыдущего,
+        # используем кеш и логируем предупреждение (диагностика Bug #2).
+        self._last_stable_stake: float | None = None
+        # Последний достоверный TON-баланс — для отсева глючных TON=0 ответов API
+        # (см. balance-cache-corruption.md). Только для защиты _poll_body,
+        # не используется в торговых вычислениях.
+        self._last_good_ton: float = 0.0
 
     # ─── запуск ────────────────────────────────────────────────────────────────
 
@@ -73,6 +81,12 @@ class WalletManager:
             self._poll_lock.release()
 
     def _poll_body(self):
+        import threading
+        _tid  = threading.current_thread().name
+        _call = getattr(self, "_poll_call_count", 0) + 1
+        self._poll_call_count = _call
+        log.info("[WalletManager] _poll_body #%d thread=%s", _call, _tid)
+
         from price_feed import price_feed
         import db_store
 
@@ -86,6 +100,22 @@ class WalletManager:
 
         ton_bal    = float(bal.get("TON",    0) or 0)
         grinch_bal = float(bal.get("GRINCH", 0) or 0)
+
+        # ── Защита от «битого» ответа API: TON=0 при ненулевом GRINCH ──────────
+        # Кошелёк с открытой позицией всегда держит газовый резерв TON;
+        # TON=0 + GRINCH>0 — это почти всегда глюк TonCenter/TonAPI, а не
+        # реальное состояние. Пропускаем такой снапшот целиком, чтобы он не
+        # попал в историю и не превратился в провал на графике.
+        # (см. balance-cache-corruption.md)
+        if ton_bal == 0.0 and grinch_bal > 0 and self._last_good_ton > 0.5:
+            log.warning(
+                "[WalletManager] ⚠️ TON=0 при GRINCH=%.0f (был %.4f TON) — "
+                "подозрение на глюк API, снапшот пропущен",
+                grinch_bal, self._last_good_ton,
+            )
+            return
+        if ton_bal > 0:
+            self._last_good_ton = ton_bal
 
         # 2. Цены
         ton_usd    = float(price_feed.get("TON")              or 0)
@@ -127,11 +157,48 @@ class WalletManager:
                 else:
                     _raw_trades = list(getattr(trader, "open_trades", []))
                 open_trades = [t for t in _raw_trades if t.get("side") == "buy"]
-                if open_trades and grinch_bal > 0 and grinch_ton > 0:
+                if open_trades and grinch_bal > 0:
                     total_stake  = sum(t.get("stake_ton", 0) or 0 for t in open_trades)
                     total_amount = sum(t.get("amount",    0) or 0 for t in open_trades)
 
                     if total_amount > 0 and total_stake > 0:
+                        # Cost basis всегда известен, даже когда price feed временно = 0.
+                        # tracked_stake устанавливаем здесь, до проверки grinch_ton > 0,
+                        # иначе при нулевой цене в момент poll он оставался None и дашборд
+                        # терял информацию о вложениях.
+                        try:
+                            from config import Config
+                            buy_gas   = getattr(Config, "BUY_GAS_TON", 0.103)  # 0.103 = реальный BUY gas on-chain
+                            n_entries = len(open_trades)
+                            tracked_amount  = min(total_amount, grinch_bal)
+                            tracked_entries = n_entries
+                            raw_stake = total_stake
+                            # ── Защита от аномального сброса tracked_stake ──────
+                            # trader.dca_total_stake обновляется под _ot_lock в
+                            # том же self-heal что и stake_ton в open_trades.
+                            # Если они расходятся >5× — читаем raced/stale данные.
+                            # Приоритет: dca_total_stake > _last_stable_stake > raw.
+                            _dca_stake = getattr(trader, "dca_total_stake", None)
+                            _expected  = (_dca_stake
+                                          if (_dca_stake and _dca_stake > raw_stake * 2)
+                                          else self._last_stable_stake)
+                            if (_expected is not None
+                                    and raw_stake < _expected * 0.20):
+                                log.warning(
+                                    "[WalletManager] ⚠️ tracked_stake аномально мал "
+                                    "%.4f (ожидалось ≈%.4f dca_stake=%.4f), "
+                                    "total_amount=%.2f n_trades=%d — используем эталон",
+                                    raw_stake, _expected,
+                                    _dca_stake or 0, total_amount, len(open_trades),
+                                )
+                                tracked_stake = _expected
+                            else:
+                                tracked_stake = raw_stake
+                                if raw_stake > 0:
+                                    self._last_stable_stake = raw_stake
+                        except Exception as exc2:
+                            log.debug("[WalletManager] tracked_stake config: %s", exc2)
+
                         # Средневзвешенная цена входа в TON
                         entry_price_ton = total_stake / total_amount
 
@@ -142,31 +209,26 @@ class WalletManager:
                         )
                         entry_price_usd = entry_usd_weighted / total_amount
 
-                        # P&L с учётом комиссий и газа.
+                        # P&L считаем только при наличии актуальной цены.
                         # ВАЖНО: считаем P&L только по реально отслеживаемому trader'ом объёму
                         # (total_amount), а НЕ по всему балансу кошелька (grinch_bal) — на кошельке
                         # может лежать доп. GRINCH, не связанный с текущей открытой DCA-позицией
                         # (старые/ручные поступления), иначе P&L считается против чужого количества
                         # токенов и получается бессмысленно завышенным.
-                        try:
-                            from config import Config
-                            fee      = Config.FEE_PCT / 100.0
-                            sell_gas = Config.SELL_GAS_TON
-                            buy_gas  = getattr(Config, "BUY_GAS_TON", 0.25)
-                            n_entries = len(open_trades)
+                        if grinch_ton > 0 and tracked_stake is not None:
+                            try:
+                                fee      = Config.FEE_PCT / 100.0
+                                sell_gas = Config.SELL_GAS_TON
 
-                            tracked_amount  = min(total_amount, grinch_bal)
-                            tracked_entries = n_entries
-                            tracked_stake   = total_stake
-                            tracked_value_ton = tracked_amount * grinch_ton
+                                tracked_value_ton = tracked_amount * grinch_ton
 
-                            proceeds = tracked_value_ton * (1.0 - fee) - sell_gas
-                            cost     = tracked_stake + buy_gas * n_entries
-                            pnl_ton  = round(proceeds - cost, 6)
-                            pnl_pct  = round(pnl_ton / cost * 100, 2) if cost > 0 else 0.0
-                            pnl_usd  = round(pnl_ton * ton_usd, 4) if ton_usd > 0 else None
-                        except Exception as exc2:
-                            log.debug("[WalletManager] P&L config: %s", exc2)
+                                proceeds = tracked_value_ton * (1.0 - fee) - sell_gas
+                                cost     = tracked_stake + buy_gas * n_entries
+                                pnl_ton  = round(proceeds - cost, 6)
+                                pnl_pct  = round(pnl_ton / cost * 100, 2) if cost > 0 else 0.0
+                                pnl_usd  = round(pnl_ton * ton_usd, 4) if ton_usd > 0 else None
+                            except Exception as exc2:
+                                log.debug("[WalletManager] P&L config: %s", exc2)
             except Exception as exc:
                 log.debug("[WalletManager] P&L calc: %s", exc)
 
@@ -216,21 +278,47 @@ class WalletManager:
         with self._lock:
             return dict(self._snap)
 
+    @staticmethod
+    def _filter_corrupt_snaps(rows: list) -> list:
+        """Убирает снапшоты с TON=0+GRINCH>0 — глюки API, не реальное состояние."""
+        out = []
+        for r in rows:
+            ton_b    = r.get("ton_balance", 0) or 0
+            grinch_b = r.get("grinch_balance", 0) or 0
+            if ton_b == 0.0 and grinch_b > 0:
+                continue   # битая точка — пропускаем
+            out.append(r)
+        return out
+
     def get_history(self, limit: int = 200) -> list:
         """История снимков из БД (или памяти при недоступности БД)."""
         import db_store
         try:
-            rows = db_store.wallet_snapshots_get_recent(limit)
+            # Запрашиваем чуть больше лимита — часть точек может быть
+            # отфильтрована как битые (TON=0+GRINCH>0), чтобы на выходе
+            # всё равно было достаточно валидных точек.
+            rows = db_store.wallet_snapshots_get_recent(limit + 20)
             if rows:
-                return rows
+                return self._filter_corrupt_snaps(rows)[-limit:]
         except Exception:
             pass
         with self._lock:
-            return list(self._history[-limit:])
+            return self._filter_corrupt_snaps(list(self._history))[-limit:]
 
     def get_full_status(self) -> dict:
         """Полный статус кошелька: снимок + позиция + потенциал + история (50 точек)."""
         snap    = self.get_snapshot()
+        # Fallback: если in-memory snap пуст (первые секунды после старта),
+        # берём последний снапшот из PostgreSQL чтобы дашборд не показывал —
+        if not snap or not snap.get("ton_balance"):
+            try:
+                import db_store as _ds
+                _db_snap = _ds.wallet_snapshots_get_recent(1)
+                if _db_snap:
+                    snap = _db_snap[-1]
+                    log.debug("[WalletManager] get_full_status: snap from DB (cold start)")
+            except Exception as _e:
+                log.debug("[WalletManager] DB snap fallback: %s", _e)
         history = self.get_history(50)
 
         grinch_bal  = snap.get("grinch_balance", 0) or 0

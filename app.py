@@ -14,6 +14,7 @@ logging.basicConfig(
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
     datefmt="%Y-%m-%d %H:%M:%S",
 )
+logger = logging.getLogger(__name__)
 _startup_log = logging.getLogger("startup")
 _startup_log.info("=== APP IMPORT START ===")
 
@@ -36,6 +37,14 @@ import time
 _startup_log.info("stdlib OK")
 from config import Config
 _startup_log.info("config OK")
+
+# ── Модуль защиты от атак ─────────────────────────────────────────────────
+try:
+    import security as _security
+    _startup_log.info("security module OK")
+except Exception as _sec_err:
+    _security = None
+    _startup_log.warning("security module failed to load: %s", _sec_err)
 
 
 # ── Загружаем сохранённые настройки дашборда поверх env-дефолтов ─────────────
@@ -88,12 +97,20 @@ def _apply_saved_config():
                     "REVERSAL_AI_MIN", "SCALP_MIN_AI_CONF", "SCALP_TP_PCT",
                     "SHORT_MIN_AI_CONF", "SMART_MONEY_BLOCK",
                     "FAST_REENTRY_MIN_CONF", "DCA_REENTRY_COOLDOWN_SEC",
+                    # Trail-параметры (ранее отсутствовали — не персистировались в DB)
+                    "SCALP_MAX_ATR_PCT", "SHORT_TRAIL_PCT",
+                    "TRAIL_STAGE2_AT", "TRAIL_STAGE2_PCT",
+                    "TRAIL_STAGE3_AT", "TRAIL_STAGE3_PCT",
+                    "TRAIL_STAGE4_AT", "TRAIL_STAGE4_PCT",
                 ]
                 defaults = {}
                 for _a in _attrs:
                     _v = getattr(Config, _a, None)
                     if _v is not None:
                         defaults[_a] = _v
+                # DEAD_HOURS_UTC — список, сохраняем как строку
+                defaults["DEAD_HOURS_UTC"] = ",".join(str(h) for h in Config.DEAD_HOURS_UTC)
+                defaults["DEAD_HOURS_DROP_MULT"] = Config.DEAD_HOURS_DROP_MULT
                 if defaults:
                     update_section("config", defaults)
                     _startup_log.info(f"[Config] ✅ Сохранено {len(defaults)} дефолтных настроек в DB")
@@ -162,6 +179,20 @@ def _apply_saved_config():
             # ATR-множители динамических целей
             ("ATR_TP_MULT",                 float),
             ("ATR_SL_MULT",                 float),
+            # Trail-параметры (ранее отсутствовали в restore-loop)
+            ("SCALP_MAX_ATR_PCT",  float),
+            ("SHORT_TRAIL_PCT",    float),
+            ("TRAIL_STAGE2_AT",    float),
+            ("TRAIL_STAGE2_PCT",   float),
+            ("TRAIL_STAGE3_AT",    float),
+            ("TRAIL_STAGE3_PCT",   float),
+            ("TRAIL_STAGE4_AT",    float),
+            ("TRAIL_STAGE4_PCT",   float),
+            # ALL-IN на дне
+            ("ALLIN_ON_BOTTOM",    _bool),
+            ("ALLIN_BOTTOM_CONF",  float),
+            ("ALLIN_RSI_MAX",      float),
+            ("ALLIN_MIN_FREE_TON", float),
         ]:
             if (v := saved.get(attr)) is not None:
                 _safe_set(attr, v, cast)
@@ -169,12 +200,88 @@ def _apply_saved_config():
                     Config.FEE_ROUND_TRIP = Config.FEE_PCT * 2
                 applied += 1
 
+        # DEAD_HOURS_UTC — может быть строкой "0,22,23" или списком [0,22,23]
+        if (raw_dh := saved.get("DEAD_HOURS_UTC")) is not None:
+            try:
+                if isinstance(raw_dh, list):
+                    Config.DEAD_HOURS_UTC = [int(h) for h in raw_dh]
+                else:
+                    # строка вида "0,22,23" — убираем скобки на случай сериализации списка
+                    _dh_str = str(raw_dh).strip().strip("[]")
+                    Config.DEAD_HOURS_UTC = [
+                        int(h.strip()) for h in _dh_str.split(",") if h.strip().lstrip("-").isdigit()
+                    ]
+                applied += 1
+            except Exception as _dh_err:
+                _startup_log.warning(f"[Config] ⚠️ Не удалось восстановить DEAD_HOURS_UTC: {_dh_err}")
+        if (v := saved.get("DEAD_HOURS_DROP_MULT")) is not None:
+            _safe_set("DEAD_HOURS_DROP_MULT", v, float)
+            applied += 1
+
+        # Приоритет ручных настроек над устаревшим состоянием адаптивного ИИ.
+        # ExperienceManager восстанавливает свой control при импорте и иначе
+        # может вернуть MIN_AI_CONFIDENCE/TRADE_AMOUNT к старым значениям.
+        if "MIN_AI_CONFIDENCE" in saved or "TRADE_AMOUNT" in saved:
+            try:
+                from experience_manager import experience_manager
+                experience_manager.set_baseline(
+                    min_conf=(
+                        Config.MIN_AI_CONFIDENCE
+                        if "MIN_AI_CONFIDENCE" in saved else None
+                    ),
+                    trade_amount=(
+                        Config.TRADE_AMOUNT
+                        if "TRADE_AMOUNT" in saved else None
+                    ),
+                )
+            except Exception as _baseline_err:
+                _startup_log.warning(
+                    f"[Config] ⚠️ Не удалось синхронизировать базу AI: {_baseline_err}"
+                )
+
         _startup_log.info(f"[Config] ✅ Восстановлено {applied} сохранённых настроек из settings_store")
     except Exception as e:
         _startup_log.warning(f"[Config] ⚠️ Не удалось загрузить сохранённые настройки: {e}")
     finally:
-        # Гарантия: ONLY_PROFIT_EXIT всегда True, независимо от исхода загрузки
-        Config.ONLY_PROFIT_EXIT = True
+        # Гарантия: все защиты «только в плюс» всегда включены при старте,
+        # независимо от того, что лежит в DB (например, после тестового свопа
+        # «вернуть настройки назад» мог сохранить их отключёнными).
+        Config.ONLY_PROFIT_EXIT       = True   # никогда не продаём в убыток
+        Config.PROFIT_PROTECT_ENABLED = True   # защита прибыли (откат от пика)
+        Config.PROFIT_PROTECT_AI_SELL = True   # AI SELL тоже триггерит защиту
+
+        # BUG-FIX: DCA_DROP_TRIGGER_PCT должен быть в диапазоне 1–25%.
+        # Значение 50% было ошибочно сохранено в settings_store и блокировало DCA
+        # (докупка не срабатывала до -50% падения). Сбрасываем в env-дефолт,
+        # если значение вышло за разумные пределы, и перезаписываем в settings_store.
+        _env_default_drop_trigger = float(os.getenv("DCA_DROP_TRIGGER_PCT", "10"))
+        if not (1 <= Config.DCA_DROP_TRIGGER_PCT <= 25):
+            _old_val = Config.DCA_DROP_TRIGGER_PCT
+            Config.DCA_DROP_TRIGGER_PCT = _env_default_drop_trigger
+            _startup_log.warning(
+                f"[Config] ⚠️ DCA_DROP_TRIGGER_PCT={_old_val}% вне диапазона 1–25%, "
+                f"сброс → {Config.DCA_DROP_TRIGGER_PCT}% (env default)"
+            )
+            try:
+                from settings_store import update_section
+                update_section("config", {"DCA_DROP_TRIGGER_PCT": Config.DCA_DROP_TRIGGER_PCT})
+            except Exception:
+                pass
+
+        # BUG-FIX гарантия: трейл-пороги не опускаются ниже ATR-откалиброванных минимумов.
+        # Защищает от старых значений в DB. Логика max(): выше → сохраняем; ниже порога → зажимаем.
+        # Калибровка 20.07.2026: ATR(15m)=2.225%, ATR(1h)хар.≈4-5%, памп до +50% за свечу.
+        # Этапы расширены: Stage2=10% (2×ATR_1h), Stage3=7.5%, Stage4=6.0%
+        Config.TRAIL_STAGE2_PCT         = max(Config.TRAIL_STAGE2_PCT,        10.0)
+        Config.TRAIL_STAGE3_PCT         = max(Config.TRAIL_STAGE3_PCT,         7.5)
+        Config.TRAIL_STAGE4_PCT         = max(Config.TRAIL_STAGE4_PCT,         6.0)
+        # ATR(15m)=2.225% → SHORT_TRAIL ≥ 4×ATR=8.9% → 9%.
+        # Smart TP настраивается отдельно через dashboard/settings_store;
+        # не перезаписываем пользовательский tight trail при старте.
+        Config.SHORT_TRAIL_PCT          = max(Config.SHORT_TRAIL_PCT,          9.0)
+        # SCALP_MAX_ATR_PCT: ATR(15m)=2.225% < 3.0% → скальп уже включён без guard,
+        # но держим 3.0 как минимум — запас на случай роста волатильности.
+        Config.SCALP_MAX_ATR_PCT        = max(Config.SCALP_MAX_ATR_PCT,        3.0)
 
 
 _apply_saved_config()
@@ -240,6 +347,9 @@ def _add_static_cache_headers(resp):
     # на каждый запрос страницы (браузер и так проверит по ETag при заходе).
     if request.path.startswith("/static/"):
         resp.headers.setdefault("Cache-Control", "public, max-age=3600")
+    # Security headers (X-Frame-Options, X-Content-Type-Options и др.)
+    if _security:
+        resp = _security.add_security_headers(resp)
     return resp
 if Compress is not None:
     app.config["COMPRESS_MIMETYPES"] = [
@@ -263,15 +373,26 @@ def _resolve_secret_key():
     os.makedirs(_data_dir, exist_ok=True)
     path = os.path.join(_data_dir, ".session_secret")
     try:
-        if os.path.exists(path):
-            with open(path) as f:
-                saved = f.read().strip()
-            if saved:
-                return saved
-        generated = _secrets.token_hex(32)
-        with open(path, "w") as f:
-            f.write(generated)
-        return generated
+        import fcntl as _fcntl
+        lock_path = path + ".lock"
+        with open(lock_path, "w") as _lf:
+            _fcntl.flock(_lf, _fcntl.LOCK_EX)   # M1 fix: file lock — защита от race между worker'ами
+            try:
+                if os.path.exists(path):
+                    with open(path) as f:
+                        saved = f.read().strip()
+                    if saved:
+                        return saved
+                generated = _secrets.token_hex(32)
+                tmp = path + ".tmp"
+                with open(tmp, "w") as f:
+                    f.write(generated)
+                    f.flush()
+                    os.fsync(f.fileno())
+                os.replace(tmp, path)
+                return generated
+            finally:
+                _fcntl.flock(_lf, _fcntl.LOCK_UN)
     except Exception:
         return _secrets.token_hex(32)
 
@@ -396,28 +517,6 @@ _startup_log.info("SocketIO OK")
 _startup_log.info("Trader() init start")
 trader = Trader()
 _startup_log.info("Trader() OK")
-
-# ── Независимая сеточная стратегия DeDust ────────────────────────────────────
-# GridTrader живёт рядом с основным Trader, но имеет собственное состояние,
-# poller и переключатель. Если DeDust недоступен, модуль остаётся безопасно
-# неактивным и не мешает запуску основного приложения.
-try:
-    from grid_trader import get_grid_trader
-    grid_trader = get_grid_trader()
-    grid_trader.inject(
-        dedust_client=getattr(trader.exchange, "_dedust", None),
-        ai_engine=getattr(trader, "ai", None),
-        trader_ref=trader,
-    )
-    _startup_log.info(
-        "GridTrader OK: active=%s sell=%d buy=%d",
-        grid_trader.get_status().get("active"),
-        grid_trader.get_status().get("sell", {}).get("total", 0),
-        grid_trader.get_status().get("buy", {}).get("total", 0),
-    )
-except Exception as _grid_init_err:
-    grid_trader = None
-    _startup_log.warning("GridTrader setup FAILED: %s", _grid_init_err)
 ton    = TONTracker(Config.TON_WALLET)
 _startup_log.info("TONTracker OK")
 
@@ -443,14 +542,12 @@ _startup_log.info("WalletTracker OK")
 from wallet_manager import wallet_manager as _wallet_mgr
 _startup_log.info("WalletManager OK")
 
+import data_hub   # запускает фоновый поток обновления при старте приложения
+_startup_log.info("DataHub OK")
+
 
 def _safe_status():
     raw = trader.get_status()
-    if grid_trader is not None:
-        try:
-            raw["grid"] = grid_trader.get_status()
-        except Exception as _grid_status_err:
-            raw["grid"] = {"active": False, "error": str(_grid_status_err)}
     # orjson сериализует numpy-типы нативно и в 5–10× быстрее обхода _walk.
     # Fallback на рекурсивный _walk только если orjson недоступен.
     if orjson is not None:
@@ -480,6 +577,26 @@ def _safe_status():
 # обработчике запроса). Это убирает подвисания и лишние повторные вычисления.
 _status_snapshot = None
 _snapshot_lock   = threading.Lock()
+
+# Короткий кэш для read-only виджетов дашборда. Эти endpoints вызываются
+# несколькими таймерами одновременно, но не участвуют в торговых решениях.
+# Кэш уменьшает повторную сериализацию/агрегацию и не скрывает изменения
+# дольше нескольких секунд.
+_READ_API_CACHE = {}
+_READ_API_CACHE_LOCK = threading.Lock()
+
+def _read_api_cache_get(name: str, ttl: float):
+    now = time.time()
+    with _READ_API_CACHE_LOCK:
+        item = _READ_API_CACHE.get(name)
+        if item and (now - item["ts"]) < ttl:
+            return item["payload"]
+    return None
+
+def _read_api_cache_put(name: str, payload: dict):
+    with _READ_API_CACHE_LOCK:
+        _READ_API_CACHE[name] = {"ts": time.time(), "payload": payload}
+    return payload
 
 def _get_snapshot():
     """Последний готовый снимок статуса (или None, пока буфер не прогрет)."""
@@ -520,7 +637,8 @@ def push_updates():
                     _status_snapshot = snap
                 socketio.emit("status_update", snap)
         except Exception as e:
-            print(f"[Push] Ошибка: {e}")
+            import traceback as _tb
+            print(f"[Push] Ошибка: {e}\n{_tb.format_exc()}")
         time.sleep(2)
 
 
@@ -605,12 +723,6 @@ def _load_users_bg():
     # Было 3с — было нужно «подождать пока Flask поднимется», но Flask уже
     # слушает к этому моменту. 0.5с достаточно для finalization init-цикла.
     time.sleep(0.5)
-    # В demo/локальном workflow Flask-SQLAlchemy намеренно не инициализируется.
-    # Не запускать пользовательский DB-поток в этом режиме: db_store имеет
-    # отдельный JSON/DB fallback и не является признаком готовности SQLAlchemy.
-    if not _db_available:
-        _startup_log.info("User DB features disabled — skipping user/deposit workers")
-        return
     user_mgr.load_from_db(app)
     deposit_monitor.start(app, user_mgr)
 
@@ -635,14 +747,6 @@ def start_background():
         trader.on_training_progress = push_training_progress
         # Авто-старт торговли (обучение → торговля)
         trader.start()
-        # Сетка запускается отдельно от DCA/AI-трейдера. Сам поток ничего не
-        # делает, пока нет DeDust-клиента или сетка не активирована.
-        if grid_trader is not None:
-            try:
-                grid_trader.start_poller()
-                _startup_log.info("GridTrader poller started")
-            except Exception as _grid_start_err:
-                _startup_log.warning("GridTrader poller FAILED: %s", _grid_start_err)
         # Критические UI-потоки под наблюдением супервайзера —
         # при падении перезапускаются автоматически через 5с.
         _supervise("push_updates", push_updates)
@@ -662,6 +766,7 @@ def start_background():
         try:
             import alerts
             alerts.start_monitor()
+            alerts.start_hourly_report(data_dir=os.getenv("DATA_DIR", "/app/data"))
         except Exception as _al_ex:
             print(f"[Alerts] монитор не запущен: {_al_ex}")
         # ── Кошелёк: полное отслеживание TON + GRINCH через БД ──────────
@@ -669,6 +774,54 @@ def start_background():
             _wallet_mgr.start(trader_ref=trader)
         except Exception as _wm_ex:
             print(f"[WalletManager] не запущен: {_wm_ex}")
+        # ── Market Scanner: фоновый сканер паттернов ─────────────────────
+        try:
+            import ai_market_scanner as _mscanner
+            def _get_candles_for_scanner():
+                try:
+                    ohlcv = trader.exchange.get_real_ohlcv(limit=60, currency="token",
+                                                           token="base", tf="minute",
+                                                           aggregate=15)
+                    return ohlcv if ohlcv else trader.exchange.get_ohlcv(limit=60)
+                except Exception:
+                    return []
+            _mscanner.start(_get_candles_for_scanner)
+        except Exception as _sc_ex:
+            print(f"[Scanner] не запущен: {_sc_ex}")
+
+        # ── Бэкфилл: нормализация старых записей bot_trades (одноразово) ──────
+        try:
+            import db_store as _dbs
+            _dbs.backfill_trade_fields()
+        except Exception as _bf_ex:
+            print(f"[Startup] backfill_trade_fields: {_bf_ex}")
+
+        # ── Очистка артефакта: сталый ключ trading.trading_enabled в bot_settings
+        # Бот читает ТОЛЬКО trader_state.trading_enabled; секция "trading" — устаревший
+        # артефакт предыдущей версии кода, вызывавший путаницу при аудите.
+        try:
+            import db_store as _dbs_te
+            _dbs_te.settings_delete_key("trading", "trading_enabled")
+        except Exception as _te_ex:
+            print(f"[Startup] clean trading_enabled conflict: {_te_ex}")
+
+        # -- Grid Trader v2: compound-реинвест + DCA + GridAI --
+        try:
+            from grid_trader import get_grid_trader
+            from grid_ai import get_grid_ai
+            _grid    = get_grid_trader()
+            _grid_ai = get_grid_ai()
+            _dc      = (getattr(trader, 'dedust', None)
+                        or getattr(trader, '_dc', None)
+                        or getattr(getattr(trader, 'exchange', None), '_dedust', None))
+            _ai      = getattr(trader, 'ai', None)
+            _grid.inject(dedust_client=_dc, ai_engine=_ai, grid_ai=_grid_ai,
+                         trader_ref=trader)
+            _grid.start_poller()
+            print('[Grid] Grid-trader v2 поллер запущен (GridAI примеров: %d)' %
+                  len(_grid_ai._experience))
+        except Exception as _grid_ex:
+            print('[Grid] не запущен: ' + str(_grid_ex))
 
 start_background()
 
@@ -682,6 +835,12 @@ from datetime import timedelta
 ADMIN_USERNAME = os.environ.get("ADMIN_USERNAME", "")
 ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "")
 
+if not (ADMIN_USERNAME and ADMIN_PASSWORD):
+    _startup_log.critical(
+        "⛔ ADMIN_USERNAME / ADMIN_PASSWORD не заданы! "
+        "Все изменяющие API (POST) заблокированы до их установки."
+    )
+
 app.permanent_session_lifetime = timedelta(days=30)
 
 # Публичные пути — доступны без входа (страницы участников платформы).
@@ -689,7 +848,13 @@ app.permanent_session_lifetime = timedelta(days=30)
 _PUBLIC_EXACT = {
     "/login", "/logout", "/favicon.ico",
     "/tonconnect-manifest.json", "/join", "/api/platform/stats",
-    "/health",  # health-check от Bothost/Docker должен проходить без авторизации
+    "/health",           # health-check от Bothost/Docker без авторизации
+    "/api/amm/preview",  # AMM live widget — виджет на дашборде без авторизации
+    "/webhook/github",   # GitHub webhook — вызывается GitHub'ом, не пользователем
+    "/api/ai-modules",   # статус AI-модулей — нужен до авторизации для дашборда
+    "/api/performance",  # read-only торговая статистика — нужна виджетам без авторизации
+    "/api/ai/history",   # статистика обучения AI — только чтение, не содержит sensitive данных
+    "/api/grid/status",  # статус grid-сетки — read-only, нужен дашборду без авторизации
 }
 _PUBLIC_PREFIXES = ("/static/", "/dashboard/", "/api/user/")
 
@@ -703,9 +868,34 @@ def _is_public_path(path):
 
 
 @app.before_request
+def _security_check():
+    """Rate-limit + IP-бан + scanner-detection. Первый before_request."""
+    if _security:
+        result = _security.check_request()
+        if result is not None:
+            return result
+
+
+@app.before_request
+def _ensure_csrf_token():
+    """Генерируем CSRF-токен в сессии при первом запросе."""
+    import secrets as _s
+    if "_csrf" not in session:
+        session["_csrf"] = _s.token_hex(32)
+
+
+@app.before_request
 def _require_login():
-    # Пока логин/пароль не заданы — доступ не блокируем (чтобы не закрыть панель).
+    # Если логин/пароль не заданы — блокируем state-changing запросы (POST/PUT/DELETE).
+    # GET-запросы пропускаем, чтобы дашборд оставался доступным.
     if not _auth_configured():
+        if request.method in ("POST", "PUT", "DELETE", "PATCH"):
+            path = request.path or "/"
+            if not _is_public_path(path) and path != "/login":
+                return jsonify({
+                    "ok": False,
+                    "error": "Панель не защищена паролем. Задайте ADMIN_USERNAME и ADMIN_PASSWORD."
+                }), 403
         return None
     path = request.path or "/"
     if _is_public_path(path):
@@ -717,21 +907,59 @@ def _require_login():
     return redirect(url_for("login", next=path))
 
 
+@app.before_request
+def _check_csrf():
+    """Проверяем CSRF-токен для всех изменяющих запросов."""
+    if request.method not in ("POST", "PUT", "DELETE", "PATCH"):
+        return None
+    path = request.path or "/"
+    # Публичные пути и SocketIO — не проверяем
+    if _is_public_path(path) or path.startswith("/socket.io") or path == "/login":
+        return None
+    # Внутренние вызовы с localhost не требуют CSRF (docker exec / management scripts)
+    remote = request.remote_addr or ""
+    if remote in ("127.0.0.1", "::1"):
+        return None
+    token = (
+        request.headers.get("X-CSRF-Token")
+        or request.form.get("csrf_token")
+        or ""
+    )
+    session_token = session.get("_csrf") or ""
+    if not session_token or not hmac.compare_digest(token, session_token):
+        if path.startswith("/api"):
+            return jsonify({"ok": False, "error": "CSRF token invalid"}), 403
+        return redirect(url_for("login"))
+
+
 @app.route("/login", methods=["GET", "POST"])
 def login():
     if session.get("logged_in"):
         return redirect(request.args.get("next") or url_for("index"))
     error = None
     if request.method == "POST":
+        # Брутфорс-защита: проверяем лимит попыток для этого IP
+        _ip = _security.get_client_ip() if _security else (request.remote_addr or "")
+        if _security and not _security.check_login_allowed(_ip):
+            error = "Слишком много попыток входа. Попробуйте позже."
+            return render_template("login.html", error=error,
+                                   next=request.args.get("next", "")), 429
+
         username = (request.form.get("username") or "").strip()
         password = request.form.get("password") or ""
         if (_auth_configured()
                 and hmac.compare_digest(username, ADMIN_USERNAME)
                 and hmac.compare_digest(password, ADMIN_PASSWORD)):
+            if _security:
+                _security.record_login_success(_ip)
+            session.clear()          # M2 fix: session fixation — обновляем сессию перед входом
             session.permanent = True
             session["logged_in"] = True
             session["user"] = username
             return redirect(request.args.get("next") or url_for("index"))
+        # Неудачная попытка
+        if _security:
+            _security.record_login_fail(_ip)
         error = "Неверный логин или пароль"
     return render_template("login.html", error=error,
                            next=request.args.get("next", ""))
@@ -789,7 +1017,7 @@ def health():
     if trader.last_tick_ts == 0:
         # Ещё идёт предобучение AI перед первым тиком — это ожидаемо, не ошибка
         return jsonify({"status": "ok", "trader": "starting", "rss_mb": rss_mb}), 200
-    if age > 90:
+    if age > 180:
         return jsonify({
             "status": "unhealthy",
             "reason": "trading loop stalled",
@@ -818,6 +1046,26 @@ def health():
     }), 200
 
 
+def _check_admin_confirm() -> bool:
+    """C1/C2 fix: step-up для деструктивных admin-операций.
+    Если задан ADMIN_CONFIRM_PIN — требуем его в заголовке X-Admin-Confirm или в теле запроса.
+    Если не задан — пропускаем (backward-compat), но логируем предупреждение.
+    """
+    pin = os.environ.get("ADMIN_CONFIRM_PIN", "")
+    if not pin:
+        import logging as _lg
+        _lg.getLogger("app").warning(
+            "[AdminSecurity] ADMIN_CONFIRM_PIN не задан — деструктивный admin-endpoint не защищён step-up!")
+        return True   # backward-compat
+    provided = (
+        request.headers.get("X-Admin-Confirm")
+        or ((request.json or {}).get("admin_confirm_pin", "") if request.is_json
+            else request.form.get("admin_confirm_pin", ""))
+        or ""
+    )
+    return hmac.compare_digest(str(provided), pin)
+
+
 @app.route("/api/admin/self_update", methods=["POST"])
 def api_admin_self_update():
     """Само-обновление: скачивает актуальные .py-файлы с GitHub и делает
@@ -837,8 +1085,12 @@ def api_admin_self_update():
         "settings_store.py", "user_trader.py", "wallet_manager.py",
         "wallet_tracker.py", "db_store.py", "http_client.py",
         "coin_info.py", "exchange.py",
+        "grid_trader.py", "grid_ai.py",
         "templates/index.html", "templates/join.html", "templates/user_dash.html",
     ]
+
+    if not _check_admin_confirm():
+        return jsonify({"ok": False, "error": "step-up подтверждение не прошло — укажите ADMIN_CONFIRM_PIN"}), 403
 
     branch = (request.json or {}).get("branch", "main") if request.is_json else "main"
     updated, skipped, errors = [], [], []
@@ -895,12 +1147,9 @@ def api_admin_self_update():
 
 @app.route("/api/admin/hard_restart", methods=["POST"])
 def api_admin_hard_restart():
-    """Настоящий перезапуск процесса (не graceful SIGHUP воркеров, которое
-    при --preload не подхватывает новый код/шаблоны с диска). Отправляет
-    SIGTERM мастеру gunicorn: супервизор/Docker с restart-политикой поднимет
-    процесс заново, который импортирует все .py и шаблоны с чистого листа.
-    Требует авторизации (тот же before_request, что и остальной /api/admin).
-    """
+    """Настоящий перезапуск процесса. Требует авторизации + step-up pin."""
+    if not _check_admin_confirm():
+        return jsonify({"ok": False, "error": "step-up подтверждение не прошло — укажите ADMIN_CONFIRM_PIN"}), 403
     import signal as _sig
     try:
         import psutil as _ps
@@ -940,23 +1189,29 @@ def api_admin_fix_open_trades():
     """
     from config import Config as _Cfg
     fixed = []
-    for t in (trader.open_trades or []):
-        ep = float(t.get("entry_price") or 0)
-        tp = float(t.get("take_profit") or 0)
-        st = float(t.get("stake_ton") or 0)
-        if ep > 0 and tp / ep > 10:
-            mg = _Cfg.required_gross_pct_with_gas(st if st > 0 else None)
-            tp_pct = max(_Cfg.TAKE_PROFIT_PCT, mg)
-            new_tp = round(ep * (1 + tp_pct / 100), 8)
-            t["take_profit"] = new_tp
-            fixed.append({"id": str(t.get("id", ""))[:12],
-                           "old_tp": tp, "new_tp": new_tp})
+    with trader._ot_lock:
+        for t in (trader.open_trades or []):
+            ep = float(t.get("entry_price") or 0)
+            tp = float(t.get("take_profit") or 0)
+            st = float(t.get("stake_ton") or 0)
+            if ep > 0 and tp / ep > 10:
+                mg = _Cfg.required_gross_pct_with_gas(st if st > 0 else None)
+                tp_pct = max(_Cfg.TAKE_PROFIT_PCT, mg)
+                new_tp = round(ep * (1 + tp_pct / 100), 8)
+                t["take_profit"] = new_tp
+                fixed.append({"id": str(t.get("id", ""))[:12],
+                               "old_tp": tp, "new_tp": new_tp})
     if fixed:
         try:
             trader.exp.save_open_trades(trader._combined_open_trades())
-        except Exception:
-            pass
+        except Exception as _e:
+            import logging as _lg
+            _lg.getLogger("app").warning("fix_open_trades save_open_trades error: %s", _e)
     return jsonify({"ok": True, "fixed": fixed, "count": len(fixed)})
+
+
+_MEMORY_CACHE: dict = {"ts": 0.0, "payload": None}
+_MEMORY_CACHE_TTL = 10  # секунд — gc.get_objects() дорогой вызов
 
 
 @app.route("/api/memory")
@@ -966,7 +1221,12 @@ def api_memory():
     инциденте (OOM на внешнем хостинге) сразу видеть, что именно раздуто:
     модели AI, буферы опыта, кэши цен/аналитики или количество потоков.
     Не требует psutil — используется resource.getrusage (встроен в Python).
+    Кэшируется на 10 сек: gc.get_objects() дорог при частом polling-е.
     """
+    _now = time.time()
+    if _MEMORY_CACHE["payload"] and (_now - _MEMORY_CACHE["ts"]) < _MEMORY_CACHE_TTL:
+        return jsonify({**_MEMORY_CACHE["payload"], "cached": True}), 200
+
     rss_kb = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
     rss_mb = round(rss_kb / 1024, 1)  # на Linux ru_maxrss уже в КБ
 
@@ -1012,7 +1272,7 @@ def api_memory():
         "gc_generation_counts": gc.get_count(),
     }
 
-    return jsonify({
+    payload = {
         "process": {
             "rss_mb": rss_mb,
             "active_threads": threading.active_count(),
@@ -1022,7 +1282,135 @@ def api_memory():
         "analytics_buffer": analytics_info,
         "caches": cache_info,
         "gc": gc_info,
-    }), 200
+    }
+    _MEMORY_CACHE["payload"] = payload
+    _MEMORY_CACHE["ts"]      = time.time()
+    return jsonify(payload), 200
+
+
+# ─────────────────────────── Performance Stats ──────────────────────────────
+
+@app.route("/api/performance")
+def api_performance():
+    """Расширенная торговая статистика: Sharpe, серия побед, daily P&L, circuit breaker.
+
+    Рассчитывает упрощённый Sharpe Ratio по истории сделок сессии.
+    Annualized = (mean_pnl / std_pnl) × √252 (252 торговых дня в году).
+    """
+    cached = _read_api_cache_get("performance", 10)
+    if cached is not None:
+        return jsonify(cached), 200
+
+    stats = getattr(trader, "stats", {}) or {}
+    total = int(stats.get("total_trades",   0))
+    wins  = int(stats.get("winning_trades", 0))
+    pnl   = float(stats.get("total_pnl",    0.0))
+
+    win_rate = round(wins / total * 100, 1) if total > 0 else 0.0
+
+    # Sharpe Ratio из закрытых сделок (upрощённый, аннуализированный)
+    sharpe_ratio = None
+    try:
+        import numpy as _np
+        closed = [t for t in (trader.trades or []) if t.get("pnl") is not None]
+        if len(closed) >= 5:
+            pnls = _np.array([float(t["pnl"]) for t in closed], dtype=float)
+            mean_p = float(_np.mean(pnls))
+            std_p  = float(_np.std(pnls))
+            if std_p > 0:
+                sharpe_ratio = round(mean_p / std_p * (252 ** 0.5), 2)
+    except Exception:
+        pass
+
+    # Max Drawdown из кумулятивного P&L по закрытым сделкам
+    max_drawdown_ton = None
+    try:
+        closed = sorted(
+            [t for t in (trader.trades or []) if t.get("pnl") is not None and t.get("closed_at")],
+            key=lambda t: t.get("closed_at", "")
+        )
+        if len(closed) >= 2:
+            import numpy as _np2
+            pnls_arr  = _np2.array([float(t["pnl"]) for t in closed], dtype=float)
+            cum_pnl   = _np2.cumsum(pnls_arr)
+            running_max = _np2.maximum.accumulate(cum_pnl)
+            drawdowns   = cum_pnl - running_max
+            max_drawdown_ton = round(float(_np2.min(drawdowns)), 4)
+    except Exception:
+        pass
+
+    # BrainFusion: точность источников и динамические веса
+    source_accuracy = {}
+    try:
+        import brain_fusion as _bf_mod
+        _b = _bf_mod.brain
+        with _b._lock:
+            source_accuracy = {
+                "ai":  {"wins": _b._ai_wins,  "total": _b._ai_total,
+                         "pct": round(_b._ai_wins / _b._ai_total * 100, 1)
+                                if _b._ai_total > 0 else None},
+                "ta":  {"wins": _b._ta_wins,  "total": _b._ta_total,
+                         "pct": round(_b._ta_wins / _b._ta_total * 100, 1)
+                                if _b._ta_total > 0 else None},
+                "llm": {"wins": _b._adv_wins, "total": _b._adv_total,
+                         "pct": round(_b._adv_wins / _b._adv_total * 100, 1)
+                                if _b._adv_total > 0 else None},
+            }
+    except Exception:
+        pass
+
+    payload = {
+        "ok":                 True,
+        "total_trades":       total,
+        "winning_trades":     wins,
+        "win_rate_pct":       win_rate,
+        "total_pnl_ton":      round(pnl, 4),
+        "win_streak":         int(stats.get("win_streak",      0)),
+        "max_win_streak":     int(stats.get("max_win_streak",  0)),
+        "best_trade_ton":     round(float(stats.get("best_trade_ton",  0.0)), 4),
+        "worst_trade_ton":    round(float(stats.get("worst_trade_ton", 0.0)), 4),
+        "daily_pnl_ton":      round(float(stats.get("daily_pnl",       0.0)), 4),
+        "circuit_breaker":    bool(stats.get("circuit_breaker_active", False)),
+        "sharpe_ratio":       sharpe_ratio,
+        "max_drawdown_ton":   max_drawdown_ton,
+        "source_accuracy":    source_accuracy,
+    }
+    _read_api_cache_put("performance", payload)
+    return jsonify(payload), 200
+
+
+@app.route("/api/security/stats")
+def api_security_stats():
+    """Статистика модуля защиты: заблокированные IP, rate-limit, брутфорс."""
+    if not _security:
+        return jsonify({"ok": False, "error": "security module not loaded"}), 503
+    return jsonify({"ok": True, **_security.get_stats()})
+
+
+@app.route("/api/security/ban", methods=["POST"])
+def api_security_ban():
+    """Ручной перманентный бан IP. Тело: {"ip": "1.2.3.4"}"""
+    if not _security:
+        return jsonify({"ok": False, "error": "security module not loaded"}), 503
+    data = request.get_json(silent=True) or {}
+    ip = (data.get("ip") or "").strip()
+    if not ip:
+        return jsonify({"ok": False, "error": "ip required"}), 400
+    _security.ban_ip(ip)
+    return jsonify({"ok": True, "banned": ip})
+
+
+@app.route("/api/security/unban", methods=["POST"])
+def api_security_unban():
+    """Снять бан с IP. Тело: {"ip": "1.2.3.4"}"""
+    if not _security:
+        return jsonify({"ok": False, "error": "security module not loaded"}), 503
+    data = request.get_json(silent=True) or {}
+    ip = (data.get("ip") or "").strip()
+    if not ip:
+        return jsonify({"ok": False, "error": "ip required"}), 400
+    _security.unban_ip(ip)
+    return jsonify({"ok": True, "unbanned": ip})
 
 
 _GIT_LAST_UPDATE_CACHE = {"value": None}
@@ -1083,98 +1471,166 @@ def api_status():
     # Пока буфер не прогрет (самый первый запрос) — считаем напрямую один раз.
     return jsonify(_status_for_response())
 
+# ─────────────────────────── AMM Preview ────────────────────────────────────
+_AMM_PREVIEW_CACHE = {"ts": 0.0, "payload": None}
+_AMM_PREVIEW_TTL   = 12  # сек — TonAPI reserves запрос, не долбим чаще раза в 12с
 
-# ════════════════════════════════════════════════════════════════════════════
-#  Grid trading — отдельный lifecycle и API
-# ════════════════════════════════════════════════════════════════════════════
+@app.route("/api/amm/preview")
+def api_amm_preview():
+    """Реальная CPMM-оценка: сколько TON вернёт пул за весь GRINCH прямо сейчас.
 
-@app.route("/api/grid/status")
-def api_grid_status():
-    """Текущий статус сетки и её уровни."""
-    if grid_trader is None:
-        return jsonify({"ok": False, "active": False,
-                        "error": "GridTrader не инициализирован"}), 503
+    Кэшируется 12 секунд чтобы не насиловать TonAPI при частом polling-е.
+    Возвращает:
+      grinch_amount   — GRINCH на кошельке (из открытых позиций)
+      expected_ton    — брутто-выход из пула (CPMM с price impact)
+      net_ton         — нетто (expected_ton − sell_gas)
+      min_net_ton     — минимум для безубыточного выхода (stake + buy_gas * entries)
+      shortfall_ton   — дефицит (< 0) или запас (> 0)
+      ok              — True если net_ton ≥ min_net_ton
+      pool_ton_reserve, pool_grinch_reserve — резервы пула
+      sell_gas        — Config.SELL_GAS_TON
+      cached          — True если данные из кэша
+    """
+    now = time.time()
+    if _AMM_PREVIEW_CACHE["payload"] and (now - _AMM_PREVIEW_CACHE["ts"]) < _AMM_PREVIEW_TTL:
+        payload = dict(_AMM_PREVIEW_CACHE["payload"])
+        payload["cached"] = True
+        payload["cache_age"] = round(now - _AMM_PREVIEW_CACHE["ts"], 1)
+        return jsonify(payload)
+
     try:
-        return jsonify({"ok": True, **grid_trader.get_status()})
+        from config import Config as _Cfg
+        dc = trader.exchange._dedust  # DeDustClient instance
+
+        # 1. GRINCH из открытых позиций (снимок под локом — защита от race с tick)
+        with trader._ot_lock:
+            open_trades = list(trader.open_trades) if trader.open_trades else []
+        grinch_amount = sum(t.get("amount", 0) or 0 for t in open_trades)
+        total_stake   = sum(t.get("stake_ton", 0) or 0 for t in open_trades)
+        n_entries     = max(1, len(open_trades)) if open_trades else 1
+
+        # Если нет открытых позиций — берём реальный баланс кошелька (для индикации)
+        if grinch_amount <= 0:
+            try:
+                from wallet_manager import wallet_manager as _wm
+                snap = _wm.get_snapshot() or {}
+                grinch_amount = float(snap.get("grinch", 0) or 0)
+            except Exception:
+                pass
+
+        # 2. Минимум для безубытка (только если есть открытые позиции)
+        min_net_ton = (total_stake + _Cfg.BUY_GAS_TON * n_entries) if open_trades else 0.0
+        sell_gas    = _Cfg.SELL_GAS_TON
+
+        # 3. Резервы пула + CPMM
+        pool_ton = pool_grinch = None
+        expected_ton = None
+        reserves = None
+        if dc is not None:
+            try:
+                reserves = dc._pool_reserves()
+            except Exception:
+                reserves = None
+
+        if reserves:
+            pool_ton, pool_grinch = reserves
+            if grinch_amount > 0:
+                expected_ton = dc._cpmm_out(grinch_amount, pool_grinch, pool_ton)
+        elif grinch_amount > 0:
+            # Fallback: spot-цена из price_feed
+            try:
+                from price_feed import price_feed as _pf
+                gtp = _pf.get_grinch_ton_price()
+                if gtp and gtp > 0:
+                    expected_ton = grinch_amount * gtp * (1 - _Cfg.FEE_PCT / 100)
+            except Exception:
+                pass
+
+        net_ton      = round(expected_ton - sell_gas, 4) if expected_ton is not None else None
+        shortfall    = round(net_ton - min_net_ton, 4)  if net_ton is not None else None
+        amm_ok       = (shortfall >= 0) if shortfall is not None else None
+        price_impact = None
+        if expected_ton and pool_ton and pool_grinch and grinch_amount > 0:
+            spot_price_ton = pool_ton / pool_grinch  # цена GRINCH в TON без impact
+            ideal_out      = grinch_amount * spot_price_ton * (1 - _Cfg.FEE_PCT / 100)
+            price_impact   = round((1 - expected_ton / ideal_out) * 100, 3) if ideal_out > 0 else None
+
+        payload = {
+            "grinch_amount":       round(grinch_amount, 2),
+            "expected_ton":        round(expected_ton, 4)  if expected_ton  is not None else None,
+            "net_ton":             net_ton,
+            "min_net_ton":         round(min_net_ton, 4),
+            "shortfall_ton":       shortfall,
+            "ok":                  amm_ok,
+            "price_impact_pct":    price_impact,
+            "pool_ton_reserve":    round(pool_ton, 2)    if pool_ton    is not None else None,
+            "pool_grinch_reserve": round(pool_grinch, 0) if pool_grinch is not None else None,
+            "sell_gas":            sell_gas,
+            "n_entries":           n_entries,
+            "has_position":        len(open_trades) > 0,
+            "cached":              False,
+            "cache_age":           0,
+            "ts":                  round(now),
+        }
+        _AMM_PREVIEW_CACHE["ts"]      = now
+        _AMM_PREVIEW_CACHE["payload"] = payload
+        return jsonify(payload)
+
     except Exception as e:
-        return jsonify({"ok": False, "active": False, "error": str(e)}), 500
+        return jsonify({"error": str(e), "ok": None, "cached": False}), 500
 
-
-@app.route("/api/grid/build", methods=["POST"])
-def api_grid_build():
-    """Построить/перестроить сетку по текущим on-chain балансам."""
-    if grid_trader is None:
-        return jsonify({"ok": False, "error": "GridTrader не инициализирован"}), 503
+# ─────────────────────────── Living Organism ────────────────────────────────
+@app.route("/api/market_hub")
+def api_market_hub():
+    """Агрегированные рыночные данные из 6 бесплатных источников."""
     try:
-        data = request.get_json(silent=True) or {}
-        step = data.get("step_pct")
-        sell_levels = data.get("sell_levels")
-        buy_levels = data.get("buy_levels")
-
-        step = float(step) if step not in (None, "") else None
-        sell_levels = int(sell_levels) if sell_levels not in (None, "") else None
-        buy_levels = int(buy_levels) if buy_levels not in (None, "") else None
-        if sell_levels is not None and not 1 <= sell_levels <= 30:
-            raise ValueError("sell_levels должен быть от 1 до 30")
-        if buy_levels is not None and not 1 <= buy_levels <= 30:
-            raise ValueError("buy_levels должен быть от 1 до 30")
-
-        from price_feed import price_feed
-        current_price_ton = float(price_feed.get_grinch_ton_price() or 0)
-        if current_price_ton <= 0:
-            return jsonify({"ok": False, "error": "Нет актуальной цены GRINCH/TON"}), 503
-
-        balance = trader.exchange.get_balance() or {}
-        if balance.get("error"):
-            return jsonify({"ok": False, "error": str(balance.get("error"))}), 503
-        grinch_balance = float(balance.get("GRINCH", balance.get("grinch", 0)) or 0)
-        ton_balance = float(balance.get("TON", balance.get("ton", 0)) or 0)
-        result = grid_trader.build_grid(
-            current_price_ton=current_price_ton,
-            grinch_balance=grinch_balance,
-            ton_balance=ton_balance,
-            step_pct=step,
-            sell_levels=sell_levels,
-            buy_levels=buy_levels,
-        )
-        return jsonify(result), (200 if result.get("ok") else 400)
-    except (TypeError, ValueError) as e:
-        return jsonify({"ok": False, "error": str(e)}), 400
+        from data_hub import get_snapshot, get_source_status
+        snap   = get_snapshot()
+        status = get_source_status()
+        return jsonify({"ok": True, "data": snap, "sources": status})
     except Exception as e:
-        _startup_log.exception("Grid build failed")
         return jsonify({"ok": False, "error": str(e)}), 500
 
+@app.route("/api/organism")
+def api_organism():
+    """Состояние живого организма QuantumBrain (7 биосистем)."""
+    cached = _read_api_cache_get("organism", 5)
+    if cached is not None:
+        return jsonify(cached)
+    try:
+        from organism import organism as _org
+        return jsonify(_read_api_cache_put("organism", _org.get_state()))
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
-@app.route("/api/grid/activate", methods=["POST"])
-def api_grid_activate():
-    if grid_trader is None:
-        return jsonify({"ok": False, "error": "GridTrader не инициализирован"}), 503
-    result = grid_trader.activate()
-    return jsonify(result), (200 if result.get("ok") else 400)
-
-
-@app.route("/api/grid/deactivate", methods=["POST"])
-def api_grid_deactivate():
-    if grid_trader is None:
-        return jsonify({"ok": False, "error": "GridTrader не инициализирован"}), 503
-    data = request.get_json(silent=True) or {}
-    result = grid_trader.deactivate(str(data.get("reason") or "manual")[:120])
-    return jsonify(result)
-
-
-@app.route("/api/grid/reset-errors", methods=["POST"])
-def api_grid_reset_errors():
-    if grid_trader is None:
-        return jsonify({"ok": False, "error": "GridTrader не инициализирован"}), 503
-    data = request.get_json(silent=True) or {}
-    level_ids = data.get("level_ids")
-    if level_ids is not None and not isinstance(level_ids, list):
-        return jsonify({"ok": False, "error": "level_ids должен быть списком"}), 400
-    result = grid_trader.reset_error_levels(level_ids)
-    return jsonify(result), (200 if result.get("ok") else 400)
+@app.route("/api/ai-modules")
+def api_ai_modules():
+    """Статус всех AI-модулей: entry optimizer, TP optimizer, market scanner."""
+    cached = _read_api_cache_get("ai-modules", 15)
+    if cached is not None:
+        return jsonify(cached)
+    result = {}
+    try:
+        import ai_entry_optimizer as _eo
+        result["entry_optimizer"] = _eo.get_status()
+    except Exception as e:
+        result["entry_optimizer"] = {"error": str(e)}
+    try:
+        import ai_tp_optimizer as _to
+        result["tp_optimizer"] = _to.get_status()
+    except Exception as e:
+        result["tp_optimizer"] = {"error": str(e)}
+    try:
+        import ai_market_scanner as _sc
+        result["market_scanner"] = _sc.get_status()
+        sig = _sc.get_last_signal()
+        result["market_scanner"]["active_signal"] = sig
+    except Exception as e:
+        result["market_scanner"] = {"error": str(e)}
+    return jsonify(_read_api_cache_put("ai-modules", result))
 
 _CANDLES_CACHE = {"ts": 0.0, "payload": None}
-_CANDLES_CACHE_TTL = 8  # сек — свечи обновляются раз в 15м, считать индикаторы на каждый опрос (10с) незачем
+_CANDLES_CACHE_TTL = 30  # сек — свечи 15м, пересчёт чаще 30с бессмысленен
 
 @app.route("/api/candles")
 def api_candles():
@@ -1227,6 +1683,55 @@ def api_trading_disable():
     trader.disable_trading()
     return jsonify({"ok": True, "trading_enabled": False})
 
+@app.route("/api/dca/reset_pullback", methods=["POST"])
+def api_dca_reset_pullback():
+    """Сбросить ожидание отката DCA — бот сразу начнёт искать вход."""
+    trader.dca_wait_pullback = False
+    trader.dca_peak_price    = 0.0
+    trader._save_volatile_state()
+    return jsonify({"ok": True, "dca_wait_pullback": False, "dca_peak_price": 0.0})
+
+@app.route("/api/dca/reset_compound", methods=["POST"])
+def api_dca_reset_compound():
+    """Сбросить накопленный DCA compound-бонус в 0 (без закрытия позиции)."""
+    old = getattr(trader, "dca_compound_bonus_ton", 0.0)
+    trader.dca_compound_bonus_ton = 0.0
+    try:
+        trader._save_volatile_state()
+    except Exception:
+        pass
+    trader.log(f"🔄 DCA compound-бонус сброшен вручную: {old:.3f} → 0 TON", "INFO")
+    return jsonify({"ok": True, "old_bonus_ton": round(old, 3), "new_bonus_ton": 0.0})
+
+@app.route("/api/dca/reset_state", methods=["POST"])
+def api_dca_reset_state():
+    """Полный сброс DCA-счётчиков (только если нет открытых позиций).
+    Используется для восстановления после ghost-позиций, когда GRINCH продан
+    на блокчейне, но счётчики остались в памяти."""
+    if trader.open_trades:
+        return jsonify({
+            "ok": False,
+            "error": f"Есть {len(trader.open_trades)} открытых позиций — сначала закройте их"
+        }), 400
+    trader.dca_entries_count     = 0
+    trader.dca_total_stake       = 0.0
+    trader.dca_wait_pullback     = False
+    trader.dca_peak_price        = 0.0
+    trader.dca_last_buy_price    = 0.0
+    trader.dca_cascade_half_sold = False
+    trader.portfolio_high_water_ton = 0.0
+    try:
+        trader._save_volatile_state()
+    except Exception:
+        pass
+    trader.log("🔄 DCA-состояние сброшено вручную (ghost-recovery)", "INFO")
+    return jsonify({
+        "ok": True,
+        "dca_entries_count": 0,
+        "dca_total_stake": 0.0,
+        "dca_wait_pullback": False,
+    })
+
 @app.route("/api/trade/delete", methods=["POST"])
 def api_trade_delete():
     data = request.get_json(silent=True) or {}
@@ -1242,7 +1747,10 @@ def api_trade_close():
     tid = data.get("id")
     if tid is None or tid == "":
         return jsonify({"ok": False, "error": "не указан id позиции"}), 400
-    result = trader.close_trade(tid)
+    # force=true — принудительное закрытие тестовой/ошибочной позиции;
+    # обходит ONLY_PROFIT_EXIT, но исполняет реальный своп на блокчейне.
+    force = bool(data.get("force", False))
+    result = trader.close_trade(tid, force=force)
     return jsonify(result), (200 if result.get("ok") else 400)
 
 @app.route("/api/ai/decisions")
@@ -1394,7 +1902,6 @@ def api_ai_deep_retrain():
     """Запускает глубокое переобучение ИИ вручную (не ждём 2 дня).
     Не блокирует ответ — работает в фоновом потоке. Повторный вызов
     во время активного запуска возвращает статус already_running."""
-    global _deep_retrain_manual_state
     with _deep_retrain_manual_lock:
         if _deep_retrain_manual_state["running"]:
             return jsonify({"ok": False, "status": "already_running",
@@ -1403,7 +1910,6 @@ def api_ai_deep_retrain():
         _deep_retrain_manual_state["error"]   = None
 
     def _run():
-        global _deep_retrain_manual_state
         try:
             # 1) Лёгкие модели в оперативной памяти
             ai = getattr(trader, "ai", None)
@@ -1513,6 +2019,10 @@ def api_advisor_toggle_auto():
 
 @app.route("/api/advisor/config", methods=["GET", "POST"])
 def api_advisor_config():
+    if request.method == "POST":
+        err = _require_login()
+        if err:
+            return err
     from ai_advisor import set_config, AUTO_INTERVAL_MIN, AUTO_TRADES_TRIGGER
     if request.method == "POST":
         data = request.json or {}
@@ -1521,7 +2031,7 @@ def api_advisor_config():
             trades_trigger = data.get("trades_trigger"),
         )
         return jsonify({"ok": True, **result})
-    return jsonify({"interval_min": AUTO_INTERVAL_MIN, "trades_trigger": AUTO_TRADES_TRIGGER})
+    return jsonify({"ok": True, "interval_min": AUTO_INTERVAL_MIN, "trades_trigger": AUTO_TRADES_TRIGGER})
 
 @app.route("/api/advisor/log")
 def api_advisor_log():
@@ -1530,20 +2040,22 @@ def api_advisor_log():
 
 @app.route("/api/advisor/apikey", methods=["POST"])
 def api_advisor_apikey():
+    """Обратная совместимость: сохраняет ключ Groq (старый эндпоинт)."""
+    err = _require_login()
+    if err:
+        return err
     from ai_advisor import reload_key
     data = request.json or {}
     key  = str(data.get("key", "")).strip()
     if not key:
         return jsonify({"ok": False, "error": "Ключ не может быть пустым"})
-    # сохраняем в файл DATA_DIR/groq_key.txt и применяем немедленно
-    reload_key(key)
+    reload_key(key, provider="groq")
     return jsonify({"ok": True, "enabled": True})
 
 @app.route("/api/advisor/apikey", methods=["GET"])
 def api_advisor_apikey_get():
     from ai_advisor import _read_key_file
     stored = _read_key_file()
-    # возвращаем только маску — не раскрываем ключ в UI
     masked = ("gsk_" + "•" * 20 + stored[-4:]) if len(stored) > 8 else ("•" * len(stored) if stored else "")
     return jsonify({"ok": True, "has_key": bool(stored), "masked": masked})
 
@@ -1603,6 +2115,52 @@ def api_paper_set_capital():
     summary = set_capital(profile, capital)
     return jsonify({"ok": True, **summary})
 
+# ── Мульти-провайдер API ────────────────────────────────────────────────────
+
+@app.route("/api/advisor/providers", methods=["GET"])
+def api_advisor_providers():
+    """Список всех AI-провайдеров и их статус (есть ключ / активен)."""
+    from ai_advisor import get_providers
+    return jsonify(get_providers())
+
+
+@app.route("/api/advisor/providers/<provider_id>/key", methods=["POST"])
+def api_advisor_provider_key(provider_id):
+    """Сохранить API-ключ для указанного провайдера."""
+    from ai_advisor import reload_key, PROVIDER_CONFIGS
+    if provider_id not in PROVIDER_CONFIGS:
+        return jsonify({"ok": False, "error": f"Неизвестный провайдер: {provider_id}"}), 400
+    data = request.json or {}
+    key  = str(data.get("key", "")).strip()
+    if not key:
+        return jsonify({"ok": False, "error": "Ключ не может быть пустым"}), 400
+    reload_key(key, provider=provider_id)
+    return jsonify({"ok": True, "provider": PROVIDER_CONFIGS[provider_id]["name"]})
+
+
+@app.route("/api/advisor/providers/<provider_id>/key", methods=["GET"])
+def api_advisor_provider_key_get(provider_id):
+    """Проверить наличие ключа у провайдера (без раскрытия значения)."""
+    from ai_advisor import PROVIDER_CONFIGS, _read_provider_key
+    if provider_id not in PROVIDER_CONFIGS:
+        return jsonify({"ok": False, "error": "Неизвестный провайдер"}), 400
+    stored = _read_provider_key(provider_id)
+    masked = ("•" * 8 + stored[-4:]) if len(stored) > 8 else ("•" * len(stored) if stored else "")
+    return jsonify({"ok": True, "has_key": bool(stored), "masked": masked,
+                    "provider": PROVIDER_CONFIGS[provider_id]["name"]})
+
+
+@app.route("/api/advisor/providers/select", methods=["POST"])
+def api_advisor_provider_select():
+    """Выбрать предпочтительный AI-провайдер (или 'auto' для авто-выбора)."""
+    from ai_advisor import set_provider
+    data = request.json or {}
+    pid  = str(data.get("provider_id", "")).strip()
+    if pid.lower() in ("auto", ""):
+        pid = None
+    result = set_provider(pid)
+    return jsonify(result), (200 if result.get("ok") else 400)
+
 @app.route("/api/alerts/config", methods=["POST"])
 def api_alerts_config():
     import settings_store
@@ -1631,6 +2189,51 @@ def api_alerts_config_get():
         "enabled": bool(sec.get("enabled", True)),
     })
 
+@app.route("/webhook/github", methods=["POST"])
+def webhook_github():
+    """GitHub Webhook — мгновенный триггер деплоя при push в main.
+    Настрой в GitHub: Settings → Webhooks → Payload URL = http://ВАШ_IP/webhook/github
+    """
+    import hmac, hashlib, subprocess, threading
+
+    # Проверяем подпись (опционально, если задан WEBHOOK_SECRET)
+    secret = os.getenv("WEBHOOK_SECRET", "").encode()
+    if secret:
+        sig_header = request.headers.get("X-Hub-Signature-256", "")
+        expected = "sha256=" + hmac.new(secret, request.data, hashlib.sha256).hexdigest()
+        if not hmac.compare_digest(sig_header, expected):
+            logger.warning("[Webhook] ❌ Неверная подпись GitHub")
+            return jsonify({"ok": False, "error": "invalid signature"}), 401
+
+    data = request.get_json(silent=True) or {}
+    ref  = data.get("ref", "")
+    pusher = data.get("pusher", {}).get("name", "?")
+
+    # Реагируем только на push в main/master
+    if ref not in ("refs/heads/main", "refs/heads/master"):
+        return jsonify({"ok": True, "skip": True, "reason": f"ref={ref} не main"})
+
+    commit_msg = data.get("head_commit", {}).get("message", "?")[:80]
+    log.info(f"[Webhook] 🚀 GitHub push от {pusher}: {commit_msg}")
+
+    # Запускаем деплой в фоне — не блокируем ответ GitHub
+    # Внимание: deploy.sh запускается на ХОСТЕ через /opt/bot/deploy.sh,
+    # но внутри контейнера docker-команды недоступны.
+    # Поэтому пишем trigger-файл → хост-демон его читает и запускает деплой.
+    def _run_deploy():
+        try:
+            # Пишем trigger-файл в /app/data (примонтированный volume хоста)
+            trigger_path = "/app/data/.deploy_trigger"
+            with open(trigger_path, "w") as f:
+                f.write(f"{commit_msg}\n")
+            log.info(f"[Webhook] ✅ Trigger записан → {trigger_path}")
+        except Exception as e:
+            log.error(f"[Webhook] ошибка записи trigger: {e}")
+
+    threading.Thread(target=_run_deploy, daemon=True, name="github-deploy").start()
+    return jsonify({"ok": True, "queued": True, "commit": commit_msg})
+
+
 @app.route("/api/alerts/test", methods=["POST"])
 def api_alerts_test():
     import alerts
@@ -1656,9 +2259,12 @@ def api_manual_sell_all():
 @app.route("/api/wallet/full")
 def api_wallet_full():
     """Полный статус кошелька: баланс TON + GRINCH, цены, P&L, потенциал, история."""
+    cached = _read_api_cache_get("wallet-full", 5)
+    if cached is not None:
+        return jsonify(cached)
     try:
         status = _wallet_mgr.get_full_status()
-        return jsonify({"ok": True, **status})
+        return jsonify(_read_api_cache_put("wallet-full", {"ok": True, **status}))
     except Exception as e:
         return jsonify({"ok": False, "error": str(e)}), 500
 
@@ -1684,9 +2290,16 @@ def api_wallet_history():
         return jsonify({"ok": False, "error": str(e)}), 500
 
 
+_WALLET_ANALYTICS_CACHE: dict = {"ts": 0.0, "payload": None}
+_WALLET_ANALYTICS_TTL = 15  # сек — содержит P&L открытой позиции, обновлять раз в 15с достаточно
+
 @app.route("/api/wallet/analytics")
 def api_wallet_analytics():
     """Аналитика GRINCH-позиции: сколько монет, по какой цене куплено, P&L по целям."""
+    _now = time.time()
+    if _WALLET_ANALYTICS_CACHE["payload"] is not None and \
+            (_now - _WALLET_ANALYTICS_CACHE["ts"]) < _WALLET_ANALYTICS_TTL:
+        return jsonify(_WALLET_ANALYTICS_CACHE["payload"])
     try:
         import db_store
         status = _wallet_mgr.get_full_status()
@@ -1696,23 +2309,32 @@ def api_wallet_analytics():
         trades = db_store.trades_get_recent(50)
         grinch_trades = [t for t in trades if "GRINCH" in str(t.get("symbol", "GRINCH"))]
 
-        # Статистика: сколько куплено/продано GRINCH суммарно
-        total_bought_grinch = sum(
-            t.get("amount", 0) or 0 for t in grinch_trades
-            if t.get("side") == "buy" or t.get("type") == "buy"
+        # Статистика: сколько куплено/продано GRINCH суммарно.
+        # Все наши сделки — LONG (side="buy"): покупаем GRINCH за TON, затем продаём.
+        # Закрытые LONG-сделки означают, что GRINCH был продан обратно за TON.
+        buy_trades    = [t for t in grinch_trades
+                         if t.get("side") == "buy" or t.get("type") == "buy"]
+        closed_buy    = [t for t in buy_trades
+                         if t.get("status") == "closed" or t.get("closed_at")]
+
+        total_bought_grinch = sum(t.get("amount", 0) or 0 for t in buy_trades)
+        # GRINCH продано = GRINCH из закрытых LONG-позиций (купили → продали обратно за TON)
+        total_sold_grinch   = sum(t.get("amount", 0) or 0 for t in closed_buy)
+        # Bug-fix #4: включаем BUY_GAS в реально потраченное
+        _buy_gas = getattr(Config, "BUY_GAS_TON", 0.103)
+        total_ton_spent     = sum(
+            (t.get("stake_ton", 0) or t.get("ton_spent", 0) or 0) + _buy_gas
+            for t in buy_trades
         )
-        total_sold_grinch   = sum(
-            t.get("amount", 0) or 0 for t in grinch_trades
-            if t.get("side") == "sell" or t.get("type") == "sell"
+        # TON получено = ставка + газ покупки + прибыль по каждой закрытой LONG-сделке
+        total_ton_received  = sum(
+            (t.get("stake_ton", 0) or t.get("ton_spent", 0) or 0) + _buy_gas
+            + (t.get("pnl", 0) or 0)
+            for t in closed_buy
         )
-        total_ton_spent = sum(
-            (t.get("stake_ton", 0) or t.get("ton_spent", 0) or 0)
-            for t in grinch_trades if t.get("side") == "buy" or t.get("type") == "buy"
-        )
-        total_ton_received = sum(
-            (t.get("proceeds_ton", 0) or 0)
-            for t in grinch_trades if t.get("side") == "sell" or t.get("type") == "sell"
-        )
+        # Bug-fix #3: net_pnl считаем напрямую как сумму реализованных PnL —
+        # это не зависит от открытых позиций и всегда показывает реальную прибыль
+        net_pnl_ton = round(sum((t.get("pnl", 0) or 0) for t in closed_buy), 4)
 
         # Цена безубытка по открытым позициям
         open_trades_enriched = getattr(trader, "open_trades", [])
@@ -1722,7 +2344,7 @@ def api_wallet_analytics():
             if be_list:
                 breakeven_ton = be_list[-1]
 
-        return jsonify({
+        _payload = {
             "ok":    True,
             "snapshot": snap,
             "position": {
@@ -1744,10 +2366,13 @@ def api_wallet_analytics():
                 "total_sold_grinch":    round(total_sold_grinch, 2),
                 "total_ton_spent":      round(total_ton_spent, 4),
                 "total_ton_received":   round(total_ton_received, 4),
-                "net_pnl_ton":          round(total_ton_received - total_ton_spent, 4),
+                "net_pnl_ton":          net_pnl_ton,
             },
             "recent_trades": grinch_trades[:20],
-        })
+        }
+        _WALLET_ANALYTICS_CACHE["payload"] = _payload
+        _WALLET_ANALYTICS_CACHE["ts"] = time.time()
+        return jsonify(_payload)
     except Exception as e:
         return jsonify({"ok": False, "error": str(e)}), 500
 
@@ -1810,6 +2435,35 @@ def api_ton_price():
         pass
     return jsonify({"price": 2.44})
 
+
+@app.route("/api/wallet")
+def api_wallet():
+    """Legacy-эндпоинт: адрес кошелька + последние транзакции.
+    Вызывается из refreshTon() в index.html для заполнения ton-addr / ton-deposits."""
+    try:
+        data = ton.get_data()
+        transactions = [
+            {
+                "value_ton":    dep.get("amount", 0),
+                "comment":      dep.get("comment", ""),
+                "message_text": dep.get("comment", ""),
+                "timestamp":    dep.get("time", 0),
+                "ts":           dep.get("time_str", ""),
+                "from":         dep.get("from", ""),
+                "hash":         dep.get("hash", ""),
+            }
+            for dep in (data.get("deposits") or [])
+        ]
+        return jsonify({
+            "ok":           True,
+            "address":      data.get("address", ""),
+            "balance":      data.get("balance", 0),
+            "transactions": transactions,
+        })
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e), "address": "", "transactions": []}), 500
+
+
 @app.route("/api/coin")
 def api_coin():
     base = Config.SYMBOL.split("/")[0].upper()
@@ -1841,10 +2495,14 @@ def api_liquidity_guard_status():
 
 @app.route("/api/equity")
 def api_equity():
-    """История изменения баланса кошелька (equity curve)."""
-    from experience_manager import experience_manager
-    with experience_manager._lock:
-        pts = list(experience_manager.data.get("equity", []))
+    """История изменения баланса кошелька (equity curve) — из PostgreSQL."""
+    import db_store as _ds
+    pts = _ds.equity_get_all(limit=3000)
+    # Fallback: если БД недоступна, читаем из памяти experience_manager
+    if not pts:
+        from experience_manager import experience_manager
+        with experience_manager._lock:
+            pts = list(experience_manager.data.get("equity", []))
     return jsonify({"points": pts})
 
 @app.route("/api/experience")
@@ -1854,13 +2512,22 @@ def api_experience():
     return jsonify(experience_manager.get_report())
 
 
+_TRADES_ANALYTICS_CACHE: dict = {"ts": 0.0, "payload": None}
+_TRADES_ANALYTICS_TTL = 60  # сек — агрегаты 2000 сделок, обновлять раз в минуту достаточно
+
 @app.route("/api/analytics/trades")
 def api_analytics_trades():
     """
     Полная аналитика закрытых сделок из PostgreSQL.
     Возвращает агрегаты по режиму рынка, RSI, умным деньгам, уверенности AI —
     для самообучения и понимания, при каких условиях бот торгует в плюс.
+    Результат кэшируется на 60 сек — агрегация 2000 записей дорогая.
     """
+    _now = time.time()
+    if _TRADES_ANALYTICS_CACHE["payload"] is not None and \
+            (_now - _TRADES_ANALYTICS_CACHE["ts"]) < _TRADES_ANALYTICS_TTL:
+        return jsonify(_TRADES_ANALYTICS_CACHE["payload"])
+
     import db_store
     trades = db_store.trades_get_all(limit=2000)
     if not trades:
@@ -1932,7 +2599,10 @@ def api_analytics_trades():
         "by_ai_confidence": conf_buckets,
         "by_smart_money": sm_stats,
     }
-    return jsonify({"ok": True, "count": total, "trades": trades[-50:], "summary": summary})
+    payload = {"ok": True, "count": total, "trades": trades[-50:], "summary": summary}
+    _TRADES_ANALYTICS_CACHE["payload"] = payload
+    _TRADES_ANALYTICS_CACHE["ts"] = time.time()
+    return jsonify(payload)
 
 
 @app.route("/api/liquidator/sell", methods=["POST"])
@@ -2022,6 +2692,14 @@ def api_config_get():
         "confluence_rsi_max":       Config.CONFLUENCE_RSI_MAX,
         "confluence_vol_min_ratio": Config.CONFLUENCE_VOL_MIN_RATIO,
         "ev_threshold":             Config.EV_THRESHOLD,
+        # ALL-IN на дне
+        "allin_on_bottom":    Config.ALLIN_ON_BOTTOM,
+        "allin_bottom_conf":  Config.ALLIN_BOTTOM_CONF,
+        "allin_rsi_max":      Config.ALLIN_RSI_MAX,
+        "allin_min_free_ton": Config.ALLIN_MIN_FREE_TON,
+        # Временной фильтр
+        "dead_hours_utc":          Config.DEAD_HOURS_UTC,
+        "dead_hours_drop_mult":    Config.DEAD_HOURS_DROP_MULT,
     })
 
 @app.route("/api/config", methods=["POST"])
@@ -2130,6 +2808,16 @@ def api_config_set():
     if (v := num("atr_tp_mult", 0.5, 10.0)) is not None: Config.ATR_TP_MULT = v
     if (v := num("atr_sl_mult", 0.5, 10.0)) is not None: Config.ATR_SL_MULT = v
 
+    # Trail-параметры (ранее отсутствовали в API — не персистировались)
+    if (v := num("scalp_max_atr_pct",  0.1, 30))  is not None: Config.SCALP_MAX_ATR_PCT = v
+    if (v := num("short_trail_pct",    0.5, 50))  is not None: Config.SHORT_TRAIL_PCT    = v
+    if (v := num("trail_stage2_at",    1,   100)) is not None: Config.TRAIL_STAGE2_AT    = v
+    if (v := num("trail_stage2_pct",   0.5, 50))  is not None: Config.TRAIL_STAGE2_PCT   = v
+    if (v := num("trail_stage3_at",    1,   100)) is not None: Config.TRAIL_STAGE3_AT    = v
+    if (v := num("trail_stage3_pct",   0.5, 50))  is not None: Config.TRAIL_STAGE3_PCT   = v
+    if (v := num("trail_stage4_at",    1,   100)) is not None: Config.TRAIL_STAGE4_AT    = v
+    if (v := num("trail_stage4_pct",   0.5, 50))  is not None: Config.TRAIL_STAGE4_PCT   = v
+
     # Детектор крупных продаж
     if "large_sell_dca_enabled" in data:
         Config.LARGE_SELL_DCA_ENABLED = bool(data["large_sell_dca_enabled"])
@@ -2153,6 +2841,27 @@ def api_config_set():
     if (v := num("confluence_rsi_max",       50, 100))   is not None: Config.CONFLUENCE_RSI_MAX       = v
     if (v := num("confluence_vol_min_ratio", 0,  10))    is not None: Config.CONFLUENCE_VOL_MIN_RATIO = v
     if (v := num("ev_threshold",            -100, 100))  is not None: Config.EV_THRESHOLD             = v
+
+    # ALL-IN на дне: покупка всего баланса при экстремальной перепроданности
+    if "allin_on_bottom" in data:
+        Config.ALLIN_ON_BOTTOM = bool(data["allin_on_bottom"])
+    if (v := num("allin_bottom_conf",   10, 100))   is not None: Config.ALLIN_BOTTOM_CONF  = v
+    if (v := num("allin_rsi_max",        5,  50))   is not None: Config.ALLIN_RSI_MAX       = v
+    if (v := num("allin_min_free_ton",   1, 10000)) is not None: Config.ALLIN_MIN_FREE_TON  = v
+
+    # Временной фильтр: мёртвые часы
+    if "dead_hours_utc" in data:
+        _dh_raw = data["dead_hours_utc"]
+        try:
+            if isinstance(_dh_raw, list):
+                Config.DEAD_HOURS_UTC = [int(h) for h in _dh_raw]
+            else:
+                Config.DEAD_HOURS_UTC = [
+                    int(h) for h in str(_dh_raw).split(",") if str(h).strip().lstrip("-").isdigit()
+                ]
+        except Exception:
+            pass
+    if (v := num("dead_hours_drop_mult", 1.0, 5.0)) is not None: Config.DEAD_HOURS_DROP_MULT = v
 
     if "symbol" in data and data["symbol"] != Config.SYMBOL:
         if trader.open_trades:
@@ -2229,6 +2938,23 @@ def api_config_set():
             "CONFLUENCE_RSI_MAX":       Config.CONFLUENCE_RSI_MAX,
             "CONFLUENCE_VOL_MIN_RATIO": Config.CONFLUENCE_VOL_MIN_RATIO,
             "EV_THRESHOLD":             Config.EV_THRESHOLD,
+            # Trail-параметры (ранее отсутствовали — теперь персистируются)
+            "SCALP_MAX_ATR_PCT": Config.SCALP_MAX_ATR_PCT,
+            "SHORT_TRAIL_PCT":   Config.SHORT_TRAIL_PCT,
+            "TRAIL_STAGE2_AT":   Config.TRAIL_STAGE2_AT,
+            "TRAIL_STAGE2_PCT":  Config.TRAIL_STAGE2_PCT,
+            "TRAIL_STAGE3_AT":   Config.TRAIL_STAGE3_AT,
+            "TRAIL_STAGE3_PCT":  Config.TRAIL_STAGE3_PCT,
+            "TRAIL_STAGE4_AT":   Config.TRAIL_STAGE4_AT,
+            "TRAIL_STAGE4_PCT":  Config.TRAIL_STAGE4_PCT,
+            # ALL-IN на дне
+            "ALLIN_ON_BOTTOM":    Config.ALLIN_ON_BOTTOM,
+            "ALLIN_BOTTOM_CONF":  Config.ALLIN_BOTTOM_CONF,
+            "ALLIN_RSI_MAX":      Config.ALLIN_RSI_MAX,
+            "ALLIN_MIN_FREE_TON": Config.ALLIN_MIN_FREE_TON,
+            # Временной фильтр
+            "DEAD_HOURS_UTC":       ",".join(str(h) for h in Config.DEAD_HOURS_UTC),
+            "DEAD_HOURS_DROP_MULT": Config.DEAD_HOURS_DROP_MULT,
         })
     except Exception as e:  # noqa: BLE001
         return jsonify({"ok": True, "message": f"Настройки применены, но не сохранены на диск: {e}"})
@@ -2343,14 +3069,21 @@ def api_user_status(token):
 
 @app.route("/api/user/deposit", methods=["POST"])
 def api_user_deposit_manual():
-    """Ручное зачисление депозита (для тестирования / после ручной проверки)."""
+    """Ручное зачисление депозита (только для администратора после ручной проверки)."""
+    # FIX#3: эндпоинт ручного зачисления — только для авторизованного владельца.
+    if not session.get("logged_in"):
+        return jsonify({"ok": False, "error": "Требуется вход администратора"}), 401
     if not _db_available:
         return jsonify({"ok": False, "error": "БД недоступна"}), 503
     data   = request.json or {}
     token  = str(data.get("token", ""))
-    amount = float(data.get("amount", 0))
-    if amount <= 0:
-        return jsonify({"ok": False, "error": "Сумма должна быть > 0"}), 400
+    # FIX#20: проверяем finite перед float-конвертацией
+    try:
+        amount = float(data.get("amount", 0))
+    except (TypeError, ValueError):
+        return jsonify({"ok": False, "error": "Некорректная сумма"}), 400
+    if not math.isfinite(amount) or amount <= 0:
+        return jsonify({"ok": False, "error": "Сумма должна быть конечным числом > 0"}), 400
     ok = user_mgr.credit_deposit(token, amount, app)
     if not ok:
         return jsonify({"ok": False, "error": "Пользователь не найден"}), 404
@@ -2365,10 +3098,16 @@ def api_user_deposit_manual():
 
 @app.route("/api/user/withdraw", methods=["POST"])
 def api_user_withdraw():
-    data   = request.json or {}
-    token  = str(data.get("token", ""))
-    amount = float(data.get("amount", 0))
-    if amount < 0.1:
+    data  = request.json or {}
+    token = str(data.get("token", ""))
+    if not token:
+        return jsonify({"ok": False, "error": "Токен обязателен"}), 400
+    # FIX#4/#20: проверяем finite перед float-конвертацией
+    try:
+        amount = float(data.get("amount", 0))
+    except (TypeError, ValueError):
+        return jsonify({"ok": False, "error": "Некорректная сумма"}), 400
+    if not math.isfinite(amount) or amount < 0.1:
         return jsonify({"ok": False, "error": "Минимальный вывод 0.1 TON"}), 400
     result = user_mgr.withdraw(token, amount, app)
     return jsonify(result), 200 if result.get("ok") else 400
@@ -2516,3 +3255,127 @@ if __name__ == "__main__":
             time.sleep(2)
     else:
         raise SystemExit(f"[startup] порт {_PORT} так и не освободился")
+
+
+# ════════════════════════════════════════════════════════════════════════════
+#  Grid Trading API
+# ════════════════════════════════════════════════════════════════════════════
+
+@app.route('/api/grid/status')
+def api_grid_status():
+    try:
+        from grid_trader import get_grid_trader
+        return jsonify(get_grid_trader().get_status())
+    except Exception as e:
+        # FIX#12: не раскрываем внутренние ошибки (SQL, пути, конфигурацию)
+        logger.error("api_grid_status error: %s", e, exc_info=True)
+        return jsonify({'error': 'Внутренняя ошибка сервера'}), 500
+
+
+@app.route('/api/grid/build', methods=['POST'])
+def api_grid_build():
+    try:
+        from grid_trader import get_grid_trader, GridConfig
+        from price_feed import price_feed
+        from dedust_client import get_shared_balance
+
+        data      = request.get_json(silent=True) or {}
+        bal       = get_shared_balance()
+        price_ton = price_feed.get_grinch_ton_price()
+        if not price_ton:
+            return jsonify({'ok': False, 'error': 'Нет цены GRINCH/TON'}), 400
+
+        # grinch_balance: явный параметр > физический кошелёк.
+        # DCA-позиции — отдельный резерв и не могут стать балансом Grid.
+        if 'grinch_balance' in data:
+            grinch_bal = float(data['grinch_balance'])
+        else:
+            grinch_bal = float(bal.get('GRINCH', bal.get('grinch', 0)))
+
+        result = get_grid_trader().build_grid(
+            current_price_ton = price_ton,
+            grinch_balance    = grinch_bal,
+            ton_balance       = float(bal.get('TON', bal.get('ton', 0))),
+            step_pct          = float(data.get('step_pct', GridConfig.DEFAULT_STEP_PCT)),
+            sell_levels       = int(data.get('sell_levels',  GridConfig.SELL_LEVELS_COUNT)),
+            buy_levels        = int(data.get('buy_levels',   GridConfig.BUY_LEVELS_COUNT)),
+        )
+        return jsonify(result)
+    except Exception as e:
+        # FIX#12: скрываем внутренние ошибки
+        logger.error("api_grid_build error: %s", e, exc_info=True)
+        return jsonify({'ok': False, 'error': 'Внутренняя ошибка сервера'}), 500
+
+
+@app.route('/api/grid/activate', methods=['POST'])
+def api_grid_activate():
+    try:
+        from grid_trader import get_grid_trader
+        return jsonify(get_grid_trader().activate())
+    except Exception as e:
+        logger.error("api_grid_activate error: %s", e, exc_info=True)
+        return jsonify({'ok': False, 'error': 'Внутренняя ошибка сервера'}), 500
+
+
+@app.route('/api/grid/deactivate', methods=['POST'])
+def api_grid_deactivate():
+    try:
+        from grid_trader import get_grid_trader
+        data   = request.get_json(silent=True) or {}
+        reason = data.get('reason', 'manual')
+        return jsonify(get_grid_trader().deactivate(reason=reason))
+    except Exception as e:
+        logger.error("api_grid_deactivate error: %s", e, exc_info=True)
+        return jsonify({'ok': False, 'error': 'Внутренняя ошибка сервера'}), 500
+
+
+@app.route('/api/grid/ai_status', methods=['GET'])
+def api_grid_ai_status():
+    try:
+        from grid_trader import get_grid_trader
+        gt = get_grid_trader()
+        status = gt.get_status()
+        return jsonify({
+            "ok": True,
+            "ai_manager": status.get("ai_manager", {}),
+            "step_pct":   status.get("step_pct"),
+            "active":     status.get("active"),
+            "regime":     status.get("ai_manager", {}).get("last_regime", "UNKNOWN"),
+        })
+    except Exception as e:
+        logger.error("api_grid_ai_status error: %s", e, exc_info=True)
+        return jsonify({"ok": False, "error": "Внутренняя ошибка сервера"}), 500
+
+@app.route('/api/grid/reset_errors', methods=['POST'])
+def api_grid_reset_errors():
+    """Сбросить error-уровни сетки обратно в waiting.
+    Body (опционально): {"level_ids": [1, 4, 5]}  — конкретные id.
+    Без level_ids — сбрасываются все error-уровни.
+    """
+    try:
+        from grid_trader import get_grid_trader
+        data      = request.get_json(silent=True) or {}
+        level_ids = data.get("level_ids") or None
+        if level_ids:
+            level_ids = [int(x) for x in level_ids]
+        return jsonify(get_grid_trader().reset_error_levels(level_ids))
+    except Exception as e:
+        logger.error("api_grid_reset_errors error: %s", e, exc_info=True)
+        return jsonify({'ok': False, 'error': 'Внутренняя ошибка сервера'}), 500
+
+
+@app.route('/api/grid/step', methods=['POST'])
+def api_grid_set_step():
+    try:
+        from grid_trader import get_grid_trader, GridConfig
+        data = request.get_json(silent=True) or {}
+        step = float(data.get('step_pct', GridConfig.DEFAULT_STEP_PCT))
+        step = max(GridConfig.MIN_STEP_PCT, min(GridConfig.MAX_STEP_PCT, step))
+        gt   = get_grid_trader()
+        with gt._lock:
+            gt._state.step_pct = step
+            gt._save_state()
+        return jsonify({'ok': True, 'step_pct': step})
+    except Exception as e:
+        logger.error("api_grid_set_step error: %s", e, exc_info=True)
+        return jsonify({'ok': False, 'error': 'Внутренняя ошибка сервера'}), 500

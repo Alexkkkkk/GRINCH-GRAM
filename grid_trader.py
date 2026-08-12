@@ -1692,8 +1692,8 @@ class GridTrader:
                 # ── Обучаем GridAI ─────────────────────────────────────
                 if self._grid_ai:
                     try:
-                        _center_p = self._state.center_price_ton or price_ton
-                        _ddown_fill = (max(0.0, (1.0 - price_ton / _center_p) * 100.0)
+                        _center_p = self._state.center_price_ton or current_price
+                        _ddown_fill = (max(0.0, (1.0 - current_price / _center_p) * 100.0)
                                        if _center_p > 0 else 0.0)
                         self._grid_ai.record_fill(
                             "sell", self._state.step_pct,

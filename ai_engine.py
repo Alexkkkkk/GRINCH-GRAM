@@ -50,23 +50,8 @@ from sklearn.preprocessing import StandardScaler, RobustScaler
 from sklearn.pipeline import Pipeline
 import warnings
 import concurrent.futures as _cf
+from config import Config
 warnings.filterwarnings("ignore")
-
-
-def safe_polyfit(x, y, deg: int):
-    """Безопасный polyfit для плоских/неполных рядов цен."""
-    x_arr = np.asarray(x, dtype=float)
-    y_arr = np.asarray(y, dtype=float)
-    if len(x_arr) < deg + 1 or len(y_arr) < deg + 1:
-        return np.zeros(deg + 1, dtype=float)
-    if not np.all(np.isfinite(x_arr)) or not np.all(np.isfinite(y_arr)):
-        return np.zeros(deg + 1, dtype=float)
-    if np.ptp(y_arr) == 0:
-        return np.zeros(deg + 1, dtype=float)
-    try:
-        return np.polyfit(x_arr, y_arr, deg)
-    except (ValueError, np.linalg.LinAlgError):
-        return np.zeros(deg + 1, dtype=float)
 
 # ─── Режим для маломощных хостов (Bothost и т.п.) ────────────────────────────
 # LOW_MEMORY_MODE=1 → урезанный ансамбль (3 модели вместо 6) + меньше буферов.
@@ -98,15 +83,15 @@ else:
     except Exception:
         _HAS_LGB = False
 
-    # v4.6: 7-я модель ансамбля. CatBoost — современный градиентный бустинг
-    # с встроенной обработкой категориальных фич и ordered boosting (меньше
-    # переобучения на малых выборках, чем у XGB/LGB). Требует libgomp (есть
-    # на проде — Debian; на NixOS-деве может отсутствовать, поэтому опционален).
+    # v4.6: CatBoost — ОТКЛЮЧЁН (audit 25.07.2026: walk-forward acc=40%, хуже
+    # случайного; weight=0.16 при общем ансамбле ~0.38 — портит голосование).
+    # Включить обратно: убрать строку _HAS_CATBOOST = False ниже.
     try:
         from catboost import CatBoostClassifier
         _HAS_CATBOOST = True
     except Exception:
         _HAS_CATBOOST = False
+    _HAS_CATBOOST = False   # audit 25.07.2026: acc=40% < 50% → disabled
 
 log = logging.getLogger(__name__)
 
@@ -191,13 +176,13 @@ def _garman_klass_vol(o: np.ndarray, h: np.ndarray, l: np.ndarray, c: np.ndarray
 # ─── Константы ────────────────────────────────────────────────────────────────
 LOOK_AHEADS       = [3, 5, 8, 13]      # мульти-горизонт для 15м GRINCH (более длинный горизонт)
 ATR_LABEL_MULT    = 0.7                 # порог = 0.7 × ATR_pct (качественнее, меньше шума)
-CONFIRM_WEIGHT    = 15.0               # вес реальной сделки ×15 — доминирует над историей
+CONFIRM_WEIGHT    = 8.0                # вес реальной сделки ×8 — баланс между опытом и историей (15→8: меньше оверфиттинга на малых выборках)
 REPLAY_SIZE       = 200 if LOW_MEMORY_MODE else 800   # ещё меньше на маломощных хостах (Bothost)
-CONFIRMED_CAP     = 250 if LOW_MEMORY_MODE else None   # кап на буфер подтверждённых сделок (иначе растёт вечно)
+CONFIRMED_CAP     = 250 if LOW_MEMORY_MODE else 2000   # кап на буфер в RAM; полная история хранится в БД (ai_examples)
 ACCURACY_WINDOW   = 100                # длиннее окно = стабильнее веса моделей
 META_MIN_SAMPLES  = 8                  # мета-слой активируется раньше (с 8 сделок)
 RETRAIN_EVERY     = 8 if LOW_MEMORY_MODE else 4        # реже переобучение → реже пиковая нагрузка на RAM
-ANALYZE_CACHE_TTL = 12                  # сек — не пересчитывать 7 моделей повторно на тех же свечах
+ANALYZE_CACHE_TTL = 7                   # сек — не пересчитывать 7 моделей повторно на тех же свечах
 KELLY_LOOKBACK    = 100                # стабильный Kelly на 100 сделках
 
 # ─── v4: Асимметричные пороги сигналов ───────────────────────────────────────
@@ -206,14 +191,17 @@ KELLY_LOOKBACK    = 100                # стабильный Kelly на 100 с�
 # BUY: 50% (раньше было 43% — слишком много ложных входов)
 # SELL: 62% (высокий порог — AI SELL используется только для profit protection)
 # EV_MIN_TRADES: сколько сделок нужно для активации EV-фильтра
-BUY_THRESHOLD     = 0.43    # ≥43% вероятности роста → BUY (активная торговля в плюс)
-SELL_THRESHOLD    = 0.62    # ≥62% вероятности падения → SELL (только profit protection)
-EV_MIN_TRADES     = 12      # минимум сделок для активации EV-фильтра
+BUY_THRESHOLD     = 0.52    # v5: ≥52% — profit-only точность (было 0.43 — слишком много ложных входов)
+SELL_THRESHOLD    = 0.65    # v5: ≥65% — AI SELL только при высокой уверенности (было 0.62)
+EV_MIN_TRADES     = 8       # v5: EV-фильтр активируется раньше — с 8 сделок (было 12)
 VR_TREND_THRESH   = 1.15    # Variance Ratio > 1.15 → трендующий рынок → +буст BUY
 VR_MEAN_REV_THRESH= 0.85    # Variance Ratio < 0.85 → возвратный → -штраф BUY
-# Минимальный размер прибыли для profit-biased разметки (% от цены)
-# DEX: 2% round-trip fee + ~0.3% gas impact на 100 TON ставке → ~2.3% порог
-PROFIT_BIAS_PCT   = 0.025   # label=BUY только если ожидаемый рост > 2.5%
+SIGNAL_PERSIST_TICKS = 2    # v5: минимум N последовательных BUY тиков (предотвращает шумовые входы)
+# Минимальный размер прибыли для profit-biased разметки (% от цены).
+# v5 FIX: повышен с 3% до 6%. При DEX round-trip fee 2% + gas, целевой NET=13%,
+# модель должна учиться предсказывать реально прибыльные движения.
+# Разметка теперь использует max(window) а не c[i+la] — ловит внутридиапазонные пики.
+PROFIT_BIAS_PCT   = 0.060   # label=BUY только если достижимый рост > 6% (было 3% — не покрывало fees)
 HORIZON_WEIGHTS_DEFAULT = [1.0, 1.5, 2.0, 2.5]  # начальные веса горизонтов [3,5,8,13] — адаптируются по сделкам
 
 
@@ -812,6 +800,13 @@ class AIEngine:
         # Адаптация через EMA с каждой закрытой сделкой.
         self._horizon_weights: list = list(HORIZON_WEIGHTS_DEFAULT)
 
+        # ── v5: Signal persistence tracker ──────────────────────────────────
+        # Предотвращает входы на одиночных шумовых тиках.
+        # Для GRINCH (частые кратковременные всплески) это критично:
+        # BUY сигнал должен удерживаться 2+ тиков прежде чем торговать.
+        self._signal_streak: int = 0          # кол-во последовательных BUY тиков
+        self._last_signal_dir: str = "HOLD"   # направление прошлого тика
+
         # ── v4.3: Бинарная изотоническая калибровка BUY-вероятности ────────
         # IsotonicRegression: raw_prob_up → calibrated_prob_up.
         # Бинарная (win/loss), а не 3-классовая — совпадает с confirmed_y={1,-1}.
@@ -1079,7 +1074,7 @@ class AIEngine:
 
         emit("validate", 91, "🔎 Валидация ансамбля на последних данных...")
         try:
-            last     = X[[-1]]
+            last     = df[self._feature_names].iloc[[-1]].values   # реальная последняя свеча, не X[[-1]] (обрезан на 13 баров)
             ensemble = self._ensemble_proba(last)
             classes_list = [-1, 0, 1]
             best_idx = int(np.argmax(ensemble))
@@ -1097,13 +1092,107 @@ class AIEngine:
     # Публичный анализ (каждый тик)
     # ─────────────────────────────────────────────────────────────────────────
 
-    def analyze(self, ohlcv: list) -> dict:
+    def analyze(self, ohlcv: list, wallet_state: dict = None) -> dict:
         with self._lock:
-            return self._analyze_locked(ohlcv)
+            return self._analyze_locked(ohlcv, wallet_state)
 
-    def _analyze_locked(self, ohlcv: list) -> dict:
+    # ─────────────────────────────────────────────────────────────────────────
+    # Wallet-aware корректировка уверенности (применяется поверх ML-результата)
+    # Логика: ML предсказывает направление цены; баланс/экспозиция — риск-менеджмент.
+    # Кэш хранит base-результат (без wallet), корректировка применяется каждый тик.
+    # ─────────────────────────────────────────────────────────────────────────
+    def _apply_wallet_adjustments(self, base: dict, wallet_state: dict) -> dict:
+        """Применяет корректировки уверенности на основе состояния кошелька.
+
+        Аргументы wallet_state:
+          exposure_pct  — % портфеля в GRINCH (0-100)
+          pnl_pct       — нереализованный PnL% текущей позиции
+          has_position  — bool: есть открытая позиция
+          ton_ratio     — TON / total_equity (0-1)
+        """
+        if not wallet_state:
+            return base
+
+        exposure  = float(wallet_state.get("exposure_pct", 0.0))
+        pnl       = float(wallet_state.get("pnl_pct", 0.0))
+        has_pos   = bool(wallet_state.get("has_position", False))
+        ton_ratio = float(wallet_state.get("ton_ratio", 1.0))
+
+        result    = dict(base)
+        ai_signal = result.get("ai_signal", "HOLD")
+        confidence= float(result.get("confidence", 0.0))
+        buy_adj   = 0.0
+        sell_adj  = 0.0
+        reasons   = []
+
+        # ── BUY-штраф: чем больше экспозиция в GRINCH, тем меньше нужно докупать ──
+        if exposure >= 90:
+            buy_adj -= 25.0
+            reasons.append(f"exposure={exposure:.0f}%≥90 → BUY-25")
+        elif exposure >= 75:
+            buy_adj -= 12.0
+            reasons.append(f"exposure={exposure:.0f}%≥75 → BUY-12")
+        elif exposure >= 55:
+            buy_adj -= 6.0
+            reasons.append(f"exposure={exposure:.0f}%≥55 → BUY-6")
+
+        # ── BUY-буст: нет позиции, много TON → хороший момент для входа ──
+        if not has_pos and ton_ratio >= 0.90:
+            buy_adj += 5.0
+            reasons.append(f"no_pos+TON={ton_ratio:.0%} → BUY+5")
+
+        # ── SELL-буст: сидим в прибыли → стоит рассмотреть фиксацию ──
+        if has_pos and pnl >= 20:
+            sell_adj += 15.0
+            reasons.append(f"pnl={pnl:.1f}%≥20 → SELL+15")
+        elif has_pos and pnl >= 12:
+            sell_adj += 8.0
+            reasons.append(f"pnl={pnl:.1f}%≥12 → SELL+8")
+        elif has_pos and pnl >= 7:
+            sell_adj += 4.0
+            reasons.append(f"pnl={pnl:.1f}%≥7 → SELL+4")
+
+        if not reasons:
+            return base  # нет корректировок — возвращаем base без копирования
+
+        # Применяем корректировки к confidence
+        if ai_signal == "BUY" and buy_adj != 0.0:
+            new_conf = round(max(1.0, min(99.0, confidence + buy_adj)), 1)
+            result["confidence"] = new_conf
+            # Если скорректированная уверенность упала ниже порога → HOLD
+            if new_conf < BUY_THRESHOLD * 100:
+                result["ai_signal"] = "HOLD"
+                reasons.append("BUY→HOLD (exposure too high)")
+            log.debug(
+                f"[AI Wallet] BUY adj={buy_adj:+.0f}% "
+                f"conf {confidence}%→{new_conf}% exposure={exposure:.0f}%"
+            )
+        elif ai_signal in ("HOLD", "SELL") and sell_adj != 0.0:
+            new_conf = round(max(1.0, min(99.0, confidence + sell_adj)), 1)
+            result["confidence"] = new_conf
+            if ai_signal == "HOLD" and new_conf >= SELL_THRESHOLD * 100:
+                result["ai_signal"] = "SELL"
+                reasons.append("HOLD→SELL (profit take)")
+            log.debug(
+                f"[AI Wallet] SELL adj={sell_adj:+.0f}% "
+                f"conf {confidence}%→{new_conf}% pnl={pnl:.1f}%"
+            )
+
+        result["wallet_adj"] = {
+            "exposure_pct": exposure,
+            "pnl_pct":      pnl,
+            "has_position": has_pos,
+            "buy_adj":      buy_adj,
+            "sell_adj":     sell_adj,
+            "reasons":      reasons,
+        }
+        return result
+
+    def _analyze_locked(self, ohlcv: list, wallet_state: dict = None) -> dict:
         # ── Кэш: если свечи не изменились с прошлого вызова — не гоняем
-        # 7 ML-моделей и 80+ признаков заново (тик 15с, свечи обновляются реже) ──
+        # 7 ML-моделей и 80+ признаков заново (тик 15с, свечи обновляются реже).
+        # Кэш хранит BASE-результат (без wallet-корректировок).
+        # Wallet-корректировки применяются поверх кэша каждый тик.
         if ohlcv:
             last_bar = ohlcv[-1]
             candle_key = (len(ohlcv), last_bar[0], last_bar[4])
@@ -1115,7 +1204,7 @@ class AIEngine:
                 and self._new_confirms < 5
             ):
                 self._cache_hits += 1
-                return self._last_result
+                return self._apply_wallet_adjustments(self._last_result, wallet_state)
             self._cache_misses += 1
         else:
             candle_key = None
@@ -1150,12 +1239,22 @@ class AIEngine:
                 self._refit_all()
             except Exception as e:
                 log.warning(f"[AI] _refit_all error (продолжаю с прежними моделями): {e}")
+            finally:
+                _release_memory()  # освобождаем RAM от старых объектов моделей после рефита
 
         if not self._trained:
             return self._empty_result()
 
         # ── Предсказание ─────────────────────────────────────────────────
-        last = X[[-1]]
+        # ВАЖНО: X из _make_dataset обрезан до n-max_la строк (последние 13
+        # свечей удалены — они нужны для разметки будущего при обучении).
+        # Поэтому X[[-1]] — это свеча 13 баров назад, а НЕ последняя!
+        # Для предсказания берём признаки последней свечи напрямую из df.
+        last = df[self._feature_names].iloc[[-1]].values
+        # Защита от NaN/inf в последней строке (slope_* на коротких историях,
+        # rolling-фичи с недостаточным окном). Заменяем на 0 — нейтральное
+        # значение, безопасное для всех моделей ансамбля.
+        last = np.nan_to_num(last, nan=0.0, posinf=0.0, neginf=0.0)
         try:
             ens = self._ensemble_proba(last)
         except Exception:
@@ -1252,7 +1351,7 @@ class AIEngine:
         max_prob = max(prob_up, prob_down, prob_hold)
         if max_prob == prob_up and prob_up >= BUY_THRESHOLD:
             ai_signal = "BUY"
-            self._last_buy_features = X[-1].copy()
+            self._last_buy_features = df[self._feature_names].iloc[-1].values.copy()
         elif max_prob == prob_down and prob_down >= SELL_THRESHOLD:
             ai_signal = "SELL"
         else:
@@ -1448,7 +1547,35 @@ class AIEngine:
                 f">= порог {_eff_buy_thr*100:.0f}% (режим={regime_name})"
             )
             ai_signal = "BUY"
-            self._last_buy_features = X[-1].copy()
+            self._last_buy_features = df[self._feature_names].iloc[-1].values.copy()
+
+        # ── v5: Signal Persistence Filter ────────────────────────────────
+        # BUY-сигнал должен удержаться N тиков подряд прежде чем открыть сделку.
+        # Это фильтрует кратковременные всплески GRINCH-а (типичны для micro-cap DEX).
+        # Правила:
+        #   conf ≥ 75% → вход с 1-го тика (сигнал очень сильный, не ждём)
+        #   conf 60-75% → требуем 2 последовательных BUY тика
+        #   conf < 60%  → требуем 3 тика (слабый сигнал, нужно подтверждение)
+        if ai_signal == "BUY":
+            self._signal_streak = (self._signal_streak + 1
+                                   if self._last_signal_dir == "BUY" else 1)
+            self._last_signal_dir = "BUY"
+            req_streak = 1 if confidence >= 75 else 2 if confidence >= 60 else 3
+            if self._signal_streak < req_streak:
+                log.debug(
+                    f"[AI v5 Persist] BUY отложен: streak={self._signal_streak}/{req_streak} "
+                    f"conf={confidence:.0f}% → HOLD (ждём подтверждения)"
+                )
+                ai_signal = "HOLD"
+                confidence = min(confidence, 49.0)
+        else:
+            if ai_signal == "SELL":
+                self._signal_streak = 0
+                self._last_signal_dir = "SELL"
+            elif self._last_signal_dir != "BUY":
+                pass  # нейтральный HOLD, не сбрасываем накопленную серию
+            else:
+                self._signal_streak = max(0, self._signal_streak - 1)
 
         # ── v4.4: Decay уверенности при устаревшей модели ────────────────
         # Модель, не обновлявшаяся > 2 часов в изменившемся рынке, ненадёжна.
@@ -1490,29 +1617,56 @@ class AIEngine:
             "disagreement": round(_disagreement * 100, 1),
             "ood_score":    round(_ood_score * 100, 1),
             "specialist_adj": _specialist_adj,
+            # v5: signal persistence info
+            "signal_streak":      self._signal_streak,
+            "ev_profitable":      kelly.get("ev_profitable", kelly.get("ev", 0) > 0),
+            "profit_margin_ton":  kelly.get("profit_margin", 0.0),
         }
 
-        # ── Сохраняем в кэш: следующий тик с теми же свечами получит
-        # готовый результат мгновенно, без повторного прогона моделей ──
+        # ── Сохраняем BASE-результат в кэш (без wallet-корректировок).
+        # Следующий тик с теми же свечами получит base мгновенно,
+        # а wallet-корректировки применятся поверх по текущему балансу. ──
         self._last_candle_key = candle_key
         self._last_result     = result
         self._last_result_ts  = time.time()
-        return result
+        return self._apply_wallet_adjustments(result, wallet_state)
 
     # ─────────────────────────────────────────────────────────────────────────
     # Обратная связь от трейдера (вызывается когда сделка закрывается)
     # ─────────────────────────────────────────────────────────────────────────
 
-    def feedback(self, outcome: str, pnl: float, regime: str = "UNKNOWN", conf: float = 0.0):
+    def feedback(
+        self,
+        outcome: str,
+        pnl: float,
+        regime: str = "UNKNOWN",
+        conf: float = 0.0,
+        features=None,
+    ):
         """
         outcome: "win" | "loss"
         pnl:     P&L в TON (может быть отрицательным)
         regime:  рыночный режим при входе (UPTREND / DOWNTREND / ...)
         conf:    уверенность AI при входе (%)
+        features: необязательный снимок признаков именно этой сделки.
+            Нужен для DCA, где несколько входов закрываются одной операцией.
         """
-        if self._last_buy_features is None:
-            return
         with self._lock:
+            # DCA-позиции могут быть объединены в одну и закрыты одним
+            # sell-all. В таком случае общий _last_buy_features уже не
+            # позволяет однозначно связать результат с каждым входом.
+            context_features = (
+                np.asarray(features, dtype=float).copy()
+                if features is not None
+                else (
+                    self._last_buy_features.copy()
+                    if self._last_buy_features is not None
+                    else None
+                )
+            )
+            if context_features is None:
+                return
+
             label   = 1 if outcome == "win" else -1
             is_win  = (outcome == "win")
 
@@ -1527,7 +1681,7 @@ class AIEngine:
 
             weight = CONFIRM_WEIGHT * (1.0 + pnl_norm * 1.5) * conf_factor
 
-            self._confirmed_X.append(self._last_buy_features.copy())
+            self._confirmed_X.append(context_features)
             self._confirmed_y.append(label)
             self._confirmed_w.append(weight)
             # Полная история — НАВСЕГДА, в БД (не урезается). Оперативный буфер
@@ -1535,7 +1689,7 @@ class AIEngine:
             # раз в 2 дня _deep_retrain() подтягивает всю историю из БД обратно.
             try:
                 import db_store
-                db_store.ai_example_insert(self._last_buy_features.tolist(), label, weight)
+                db_store.ai_example_insert(context_features.tolist(), label, weight)
             except Exception as e:
                 log.debug(f"[AI] ai_example_insert error: {e}")
             # LOW_MEMORY_MODE: без кепа этот буфер растёт вечно (годы работы
@@ -1546,7 +1700,10 @@ class AIEngine:
                 del self._confirmed_X[:excess]
                 del self._confirmed_y[:excess]
                 del self._confirmed_w[:excess]
-            self._last_buy_features = None
+            # При явном features контекст принадлежит вызывающей DCA-сделке,
+            # поэтому не очищаем общий pending-контекст другой сделки.
+            if features is None:
+                self._last_buy_features = None
             self._new_confirms += 1
 
             # Kelly history
@@ -1604,6 +1761,24 @@ class AIEngine:
             f"(вес={weight:.1f})"
         )
 
+    def capture_buy_context(self, ohlcv: list) -> bool:
+        """Принудительно захватывает признаки текущей последней свечи как
+        контекст входа в позицию. Вызывается при DCA-покупке, чтобы
+        feedback() сработал даже если AI-сигнал был HOLD (не BUY).
+        Возвращает True если захват удался."""
+        try:
+            with self._lock:
+                if not self._feature_names:
+                    return False
+                df = self._build_features(ohlcv)
+                if df is None or len(df) < 40:
+                    return False
+                self._last_buy_features = df[self._feature_names].iloc[-1].values.copy()
+                return True
+        except Exception as e:
+            log.debug(f"[AI] capture_buy_context error: {e}")
+            return False
+
     # ─────────────────────────────────────────────────────────────────────────
     # Персистентность опыта (переживает перезапуск)
     # ─────────────────────────────────────────────────────────────────────────
@@ -1611,34 +1786,93 @@ class AIEngine:
     def export_experience(self) -> dict:
         """Сериализует подтверждённый опыт ИИ для записи на диск."""
         with self._lock:
+            lbf = (self._last_buy_features.tolist()
+                   if self._last_buy_features is not None else None)
             return {
-                "confirmed_X":  [list(map(float, x)) for x in self._confirmed_X],
-                "confirmed_y":  [int(v) for v in self._confirmed_y],
-                "confirmed_w":  [float(v) for v in self._confirmed_w],
-                "slot_acc":     {s.name: list(s._history) for s in self._slots},
-                "feature_dim":  len(self._feature_names),
-                "kelly_wins":   list(self._kelly_wins),
-                "kelly_pnls":   list(self._kelly_pnls),
-                "retrains":     self._retrains,
+                "confirmed_X":       [list(map(float, x)) for x in self._confirmed_X],
+                "confirmed_y":       [int(v) for v in self._confirmed_y],
+                "confirmed_w":       [float(v) for v in self._confirmed_w],
+                "slot_acc":          {s.name: list(s._history) for s in self._slots},
+                "feature_dim":       len(self._feature_names),
+                "kelly_wins":        list(self._kelly_wins),
+                "kelly_pnls":        list(self._kelly_pnls),
+                "retrains":          self._retrains,
+                "last_buy_features": lbf,  # сохраняем чтобы feedback() работал после рестарта
+                # BUG-FIX: горизонтные веса адаптируются по ходу торговли (v4.3),
+                # но ранее не сохранялись → сбрасывались на дефолт при каждом рестарте.
+                "horizon_weights":   list(self._horizon_weights),
             }
 
     def import_experience(self, data: dict) -> int:
         """Восстанавливает опыт с диска и дообучает модели.
-        Возвращает число восстановленных подтверждённых примеров (0 — если
-        несовместимо или пусто). Вызывать ПОСЛЕ pretrain (нужны feature_names)."""
+        Возвращает число восстановленных подтверждённых примеров.
+        ВАЖНО: метаданные (_retrains, slot_acc, kelly) восстанавливаются ВСЕГДА,
+        даже если confirmed_X пуст — иначе точность/Sharpe/счётчик обнуляются после
+        каждого рестарта пока нет ни одной закрытой сделки.
+        Вызывать ПОСЛЕ pretrain (нужны feature_names)."""
         if not data:
-            return 0
-        X = data.get("confirmed_X") or []
-        if not X:
             return 0
         with self._lock:
             cur_dim   = len(self._feature_names)
             saved_dim = data.get("feature_dim")
-            # Изменился набор признаков → старый опыт несовместим, пропускаем
-            if cur_dim and saved_dim and cur_dim != saved_dim:
-                log.warning(f"[AI] Опыт несовместим: признаков {saved_dim}≠{cur_dim}, пропуск")
-                return 0
             try:
+                # ── Блок 1: метаданные — восстанавливаем ВСЕГДА ──────────────
+                # Счётчик переобучений, точность моделей, Kelly-история, Sharpe.
+                # Не зависят от совместимости признаков и не требуют confirmed_X.
+                self._retrains = int(data.get("retrains", 0))
+
+                acc = data.get("slot_acc", {}) or {}
+                for s in self._slots:
+                    h = acc.get(s.name)
+                    if h:
+                        s._history = deque(h, maxlen=ACCURACY_WINDOW)
+                        if s._history:
+                            a = sum(s._history) / len(s._history)
+                            s.weight = max(0.15, a ** 2)
+
+                kw = data.get("kelly_wins", [])
+                kp = data.get("kelly_pnls", [])
+                if kw:
+                    for v in kw[-KELLY_LOOKBACK:]:
+                        self._kelly_wins.append(int(v))
+                if kp:
+                    for v in kp[-KELLY_LOOKBACK:]:
+                        self._kelly_pnls.append(float(v))
+
+                # Фичи последней покупки: feedback() проверяет при закрытии сделки
+                lbf = data.get("last_buy_features")
+                if lbf and cur_dim and len(lbf) == cur_dim:
+                    self._last_buy_features = np.array(lbf, dtype=float)
+                    log.info("[AI] _last_buy_features восстановлены из experience")
+
+                # BUG-FIX: горизонтные веса адаптируются по ходу торговли (v4.3),
+                # но ранее не восстанавливались → каждый рестарт сбрасывал их на дефолт.
+                hw = data.get("horizon_weights")
+                if hw and len(hw) == len(self._horizon_weights):
+                    self._horizon_weights = [float(v) for v in hw]
+                    log.info(
+                        f"[AI] horizon_weights восстановлены: "
+                        f"{[round(w, 2) for w in self._horizon_weights]}"
+                    )
+
+                # ── Блок 2: confirmed_X — только если есть примеры ───────────
+                X = data.get("confirmed_X") or []
+                if not X:
+                    if self._retrains:
+                        log.info(
+                            f"[AI] Метаданные восстановлены: переобучений={self._retrains}, "
+                            f"Kelly={len(self._kelly_wins)} сделок (примеров ещё нет)"
+                        )
+                    return 0
+
+                # Изменился набор признаков → подтверждённые примеры несовместимы
+                if cur_dim and saved_dim and cur_dim != saved_dim:
+                    log.warning(
+                        f"[AI] Подтверждённые примеры несовместимы: признаков {saved_dim}≠{cur_dim}, "
+                        f"пропуск. Метаданные восстановлены."
+                    )
+                    return 0
+
                 self._confirmed_X = [np.array(x, dtype=float) for x in X]
                 self._confirmed_y = [int(v) for v in data.get("confirmed_y", [])]
                 self._confirmed_w = [float(v) for v in data.get("confirmed_w", [])]
@@ -1648,28 +1882,14 @@ class AIEngine:
                     self._confirmed_X = self._confirmed_X[-CONFIRMED_CAP:]
                     self._confirmed_y = self._confirmed_y[-CONFIRMED_CAP:]
                     self._confirmed_w = self._confirmed_w[-CONFIRMED_CAP:]
-                acc = data.get("slot_acc", {}) or {}
-                for s in self._slots:
-                    h = acc.get(s.name)
-                    if h:
-                        s._history = deque(h, maxlen=ACCURACY_WINDOW)
-                        if s._history:
-                            a = sum(s._history) / len(s._history)
-                            s.weight = max(0.15, a ** 2)
-                # Восстанавливаем Kelly историю
-                kw = data.get("kelly_wins", [])
-                kp = data.get("kelly_pnls", [])
-                if kw:
-                    for v in kw[-KELLY_LOOKBACK:]:
-                        self._kelly_wins.append(int(v))
-                if kp:
-                    for v in kp[-KELLY_LOOKBACK:]:
-                        self._kelly_pnls.append(float(v))
-                self._retrains = int(data.get("retrains", 0))
+
                 n = len(self._confirmed_X)
                 if n and self._trained:
                     self._refit_all()
-                log.info(f"[AI] Восстановлено {n} подтверждённых примеров, Kelly={len(self._kelly_wins)} сделок")
+                log.info(
+                    f"[AI] Восстановлено {n} подтверждённых примеров · "
+                    f"переобучений={self._retrains} · Kelly={len(self._kelly_wins)} сделок"
+                )
                 return n
             except Exception as e:
                 log.warning(f"[AI] import_experience error: {e}")
@@ -1897,7 +2117,9 @@ class AIEngine:
         }
         for name, mask in masks.items():
             X_s, y_s, w_s = X_arr[mask], y_arr[mask], w_arr[mask]
-            if len(X_s) < 20 or len(np.unique(y_s)) < 2:
+            # Порог снижен 20→10: GRINCH часто в RANGING, тренд-специалист
+            # не мог обучиться при нехватке UPTREND/SQUEEZE свечей (trend=— всегда)
+            if len(X_s) < 10 or len(np.unique(y_s)) < 2:
                 continue
             try:
                 from sklearn.ensemble import RandomForestClassifier
@@ -1947,7 +2169,12 @@ class AIEngine:
                 tmp.fit(X_tr, y_tr)   # без sample_weight — нам нужна честная точность
                 acc = float(np.mean(tmp.predict(X_te) == y_te))
                 new_accs[slot.name] = acc
-                wf_weight = max(0.15, acc ** 2)
+                # Если точность хуже случайного (< 48%) — эффективно отключаем модель
+                if acc < 0.48:
+                    wf_weight = 0.01
+                    log.debug(f"[AI WF] {slot.name} acc={acc:.0%} < 48% — отключён")
+                else:
+                    wf_weight = max(0.15, acc ** 2)
                 slot.weight = 0.60 * slot.weight + 0.40 * wf_weight
             except Exception as e:
                 log.debug(f"[AI WF] {slot.name}: {e}")
@@ -2082,6 +2309,8 @@ class AIEngine:
         _slot_up_vals = []   # для вычисления disagreement в _analyze_locked
         for slot in self._slots:
             try:
+                if slot.weight < 0.05:   # отключён walk-forward (acc < 48%) — пропускаем
+                    continue
                 proba   = slot.predict_proba(X)[0]   # shape=(n_classes,)
                 aligned = self._align_proba(proba, slot.classes_)
                 proba_sum += aligned * slot.weight
@@ -2104,27 +2333,37 @@ class AIEngine:
                 meta_p  = self._meta.predict_proba(meta_X)[0]
                 meta_cls = self._meta.named_steps["clf"].classes_
                 meta_aligned = self._align_proba(meta_p, meta_cls)
-                # Блендинг: 60% мета + 40% базовый
-                base_ens = 0.4 * base_ens + 0.6 * meta_aligned
+                # v5: Адаптивный блендинг — чем увереннее мета, тем больше её вес.
+                # Диапазон: 45-75% мета (было фиксированное 60%).
+                # max(meta_aligned) = уверенность мета-модели в своём предсказании.
+                _meta_conf   = float(meta_aligned.max())
+                _meta_weight = min(0.75, 0.45 + 0.50 * (_meta_conf - 0.33) / 0.67)
+                base_ens = (1.0 - _meta_weight) * base_ens + _meta_weight * meta_aligned
             except Exception:
                 pass
 
         return base_ens
 
     def _align_proba(self, proba: np.ndarray, classes) -> np.ndarray:
-        """Выравнивает вектор вероятностей к индексам [P(-1), P(0), P(1)]."""
-        # Отсутствующий класс имеет вероятность 0, а не ложные 1/3.
-        out = np.zeros(3, dtype=float)
+        """Выравнивает вектор вероятностей к индексам [P(-1), P(0), P(1)].
+
+        M7-fix: начинаем с нулей, а НЕ с 1/3. Если модель обучена только на
+        BUY+HOLD (без SELL), 1/3 по умолчанию давало ложные SELL-сигналы.
+        После заполнения нормируем → незнакомые классы остаются 0.
+        """
+        out = np.zeros(3)   # [P(SELL), P(HOLD), P(BUY)]
         cls_list = list(classes)
         mapping  = {-1: 0, 0: 1, 1: 2}
         for j, c in enumerate(cls_list):
             idx = mapping.get(int(c))
             if idx is not None and j < len(proba):
                 out[idx] = proba[j]
-        # Нормируем
+        # Нормируем (сумма может быть < 1 если классов меньше трёх)
         s = out.sum()
         if s > 0:
             out /= s
+        else:
+            out = np.array([0.0, 1.0, 0.0])   # fallback: HOLD
         return out
 
     # ─────────────────────────────────────────────────────────────────────────
@@ -2171,9 +2410,14 @@ class AIEngine:
         # BB squeeze: ширина ниже 20% квантиля → сжатие перед взрывом
         df["bb_squeeze"] = (df["bb_w"] < df["bb_w"].rolling(50).quantile(0.2)).astype(int)
 
-        # ── ATR ───────────────────────────────────────────────────────────
+        # ── ATR (Wilder's smoothing, com=13 ≡ alpha=1/14) ────────────────
+        # rolling(14).mean() — это простое SMA, а не метод Уайлдера.
+        # Wilder (1978) использует EMA с alpha=1/N; в pandas: ewm(com=N-1).
+        # Исправлено для согласованности со strategy.py (ewm(com=13)).
+        # Разница: SMA реагирует острее на недавний всплеск ATR; Wilder —
+        # плавнее, ближе к тому, что показывают TradingView и DeDust-chart.
         tr = pd.concat([h - l, (h - c.shift()).abs(), (l - c.shift()).abs()], axis=1).max(axis=1)
-        df["atr"]     = tr.rolling(14).mean()
+        df["atr"]     = tr.ewm(com=13, adjust=False).mean()   # Wilder's ATR
         df["atr_pct"] = df["atr"] / (c + 1e-10)
 
         # ── Stochastic ────────────────────────────────────────────────────
@@ -2270,8 +2514,12 @@ class AIEngine:
                 else:
                     y_ = c.values[i-win+1:i+1]
                     x_ = np.arange(win, dtype=float)
-                    m  = safe_polyfit(x_, y_, 1)[0]
-                    slopes.append(m / (c.values[i] + 1e-10))
+                    # M6-fix: константные y_ дают inf/NaN в polyfit
+                    if np.ptp(y_) < 1e-12:
+                        slopes.append(0.0)
+                    else:
+                        m = np.polyfit(x_, y_, 1)[0]
+                        slopes.append(m / (c.values[i] + 1e-10))
             df[f"slope_{win}"] = slopes
 
         # ── Позиция цены: близость к хаю/лою ─────────────────────────────
@@ -2400,6 +2648,79 @@ class AIEngine:
         total_vol_5 = v.rolling(5).sum()
         df["buy_pressure"] = bull_vol_5 / (total_vol_5 + 1e-10)
 
+        # ── DataHub: внешние рыночные признаки (6 бесплатных источников) ──
+        try:
+            from data_hub import get_ml_features as _hub_ml
+            _hub = _hub_ml()
+            df["fg_norm"]          = _hub["fg_norm"]
+            df["btc_trend"]        = _hub["btc_trend"]
+            df["funding_rate_ml"]  = _hub["funding_rate_ml"]
+            df["ton_tvl_ml"]       = _hub["ton_tvl_ml"]
+            df["grinch_trending"]  = _hub["grinch_trending"]
+        except Exception:
+            for _hcol in ["fg_norm", "btc_trend", "funding_rate_ml", "ton_tvl_ml", "grinch_trending"]:
+                if _hcol not in df.columns:
+                    df[_hcol] = 0.0
+
+        # ════════════════════════════════════════════════════════════════
+        # ── v5 NEW FEATURES — дополнительные предикторы ──────────────
+        # ════════════════════════════════════════════════════════════════
+
+        # ── Kaufman Efficiency Ratio (KER/ER) ──────────────────────────
+        # 1.0 = идеальный тренд (рынок движется прямо), 0.0 = случайное блуждание.
+        # Лучший предсказатель условий для трендовых стратегий.
+        _price_chg_10 = (c - c.shift(10)).abs()
+        _path_len_10  = c.diff().abs().rolling(10, min_periods=3).sum()
+        df["kama_er"]  = (_price_chg_10 / (_path_len_10 + 1e-10)).clip(0, 1)
+
+        # ── RSI Divergence (бычья/медвежья дивергенция) ─────────────────
+        # Bullish: цена ниже, RSI выше → скрытая сила (разворот вверх)
+        # Bearish: цена выше, RSI ниже → скрытая слабость (разворот вниз)
+        _c_lag5   = c.shift(5)
+        _rsi_lag5 = df["rsi"].shift(5)
+        df["rsi_div_bull"] = ((c < _c_lag5) & (df["rsi"] > _rsi_lag5)).astype(float)
+        df["rsi_div_bear"] = ((c > _c_lag5) & (df["rsi"] < _rsi_lag5)).astype(float)
+
+        # ── Candle Streak (серия однонаправленных свечей) ────────────────
+        # Растущая серия подтверждает импульс; слишком длинная = перегрев.
+        _c_up_arr = (c > c.shift(1)).astype(int).values
+        _up_str = np.zeros(len(_c_up_arr), dtype=float)
+        _dn_str = np.zeros(len(_c_up_arr), dtype=float)
+        for _si in range(1, len(_c_up_arr)):
+            if _c_up_arr[_si]:
+                _up_str[_si] = _up_str[_si - 1] + 1
+            else:
+                _dn_str[_si] = _dn_str[_si - 1] + 1
+        df["up_streak"] = np.clip(_up_str, 0, 10)
+        df["dn_streak"] = np.clip(_dn_str, 0, 10)
+
+        # ── EMA Trend Strength (сила EMA-тренда) ────────────────────────
+        # Нормализованное расстояние EMA9 от EMA50: >0 = бычий тренд, <0 = медвежий.
+        df["ema_trend_str"] = (df["ema_9"] - df["ema_50"]) / (df["ema_50"] + 1e-10)
+
+        # ── Volume-Price Momentum Quality ────────────────────────────────
+        # Объём + цена растут вместе = качественный импульс, не просто шум.
+        _price_up_3 = (c > c.shift(3)).astype(float)
+        _vol_above  = (v > v.rolling(20, min_periods=5).mean()).astype(float)
+        df["vol_price_mom"] = _price_up_3 * _vol_above
+
+        # ── Stochastic RSI ────────────────────────────────────────────────
+        # Сверхчувствительный осциллятор: RSI RSI.
+        _rsi_lo14 = df["rsi"].rolling(14, min_periods=5).min()
+        _rsi_hi14 = df["rsi"].rolling(14, min_periods=5).max()
+        df["stoch_rsi"] = (df["rsi"] - _rsi_lo14) / (_rsi_hi14 - _rsi_lo14 + 1e-10)
+
+        # ── Price Deviation from VWAP (z-score) ──────────────────────────
+        # Как далеко цена от «справедливой» стоимости (в сигмах).
+        _vwap_dev_mu  = df["vwap_dev"].rolling(50, min_periods=10).mean()
+        _vwap_dev_std = df["vwap_dev"].rolling(50, min_periods=10).std()
+        df["vwap_dev_z"] = (df["vwap_dev"] - _vwap_dev_mu) / (_vwap_dev_std + 1e-10)
+
+        # ── Liquidity Proxy: High-Low Spread Ratio ────────────────────────
+        # Высокий spread = низкая ликвидность = высокий slippage риск.
+        _hl_spread  = (h - l) / (c + 1e-10)
+        df["liq_proxy"] = _hl_spread.rolling(10, min_periods=3).mean()
+
         df.dropna(inplace=True)
         return df
 
@@ -2453,6 +2774,23 @@ class AIEngine:
             "dump_velocity",       # скорость падения за 5 баров (%)
             "vol_collapse",        # коллапс объёма от пикового значения за 20 баров
             "post_pump_dump",      # флаг паттерна: цена -18% от хая + объём -40%
+            # ── v5 NEW: Усиленные предикторы ─────────────────────────────────────
+            "kama_er",             # Kaufman Efficiency Ratio (тренд vs случайное блуждание)
+            "rsi_div_bull",        # RSI бычья дивергенция (разворот вверх)
+            "rsi_div_bear",        # RSI медвежья дивергенция (разворот вниз)
+            "up_streak",           # серия бычьих свечей (подтверждение импульса)
+            "dn_streak",           # серия медвежьих свечей (подтверждение спада)
+            "ema_trend_str",       # сила EMA-тренда (EMA9 vs EMA50)
+            "vol_price_mom",       # качество импульса (объём + цена вместе)
+            "stoch_rsi",           # Stochastic RSI (сверхчувствительный осциллятор)
+            "vwap_dev_z",          # отклонение от VWAP в z-score
+            "liq_proxy",           # прокси ликвидности (HL spread)
+            # ── v5 NEW: DataHub — внешние рыночные данные ─────────────────────
+            "fg_norm",             # Fear&Greed нормализованный -1..+1
+            "btc_trend",           # BTC изм. 24ч / 10 (рыночный ветер)
+            "funding_rate_ml",     # Bybit funding rate × 1000 (лонг/шорт перекос)
+            "ton_tvl_ml",          # DeFiLlama TON TVL изменение / 5
+            "grinch_trending",     # позиция в трендах GeckoTerminal / 10
         ]
         # Оставляем только существующие столбцы
         feature_cols = [col for col in feature_cols if col in df.columns]
@@ -2485,10 +2823,20 @@ class AIEngine:
             weighted_sum = 0.0
             total_w = 0.0
             for la, w in zip(LOOK_AHEADS, HORIZON_WEIGHTS):
-                ret = (c[i + la] - c[i]) / (c[i] + 1e-10)
-                if ret > buy_thresh:
+                # v5 FIX: используем max/min в окне, а не endpoint c[i+la].
+                # Реальная торговля ловит внутридневные экстремумы (trailing stop),
+                # поэтому достижимый максимум/минимум — правильная метрика.
+                # Старый подход c[i+la] недооценивал прибыльные BUY-возможности.
+                window_end = min(i + la + 1, n)
+                window = c[i + 1 : window_end]
+                if len(window) == 0:
+                    total_w += w
+                    continue
+                ret_up   = (window.max() - c[i]) / (c[i] + 1e-10)   # лучший достижимый рост
+                ret_down = (window.min() - c[i]) / (c[i] + 1e-10)   # худший провал (отрицательный)
+                if ret_up > buy_thresh:
                     weighted_sum += w
-                elif ret < -sell_thresh:
+                elif ret_down < -sell_thresh:
                     weighted_sum -= w
                 total_w += w
             # Взвешенное решение: >50% веса за сторону → сигнал
@@ -2611,7 +2959,7 @@ class AIEngine:
         c     = df["close"].values;  price = float(c[-1])
         atr   = float(df["atr"].iloc[-1])
         x     = np.arange(10, dtype=float);  y = c[-10:]
-        slope = safe_polyfit(x, y, 1)[0]
+        slope = np.polyfit(x, y, 1)[0]
         s_pct = slope / (price + 1e-10) * 100
         return {
             "t1": round(price + slope,   8),
@@ -2696,15 +3044,33 @@ class AIEngine:
 
             half_kelly = max(0.1, min(kelly_raw * kelly_mult, 2.0))
             ev = win_rate * avg_win - (1 - win_rate) * avg_loss
+
+            # v5: Profit Certainty Score — вероятность что сделка покроет DEX fees + gas.
+            # Используем Sharpe-based threshold: требуем EV > fee_cost на сделку.
+            try:
+                _stake   = float(getattr(Config, "TRADE_AMOUNT", 100.0))
+                _fee_pct = float(getattr(Config, "FEE_ROUND_TRIP", 2.0)) / 100.0
+                _buy_gas = float(getattr(Config, "BUY_GAS_TON", 0.103))
+                _sell_gas= float(getattr(Config, "SELL_GAS_TON", 0.08))
+                _total_cost = _stake * _fee_pct + _buy_gas + _sell_gas
+                # EV должен быть > полной стоимости сделки (fee + gas) чтобы быть прибыльным
+                ev_profitable = ev > _total_cost
+                profit_margin = round(ev - _total_cost, 4)
+            except Exception:
+                ev_profitable = ev > 0
+                profit_margin = round(ev, 4)
+
             return {
-                "fraction": round(half_kelly, 3),
-                "win_rate": round(win_rate * 100, 1),
-                "rr_ratio": round(rr, 2),
-                "trades":   n,
-                "ev":       round(ev, 4),
-                "avg_win":  round(avg_win, 4),
-                "avg_loss": round(avg_loss, 4),
-                "sharpe":   sharpe,
+                "fraction":      round(half_kelly, 3),
+                "win_rate":      round(win_rate * 100, 1),
+                "rr_ratio":      round(rr, 2),
+                "trades":        n,
+                "ev":            round(ev, 4),
+                "profit_margin": profit_margin,     # v5: EV минус реальные издержки (fee+gas)
+                "ev_profitable": ev_profitable,     # v5: True = EV покрывает ВСЕ издержки
+                "avg_win":       round(avg_win, 4),
+                "avg_loss":      round(avg_loss, 4),
+                "sharpe":        sharpe,
             }
         except Exception:
             return {"fraction": 0.5, "win_rate": 50.0, "rr_ratio": 1.0,
@@ -2717,7 +3083,10 @@ class AIEngine:
                 "name":     s.name,
                 "icon":     icons.get(s.name, "🤖"),
                 "weight":   round(s.weight, 2),
-                "accuracy": round(s.accuracy * 100, 1),
+                # Bug-fix #1: samples — это история ЖИВЫХ предсказаний, не обучающих примеров.
+                # Когда samples=0, accuracy всегда возвращает 0.5 (default) — это вводило в заблуждение.
+                # Теперь accuracy=None когда нет живых предсказаний (фронтенд покажет «нет данных»).
+                "accuracy": round(s.accuracy * 100, 1) if s._history else None,
                 "samples":  len(s._history),
             }
             for s in self._slots

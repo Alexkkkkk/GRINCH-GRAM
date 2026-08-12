@@ -1,3 +1,18 @@
+// ═══ CSRF-защита — добавляем X-CSRF-Token ко всем state-changing запросам ═══
+(function() {
+  var _csrf = (typeof window._csrfToken !== "undefined" ? window._csrfToken : "")
+              || (document.querySelector('meta[name="csrf-token"]') || {}).content || "";
+  var _origFetch = window.fetch;
+  window.fetch = function(url, opts) {
+    opts = opts || {};
+    var method = (opts.method || "GET").toUpperCase();
+    if (_csrf && ["POST","PUT","DELETE","PATCH"].indexOf(method) !== -1) {
+      opts.headers = Object.assign({"X-CSRF-Token": _csrf}, opts.headers || {});
+    }
+    return _origFetch.call(this, url, opts);
+  };
+})();
+
 // ═══ Toast-уведомления (заменяет alert(), который блокируется в iframe) ═══
 function showToast(msg, type) {
   // type: "ok" | "err" | "info"  (default: "info")
@@ -23,6 +38,9 @@ document.addEventListener("DOMContentLoaded", () => {
 
 // Немедленно загружаем данные при старте страницы (не ждём SocketIO)
 fetch("/api/status").then(r => r.json()).then(updateUI).catch(() => {});
+// Grid: немедленно и затем каждые 30 сек
+fetchGridStatus();
+setInterval(fetchGridStatus, 30000);
 
 const socket = io({
   path: "/socket.io",
@@ -46,11 +64,11 @@ function fmtPrice(p) {
   return "$" + p.toLocaleString("en-US", { minimumFractionDigits: digits, maximumFractionDigits: digits });
 }
 
-// Курс GRINCH в GRAM (бывш. Toncoin)
+// Курс GRINCH в TON
 function fmtGram(p) {
   p = Number(p) || 0;
   const digits = p >= 100 ? 2 : (p >= 1 ? 4 : (p >= 0.01 ? 6 : 8));
-  return p.toLocaleString("en-US", { minimumFractionDigits: digits, maximumFractionDigits: digits }) + " GRAM";
+  return p.toLocaleString("en-US", { minimumFractionDigits: digits, maximumFractionDigits: digits }) + " TON";
 }
 
 let _lastLivePrice = null;
@@ -59,7 +77,7 @@ function updatePrice(d) {
   if (!el) return;
   const gram = Number(d.gram) || 0;
   const usd  = Number(d.price) || 0;
-  // Hero ВСЕГДА в GRAM: при сбое котировки не подменяем доллар, держим прежнее значение
+  // Hero ВСЕГДА в TON: при сбое котировки не подменяем доллар, держим прежнее значение
   if (gram > 0) {
     el.textContent = fmtGram(gram);
     if (_lastLivePrice !== null && gram !== _lastLivePrice) {
@@ -95,16 +113,16 @@ function updateUI(data) {
   const stats    = data.stats    || {};
   const ai       = data.ai       || {};
 
-  // Курс GRINCH в GRAM (бывш. Toncoin) — основное число; USD — справочно
+  // Курс GRINCH в TON — основное число; USD — справочно
   const priceFromAnalysis = Number(analysis.price);
   const gram = Number(data.grinch_ton) || 0;
   const priceEl = document.getElementById("price");
-  // Hero ВСЕГДА в GRAM: при отсутствии курса не подменяем доллар
+  // Hero ВСЕГДА в TON: при отсутствии курса не подменяем доллар
   if (priceEl && gram > 0) priceEl.textContent = fmtGram(gram);
   const pitEl = document.getElementById("price-in-ton");
   if (pitEl && priceFromAnalysis > 0) pitEl.textContent = "≈ " + fmtPrice(priceFromAnalysis);
   const symLabel = document.getElementById("symbol-label");
-  if (symLabel) symLabel.textContent = "GRINCH/GRAM";
+  if (symLabel) symLabel.textContent = "GRINCH/TON";
 
   // Технический сигнал
   const sig = analysis.signal || "HOLD";
@@ -226,7 +244,7 @@ function updateUI(data) {
   balList.innerHTML = Object.entries(bal).map(([k, v]) => {
     const m = ASSET_META[k] || { cls: "", icon: "", aCls: "" };
     return `<div class="balance-item ${m.cls}">
-      <span class="balance-asset ${m.aCls}">${m.icon} ${k}</span>
+      <span class="balance-asset ${m.aCls}">${m.icon} ${escapeHtml(k)}</span>
       <span class="balance-amount">${Number(v).toFixed(4)}</span>
     </div>`;
   }).join("") || '<div class="empty-msg">Нет данных</div>';
@@ -269,7 +287,7 @@ function updateUI(data) {
 
   renderOpenTrades(data.open_trades  || [], Number(data.analysis?.price) || 0, Number(data.grinch_ton) || 0);
   renderOpenShortTrades(data.open_short_trades || [], Number(data.analysis?.price) || 0, Number(data.grinch_ton) || 0);
-  renderHistory(data.recent_trades || []);
+  renderHistory(data.recent_trades || []);  // async — не ждём
   renderLogs(data.logs             || []);
 
   // ═══ AI COMMAND CENTER ═══
@@ -290,85 +308,7 @@ function updateUI(data) {
 
   // DCA стратегия — статус текущего цикла
   if (data.dca_mode) renderDcaState(data.dca_state || null, data.dca_mode);
-
-  // Grid-сетка — независимый lifecycle и статус
-  if (data.grid) renderGridState(data.grid);
 }
-
-function renderGridState(st) {
-  const g = id => document.getElementById(id);
-  if (!st) return;
-  const active = !!st.active;
-  const badge = g("grid-status-badge");
-  if (badge) {
-    badge.textContent = active ? "АКТИВНА" : (st.paused_reason ? "ПАУЗА" : "не активна");
-    badge.style.color = active ? "#00ff88" : "#8892b0";
-    badge.style.background = active ? "rgba(0,255,136,.12)" : "rgba(255,255,255,.08)";
-  }
-  const poller = g("grid-poller-status");
-  if (poller) {
-    const tick = Number(st.last_tick || 0);
-    poller.textContent = tick > 0
-      ? "Последний тик: " + new Date(tick * 1000).toLocaleTimeString()
-      : "Опрос: ожидает";
-  }
-  if (g("grid-center")) g("grid-center").textContent =
-    st.center_price_ton > 0 ? Number(st.center_price_ton).toFixed(8) + " TON" : "—";
-  if (g("grid-sell-count")) g("grid-sell-count").textContent =
-    `${st.sell?.waiting ?? 0}/${st.sell?.total ?? 0}`;
-  if (g("grid-buy-count")) g("grid-buy-count").textContent =
-    `${st.buy?.waiting ?? 0}/${st.buy?.total ?? 0}`;
-  if (g("grid-profit")) g("grid-profit").textContent =
-    st.total_profit_ton != null ? Number(st.total_profit_ton).toFixed(4) + " TON" : "—";
-
-  const sell = st.sell || {}, buy = st.buy || {};
-  const summary = [];
-  if (st.step_pct != null) summary.push(`Шаг: <b>${Number(st.step_pct).toFixed(1)}%</b>`);
-  if (sell.next_price_ton) summary.push(`Ближайший SELL: <b>${Number(sell.next_price_ton).toFixed(8)} TON</b>`);
-  if (buy.next_price_ton) summary.push(`Ближайший BUY: <b>${Number(buy.next_price_ton).toFixed(8)} TON</b>`);
-  if (st.grid_reserved_grinch != null) summary.push(`Резерв Grid: <b>${Number(st.grid_reserved_grinch).toLocaleString("en-US", {maximumFractionDigits:0})} GRINCH</b>`);
-  const levels = g("grid-levels-summary");
-  if (levels) levels.innerHTML = summary.length ? summary.join(" · ") : "Сетка ещё не построена.";
-  const err = g("grid-error-msg");
-  if (err) {
-    const msg = st.error || st.paused_reason || "";
-    err.textContent = msg;
-    err.style.display = msg ? "" : "none";
-  }
-}
-
-async function _gridAction(path, body = {}) {
-  try {
-    const r = await fetch(path, {
-      method: "POST",
-      headers: {"Content-Type": "application/json"},
-      body: JSON.stringify(body),
-    });
-    const d = await r.json();
-    if (!d.ok) throw new Error(d.error || d.message || "Ошибка Grid");
-    showToast("✅ " + (d.message || "Готово"), "ok");
-    const s = await fetch("/api/grid/status").then(x => x.json());
-    renderGridState(s);
-    return s;
-  } catch (e) {
-    showToast("❌ " + e.message, "err");
-    const err = document.getElementById("grid-error-msg");
-    if (err) { err.textContent = e.message; err.style.display = ""; }
-    return null;
-  }
-}
-
-function buildGrid() {
-  const n = id => Number(document.getElementById(id)?.value);
-  return _gridAction("/api/grid/build", {
-    step_pct: n("grid-step"),
-    sell_levels: n("grid-sell-levels"),
-    buy_levels: n("grid-buy-levels"),
-  });
-}
-function activateGrid() { return _gridAction("/api/grid/activate"); }
-function deactivateGrid() { return _gridAction("/api/grid/deactivate"); }
-function resetGridErrors() { return _gridAction("/api/grid/reset-errors"); }
 
 function renderDcaState(st, active) {
   const panel = document.getElementById("dca-status-panel");
@@ -383,15 +323,32 @@ function renderDcaState(st, active) {
     "buying":  "🟢 Набор позиции",
     "waiting": "📉 Ожидание отката",
   };
-  const phase = st.wait_pullback ? "waiting" : (st.entries_count > 0 ? "buying" : "idle");
+  // Если last_buy_price > 0 но entries_count ещё 0 (кратковременный рассинхрон
+  // между сбросом цикла и self-heal в следующем тике) — не показывать "Ожидание входа"
+  const phase = st.wait_pullback
+    ? "waiting"
+    : (st.entries_count > 0
+      ? "buying"
+      : (st.last_buy_price > 0 ? "waiting" : "idle"));
   if (g("dca-phase"))   g("dca-phase").textContent  = phaseMap[phase] || phase;
   if (g("dca-entries")) g("dca-entries").textContent = (st.entries_count ?? "—") + " / " + (st.max_entries ?? "—");
   if (g("dca-stake"))   g("dca-stake").textContent   = st.total_stake != null ? Number(st.total_stake).toFixed(2) + " TON" : "—";
 
-  // Прибыль портфеля (поле portfolio_pct из get_status)
-  const profit = st.portfolio_pct;
-  const target = st.target_pct ?? 20;
-  if (g("dca-profit"))       g("dca-profit").textContent      = profit != null ? (profit >= 0 ? "+" : "") + Number(profit).toFixed(2) + "%" : "—";
+  // Прибыль портфеля (поля portfolio_pct + portfolio_ton из get_status)
+  const profit    = st.portfolio_pct;
+  const profitTon = st.portfolio_ton;
+  const target    = st.target_pct ?? 20;
+  if (g("dca-profit")) {
+    if (profit != null) {
+      const pStr  = (profit >= 0 ? "+" : "") + Number(profit).toFixed(2) + "%";
+      const tStr  = profitTon != null ? " / " + (profitTon >= 0 ? "+" : "") + Number(profitTon).toFixed(3) + " TON" : "";
+      g("dca-profit").textContent = pStr + tStr;
+      g("dca-profit").style.color = profit > 0 ? "#00ff88" : profit < 0 ? "#ff453a" : "#ffd700";
+    } else {
+      g("dca-profit").textContent = "—";
+      g("dca-profit").style.color = "";
+    }
+  }
   if (g("dca-target-label")) g("dca-target-label").textContent = "+" + target + "%";
 
   // Прогресс-бар
@@ -437,6 +394,34 @@ function renderDcaState(st, active) {
       g("dca-compound-bonus").textContent = "0 TON (накопится после профита)";
       g("dca-compound-bonus").style.color = "#8892b0";
     }
+  }
+}
+
+// Обновляет подсказки под compound и adaptive полями в реальном времени
+function updateDcaHints() {
+  const g = id => document.getElementById(id);
+  // ── Compound hint ─────────────────────────────────────────────────────────
+  const stakeEl = g("cfg-dca-stake");
+  const ratioEl = g("cfg-dca-compound-ratio");
+  const dropEl  = g("cfg-dca-drop");
+  const hintC   = g("dca-compound-hint");
+  if (hintC && stakeEl && ratioEl) {
+    const stake = parseFloat(stakeEl.value) || 20;
+    const ratio = parseFloat(ratioEl.value) || 0.30;
+    const pct   = Math.round(ratio * 100);
+    const bonus = (stake * ratio).toFixed(1);
+    hintC.textContent = `Прибыль ${stake} TON → +${pct}% = +${bonus} TON к следующей ставке`;
+  }
+  // ── Adaptive trigger hint ─────────────────────────────────────────────────
+  const fastMoveEl = g("cfg-dca-fast-move");
+  const fastDropEl = g("cfg-dca-fast-drop");
+  const normalDrop = dropEl ? parseFloat(dropEl.value) || 12 : 12;
+  const hintA      = g("dca-adaptive-hint");
+  if (hintA && fastMoveEl && fastDropEl) {
+    const fm = parseFloat(fastMoveEl.value) || 5;
+    const fd = parseFloat(fastDropEl.value) || 6;
+    hintA.textContent =
+      `Если рынок вырос >${fm}% за 75 сек → докупать уже при -${fd}% (не -${normalDrop}%)`;
   }
 }
 
@@ -516,7 +501,7 @@ function renderEntryQuality(eq, signal) {
   const reasonsHtml = reasons.length
     ? `<div style="margin-top:5px;display:flex;flex-wrap:wrap;gap:4px">
         ${reasons.map(r => `<span style="background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.08);
-          border-radius:5px;padding:2px 7px;color:#c8d6e8;font-size:10px">${r}</span>`).join("")}
+          border-radius:5px;padding:2px 7px;color:#c8d6e8;font-size:10px">${escapeHtml(r)}</span>`).join("")}
        </div>`
     : "";
 
@@ -550,7 +535,7 @@ function renderSmartMoneyBar(sm) {
   el.style.borderColor = col + "55";
   el.style.background  = bg;
   el.innerHTML = `
-    <span style="color:${col};font-weight:700">🐋 ${arrow} ${sm.label || "умные деньги"}</span>
+    <span style="color:${col};font-weight:700">🐋 ${arrow} ${escapeHtml(sm.label || "умные деньги")}</span>
     <span style="color:#8892b0;margin-left:8px">score ${score > 0 ? "+" : ""}${score.toFixed(2)}</span>
     ${sm.buys_1h  != null ? `<span style="color:#00ff88;margin-left:8px">↑ ${sm.buys_1h.toFixed(1)} TON/ч</span>` : ""}
     ${sm.sells_1h != null ? `<span style="color:#ff4d6d;margin-left:6px">↓ ${sm.sells_1h.toFixed(1)} TON/ч</span>` : ""}
@@ -670,18 +655,22 @@ function _updateQuantumModels(modelInfo) {
   const MODEL_ICONS = {RF:"🌲",ET:"⚡",GB:"🚀",HGB:"💥",XGB:"🔥",MLP:"🧠"};
   const MODEL_DESC  = {RF:"Random Forest",ET:"Extra Trees",GB:"Gradient Boost",HGB:"Hist GB",XGB:"XGBoost",MLP:"Neural Net"};
   grid.innerHTML = modelInfo.map(m => {
-    const pct = Math.round(m.accuracy || 0);
-    const col = pct >= 65 ? "#00ff88" : pct >= 50 ? "#ffd166" : "#ff4d6d";
-    const wPct = Math.min(m.weight / 2.0 * 100, 100).toFixed(0);
+    // accuracy может быть null (нет истории сделок) — показываем "—" вместо "0%"
+    const hasAcc = m.accuracy != null;
+    const pct    = hasAcc ? Math.round(m.accuracy) : null;
+    const col    = !hasAcc ? "#8892b0" : pct >= 65 ? "#00ff88" : pct >= 50 ? "#ffd166" : "#ff4d6d";
+    const wPct   = Math.min(m.weight / 2.0 * 100, 100).toFixed(0);
+    const barW   = hasAcc ? pct : 0;   // полоса не рисуется пока нет данных
+    const accStr = hasAcc ? `${pct}% acc` : "—  нет данных";
     return `<div class="qb-model-card">
       <div class="qb-model-icon">${MODEL_ICONS[m.name]||"🤖"}</div>
       <div class="qb-model-body">
-        <div class="qb-model-name">${m.name} <span class="qb-model-desc">${MODEL_DESC[m.name]||""}</span></div>
+        <div class="qb-model-name">${escapeHtml(m.name)} <span class="qb-model-desc">${MODEL_DESC[m.name]||""}</span></div>
         <div class="qb-model-bar-wrap">
-          <div class="qb-model-bar" style="width:${pct}%;background:${col}"></div>
+          <div class="qb-model-bar" style="width:${barW}%;background:${col}"></div>
         </div>
         <div class="qb-model-stats">
-          <span style="color:${col}">${pct}% acc</span>
+          <span style="color:${col}">${accStr}</span>
           <span style="color:#8892b0">wt: ${m.weight.toFixed(2)}</span>
         </div>
       </div>
@@ -689,8 +678,16 @@ function _updateQuantumModels(modelInfo) {
   }).join("");
 }
 
+function _updateUntrainedWarning(trained) {
+  const banner = document.getElementById("ai-untrained-banner");
+  if (!banner) return;
+  banner.style.display = trained ? "none" : "flex";
+}
+
 function updateAIPro(ai) {
   if (!ai) return;
+
+  _updateUntrainedWarning(!!ai.trained);
 
   const signal  = ai.ai_signal  || "HOLD";
   const conf    = Number(ai.confidence)  || 0;
@@ -792,6 +789,13 @@ function updateAIPro(ai) {
 let _portfolioBaseline = null;
 
 function _updatePortfolioTracker(bal, analysis, stats) {
+  // Если открыта вкладка «Кошелёк» — её элементы обслуживает renderWalletFull()
+  // (данные с /api/wallet/full, обновление каждые 6 сек).
+  // _updatePortfolioTracker обновляет те же id каждые 2 сек с другим форматом
+  // → два цикла перезаписывают друг друга → "прыгание" значений.
+  const walletTab = document.getElementById('tab-wallet');
+  if (walletTab && !walletTab.classList.contains('tab-hidden')) return;
+
   const tonAmt  = Number(bal?.TON)    || 0;
   const grnAmt  = Number(bal?.GRINCH) || 0;
   const grnUsd  = Number(analysis?.price) || 0;
@@ -1017,10 +1021,10 @@ function renderSR(sr) {
   const res = sr.resistance || [];
   const sup = sr.support    || [];
   document.getElementById("sr-res").innerHTML = res.length
-    ? res.reverse().map(v => `<div class="sr-val sr-res">$${v}</div>`).join("")
+    ? res.reverse().map(v => `<div class="sr-val sr-res">${escapeHtml(String(v))}</div>`).join("")
     : '<div class="empty-msg">—</div>';
   document.getElementById("sr-sup").innerHTML = sup.length
-    ? sup.map(v => `<div class="sr-val sr-sup">$${v}</div>`).join("")
+    ? sup.map(v => `<div class="sr-val sr-sup">${escapeHtml(String(v))}</div>`).join("")
     : '<div class="empty-msg">—</div>';
 }
 
@@ -1033,7 +1037,7 @@ function renderPatterns(patterns) {
   el.innerHTML = patterns.map(p => {
     const cls  = p.type === "bullish" ? "pat-bull" : p.type === "bearish" ? "pat-bear" : "pat-neut";
     const icon = p.type === "bullish" ? "🟢" : p.type === "bearish" ? "🔴" : "🟡";
-    return `<div class="pattern-item ${cls}">${icon} <b>${p.name}</b> — <span>${p.desc}</span></div>`;
+    return `<div class="pattern-item ${cls}">${icon} <b>${escapeHtml(p.name)}</b> — <span>${escapeHtml(p.desc)}</span></div>`;
   }).join("");
 }
 
@@ -1048,7 +1052,7 @@ function renderFeatureImportance(fi) {
     const barColor = `hsl(${hue},80%,60%)`;
     return `
     <div class="fi-row">
-      <span class="fi-name">${f.feature}</span>
+      <span class="fi-name">${escapeHtml(f.feature)}</span>
       <div class="fi-bar-wrap">
         <div class="fi-bar" style="width:${w}%;background:linear-gradient(90deg,${barColor},${barColor}88)"></div>
       </div>
@@ -1206,27 +1210,409 @@ async function closeTrade(btn, id) {
   fetch("/api/status").then(r => r.json()).then(updateUI).catch(() => {});
 }
 
-function renderHistory(trades) {
-  const el     = document.getElementById("trades-history");
-  const closed = trades.filter(t => t.status === "closed").reverse();
-  if (!closed.length) { el.innerHTML = '<div class="empty-msg">История пуста</div>'; return; }
-  el.innerHTML = closed.slice(0, 20).map(t => {
+// ════════════════════════════════════════════════════
+//  Grid-сетка: статус + GridAIManager
+// ════════════════════════════════════════════════════
+
+async function fetchGridStatus() {
+  try {
+    const r = await fetch('/api/grid/status');
+    if (!r.ok) return;
+    const d = await r.json();
+    renderGridPanel(d);
+  } catch(e) {}
+}
+
+function _gtxt(id, val) {
+  const el = document.getElementById(id);
+  if (el) el.textContent = val;
+}
+
+function renderGridPanel(d) {
+  if (!d) return;
+
+  // Статус-бейдж
+  const active = d.active;
+  const badge  = document.getElementById('grid-status-badge');
+  if (badge) {
+    badge.textContent = active ? '▶ Активна' : '⏸ Пауза';
+    badge.style.background = active ? 'rgba(0,255,136,.15)' : 'rgba(255,107,107,.12)';
+    badge.style.color = active ? 'var(--green)' : 'var(--red)';
+  }
+
+  // Режим и AI-пауза
+  const aiMgr  = d.ai_manager || {};
+  const regime = aiMgr.last_regime || '';
+  const regEl  = document.getElementById('grid-regime-badge');
+  if (regEl) {
+    if (regime && regime !== 'UNKNOWN') {
+      regEl.textContent = regime;
+      regEl.style.display = '';
+    } else {
+      regEl.style.display = 'none';
+    }
+  }
+  const pausedEl = document.getElementById('grid-ai-paused-badge');
+  if (pausedEl) pausedEl.style.display = aiMgr.paused_by_ai ? '' : 'none';
+
+  // Метрики
+  const profit = d.total_profit_ton || 0;
+  _gtxt('grid-total-profit', (profit >= 0 ? '+' : '') + profit.toFixed(3) + ' TON');
+  _gtxt('grid-center', d.center_price_ton ? d.center_price_ton.toFixed(6) + ' TON' : '—');
+  _gtxt('grid-step',   d.step_pct != null ? d.step_pct.toFixed(1) + '%' : '—');
+  _gtxt('grid-cycles', d.total_sell_cycles != null ? d.total_sell_cycles : '—');
+  const gridReserve = Number(d.grid_reserved_grinch);
+  const dcaReserve  = Number(d.dca_reserved_grinch);
+  _gtxt('grid-reserved-grinch',
+    Number.isFinite(gridReserve) ? gridReserve.toLocaleString('ru-RU', {maximumFractionDigits: 0}) + ' GRINCH' : '— GRINCH');
+  _gtxt('dca-reserved-grinch',
+    Number.isFinite(dcaReserve) ? dcaReserve.toLocaleString('ru-RU', {maximumFractionDigits: 0}) + ' GRINCH' : '— GRINCH');
+
+  // Показываем SELL-уровни по возрастанию цены: от ближайшего к текущей
+  // цене до самого высокого. Копия массива важна — порядок ордеров в
+  // состоянии Grid и порядок их исполнения при этом не меняются.
+  const sells   = [...(d.sell_levels || [])].sort((a, b) => {
+    const priceA = Number(a.price_ton);
+    const priceB = Number(b.price_ton);
+    if (!Number.isFinite(priceA)) return 1;
+    if (!Number.isFinite(priceB)) return -1;
+    return priceA - priceB;
+  });
+  const waiting = sells.filter(l => l.status === 'waiting');
+  _gtxt('grid-sell-waiting', `${waiting.length} / ${sells.length}`);
+
+  // ── Вспомогательная функция: полоска прогресса + дельта-текст ──────────────
+  function _gridLevelBar(curPrice, targetPrice, direction) {
+    // direction: 'sell' (цена растёт до таргета) | 'buy' (цена падает до таргета)
+    if (!curPrice || !targetPrice) return '';
+    let pct, deltaSign, deltaPct, barClr, labelClr;
+    if (direction === 'sell') {
+      pct      = Math.min(100, (curPrice / targetPrice) * 100);
+      deltaPct = ((targetPrice - curPrice) / curPrice * 100);
+      deltaSign = '+';
+      barClr   = pct >= 90 ? '#00ff88' : pct >= 70 ? '#ffd166' : '#00d4ff';
+      labelClr = barClr;
+    } else {
+      pct      = Math.min(100, (targetPrice / curPrice) * 100);
+      deltaPct = ((curPrice - targetPrice) / curPrice * 100);
+      deltaSign = '-';
+      barClr   = pct >= 90 ? '#00ff88' : pct >= 70 ? '#ffd166' : '#c084fc';
+      labelClr = barClr;
+    }
+    const label = deltaPct <= 0
+      ? (direction === 'sell'
+          ? `<span style="color:var(--green);font-size:9px;font-family:var(--mono)">✓ достигнут</span>`
+          : `<span style="color:#ffd166;font-size:9px;font-family:var(--mono)">⚡ ниже уровня</span>`)
+      : `<span style="color:${labelClr};font-size:9px;font-family:var(--mono)">${deltaSign}${deltaPct.toFixed(1)}% до ${direction === 'sell' ? 'продажи' : 'закупки'}</span>`;
+    return `
+      <div style="display:flex;align-items:center;gap:5px;margin-top:3px">
+        <div style="flex:1;height:3px;background:rgba(255,255,255,.07);border-radius:2px;overflow:hidden">
+          <div style="width:${pct.toFixed(1)}%;height:100%;background:${barClr};border-radius:2px;transition:width .4s ease"></div>
+        </div>
+        ${label}
+      </div>`;
+  }
+
+  // SELL уровни
+  const lvlEl = document.getElementById('grid-sell-levels');
+  if (lvlEl) {
+    if (!sells.length) {
+      lvlEl.innerHTML = '<div style="font-size:11px;color:var(--text2);padding:4px">Нет уровней</div>';
+    } else {
+      const curPrice = _lastLivePrice || 0;
+      lvlEl.innerHTML = sells.map(l => {
+        const isFilled  = l.status === 'filled';
+        const isWaiting = l.status === 'waiting';
+        const icon = isFilled ? '✅' : isWaiting ? '⏳' : '⊘';
+        const clr  = isFilled ? 'var(--green)' : isWaiting ? 'var(--text)' : 'var(--text2)';
+        const priceStr  = l.price_ton ? l.price_ton.toFixed(6) : '—';
+        const amtStr    = l.amount_grinch ? (l.amount_grinch / 1000).toFixed(0) + 'k GRN' : '';
+        const ownerStr  = l.owner === 'dca'
+          ? '<span style="font-size:9px;color:#c084fc">DCA</span>'
+          : '<span style="font-size:9px;color:#00d4ff">Grid</span>';
+        const profitStr = isFilled && l.profit_ton ? `<span style="color:var(--green);font-size:10px">+${l.profit_ton.toFixed(3)} TON</span>` : '';
+        const bar = isWaiting ? _gridLevelBar(curPrice, l.price_ton, 'sell') : '';
+        return `<div style="padding:3px 6px;background:rgba(255,255,255,.025);border-radius:4px;font-size:11px">
+          <div style="display:flex;align-items:center;gap:8px">
+            <span style="width:14px;flex-shrink:0">${icon}</span>
+            <span style="font-family:var(--mono);color:${clr};flex:1">${priceStr} TON</span>
+            <span style="color:var(--text2);font-size:10px">${amtStr}</span>
+            ${ownerStr}
+            ${profitStr}
+          </div>
+          ${bar}
+        </div>`;
+      }).join('');
+    }
+  }
+
+  // BUY уровни
+  const buys   = d.buy_levels || [];
+  const buyEl  = document.getElementById('grid-buy-levels');
+  if (buyEl) {
+    if (!buys.length) {
+      buyEl.innerHTML = '<div style="font-size:11px;color:var(--text2);padding:4px">Нет уровней</div>';
+    } else {
+      const curPrice = _lastLivePrice || 0;
+      buyEl.innerHTML = buys.map(l => {
+        const isFilled     = l.status === 'filled';
+        const isWaiting    = l.status === 'waiting';
+        const isIdleDeploy = isWaiting && l.note && l.note.includes('idle-deploy');
+        const icon  = isFilled ? '✅' : isIdleDeploy ? '⏳' : isWaiting ? '🟢' : '⊘';
+        const clr   = isFilled ? 'var(--green)' : isIdleDeploy ? 'var(--yellow)' : isWaiting ? '#00ff88' : 'var(--text2)';
+        const priceStr = l.price_ton ? l.price_ton.toFixed(6) : '—';
+        const amtStr   = l.amount_ton ? l.amount_ton.toFixed(1) + ' TON' : '';
+        const bar = isWaiting ? _gridLevelBar(curPrice, l.price_ton, 'buy') : '';
+        return `<div style="padding:3px 6px;background:rgba(0,255,136,.03);border-radius:4px;font-size:11px;border:1px solid rgba(0,255,136,.06)">
+          <div style="display:flex;align-items:center;gap:8px">
+            <span style="width:14px;flex-shrink:0">${icon}</span>
+            <span style="font-family:var(--mono);color:${clr};flex:1">${priceStr} TON</span>
+            <span style="color:var(--text2);font-size:10px">${amtStr}</span>
+          </div>
+          ${bar}
+        </div>`;
+      }).join('');
+    }
+  }
+
+  // Idle-Deploy статистика
+  const idle    = d.idle_deploy || {};
+  const idleRow = document.getElementById('grid-idle-deploy-row');
+  if (idleRow) {
+    const idleWait   = idle.waiting_count || 0;
+    const idleTon    = idle.waiting_ton   || 0;
+    const idleFilled = idle.filled_count  || 0;
+    if (idleWait > 0 || idleFilled > 0) {
+      idleRow.style.display = '';
+      _gtxt('grid-idle-waiting', idleWait + ' ожид.');
+      _gtxt('grid-idle-ton',     idleTon  > 0 ? idleTon.toFixed(1) + ' TON заморожено' : '');
+      _gtxt('grid-idle-filled',  idleFilled > 0 ? '· ' + idleFilled + ' исполнено' : '');
+    } else {
+      idleRow.style.display = 'none';
+    }
+  }
+
+  // GridAI-менеджер: лог решений
+  const logEl = document.getElementById('grid-ai-mgr-log');
+  const decLog = aiMgr.decision_log || [];
+  if (logEl) {
+    if (!decLog.length) {
+      logEl.innerHTML = '<div style="font-size:11px;color:var(--text2)">Решений пока нет</div>';
+    } else {
+      logEl.innerHTML = decLog.slice(0, 6).map(e => {
+        const t    = e.ts ? new Date(e.ts * 1000).toISOString().slice(11, 16) : '';
+        const decs = (e.decisions || []).join(' · ');
+        return `<div style="font-size:10px;padding:2px 0;border-bottom:1px solid rgba(255,255,255,.04);line-height:1.5">
+          <span style="color:var(--text2)">${t}</span>
+          <span style="color:#00d4ff;margin:0 5px">[${e.regime || ''}]</span>
+          <span style="color:var(--text-dim)">${escapeHtml(decs)}</span>
+        </div>`;
+      }).join('');
+    }
+  }
+
+  // Кулдаун перестройки
+  const cdEl = document.getElementById('grid-ai-rebuild-cd');
+  if (cdEl && aiMgr.rebuild_cooldown_left != null) {
+    const mins = Math.ceil(aiMgr.rebuild_cooldown_left / 60);
+    cdEl.textContent = mins > 0 ? `перестройка через ${mins} мин` : 'перестройка готова';
+  }
+
+  // ── GridAI v6 stats ──────────────────────────────────────────────
+  const gai = d.grid_ai || {};
+  if (gai.trained != null) {
+    // Badge обучен/нет
+    const v5badge = document.getElementById('grid-ai-v5-badge');
+    if (v5badge) v5badge.style.display = gai.trained ? '' : 'none';
+
+    // Количество примеров
+    const sampEl = document.getElementById('grid-ai-v5-samples');
+    if (sampEl) sampEl.textContent = gai.samples != null ? `${gai.samples} примеров` : '';
+
+    // v6: Поколение
+    const genEl = document.getElementById('grid-v6-gen');
+    if (genEl) {
+      const gen = gai.generation != null ? gai.generation : null;
+      if (gen != null) {
+        genEl.textContent = `Gen #${gen}`;
+        genEl.style.display = '';
+        genEl.style.color = gen >= 5 ? 'var(--green)' : gen >= 2 ? '#ffd166' : '#00d4ff';
+      }
+    }
+
+    // VolModel / ExitModel
+    const v5models = (gai.ensemble && gai.ensemble.v5_models) ? gai.ensemble.v5_models : [];
+    const volEl  = document.getElementById('grid-v5-volmodel');
+    const exitEl = document.getElementById('grid-v5-exitmodel');
+    if (volEl) {
+      const hasVol = v5models.includes('VolModel');
+      volEl.textContent = hasVol ? '📈 VolModel ✓' : '📈 VolModel —';
+      volEl.style.color = hasVol ? 'var(--green)' : 'var(--text2)';
+      volEl.style.background = hasVol ? 'rgba(0,255,136,.12)' : 'rgba(255,255,255,.06)';
+    }
+    if (exitEl) {
+      const hasExit = v5models.includes('ExitModel');
+      exitEl.textContent = hasExit ? '🎯 ExitModel ✓' : '🎯 ExitModel —';
+      exitEl.style.color = hasExit ? '#c084fc' : 'var(--text2)';
+      exitEl.style.background = hasExit ? 'rgba(192,132,252,.12)' : 'rgba(255,255,255,.06)';
+    }
+
+    // v6: Дрейф-детектор
+    const driftEl = document.getElementById('grid-v6-drift');
+    if (driftEl) {
+      const dc = gai.drift_count != null ? gai.drift_count : 0;
+      driftEl.textContent = `🚨 Дрейф: ${dc}`;
+      driftEl.style.color = dc > 0 ? 'var(--red)' : 'var(--text2)';
+      driftEl.style.background = dc > 0 ? 'rgba(255,107,107,.15)' : 'rgba(255,107,107,.08)';
+    }
+
+    // v6: Bandit стратегия
+    const banditEl = document.getElementById('grid-v6-bandit');
+    if (banditEl && gai.bandit) {
+      const strat = gai.bandit.last_strategy || '—';
+      const stratLabels = {
+        conservative: 'консерв.',
+        aggressive:   'агресс.',
+        atr_pure:     'ATR',
+        kelly:        'Kelly',
+        ml_only:      'ML',
+      };
+      banditEl.textContent = `🎲 ${stratLabels[strat] || strat}`;
+      banditEl.style.color = strat === 'ml_only' ? '#00d4ff' :
+                             strat === 'aggressive' ? 'var(--green)' :
+                             strat === 'conservative' ? '#ffd166' : '#c084fc';
+    }
+
+    // v6: RL агент
+    const rlEl = document.getElementById('grid-v6-rl');
+    if (rlEl && gai.rl_agent) {
+      const ep  = gai.rl_agent.episodes || 0;
+      const avg = gai.rl_agent.avg_reward != null ? gai.rl_agent.avg_reward.toFixed(3) : '—';
+      rlEl.textContent = `🔄 RL: ${ep} эп. (${avg})`;
+      rlEl.style.color = ep >= 10 ? 'var(--green)' : 'var(--text2)';
+    }
+
+    // v6: Режимные модели
+    const rmContainer = document.getElementById('grid-v6-regime-models');
+    const rmList      = document.getElementById('grid-v6-regime-list');
+    if (rmContainer && rmList && gai.regime_models) {
+      const trained = gai.regime_models.trained_regimes || [];
+      if (trained.length > 0) {
+        rmContainer.style.display = '';
+        rmList.innerHTML = trained.map(r =>
+          `<span style="font-size:8px;padding:1px 5px;border-radius:5px;` +
+          `background:rgba(0,212,255,.12);color:#00d4ff">${r}</span>`
+        ).join('');
+      } else {
+        rmContainer.style.display = 'none';
+      }
+    }
+
+    // Kelly ×
+    const kellyEl = document.getElementById('grid-v5-kelly');
+    if (kellyEl) {
+      const km = Number(gai.kelly_mult || 1.0);
+      kellyEl.textContent = '×' + km.toFixed(3);
+      kellyEl.style.color = km >= 1.05 ? 'var(--green)' : km <= 0.85 ? 'var(--red)' : '#ffd166';
+    }
+
+    // Backtest R²
+    const r2El = document.getElementById('grid-v5-r2');
+    if (r2El) {
+      const r2 = gai.backtest_r2 != null ? Number(gai.backtest_r2) : null;
+      r2El.textContent = r2 != null ? r2.toFixed(3) : '—';
+      if (r2 != null) r2El.style.color = r2 >= 0.1 ? 'var(--green)' : r2 >= -0.5 ? '#00d4ff' : 'var(--red)';
+    }
+
+    // Direction Accuracy
+    const daEl = document.getElementById('grid-v5-diracc');
+    if (daEl) {
+      const da = gai.backtest_dir_acc != null ? Number(gai.backtest_dir_acc) : null;
+      daEl.textContent = da != null ? (da * 100).toFixed(0) + '%' : '—';
+      if (da != null) daEl.style.color = da >= 0.55 ? 'var(--green)' : da >= 0.45 ? '#c084fc' : 'var(--red)';
+    }
+  }
+}
+
+// ════════════════════════════════════════════════════
+//  История сделок
+// ════════════════════════════════════════════════════
+
+async function renderHistory(trades) {
+  const el = document.getElementById("trades-history");
+
+  // ── DCA/AI сделки ──────────────────────────────────────────────
+  const dcaClosed = trades.filter(t => t.status === "closed").map(t => ({
+    _ts:         t.closed_at ? new Date(t.closed_at).getTime() : 0,
+    pnl:         t.pnl || 0,
+    side:        t.side || "sell",
+    entry_price: t.entry_price,
+    exit_price:  t.exit_price,
+    closed_at:   t.closed_at || "",
+    close_reason: t.close_reason || "—",
+    _is_grid:    false,
+  }));
+
+  // ── Grid SELL (все заполненные уровни, включая предыдущие rebuild) ─────
+  let gridFills = [];
+  try {
+    const gr = await fetch("/api/grid/status").then(r => r.json());
+    const centerTon = gr.center_price_ton || 0;
+    // completed_fills — полная история через все rebuild сетки
+    const fills = (gr.completed_fills && gr.completed_fills.length)
+      ? gr.completed_fills
+      : (gr.sell_levels || []).filter(l => l.status === "filled"); // fallback
+    [...fills].sort((a, b) => {
+      const priceA = Number(a.fill_price_ton ?? a.price_ton);
+      const priceB = Number(b.fill_price_ton ?? b.price_ton);
+      if (!Number.isFinite(priceA)) return 1;
+      if (!Number.isFinite(priceB)) return -1;
+      return priceA - priceB;
+    }).forEach(l => {
+      gridFills.push({
+        _ts:         l.filled_at ? l.filled_at * 1000 : 0,
+        pnl:         l.profit_ton || 0,
+        side:        "sell",
+        entry_price: centerTon ? centerTon.toFixed(7) : null,
+        exit_price:  l.fill_price_ton ? l.fill_price_ton.toFixed(7) : null,
+        closed_at:   l.filled_at ? new Date(l.filled_at * 1000).toISOString() : "",
+        close_reason: `🔲 Grid L${l.id}` + (l.note ? ` (${l.note})` : ""),
+        _is_grid:    true,
+      });
+    });
+  } catch (e) { /* сетка недоступна — пропускаем */ }
+
+  // ── Объединяем, сортируем по времени (новые первые) ───────────
+  const all = [...dcaClosed, ...gridFills].sort((a, b) => b._ts - a._ts);
+
+  if (!all.length) { el.innerHTML = '<div class="empty-msg">История пуста</div>'; return; }
+
+  el.innerHTML = all.slice(0, 30).map(t => {
     const pnl    = t.pnl || 0;
     const cls    = pnl >= 0 ? "closed-win" : "closed-loss";
     const pnlCls = pnl >= 0 ? "pnl-pos" : "pnl-neg";
+    const ep     = t.entry_price ? Number(t.entry_price).toFixed(7) : "—";
+    const xp     = t.exit_price  ? Number(t.exit_price).toFixed(7)  : "—";
+    const dateStr = t.closed_at
+      ? t.closed_at.slice(5,10) + " " + t.closed_at.slice(11,16)
+      : "";
+    const gridBadge = t._is_grid
+      ? `<span style="font-size:10px;padding:1px 5px;border-radius:6px;background:rgba(0,212,255,.13);color:#00d4ff;margin-left:4px">🔲 Grid</span>`
+      : "";
     return `
       <div class="trade-card ${cls}">
         <div class="trade-row">
-          <span class="trade-side ${t.side}">${t.side?.toUpperCase()}</span>
-          <span class="${pnlCls}">${pnl >= 0 ? "+" : ""}${pnl.toFixed(4)} TON</span>
+          <span class="trade-side ${t.side}">${escapeHtml(t.side.toUpperCase())}${gridBadge}</span>
+          <span class="${pnlCls}" style="font-family:var(--mono);font-size:13px;font-weight:800">${pnl >= 0 ? "+" : ""}${pnl.toFixed(4)} TON</span>
         </div>
-        <div class="trade-row">
-          <span style="color:#8892b0">Вход: $${t.entry_price}</span>
-          <span style="color:#8892b0">Выход: $${t.exit_price || "—"}</span>
+        <div class="th-prices">
+          <span class="th-price-ep">${ep}</span>
+          <span class="th-price-arrow">→</span>
+          <span class="th-price-xp">${xp}</span>
         </div>
-        <div class="trade-row" style="color:#4a5568;font-size:10px">
-          <span>${t.close_reason || ""}</span>
-          <span>${t.closed_at?.slice(11,19) || ""}</span>
+        <div class="trade-row th-meta">
+          <span>${escapeHtml(t.close_reason)}</span>
+          <span>${dateStr}</span>
         </div>
       </div>`;
   }).join("");
@@ -1325,6 +1711,12 @@ function onDcaModeChange() {
 document.addEventListener("DOMContentLoaded", () => {
   const cb = document.getElementById("cfg-dca-mode");
   if (cb) cb.addEventListener("change", onDcaModeChange);
+
+  // Live-обновление подсказок при изменении полей DCA
+  ["cfg-dca-stake","cfg-dca-compound-ratio","cfg-dca-fast-move","cfg-dca-fast-drop","cfg-dca-drop"].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.addEventListener("input", updateDcaHints);
+  });
 });
 
 async function saveDcaConfig() {
@@ -1389,6 +1781,101 @@ async function advSaveKey() {
     showToast("✅ Groq ключ сохранён — AI советник активирован", "ok");
     if (inp) inp.value = "";
     if (typeof advLoadKey === "function") advLoadKey();
+    if (typeof advLoadStatus === "function") advLoadStatus();
+    advLoadProviders();
+  } else {
+    showToast("❌ " + (d.error || "Ошибка"), "err");
+  }
+}
+
+// ─── Мульти-провайдер AI ─────────────────────────────────────────────────────
+const PROVIDER_LINKS = {
+  openai:   "https://platform.openai.com/api-keys",
+  deepseek: "https://platform.deepseek.com/",
+  xai:      "https://console.x.ai/",
+  anthropic: "https://console.anthropic.com/settings/keys",
+  groq:     "https://console.groq.com/keys",
+};
+const PROVIDER_PLACEHOLDERS = {
+  openai:    "sk-...",
+  deepseek:  "sk-...",
+  xai:       "xai-...",
+  anthropic: "sk-ant-...",
+  groq:      "gsk_...",
+};
+
+async function advLoadProviders() {
+  try {
+    const r = await fetch("/api/advisor/providers");
+    if (!r.ok) return;
+    const data = await r.json();
+
+    // Показываем активный провайдер
+    const activeLbl = document.getElementById("adv-active-provider");
+    if (activeLbl) {
+      activeLbl.textContent = `🤖 Активный AI: ${data.active_name || "Нет ключей"}`;
+    }
+
+    // Обновляем список провайдеров
+    const list = document.getElementById("adv-providers-list");
+    if (!list) return;
+    list.innerHTML = "";
+    const providers = data.providers || {};
+    Object.entries(providers).sort((a,b) => a[1].priority - b[1].priority).forEach(([pid, p]) => {
+      const isActive = p.is_active;
+      const hasKey   = p.has_key;
+      const card = document.createElement("div");
+      card.style.cssText = `padding:8px 10px;border-radius:7px;border:1px solid ${isActive ? "rgba(160,0,255,.5)" : "rgba(255,255,255,.07)"};background:${isActive ? "rgba(160,0,255,.12)" : "rgba(255,255,255,.03)"};cursor:pointer;transition:all .2s`;
+      card.innerHTML = `
+        <div style="display:flex;align-items:center;gap:6px;margin-bottom:${hasKey ? 0 : 4}px">
+          <span style="font-size:10px;${isActive ? "color:#c084fc;font-weight:700" : "color:var(--text-mid)"}">${isActive ? "✅" : (hasKey ? "🔑" : "🔒")} ${p.name}</span>
+          <span style="font-size:9px;color:#555;margin-left:auto;font-family:var(--mono)">${p.model}</span>
+          ${isActive ? '<span style="font-size:8px;color:#a06fff;background:rgba(160,0,255,.2);padding:1px 5px;border-radius:3px">АКТИВЕН</span>' : ""}
+        </div>
+        ${!hasKey ? `<div id="prov-key-row-${pid}" style="display:flex;gap:4px;margin-top:5px;align-items:center">
+          <input type="password" id="prov-key-inp-${pid}" placeholder="${PROVIDER_PLACEHOLDERS[pid] || 'sk-...'}" autocomplete="off"
+            style="flex:1;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.1);border-radius:5px;padding:4px 8px;font-size:10px;color:var(--text-dim);outline:none;font-family:var(--mono)">
+          <button class="btn-tiny" onclick="advSaveProviderKey('${pid}')" style="font-size:9px;padding:3px 8px">💾</button>
+          <a href="${PROVIDER_LINKS[pid] || '#'}" target="_blank" style="font-size:9px;color:#a06fff;text-decoration:none">Получить</a>
+        </div>` : `<div style="font-size:9px;color:#555;margin-top:2px">Ключ сохранён
+          <button class="btn-tiny" onclick="advSelectProvider('${pid}')" style="font-size:8px;padding:2px 7px;margin-left:4px;${isActive ? 'opacity:.4' : ''}">Использовать</button>
+        </div>`}
+      `;
+      list.appendChild(card);
+    });
+  } catch(e) {
+    console.warn("advLoadProviders:", e);
+  }
+}
+
+async function advSaveProviderKey(providerId) {
+  const inp = document.getElementById(`prov-key-inp-${providerId}`);
+  const key = inp ? inp.value.trim() : "";
+  if (!key) { showToast("❌ Введите ключ", "err"); return; }
+  const r = await fetch(`/api/advisor/providers/${providerId}/key`, {
+    method:"POST", headers:{"Content-Type":"application/json"},
+    body: JSON.stringify({key})
+  });
+  const d = await r.json();
+  if (d.ok) {
+    showToast(`✅ ${d.provider} ключ сохранён!`, "ok");
+    if (inp) inp.value = "";
+    advLoadProviders();
+    if (typeof advLoadStatus === "function") advLoadStatus();
+  } else {
+    showToast("❌ " + (d.error || "Ошибка"), "err");
+  }
+}
+
+async function advSelectProvider(providerId) {
+  const r = await fetch("/api/advisor/providers/select", {
+    method:"POST", headers:{"Content-Type":"application/json"},
+    body: JSON.stringify({provider_id: providerId || "auto"})
+  });
+  const d = await r.json();
+  if (d.ok) {
+    showToast(`🤖 Активный AI: ${d.active_provider}`, "ok");
+    advLoadProviders();
     if (typeof advLoadStatus === "function") advLoadStatus();
   } else {
     showToast("❌ " + (d.error || "Ошибка"), "err");
@@ -1553,6 +2040,8 @@ async function loadConfig() {
   if (g("cfg-dca-adaptive"))       g("cfg-dca-adaptive").checked       = cfg.dca_adaptive_trigger_enabled ?? true;
   if (g("cfg-dca-fast-move"))      g("cfg-dca-fast-move").value        = cfg.dca_adaptive_fast_move_pct   ?? 5;
   if (g("cfg-dca-fast-drop"))      g("cfg-dca-fast-drop").value        = cfg.dca_adaptive_fast_drop_pct   ?? 6;
+  // Обновляем подсказки после загрузки конфига
+  updateDcaHints();
 
   // Детектор крупных продаж
   if (g("cfg-lsd-enabled"))  g("cfg-lsd-enabled").checked   = cfg.large_sell_dca_enabled  ?? true;
@@ -1870,13 +2359,13 @@ loadConfig();
 loadCoin();
 loadDexTrades();
 loadExchanges();
-setInterval(() => loadTonPrice().then(() => loadTon()), 60000);
-setInterval(loadTon, 15000);
-setInterval(loadCoin, 10000);
-setInterval(loadDexTrades, 8000);
-setInterval(loadExchanges, 15000);
+setInterval(() => loadTonPrice().then(() => loadTon()), 30000);
+setInterval(loadTon, 8000);
+setInterval(loadCoin, 5000);
+setInterval(loadDexTrades, 4000);
+setInterval(loadExchanges, 8000);
 loadWallets();
-setInterval(loadWallets, 20000);
+setInterval(loadWallets, 10000);
 
 // ═══════════════════════════════════════════════════════════════════════════
 //  ШКАЛА ОБУЧЕНИЯ AI
@@ -1888,6 +2377,45 @@ const TB_STAGE_ORDER = ["collecting", "features", "rf", "gb", "validate", "ready
 // 1) SocketIO event "training_progress" (в реальном времени)
 // 2) поле training_progress в updateUI (polling fallback, уже встроен выше)
 socket.on("training_progress", renderTrainingProgress);
+
+// ── GridAI v5: детектор ловушки ──────────────────────────────────
+socket.on("grid_trap_alert", function(data) {
+  const el = document.getElementById('grid-trap-alert');
+  if (!el) return;
+  const action = data.action || 'HOLD';
+  const conf   = Number(data.confidence || 0);
+  const reason = data.reason || '';
+  const regime = data.regime || '';
+  const draw   = Number(data.drawdown || 0);
+
+  const titleEl  = document.getElementById('grid-trap-title');
+  const reasonEl = document.getElementById('grid-trap-reason');
+  const confEl   = document.getElementById('grid-trap-conf');
+
+  if (action === 'EXIT') {
+    el.style.borderColor = 'rgba(255,77,109,.4)';
+    el.style.background  = 'rgba(255,77,109,.08)';
+    if (titleEl) { titleEl.textContent = '🚨 ЛОВУШКА — ВЫХОД'; titleEl.style.color = '#ff4d6d'; }
+  } else {
+    el.style.borderColor = 'rgba(255,209,102,.3)';
+    el.style.background  = 'rgba(255,209,102,.06)';
+    if (titleEl) { titleEl.textContent = '⚠️ ЛОВУШКА — REDUCE'; titleEl.style.color = '#ffd166'; }
+  }
+  if (reasonEl) reasonEl.textContent = `${regime} | просадка −${draw.toFixed(1)}% | ${reason}`;
+  if (confEl)   confEl.textContent   = conf.toFixed(0) + '%';
+
+  el.style.display = '';
+  el.classList.add('trap-pulse');
+
+  // Показываем 90 секунд, потом скрываем
+  clearTimeout(el._hideTimer);
+  el._hideTimer = setTimeout(() => {
+    el.style.display = 'none';
+    el.classList.remove('trap-pulse');
+  }, 90000);
+
+  showToast(`🚨 GridAI: ${action} (${conf.toFixed(0)}%) — ${regime}`, action === 'EXIT' ? 'err' : 'info');
+});
 
 function renderTrainingProgress(tp) {
   if (!tp) return;
@@ -2109,105 +2637,12 @@ function pollLiquidityGuard() {
     .catch(() => {});
 }
 pollLiquidityGuard();
-setInterval(pollLiquidityGuard, 15000);
+setInterval(pollLiquidityGuard, 8000);
 
 // ── График истории баланса кошелька (equity curve) ───────────────────────────
-(function initEquityChart() {
-  const canvas  = document.getElementById("eq-chart");
-  const emptyEl = document.getElementById("eq-empty");
-  if (!canvas) return;
-
-  function drawEquity(pts) {
-    if (!pts || pts.length < 2) {
-      canvas.style.display = "none";
-      if (emptyEl) emptyEl.style.display = "";
-      return;
-    }
-    canvas.style.display = "block";
-    if (emptyEl) emptyEl.style.display = "none";
-
-    const dpr = window.devicePixelRatio || 1;
-    const W   = canvas.offsetWidth  || 320;
-    const H   = canvas.offsetHeight || 90;
-    canvas.width  = W * dpr;
-    canvas.height = H * dpr;
-    const ctx = canvas.getContext("2d");
-    ctx.scale(dpr, dpr);
-
-    const vals = pts.map(p => p.equity_ton);
-    const times = pts.map(p => new Date(p.t).getTime());
-    const minV  = Math.min(...vals);
-    const maxV  = Math.max(...vals);
-    const range = maxV - minV || 0.0001;
-    const minT  = times[0];
-    const maxT  = times[times.length - 1];
-    const timeRange = maxT - minT || 1;
-
-    const PAD_L = 2, PAD_R = 4, PAD_T = 8, PAD_B = 14;
-    const cW = W - PAD_L - PAD_R;
-    const cH = H - PAD_T - PAD_B;
-
-    const toX = t => PAD_L + ((t - minT) / timeRange) * cW;
-    const toY = v => PAD_T + (1 - (v - minV) / range) * cH;
-
-    // фон
-    ctx.clearRect(0, 0, W, H);
-
-    // область под линией
-    const grad = ctx.createLinearGradient(0, PAD_T, 0, H - PAD_B);
-    const isUp = vals[vals.length - 1] >= vals[0];
-    grad.addColorStop(0, isUp ? "rgba(0,209,143,0.25)" : "rgba(255,90,90,0.22)");
-    grad.addColorStop(1, "rgba(0,0,0,0)");
-    ctx.beginPath();
-    ctx.moveTo(toX(times[0]), toY(vals[0]));
-    for (let i = 1; i < pts.length; i++) ctx.lineTo(toX(times[i]), toY(vals[i]));
-    ctx.lineTo(toX(times[times.length - 1]), H - PAD_B);
-    ctx.lineTo(toX(times[0]), H - PAD_B);
-    ctx.closePath();
-    ctx.fillStyle = grad;
-    ctx.fill();
-
-    // линия
-    ctx.beginPath();
-    ctx.moveTo(toX(times[0]), toY(vals[0]));
-    for (let i = 1; i < pts.length; i++) ctx.lineTo(toX(times[i]), toY(vals[i]));
-    ctx.strokeStyle = isUp ? "#00d18f" : "#ff5a5a";
-    ctx.lineWidth   = 1.5;
-    ctx.lineJoin    = "round";
-    ctx.stroke();
-
-    // метки мин/макс
-    ctx.font      = "9px monospace";
-    ctx.fillStyle = "#8892b0";
-    ctx.textAlign = "right";
-    ctx.fillText(maxV.toFixed(4) + " TON", W - PAD_R, PAD_T + 8);
-    ctx.fillText(minV.toFixed(4) + " TON", W - PAD_R, H - PAD_B - 2);
-
-    // диапазон времени
-    const rangeLbl = document.getElementById("eq-range-lbl");
-    if (rangeLbl && pts.length > 0) {
-      const first = new Date(pts[0].t);
-      const last  = new Date(pts[pts.length - 1].t);
-      const fmt   = d => d.toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" });
-      const fmtD  = d => d.toLocaleDateString("ru-RU", { day: "2-digit", month: "2-digit" });
-      const sameDay = first.toDateString() === last.toDateString();
-      rangeLbl.textContent = sameDay
-        ? `${fmtD(first)} ${fmt(first)} – ${fmt(last)}`
-        : `${fmtD(first)} – ${fmtD(last)}`;
-    }
-  }
-
-  function fetchAndDraw() {
-    fetch("/api/equity")
-      .then(r => r.json())
-      .then(d => drawEquity(d.points || []))
-      .catch(() => {});
-  }
-
-  fetchAndDraw();
-  setInterval(fetchAndDraw, 30000);
-  window.addEventListener("resize", fetchAndDraw);
-})();
+// Удалён старый raw-Canvas IIFE: он перезаписывал canvas.width/height каждые
+// 15 сек, уничтожая Chart.js-инстанс из drawEqChart() (templates/index.html).
+// Теперь только один хозяин canvas #eq-chart — drawEqChart() + renderWalletFull().
 
 // Изменить порог
 function setLiqThreshold(val) {
@@ -2379,7 +2814,7 @@ function renderMarketOverview(analysis) {
   const gradeEl = g("mo-eq-grade");
   if (gradeEl) {
     const gc = gradeColors[eq] || "#8892b0";
-    gradeEl.innerHTML = `<span style="color:${gc};font-weight:800;font-size:13px">${eq}</span>`;
+    gradeEl.innerHTML = `<span style="color:${gc};font-weight:800;font-size:13px">${escapeHtml(eq)}</span>`;
   }
   if (g("mo-eq-score")) g("mo-eq-score").textContent = score + " очков";
 
@@ -2396,8 +2831,8 @@ function renderMarketOverview(analysis) {
       const pts    = f.pts;
       return `<div class="mo-factor ${active ? "active" : "inactive"}">
         <span>${active ? "✅" : "⬜"}</span>
-        <span style="flex:1">${name}</span>
-        ${pts > 0 ? `<span class="mo-factor-pts">+${pts}</span>` : ""}
+        <span style="flex:1">${escapeHtml(name)}</span>
+        ${pts > 0 ? `<span class="mo-factor-pts">+${escapeHtml(String(pts))}</span>` : ""}
       </div>`;
     }).join("");
   }
@@ -2442,10 +2877,10 @@ function renderAIAnalytics(a) {
       const conf = Number(m.conf || 50);
       const col  = m.color || "#8892b0";
       return `<div class="ai-mtf-row" style="border-left:3px solid ${col}20">
-        <span class="ai-mtf-tf">${m.tf}</span>
+        <span class="ai-mtf-tf">${escapeHtml(m.tf)}</span>
         <div style="flex:1">
           <div style="display:flex;justify-content:space-between;margin-bottom:3px">
-            <span class="ai-mtf-sig" style="color:${col}">${m.signal}</span>
+            <span class="ai-mtf-sig" style="color:${col}">${escapeHtml(m.signal)}</span>
             <span class="ai-mtf-pct">${conf}%</span>
           </div>
           <div class="ai-comp-bar-track" style="height:3px">
@@ -2464,8 +2899,8 @@ function renderAIAnalytics(a) {
       const pct = Number(c.pct || 0);
       const col = c.color || "#5cc8ff";
       return `<div class="ai-comp-row">
-        <span class="ai-comp-icon">${c.icon}</span>
-        <span class="ai-comp-name">${c.name}</span>
+        <span class="ai-comp-icon">${escapeHtml(String(c.icon || ""))}</span>
+        <span class="ai-comp-name">${escapeHtml(c.name)}</span>
         <div class="ai-comp-bar-track">
           <div class="ai-comp-bar-fill" style="width:${pct}%;background:${col};color:${col}"></div>
         </div>
@@ -2592,15 +3027,15 @@ function renderDecisionLog(log) {
     const regShort = (d.regime || "").replace("RANGING","RANG").replace("DOWNTREND","DOWN")
       .replace("UPTREND","UP").replace("BREAKOUT","BRK").replace("VOLATILE","VOLT")
       .replace("TRANSITION","TRANS");
-    const reasonTip = d.reason ? ` title="${d.reason}"` : "";
+    const reasonTip = d.reason ? ` title="${escapeHtml(d.reason)}"` : "";
     return `<div class="ai-dec-row ${cls}"${reasonTip}>
-      <span class="ai-dec-time">${d.t || "—"}</span>
+      <span class="ai-dec-time">${escapeHtml(d.t || "—")}</span>
       <span class="ai-dec-result">${icon}</span>
-      <span class="ai-dec-conf" style="color:${result==='BUY'?'#00ff88':result==='SELL'?'#ff4d6d':'#8892b0'}">${d.conf || 0}%</span>
-      <span class="ai-dec-rsi">RSI ${d.rsi != null ? d.rsi : "—"}</span>
-      <span class="ai-dec-regime">${regShort}</span>
-      <span style="font-size:9px;color:rgba(255,255,255,.4);min-width:30px">${src}</span>
-      <span class="ai-dec-grade" style="color:${gc}">${d.quality || "C"}(${d.score || 0})</span>
+      <span class="ai-dec-conf" style="color:${result==='BUY'?'#00ff88':result==='SELL'?'#ff4d6d':'#8892b0'}">${Number(d.conf || 0)}%</span>
+      <span class="ai-dec-rsi">RSI ${d.rsi != null ? escapeHtml(String(d.rsi)) : "—"}</span>
+      <span class="ai-dec-regime">${escapeHtml(regShort)}</span>
+      <span style="font-size:9px;color:rgba(255,255,255,.4);min-width:30px">${escapeHtml(src)}</span>
+      <span class="ai-dec-grade" style="color:${gc}">${escapeHtml(d.quality || "C")}(${Number(d.score || 0)})</span>
     </div>`;
   }).join("");
 }
@@ -2613,7 +3048,7 @@ function renderDecisionLog(log) {
     }).catch(() => {});
   }
   fetchLog();
-  setInterval(fetchLog, 15000);
+  setInterval(fetchLog, 8000);
 })();
 
 // ═══════════════════════════════════════════════════════════════════
@@ -2724,8 +3159,8 @@ function updateFiltersPanel(d) {
           border-radius:8px;background:rgba(255,77,109,.06);border:1px solid rgba(255,77,109,.15)">
           <span style="font-size:10px;color:#4a5d7f;white-space:nowrap;padding-top:1px">${b.t}</span>
           <div style="flex:1;min-width:0">
-            <div style="font-size:11px;color:#ff8585;word-break:break-word">${b.reason || "—"}</div>
-            <div style="font-size:10px;color:#4a5d7f;margin-top:2px">AI ${b.conf || 0}% | ${regime}</div>
+            <div style="font-size:11px;color:#ff8585;word-break:break-word">${escapeHtml(b.reason || "—")}</div>
+            <div style="font-size:10px;color:#4a5d7f;margin-top:2px">AI ${Number(b.conf || 0)}% | ${escapeHtml(regime)}</div>
           </div>
         </div>`;
       }).join("");
@@ -2738,7 +3173,7 @@ function updateFiltersPanel(d) {
     fetch("/api/filters/status").then(r => r.json()).then(updateFiltersPanel).catch(() => {});
   }
   fetchFilters();
-  setInterval(fetchFilters, 10000);
+  setInterval(fetchFilters, 6000);
 })();
 
 // ═══════════════════════════════════════════════════════════════════
@@ -2888,7 +3323,7 @@ function updateDBSync(data) {
     }).catch(() => updateDBSync(null));
   }
   fetchDB();
-  setInterval(fetchDB, 30000);
+  setInterval(fetchDB, 20000);
 })();
 
 // ═══════════════════════════════════════════════════════════════════

@@ -122,10 +122,17 @@ class DepositMonitor:
 
         from models import UserWallet
         from database import db
+        # FIX#13: LIKE-поиск по префиксу совпадал с чужими токенами, если код короткий.
+        # Мемо записывается как "GG-{token[:8]}", поэтому ищем точное совпадение первых 8 символов.
+        # Сначала ищем точное совпадение токена по первым символам (длина кода = 8 hex-символов).
         uw = UserWallet.query.filter(
             UserWallet.token.like(f"{code}%"),
             UserWallet.active == True
         ).first()
+        # Дополнительная проверка: код в memo должен совпадать с началом токена (защита от коллизии LIKE)
+        if uw and not uw.token.lower().startswith(code):
+            log.warning(f"[DepositMonitor] LIKE-коллизия: memo-код {code!r} не совпадает с токеном {uw.token[:16]!r}")
+            uw = None
         if not uw:
             return
 
@@ -138,7 +145,14 @@ class DepositMonitor:
             return
 
         log.info(f"[DepositMonitor] Депозит {amount_ton:.4f} TON от {source[:16]}… → {uw.name or uw.token[:8]}")
-        self._user_mgr.credit_deposit(uw.token, amount_ton, self._app)
 
+        # BUG-FIX: обновляем last_checked_lt ДО зачисления.
+        # Если процесс падает ПОСЛЕ credit_deposit но ДО commit — депозит
+        # зачислится дважды при следующем опросе (lt > last_lt снова true).
+        # Порядок: сначала фиксируем lt (идемпотентная защита), потом кредит.
+        # Если credit_deposit упадёт — депозит будет залогирован, но не зачислен
+        # (потеря одного депозита лучше, чем двойное зачисление реальных денег).
         uw.last_checked_lt = lt
         db.session.commit()
+
+        self._user_mgr.credit_deposit(uw.token, amount_ton, self._app)

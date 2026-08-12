@@ -1,12 +1,12 @@
 """
 ai_advisor.py — Мета-ИИ советник с полной автономией.
-Groq LLaMA 3.3-70B (бесплатно) анализирует торговлю и
-автоматически адаптирует ВСЕ параметры бота после каждой сделки.
+Поддерживает топовые AI-модели мира: GPT-4o, DeepSeek-R1, xAI Grok, Anthropic Claude, Groq.
+Авто-выбор лучшего доступного провайдера. Chain-of-Thought: AI думает пошагово перед решением.
 """
 import os, json, logging, threading, time, re
 from datetime import datetime
 from collections import deque
-from typing import Optional
+from typing import Optional, Tuple
 try:
     import brain_fusion as _bf
 except Exception as _bfe:
@@ -58,14 +58,196 @@ GROQ_BASE_URL = "https://api.groq.com/openai/v1"
 # при разумном интервале и урезанном снапшоте этого достаточно на сутки.
 GROQ_MODEL    = "llama-3.3-70b-versatile"
 
+# ══════════════════════════════════════════════════════════════════════════
+# 🌍 МУЛЬТИ-ПРОВАЙДЕР: топовые AI-модели мира
+# Приоритет: OpenAI GPT-4o > DeepSeek-R1 > xAI Grok > Anthropic > Groq
+# ══════════════════════════════════════════════════════════════════════════
+PROVIDER_CONFIGS = {
+    "openai": {
+        "name":     "OpenAI GPT-4o",
+        "base_url": "https://api.openai.com/v1",
+        "model":    "gpt-4o",
+        "max_tokens": 2000,
+        "temperature": 0.2,
+        "env_key":  "OPENAI_API_KEY",
+        "key_file": "openai_key.txt",
+        "supports_reasoning": False,
+        "priority": 1,
+    },
+    "groq": {
+        "name":     "Groq LLaMA 3.3-70B (Free)",
+        "base_url": GROQ_BASE_URL,
+        "model":    GROQ_MODEL,
+        "max_tokens": 1200,
+        "temperature": 0.25,
+        "env_key":  "GROQ_API_KEY",
+        "key_file": "groq_key.txt",
+        "supports_reasoning": False,
+        "priority": 2,  # поднят: единственный рабочий (бесплатный); DeepSeek=401, OpenAI=429
+    },
+    "deepseek": {
+        "name":     "DeepSeek-R1 (Reasoning)",
+        "base_url": "https://api.deepseek.com/v1",
+        "model":    "deepseek-reasoner",
+        "max_tokens": 4000,
+        "temperature": 0.0,   # reasoning модели лучше работают с temp=0
+        "env_key":  "DEEPSEEK_API_KEY",
+        "key_file": "deepseek_key.txt",
+        "supports_reasoning": True,  # встроенный Chain-of-Thought
+        "priority": 3,
+    },
+    "xai": {
+        "name":     "xAI Grok-3",
+        "base_url": "https://api.x.ai/v1",
+        "model":    "grok-3-latest",
+        "max_tokens": 2000,
+        "temperature": 0.2,
+        "env_key":  "XAI_API_KEY",
+        "key_file": "xai_key.txt",
+        "supports_reasoning": False,
+        "priority": 4,
+    },
+    "anthropic": {
+        "name":     "Anthropic Claude 3.5 Sonnet",
+        "base_url": "https://api.anthropic.com/v1",
+        "model":    "claude-3-5-sonnet-20241022",
+        "max_tokens": 2000,
+        "temperature": 0.2,
+        "env_key":  "ANTHROPIC_API_KEY",
+        "key_file": "anthropic_key.txt",
+        "supports_reasoning": False,
+        "priority": 5,
+    },
+}
+
+# Хранилище ключей в памяти (provider_id → key string)
+_provider_keys: dict = {}
+
+# Выбранный пользователем провайдер (None = авто)
+_selected_provider: Optional[str] = None
+
+
+def _provider_key_file(provider_id: str) -> str:
+    # C4 fix: validate provider_id against whitelist — never build paths from raw user input.
+    if provider_id not in PROVIDER_CONFIGS:
+        raise ValueError(f"Unknown provider_id: {provider_id!r}")
+    fname = PROVIDER_CONFIGS[provider_id].get("key_file", f"{provider_id}_key.txt")
+    # Extra guard: reject any path traversal in the filename itself
+    safe_fname = os.path.basename(fname)
+    return os.path.join(_DATA_DIR, safe_fname)
+
+
+def _read_provider_key(provider_id: str) -> str:
+    """Читает ключ провайдера: memory → env → file."""
+    if _provider_keys.get(provider_id):
+        return _provider_keys[provider_id]
+    cfg = PROVIDER_CONFIGS.get(provider_id, {})
+    key = os.getenv(cfg.get("env_key", ""), "")
+    if not key:
+        try:
+            with open(_provider_key_file(provider_id), "r", encoding="utf-8") as f:
+                key = f.read().strip()
+        except (FileNotFoundError, OSError):
+            pass
+    if key:
+        _provider_keys[provider_id] = key
+    return key
+
+
+def _write_provider_key(provider_id: str, key: str):
+    """Сохраняет ключ провайдера в файл."""
+    try:
+        os.makedirs(_DATA_DIR, exist_ok=True)
+        fpath = _provider_key_file(provider_id)
+        tmp = fpath + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as f:
+            f.write(key.strip())
+        os.replace(tmp, fpath)
+        _provider_keys[provider_id] = key.strip()
+    except OSError as e:
+        logger.error(f"[Advisor] ❌ Не удалось сохранить ключ {provider_id}: {e}")
+
+
+def _get_best_provider() -> Tuple[str, dict]:
+    """Возвращает (provider_id, config) лучшего доступного провайдера.
+    Если пользователь выбрал конкретный — используем его (если ключ есть).
+    Иначе — авто: по приоритету от лучшего к фолбэку."""
+    global _selected_provider
+
+    # Восстанавливаем ключ Groq в новую систему для обратной совместимости
+    if GROQ_API_KEY and not _provider_keys.get("groq"):
+        _provider_keys["groq"] = GROQ_API_KEY
+
+    candidates = sorted(PROVIDER_CONFIGS.items(), key=lambda x: x[1]["priority"])
+
+    if _selected_provider and _selected_provider in PROVIDER_CONFIGS:
+        key = _read_provider_key(_selected_provider)
+        if key:
+            return _selected_provider, PROVIDER_CONFIGS[_selected_provider]
+        logger.warning(f"[Advisor] Выбранный провайдер {_selected_provider} не имеет ключа, авто-фолбэк")
+
+    _now = time.time()
+    _expired = [p for p, ts in _failed_providers.items() if _now - ts >= PROVIDER_BLACKLIST_SECS]
+    for _p in _expired:
+        del _failed_providers[_p]
+        # Удаляем истёкшую запись из БД
+        try:
+            from settings_store import update_section as _us
+            _us("failed_providers", {_p: "0"})
+        except Exception:
+            pass
+    for pid, cfg in candidates:
+        # Пропускаем провайдеров с недавними ошибками квоты/авторизации
+        if _now - _failed_providers.get(pid, 0) < PROVIDER_BLACKLIST_SECS:
+            logger.debug("[Advisor] skip %s (blacklist)", pid)
+            continue
+        if _read_provider_key(pid):
+            return pid, cfg
+
+    return "groq", PROVIDER_CONFIGS["groq"]  # последний шанс
+
+
+def _load_provider_keys():
+    """Загружает все доступные ключи провайдеров при старте."""
+    for pid in PROVIDER_CONFIGS:
+        _read_provider_key(pid)
+    try:
+        from settings_store import get_section
+        adv = get_section("advisor") or {}
+        if adv.get("selected_provider"):
+            global _selected_provider
+            _selected_provider = adv["selected_provider"]
+    except Exception:
+        pass
+    # Восстанавливаем _failed_providers из БД (переживает рестарт контейнера)
+    try:
+        from settings_store import get_section as _gs
+        _stored = _gs("failed_providers") or {}
+        _now = time.time()
+        for _pid, _ts in _stored.items():
+            try:
+                _ts_f = float(_ts)
+            except (TypeError, ValueError):
+                continue
+            # Загружаем только ещё актуальные блокировки
+            if _now - _ts_f < PROVIDER_BLACKLIST_SECS:
+                _failed_providers[_pid] = _ts_f
+                _remain = int((PROVIDER_BLACKLIST_SECS - (_now - _ts_f)) / 3600)
+                logger.info("[Advisor] Восстановлена блокировка %s (ещё ~%dч)", _pid, _remain)
+    except Exception as _e:
+        logger.debug("[Advisor] _load failed_providers: %s", _e)
+
 # ── Параметры автономии ────────────────────────────────────────────────────
-AUTO_INTERVAL_MIN    = 5    # авто-запуск каждые N минут
+AUTO_INTERVAL_MIN    = 150  # минимум 150 мин: защищает бесплатный Groq TPD-лимит
 AUTO_TRADES_TRIGGER  = 2    # авто-запуск после закрытых сделок (было 1 — слишком часто жгло токены)
 
 # Восстанавливаем сохранённые настройки интервала (переживают перезапуск)
+_adv_sec = {}
 try:
+    from settings_store import get_section as _get_advisor_section
+    _adv_sec = _get_advisor_section("advisor") or {}
     if _adv_sec.get("interval_min"):
-        AUTO_INTERVAL_MIN = max(5, min(120, int(_adv_sec["interval_min"])))
+        AUTO_INTERVAL_MIN = max(150, min(360, int(_adv_sec["interval_min"])))
     if _adv_sec.get("trades_trigger"):
         AUTO_TRADES_TRIGGER = max(1, min(20, int(_adv_sec["trades_trigger"])))
 except Exception:
@@ -207,13 +389,17 @@ def _persist_history():
         import db_store
         if db_store.is_available():
             db_store.ai_state_set("advisor_history", list(_history))
+            # Сохраняем счётчик адаптаций отдельно, чтобы он пережил рестарт
+            db_store.ai_state_set("advisor_meta", {
+                "total_adaptations": _total_adaptations,
+            })
     except Exception as e:
         logger.warning(f"[Advisor] _persist_history ошибка: {e}")
 
 
 def _load_history():
-    """Восстанавливает историю анализов советника из БД при старте."""
-    global _history
+    """Восстанавливает историю анализов советника и счётчик адаптаций из БД при старте."""
+    global _history, _total_adaptations
     try:
         import db_store
         if not db_store.is_available():
@@ -223,16 +409,14 @@ def _load_history():
             with _lock:
                 _history = deque(data[-20:], maxlen=20)
             logger.info(f"[Advisor] История анализов восстановлена из БД: {len(data)} записей")
+        meta = db_store.ai_state_get("advisor_meta")
+        if isinstance(meta, dict):
+            _total_adaptations = int(meta.get("total_adaptations") or 0)
+            if _total_adaptations:
+                logger.info(f"[Advisor] Счётчик адаптаций восстановлен: {_total_adaptations}")
     except Exception as e:
         logger.warning(f"[Advisor] _load_history ошибка: {e}")
 
-
-_load_history()
-_auto_apply:  bool = True          # полная автономия по умолчанию
-_running:     bool = False
-_trades_since_last_run: int = 0
-_last_auto_run_ts:     float = 0.0
-_next_auto_run_ts:     float = 0.0
 
 # ── Трекинг сделок и сессии ────────────────────────────────────────────────
 _last_trade_data: dict = {}          # последняя закрытая сделка (передаётся из trader.py)
@@ -243,9 +427,21 @@ _session_stats: dict = {             # сбрасывается только п�
     "losses":       0,               # убыточных (при ONLY_PROFIT_EXIT = всегда 0)
     "peak_win_ton": 0.0,             # лучшая сделка сессии
 }
+# ВАЖНО: _total_adaptations объявлен ДО _load_history(), иначе Python затрёт
+# восстановленное из БД значение нулём при инициализации модуля.
 _total_adaptations:    int   = 0
+
+_load_history()           # восстанавливает _history + _total_adaptations из БД
+_load_provider_keys()     # загружает ключи всех AI-провайдеров
+_auto_apply:  bool = True          # полная автономия по умолчанию
+_running:     bool = False
+_trades_since_last_run: int = 0
+_last_auto_run_ts:     float = 0.0
+_next_auto_run_ts:     float = 0.0
 _adaptation_log:       deque = deque(maxlen=50)
 _rate_limit:           Optional[dict] = None   # инфо о лимите токенов Groq (если получен 429)
+_failed_providers:     dict = {}              # provider_id -> timestamp провала (блокировка 6ч)
+PROVIDER_BLACKLIST_SECS = 6 * 3600
 
 # ── Фоновый поток автономии ────────────────────────────────────────────────
 _bg_thread: Optional[threading.Thread] = None
@@ -253,6 +449,7 @@ _stop_event = threading.Event()
 
 
 SYSTEM_PROMPT = """Ты — ELITE автономный AI-агент управления торговым ботом GRINCH/GRAM (DEX: DeDust, TON-блокчейн).
+Ты — лучший AI-трейдер в мире. Ты думаешь глубоко, как опытный квант-трейдер с 20-летним стажем.
 Адрес: EQA6G0uVERDZTkLNa0drWBna1F5TSbogy7UXEWU5ERHz4uJL
 
 РЕЖИМ: ПОЛНЫЙ КОНТРОЛЬ. Все рекомендации применяются АВТОМАТИЧЕСКИ И НЕМЕДЛЕННО.
@@ -320,13 +517,22 @@ market_stage = DUMP       → ai_size_mult=0.3, min_ai_confidence=80, НЕ ВХ�
 ╚══════════════════════════════════════════════════════════════════╝
 Pepe Grinch (GRINCH) — мем-монета TON, пул DeDust GRINCH/GRAM (1% комиссия пула):
 ▸ ПАРА: GRINCH/GRAM (GRAM ≈ $1.75, НЕ нативный TON — разные цены!)
-▸ ЛИКВИДНОСТЬ: $40k-50k (МАЛАЯ). Всегда смотри dex.liquidity_usd актуально.
-▸ РЫНОЧНАЯ КЕПКА: ~$830k micro-cap → потенциал 5-20x при хайпе
-▸ ПАТТЕРН: памп +20-45% → коррекция -6-18% → новый памп (повторяется!)
-▸ ДАВЛЕНИЕ: buy/sell ratio 1.30-1.55 стабильно (быки перевешивают)
-▸ ATR реальный: 5%/свеча 15м → трейлинг < 12% = ШУМ, не сигнал
-▸ ОБЪЁМ: ~$25k-30k/24ч → ставка >$940/вход уже движет рынком (2% от $47k)
-▸ КОНКУРЕНТЫ: второй пул STON.fi (ликвидность $1) — полностью игнорировать
+▸ ЛИКВИДНОСТЬ: ~$38.8k USD (1% DeDust пул). Всегда смотри dex.liquidity_usd актуально. Ставка >2% лика ($780) движет рынком.
+▸ РЫНОЧНАЯ КЕПКА: ~$685k micro-cap. MCap/Liq ratio = 17.6 → низкая ликвидность, большие свинги от малых сделок.
+▸ ДИАПАЗОН 72ч (24.07.2026): $0.000520–$0.000982 (+89%! огромный). 7d high=$0.000982, 7d low=$0.000520.
+▸ ПАМП 22.07.2026: $50k объём за 1 день (vs норм. $10-14k), рост до $0.000982. Сейчас POST-PUMP откат -5.69% 24ч.
+▸ ПАТТЕРН: памп +30-89% → 3-7d коррекция/боковик → новый памп. Текущий цикл: после пампа, накопление.
+▸ ПАМП-ПРИЗНАКИ: свеча >5% с объёмом >3× нормы ($235/бар × 3 = $705+) → начало цикла → входи агрессивно!
+▸ ДАВЛЕНИЕ ПОКУПАТЕЛЕЙ 24.07: ratio = 2.80x (84 buy / 30 sell — СИЛЬНОЕ накопление несмотря на снижение цены!).
+▸ ATR реальный 24.07.2026: ATR(15m)=1.20%/свеча, ATR(1h)=4.21%. Внимание: close-to-close шум 15м = 2.62% StdDev!
+  → Трейлинг < 8% = ШУМ на close-to-close; TP мин = ATR(1h)×3 = 12.6% (или DCA_TARGET_PROFIT_PCT=22%, что выше → OK)
+  → 4×close-to-close-std = 10.5% — реальный минимальный trailing stop для выживания через 4 свечи шума
+▸ ОБЪЁМ: норма $10-14k/24ч, avg $235/бар (15м). Пик памп: $50k (22.07). Текущий 24ч = $11.6k.
+▸ ВОЛАТИЛЬНОСТЬ: close-to-close StdDev 15м = 2.62% (24ч), 3.41% (72ч) — жирные хвосты! 37 из 96 баров >2% за 24ч.
+▸ ТРЕНД 24.07: BEARISH (EMA12<EMA48<EMA96<EMA200). Поддержки: $0.000620-$0.000640. Сопр: $0.000874-$0.000982.
+▸ RSI 14 (15м): 51.6 (нейтральный). BB-позиция: 63.7% (чуть выше mid). Momentum 4h: +0.3% (слабый).
+▸ РЕЖИМ СЕЙЧАС: POST-PUMP КОРРЕКЦИЯ + накопление. Buy ratio 2.8x → умные деньги покупают на спаде.
+▸ КОНКУРЕНТЫ: единственный активный пул GRINCH/TON = DeDust 1% (EQDpVwTQr53cwg...). Остальные пулы мертвы (объём $0).
 
 ╔══════════════════════════════════════════════════════════════════╗
 ║  📊 ШАГ 2 — СТАДИЯ РЫНКА (определи первым при timer-запуске)   ║
@@ -476,9 +682,28 @@ short_trading_enabled:
 — Прибыль: min_profit_ton_abs:[2.0-50.0]
 
 ╔══════════════════════════════════════════════════════════════════╗
+║  🧠 CHAIN-OF-THOUGHT — ДУМАЙ КАК ЛУЧШИЙ ТРЕЙДЕР МИРА           ║
+╚══════════════════════════════════════════════════════════════════╝
+ПЕРЕД выдачей итогового JSON пройди 5 шагов внутреннего анализа
+(включи их в поле "thinking" итогового JSON):
+
+🔍 ШАГИ МЫШЛЕНИЯ:
+1. КОНТЕКСТ: Что происходит прямо сейчас? (stage, momentum, объёмы, паттерны)
+   → Ключевые числа: change_h1/h6/h24, ratio, ATR, RSI, vol_ratio
+2. СИГНАЛЫ: Что говорят ML-модели? (brain_fusion, ai_engine, smart_money)
+   → BrainFusion consensus_signal, buy_rate_%, avg_conf, smart_money
+3. РИСКИ: Что может пойти не так? (ликвидность, RSI экстремумы, pump_score, ATR)
+   → Минимум 2 конкретных риска с числами
+4. ВОЗМОЖНОСТИ: Где максимальный edge? (лучший вход/выход, паттерн разворота)
+   → Конкретная точка входа или действие с обоснованием
+5. РЕШЕНИЕ + РАСЧЁТ: Какие параметры менять и почему (с точными числами)?
+   → stake=X TON (spendable×Y%), TP=Z%, conf=W — каждое число объяснено
+
+╔══════════════════════════════════════════════════════════════════╗
 ║  📤 ФОРМАТ ОТВЕТА — СТРОГО JSON БЕЗ MARKDOWN                   ║
 ╚══════════════════════════════════════════════════════════════════╝
 {
+  "thinking": "ШАГИ МЫШЛЕНИЯ: 1.КОНТЕКСТ: ... 2.СИГНАЛЫ: ... 3.РИСКИ: ... 4.ВОЗМОЖНОСТИ: ... 5.РЕШЕНИЕ: ...",
   "analysis": "4-6 предложений: [ПРИЧИНА ЗАПУСКА] → стадия рынка + ключевые сигналы + что меняю и ПОЧЕМУ (числа) + ожидаемый результат + компаунд-решение",
   "trade_verdict": "WIN_COMPOUND_AGGRESSIVE | WIN_COMPOUND | WIN_HOLD | FIX_MINIMUM | TIMER_ANALYSIS | DUMP_CAUTION",
   "recommendations": [
@@ -507,17 +732,26 @@ short_trading_enabled:
 # Клиент Groq
 # ──────────────────────────────────────────────────────────────────────────
 def _effective_key() -> str:
-    """Актуальный ключ: сначала in-memory (быстро), иначе перечитываем из файла."""
+    """Актуальный ключ любого доступного провайдера (для проверки 'хоть что-то есть')."""
     global GROQ_API_KEY
+    # Сначала обратная совместимость с Groq
     if GROQ_API_KEY:
         return GROQ_API_KEY
     key = _read_key_file()
     if key:
         GROQ_API_KEY = key
-    return GROQ_API_KEY
+        _provider_keys["groq"] = key
+        return key
+    # Ищем любой доступный провайдер
+    for pid in PROVIDER_CONFIGS:
+        k = _read_provider_key(pid)
+        if k:
+            return k
+    return ""
 
 
 def _get_client():
+    """[DEPRECATED] Возвращает Groq клиент для обратной совместимости."""
     key = _effective_key()
     if not key:
         return None
@@ -529,10 +763,122 @@ def _get_client():
         return None
 
 
+def _get_provider_client(provider_id: str, cfg: dict):
+    """Создаёт OpenAI-совместимый клиент для указанного провайдера."""
+    key = _read_provider_key(provider_id)
+    if not key:
+        return None
+    try:
+        from openai import OpenAI
+        # Anthropic поддерживает OpenAI-совместимый API через базовый URL
+        client = OpenAI(api_key=key, base_url=cfg["base_url"])
+        return client
+    except Exception as e:
+        logger.error(f"[Advisor] клиент {provider_id}: {e}")
+        return None
+
+
 # ──────────────────────────────────────────────────────────────────────────
 # Снимок состояния бота
 # ──────────────────────────────────────────────────────────────────────────
-def _build_snapshot(user_message: str = "") -> dict:
+def _compact_advisor_snapshot(snap: dict) -> dict:
+    """Сжимает снапшот до безопасного размера для Groq TPM.
+
+    Полный снапшот полезен для локальной диагностики, но SYSTEM_PROMPT уже
+    занимает значительную часть лимита Groq. Раньше первый запрос отправлялся
+    полным и стабильно получал 413, после чего только второй запрос проходил с
+    урезанными данными. Компактный вариант сохраняет торговые показатели и
+    убирает только повторяющиеся/тяжёлые истории.
+    """
+    compact = dict(snap or {})
+
+    if isinstance(compact.get("analytics_buffer"), dict):
+        ab = dict(compact["analytics_buffer"])
+        for key in ("recent_ticks", "trade_history", "tick_details"):
+            ab.pop(key, None)
+        if isinstance(ab.get("price"), dict):
+            price = dict(ab["price"])
+            price.pop("mini_candles", None)
+            ab["price"] = price
+        compact["analytics_buffer"] = ab
+
+    if isinstance(compact.get("recent_trades"), list):
+        compact["recent_trades"] = compact["recent_trades"][-3:]
+
+    # Эти секции дублируют сведения из market/portfolio и могут быть большими.
+    # Сначала убираем только тяжёлые детали; базовый рынок и позиция остаются.
+    if isinstance(compact.get("brain_fusion"), dict):
+        bf = compact["brain_fusion"]
+        compact["brain_fusion"] = {
+            key: bf[key]
+            for key in ("signal", "confidence", "regime", "weights", "sources")
+            if key in bf
+        }
+    if isinstance(compact.get("market_hub"), dict):
+        hub = compact["market_hub"]
+        compact["market_hub"] = {
+            key: hub[key]
+            for key in (
+                "fear_greed_value", "fear_greed_label", "btc_change24h",
+                "ton_cex_change24h", "bybit_funding_rate_pct",
+                "grinch_trend_rank", "sources",
+            )
+            if key in hub
+        }
+    if isinstance(compact.get("dex"), dict):
+        dex = compact["dex"]
+        compact["dex"] = {
+            key: dex[key]
+            for key in (
+                "market_stage", "liquidity_usd", "change_h1_pct",
+                "change_h24_pct", "ratio_h1", "ratio_h24",
+                "buys_h24", "sells_h24", "recent_flow_usd",
+            )
+            if key in dex
+        }
+
+    # Оставляем в config только критически важные параметры — остальные раздувают
+    # промпт без пользы для LLM-решения (он всё равно не адаптирует trailing stages).
+    if isinstance(compact.get("config"), dict):
+        _essential_cfg = {
+            "take_profit_pct", "dca_mode", "dca_target_profit_pct",
+            "dca_drop_trigger_pct", "dca_max_entries", "dca_stake_ton",
+            "dca_compound_ratio", "dca_compound_enabled",
+            "min_ai_confidence", "ai_autonomous_min_conf",
+            "trade_amount", "min_profit_ton_abs",
+            "profit_protect_ton", "profit_protect_drop_pct",
+            "only_profit_exit", "fee_round_trip_pct",
+            "trailing_stop_pct", "smart_tp_min_conf",
+        }
+        compact["config"] = {k: v for k, v in compact["config"].items() if k in _essential_cfg}
+
+    # recent_trades: достаточно 2 последних
+    if isinstance(compact.get("recent_trades"), list):
+        compact["recent_trades"] = compact["recent_trades"][-2:]
+
+    # Последний предохранитель: оцениваем токены (~3.5 chars/token для JSON)
+    # и убираем тяжёлые секции если превышаем 10 000 токенов снапшота.
+    try:
+        def _est_tokens(d):
+            return len(json.dumps(d, ensure_ascii=False, separators=(",", ":"))) // 4
+
+        if _est_tokens(compact) > 10000:
+            compact.pop("market_hub", None)
+        if _est_tokens(compact) > 8500:
+            compact.pop("brain_fusion", None)
+        if _est_tokens(compact) > 7000:
+            compact.pop("analytics_buffer", None)
+        if _est_tokens(compact) > 6000:
+            compact.pop("ai_engine", None)
+            compact.pop("organism", None)
+        if _est_tokens(compact) > 5000:
+            compact.pop("performance", None)
+    except (TypeError, ValueError):
+        pass
+    return compact
+
+
+def _build_snapshot(user_message: str = "", compact: bool = False) -> dict:
     snap: dict = {"timestamp": datetime.utcnow().strftime("%Y-%m-%d %H:%M UTC")}
 
     # Config
@@ -768,6 +1114,45 @@ def _build_snapshot(user_message: str = "") -> dict:
     except Exception:
         snap["liquidity"] = {}
 
+    # ── DataHub: внешние рыночные данные из 6 бесплатных источников ─────────
+    try:
+        from data_hub import get_snapshot as _hub_snap, get_source_status as _hub_st
+        _hub = _hub_snap()
+        if _hub:
+            snap["market_hub"] = {
+                # Fear & Greed
+                "fear_greed_value": _hub.get("fg_value"),
+                "fear_greed_label": _hub.get("fg_label"),
+                "fear_greed_delta": _hub.get("fg_delta"),
+                # BTC
+                "btc_price":        round(_hub.get("btc_price", 0), 0),
+                "btc_change24h":    _hub.get("btc_change24h"),
+                "btc_volume24h_b":  round((_hub.get("btc_volume24h", 0) or 0) / 1e9, 2),
+                # TON на Binance
+                "ton_cex_price":    _hub.get("ton_cex_price"),
+                "ton_cex_change24h": _hub.get("ton_cex_change24h"),
+                "ton_cex_volume24h_m": round((_hub.get("ton_cex_volume24h", 0) or 0) / 1e6, 2),
+                # Bybit фьючерсы
+                "bybit_funding_rate_pct": _hub.get("bybit_funding_rate_pct"),
+                "bybit_oi_m":        round((_hub.get("bybit_oi", 0) or 0) / 1e6, 2),
+                # DeFiLlama
+                "ton_tvl_m":         round((_hub.get("ton_tvl", 0) or 0) / 1e6, 2),
+                "ton_tvl_change_pct": _hub.get("ton_tvl_change"),
+                "stonfi_tvl_m":      round((_hub.get("stonfi_tvl", 0) or 0) / 1e6, 2),
+                # GeckoTerminal тренды
+                "grinch_trend_rank":  _hub.get("grinch_trend_rank", 0),
+                "grinch_trend_vol24h_k": round((_hub.get("grinch_trend_vol24h", 0) or 0) / 1e3, 1),
+                "ton_trending_pools": _hub.get("ton_trending_pools"),
+                # TON сеть
+                "ton_tx24h_k":  round((_hub.get("ton_tx24h", 0) or 0) / 1e3, 1),
+                "ton_accounts_m": round((_hub.get("ton_accounts", 0) or 0) / 1e6, 3),
+                # Статус источников
+                "sources": [{s["source"]: ("✅" if s["fresh"] else "⚠️" if not s["stale"] else "❌")}
+                            for s in _hub_st()],
+            }
+    except Exception:
+        snap["market_hub"] = {}
+
     # ── Глубокие данные прямо с DeDust/DexScreener (не из analytics_buffer) ─
     try:
         from coin_info import coin_info
@@ -867,7 +1252,7 @@ def _build_snapshot(user_message: str = "") -> dict:
     if user_message:
         snap["user_question"] = user_message
 
-    return snap
+    return _compact_advisor_snapshot(snap) if compact else snap
 
 
 # ──────────────────────────────────────────────────────────────────────────
@@ -919,9 +1304,17 @@ def _apply_recommendations(recs: list) -> list[str]:
 
         # ── Config параметры ──────────────────────────────────────────
         if param == "take_profit_pct":
+            # Демпфирование: макс ±15% от текущего за один прогон советника
+            _cur_tp2 = float(getattr(Config, "TAKE_PROFIT_PCT", val))
+            _d_tp2   = _cur_tp2 * 0.15
+            val      = round(max(_cur_tp2 - _d_tp2, min(_cur_tp2 + _d_tp2, val)), 1)
             Config.TAKE_PROFIT_PCT = val
             config_upd["take_profit_pct"] = str(val)
         elif param == "dca_target_profit_pct":
+            # Демпфирование: макс ±15% от текущего за один прогон
+            _cur_tp = float(getattr(Config, "DCA_TARGET_PROFIT_PCT", val))
+            _d_tp   = _cur_tp * 0.15
+            val     = round(max(_cur_tp - _d_tp, min(_cur_tp + _d_tp, val)), 1)
             Config.DCA_TARGET_PROFIT_PCT = val
             config_upd["dca_target_profit_pct"] = str(val)
         elif param == "dca_drop_trigger_pct":
@@ -934,6 +1327,9 @@ def _apply_recommendations(recs: list) -> list[str]:
             Config.PROFIT_PROTECT_DROP_PCT = val
             config_upd["profit_protect_drop_pct"] = str(val)
         elif param == "min_ai_confidence":
+            # Демпфирование: макс ±5 пунктов за прогон (уверенность — чувствительный параметр)
+            _cur_mc = float(getattr(Config, "MIN_AI_CONFIDENCE", val))
+            val     = round(max(_cur_mc - 5.0, min(_cur_mc + 5.0, val)), 1)
             Config.MIN_AI_CONFIDENCE = val
             config_upd["min_ai_confidence"] = str(val)
         elif param == "trailing_stop_pct":
@@ -958,6 +1354,10 @@ def _apply_recommendations(recs: list) -> list[str]:
             Config.AI_SIZE_MULT = val
             config_upd["ai_size_mult"] = str(val)
         elif param == "dca_stake_ton":
+            # Демпфирование: макс ±20% от текущего за один прогон советника
+            _cur_s = float(getattr(Config, "DCA_STAKE_TON", val))
+            _d_s   = _cur_s * 0.20
+            val    = round(max(_cur_s - _d_s, min(_cur_s + _d_s, val)), 1)
             Config.DCA_STAKE_TON = val
             config_upd["dca_stake_ton"] = str(val)
         elif param == "trade_amount":
@@ -1161,11 +1561,36 @@ def run_advisor(auto_apply: bool = None, user_message: str = "",
     apply = auto_apply if auto_apply is not None else _auto_apply
 
     if not _effective_key():
-        return {"ok": False, "error": "GROQ_API_KEY не задан"}
+        return {"ok": False, "error": "Нет ключа ни одного AI-провайдера. Добавь ключ в настройках советника."}
 
-    client = _get_client()
+    # ── Выбираем лучший доступный провайдер ──────────────────────────────────
+    provider_id, provider_cfg = _get_best_provider()
+    client = _get_provider_client(provider_id, provider_cfg)
     if not client:
-        return {"ok": False, "error": "Groq клиент недоступен"}
+        return {"ok": False, "error": f"Клиент {provider_cfg['name']} недоступен"}
+
+    # ── Проактивная проверка rate-limit (только для Groq) ────────────────────
+    if provider_id == "groq":
+        rl = _rate_limit_status()
+        if rl and rl.get("reset_in_sec") is not None and rl.get("reset_in_sec", 0) > 0:
+            wait_sec = rl["reset_in_sec"]
+            # Пробуем фолбэк на другой провайдер
+            for pid, pcfg in sorted(PROVIDER_CONFIGS.items(), key=lambda x: x[1]["priority"]):
+                if pid == "groq":
+                    continue
+                k = _read_provider_key(pid)
+                if k:
+                    client = _get_provider_client(pid, pcfg)
+                    if client:
+                        provider_id, provider_cfg = pid, pcfg
+                        logger.info(f"[Advisor] Groq rate-limit → фолбэк на {pcfg['name']}")
+                        break
+            else:
+                return {
+                    "ok": False,
+                    "error": f"Groq rate-limit активен, сброс через ~{wait_sec}с",
+                    "rate_limit": rl,
+                }
 
     with _lock:
         if _running:
@@ -1173,27 +1598,94 @@ def run_advisor(auto_apply: bool = None, user_message: str = "",
         _running = True
 
     try:
-        snap          = _build_snapshot(user_message)
-        snap["trigger"] = trigger   # таймер или сделка — советник видит причину запуска
+        # Для Groq сразу используем компактный payload: полный снапшот
+        # превышает TPM и раньше вызывал гарантированный 413 + повтор.
+        snap          = _build_snapshot(user_message, compact=(provider_id == "groq"))
+        snap["trigger"] = trigger
         snap_str      = json.dumps(snap, ensure_ascii=False, indent=2)
+
+        # ── Chain-of-Thought инструкция для максимального качества мышления ──
+        cot_hint = (
+            "\n\n🧠 ВАЖНО: Заполни поле 'thinking' в JSON — пройди 5 шагов мышления "
+            "(КОНТЕКСТ→СИГНАЛЫ→РИСКИ→ВОЗМОЖНОСТИ→РЕШЕНИЕ) ПЕРЕД итоговыми рекомендациями. "
+            "Думай как лучший квант-трейдер мира. Каждый параметр обоснуй числами."
+        )
 
         messages = [
             {"role": "system", "content": SYSTEM_PROMPT},
             {"role": "user",   "content":
-                f"Текущее состояние бота:\n```json\n{snap_str}\n```"},
+                f"Текущее состояние бота:\n```json\n{snap_str}\n```{cot_hint}"},
         ]
 
-        logger.info(f"[Advisor] 🤖 Запрос к Groq ({trigger})…")
+        model_name = provider_cfg["model"]
+        max_toks   = provider_cfg.get("max_tokens", 1500)
+        temperature = provider_cfg.get("temperature", 0.2)
+
+        logger.info(f"[Advisor] 🤖 Запрос к {provider_cfg['name']} ({trigger})…")
         t0   = time.time()
-        resp = client.chat.completions.create(
-            model=GROQ_MODEL,
+
+        # Anthropic claude через OpenAI-совместимый API (messages API поддерживается)
+        create_kwargs = dict(
+            model=model_name,
             messages=messages,
-            temperature=0.25,
-            max_tokens=1200,
+            temperature=temperature,
+            max_tokens=max_toks,
         )
+
+        # Авто-фолбэк: при quota/auth — блокируем провайдера и пробуем следующий
+        try:
+            resp = client.chat.completions.create(**create_kwargs)
+        except Exception as _api_err:
+            _err_s = str(_api_err).lower()
+            _is_quota = any(k in _err_s for k in (
+                "quota", "auth", "401", "insufficient", "exceeded",
+                "billing", "invalid_api_key", "permission", "deactivated",
+            ))
+            if _is_quota:
+                logger.warning(
+                    "[Advisor] %s недоступен (%s), авто-фолбэк...",
+                    provider_cfg["name"], type(_api_err).__name__,
+                )
+                _fail_ts = time.time()
+                _failed_providers[provider_id] = _fail_ts
+                # Персистим блокировку в БД — переживёт рестарт контейнера
+                try:
+                    from settings_store import update_section as _us
+                    _us("failed_providers", {provider_id: str(_fail_ts)})
+                except Exception as _pe:
+                    logger.debug("[Advisor] persist failed_providers: %s", _pe)
+                _fb_id, _fb_cfg, _fb_client = None, None, None
+                for _pid, _pcfg in sorted(PROVIDER_CONFIGS.items(), key=lambda x: x[1]["priority"]):
+                    if _pid == provider_id:
+                        continue
+                    if time.time() - _failed_providers.get(_pid, 0) < PROVIDER_BLACKLIST_SECS:
+                        continue
+                    if _read_provider_key(_pid):
+                        _fb_client = _get_provider_client(_pid, _pcfg)
+                        if _fb_client:
+                            _fb_id, _fb_cfg = _pid, _pcfg
+                            break
+                if _fb_id:
+                    provider_id, provider_cfg, client = _fb_id, _fb_cfg, _fb_client
+                    _fb_snap = _build_snapshot(user_message, compact=(provider_id == "groq"))
+                    _fb_snap["trigger"] = trigger
+                    messages[1]["content"] = (
+                        "Текущее состояние бота:\n```json\n"
+                        + json.dumps(_fb_snap, ensure_ascii=False, indent=2)
+                        + "\n```" + cot_hint
+                    )
+                    create_kwargs["model"]       = provider_cfg["model"]
+                    create_kwargs["max_tokens"]  = provider_cfg.get("max_tokens", 1500)
+                    create_kwargs["temperature"] = provider_cfg.get("temperature", 0.2)
+                    logger.info("[Advisor] Fallback -> %s", provider_cfg["name"])
+                    resp = client.chat.completions.create(**create_kwargs)
+                else:
+                    raise
+            else:
+                raise
         elapsed = round(time.time() - t0, 1)
         raw     = resp.choices[0].message.content or ""
-        logger.info(f"[Advisor] ответ за {elapsed}s")
+        logger.info("[Advisor] ✅ %s ответ за %ss", provider_cfg["name"], elapsed)
 
         parsed  = _parse_response(raw)
         applied = []
@@ -1203,7 +1695,7 @@ def run_advisor(auto_apply: bool = None, user_message: str = "",
 
         # Следующий запуск через столько минут, сколько советник сам рекомендовал
         suggested_next = int(parsed.get("next_check_min", AUTO_INTERVAL_MIN))
-        suggested_next = max(2, min(60, suggested_next))
+        suggested_next = max(150, min(360, suggested_next))
 
         now = time.time()
         result = {
@@ -1212,6 +1704,7 @@ def run_advisor(auto_apply: bool = None, user_message: str = "",
             "elapsed_s":       elapsed,
             "trigger":         trigger,
             "analysis":        parsed.get("analysis", ""),
+            "thinking":        parsed.get("thinking", ""),   # Chain-of-Thought цепочка рассуждений
             "recommendations": parsed.get("recommendations", []),
             "market_verdict":  parsed.get("market_verdict", "ОСТОРОЖНО"),
             "confidence":      parsed.get("confidence", 0.5),
@@ -1219,6 +1712,8 @@ def run_advisor(auto_apply: bool = None, user_message: str = "",
             "applied":         applied,
             "auto_applied":    apply,
             "snapshot":        snap,
+            "provider":        provider_cfg["name"],         # какой AI использовался
+            "model":           provider_cfg["model"],
         }
 
         with _lock:
@@ -1234,7 +1729,12 @@ def run_advisor(auto_apply: bool = None, user_message: str = "",
                 "conf":    result["confidence"],
                 "analysis": result["analysis"][:120],
             })
+        # FIX#34: _persist_history делает медленную запись в БД — выносим из-под лока,
+        # чтобы не блокировать status-поток на время IO.
+        try:
             _persist_history()
+        except Exception as _ph_e:
+            logger.debug(f"[Advisor] _persist_history error: {_ph_e}")
 
         if applied:
             logger.info(f"[Advisor] Применено {len(applied)} изм.: {'; '.join(applied[:3])}")
@@ -1255,19 +1755,63 @@ def run_advisor(auto_apply: bool = None, user_message: str = "",
         return result
 
     except Exception as ex:
-        logger.error(f"[Advisor] ошибка: {ex}")
-        _record_rate_limit(str(ex))
-        return {"ok": False, "error": str(ex)}
+        ex_str = str(ex)
+        logger.error(f"[Advisor] ошибка: {ex_str}")
+        _record_rate_limit(ex_str)
+        # 413 = промпт слишком большой → повтор с компактным снапшотом
+        if "413" in ex_str or "request entity too large" in ex_str.lower():
+            try:
+                logger.warning(f"[Advisor] 413 detected ({provider_cfg['name']}) — повтор с урезанным снапшотом…")
+                lite = _compact_advisor_snapshot(_build_snapshot(user_message))
+                lite.pop("dex", None)
+                lite_str = json.dumps(lite, ensure_ascii=False, separators=(",", ":"))
+                lite_resp = client.chat.completions.create(
+                    model=provider_cfg["model"],
+                    messages=[
+                        {"role": "system", "content": SYSTEM_PROMPT},
+                        {"role": "user",   "content": f"Состояние:\n```json\n{lite_str}\n```"},
+                    ],
+                    temperature=provider_cfg.get("temperature", 0.25),
+                    max_tokens=provider_cfg.get("max_tokens", 1200),
+                )
+                raw_lite    = lite_resp.choices[0].message.content or ""
+                parsed_lite = _parse_response(raw_lite)
+                logger.info(f"[Advisor] 413 retry OK ({provider_cfg['name']})")
+                return {
+                    "ok":             True,
+                    "timestamp":      datetime.utcnow().strftime("%H:%M:%S"),
+                    "elapsed_s":      0,
+                    "trigger":        trigger,
+                    "analysis":       parsed_lite.get("analysis", ""),
+                    "thinking":       parsed_lite.get("thinking", ""),
+                    "recommendations": parsed_lite.get("recommendations", []),
+                    "market_verdict": parsed_lite.get("market_verdict", "ОСТОРОЖНО"),
+                    "confidence":     parsed_lite.get("confidence", 0.5),
+                    "next_check_min": AUTO_INTERVAL_MIN,
+                    "applied":        [],
+                    "auto_applied":   apply,
+                    "snapshot":       lite,
+                    "provider":       provider_cfg["name"],
+                    "model":          provider_cfg["model"],
+                }
+            except Exception as ex2:
+                logger.error(f"[Advisor] 413 retry failed: {ex2}")
+        return {"ok": False, "error": ex_str}
     finally:
         with _lock:
             _running = False
 
 
 def _record_rate_limit(err_text: str) -> None:
-    """Парсит текст ошибки Groq (429 rate_limit_exceeded) и сохраняет лимит/сброс."""
+    """Парсит текст ошибки Groq (429 rate_limit_exceeded) и сохраняет лимит/сброс.
+
+    Различает TPD (tokens per day) и TPM (tokens per minute):
+    - TPM: ждём только указанное время («try again in Xs»)
+    - TPD: дневной лимит; игнорируем короткий «try again» от Groq,
+      ставим паузу до завтрашнего 03:00 UTC чтобы не тратить остаток.
+    """
     global _rate_limit
     if "rate_limit" not in err_text and "429" not in err_text:
-        # Не лимит — если предыдущая ошибка лимита устарела (>1ч), не трогаем её.
         return
     try:
         limit_m  = re.search(r"Limit\s+(\d+)", err_text)
@@ -1280,9 +1824,23 @@ def _record_rate_limit(err_text: str) -> None:
             for val, unit in parts:
                 val = float(val)
                 reset_s += val * (3600 if unit == "h" else 60 if unit == "m" else 1)
+
+        # ── Если дневной TPD лимит — ставим паузу до 03:00 UTC следующего дня ──
+        is_tpd = "tokens per day" in err_text or "tpd" in err_text.lower()
+        if is_tpd:
+            import datetime as _dt
+            now_utc   = _dt.datetime.utcnow()
+            tomorrow  = now_utc.date() + _dt.timedelta(days=1)
+            reset_utc = _dt.datetime.combine(tomorrow, _dt.time(3, 0, 0))
+            reset_s   = (reset_utc - now_utc).total_seconds()
+            logger.warning(
+                f"[Advisor] ⚠️ Groq TPD исчерпан — пауза до {reset_utc.strftime('%Y-%m-%d %H:%M')} UTC"
+            )
+
         with _lock:
             _rate_limit = {
                 "limited":     True,
+                "is_tpd":      is_tpd,
                 "limit":       int(limit_m.group(1)) if limit_m else None,
                 "used":        int(used_m.group(1))  if used_m  else None,
                 "requested":   int(req_m.group(1))   if req_m   else None,
@@ -1438,24 +1996,41 @@ def get_status() -> dict:
     with _lock:
         now = time.time()
         nxt = _next_auto_run_ts
+        # Определяем активный провайдер для отображения
+        active_pid, active_pcfg = _get_best_provider()
+        # Список доступных провайдеров (с ключами)
+        available = {
+            pid: {
+                "name":    cfg["name"],
+                "model":   cfg["model"],
+                "has_key": bool(_read_provider_key(pid)),
+                "priority": cfg["priority"],
+                "selected": (pid == _selected_provider),
+            }
+            for pid, cfg in PROVIDER_CONFIGS.items()
+        }
         return {
-            "enabled":          bool(_effective_key()),
-            "running":          _running,
-            "auto_apply":       _auto_apply,
-            "last_advice":      _last_advice,
-            "history":          list(_history),
-            "adaptation_log":   list(_adaptation_log)[-15:],
-            "total_adaptations":_total_adaptations,
-            "trades_since_last":_trades_since_last_run,
-            "trades_trigger":   AUTO_TRADES_TRIGGER,
-            "interval_min":     AUTO_INTERVAL_MIN,
-            "ai_size_mult":     _current_size_mult(),
-            "next_run_in_sec":  max(0, int(nxt - now)) if nxt > 0 else 0,
-            "last_run_ts":      _last_auto_run_ts,
-            "model":            GROQ_MODEL,
-            "strategy_toggles": _current_strategy_toggles(),
-            "strategy_labels":  STRATEGY_TOGGLES,
-            "rate_limit":       _rate_limit_status(),
+            "enabled":           bool(_effective_key()),
+            "running":           _running,
+            "auto_apply":        _auto_apply,
+            "last_advice":       _last_advice,
+            "history":           list(_history),
+            "adaptation_log":    list(_adaptation_log)[-15:],
+            "total_adaptations": _total_adaptations,
+            "trades_since_last": _trades_since_last_run,
+            "trades_trigger":    AUTO_TRADES_TRIGGER,
+            "interval_min":      AUTO_INTERVAL_MIN,
+            "ai_size_mult":      _current_size_mult(),
+            "next_run_in_sec":   max(0, int(nxt - now)) if nxt > 0 else 0,
+            "last_run_ts":       _last_auto_run_ts,
+            "model":             active_pcfg["model"],
+            "provider":          active_pcfg["name"],
+            "provider_id":       active_pid,
+            "selected_provider": _selected_provider,
+            "providers":         available,
+            "strategy_toggles":  _current_strategy_toggles(),
+            "strategy_labels":   STRATEGY_TOGGLES,
+            "rate_limit":        _rate_limit_status(),
         }
 
 
@@ -1471,7 +2046,7 @@ def toggle_auto_apply() -> bool:
 def set_config(interval_min: int = None, trades_trigger: int = None):
     global AUTO_INTERVAL_MIN, AUTO_TRADES_TRIGGER
     if interval_min is not None:
-        AUTO_INTERVAL_MIN = max(5, min(120, int(interval_min)))
+        AUTO_INTERVAL_MIN = max(150, min(360, int(interval_min)))
     if trades_trigger is not None:
         AUTO_TRADES_TRIGGER = max(1, min(20, int(trades_trigger)))
     try:
@@ -1489,16 +2064,57 @@ def set_config(interval_min: int = None, trades_trigger: int = None):
     return {"interval_min": AUTO_INTERVAL_MIN, "trades_trigger": AUTO_TRADES_TRIGGER}
 
 
-def reload_key(key: str = None):
-    """Обновить ключ Groq и сохранить в файл. key=None — читать из env/файла."""
+def reload_key(key: str = None, provider: str = "groq"):
+    """Обновить ключ провайдера и сохранить в файл.
+    Для обратной совместимости: provider='groq', key=None → читать из env/файла."""
     global GROQ_API_KEY
     if key is not None:
         k = key.strip()
-        GROQ_API_KEY = k
-        _write_key_file(k)
+        _write_provider_key(provider, k)
+        if provider == "groq":
+            GROQ_API_KEY = k
     else:
+        # Обратная совместимость — обновляем Groq
         GROQ_API_KEY = os.getenv("GROQ_API_KEY", "") or _read_key_file()
-    return bool(GROQ_API_KEY)
+        if GROQ_API_KEY:
+            _provider_keys["groq"] = GROQ_API_KEY
+    return bool(_effective_key())
+
+
+def set_provider(provider_id: str):
+    """Устанавливает предпочтительный AI-провайдер. None = авто."""
+    global _selected_provider
+    if provider_id and provider_id not in PROVIDER_CONFIGS:
+        return {"ok": False, "error": f"Неизвестный провайдер: {provider_id}"}
+    _selected_provider = provider_id if provider_id else None
+    try:
+        from settings_store import update_section
+        update_section("advisor", {"selected_provider": _selected_provider or ""})
+    except Exception as ex:
+        logger.warning(f"[Advisor] set_provider save: {ex}")
+    pid, pcfg = _get_best_provider()
+    logger.info(f"[Advisor] 🤖 Активный провайдер: {pcfg['name']}")
+    return {"ok": True, "active_provider": pcfg["name"], "model": pcfg["model"]}
+
+
+def get_providers() -> dict:
+    """Возвращает список всех провайдеров с их статусом."""
+    pid, pcfg = _get_best_provider()
+    return {
+        "active_id":   pid,
+        "active_name": pcfg["name"],
+        "selected":    _selected_provider,
+        "providers": {
+            p: {
+                "name":     c["name"],
+                "model":    c["model"],
+                "has_key":  bool(_read_provider_key(p)),
+                "priority": c["priority"],
+                "is_active": (p == pid),
+            }
+            for p, c in sorted(PROVIDER_CONFIGS.items(), key=lambda x: x[1]["priority"])
+        }
+    }
 
 
 def get_adaptation_log() -> list:

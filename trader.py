@@ -9,6 +9,30 @@ from ai_engine import AIEngine
 from experience_manager import experience_manager
 import liquidity_guard
 try:
+    import ai_entry_optimizer as _entry_opt
+except Exception as _eo_err:
+    import logging as _eolog
+    _eolog.getLogger("trader").warning(f"ai_entry_optimizer не загружен: {_eo_err}")
+    _entry_opt = None
+try:
+    import ai_tp_optimizer as _tp_opt
+except Exception as _to_err:
+    import logging as _tolog
+    _tolog.getLogger("trader").warning(f"ai_tp_optimizer не загружен: {_to_err}")
+    _tp_opt = None
+try:
+    import ai_market_scanner as _scanner
+except Exception as _sc_err:
+    import logging as _sclog
+    _sclog.getLogger("trader").warning(f"ai_market_scanner не загружен: {_sc_err}")
+    _scanner = None
+try:
+    from organism import organism as _organism
+except Exception as _org_err:
+    import logging as _orglog
+    _orglog.getLogger("trader").warning(f"organism не загружен: {_org_err}")
+    _organism = None
+try:
     import brain_fusion as _bf
 except Exception as _bf_err:
     import logging as _bflog
@@ -57,13 +81,32 @@ class Trader:
         self.training = False
         self.trades      = []
         self.open_trades = []
+        # Загружаем историю закрытых сделок из DB при старте (чтобы дашборд
+        # не показывал пустую историю после перезапуска)
+        try:
+            import db_store as _ds
+            _db_trades = _ds.trades_get_recent(100)
+            if _db_trades:
+                # trades_get_recent возвращает DESC (новые первые) — разворачиваем
+                self.trades = list(reversed(_db_trades))
+        except Exception:
+            pass
         self.logs        = []
         self.last_ai       = {}
         self.last_analysis = {}   # кэш последнего strategy.analyze() — обновляется в _tick()
         self.stats = {
-            "total_trades":   0,
-            "winning_trades": 0,
-            "total_pnl":      0.0,
+            "total_trades":    0,
+            "winning_trades":  0,
+            "total_pnl":       0.0,
+            # ── Расширенная pro-статистика ────────────────────────────────────
+            "win_streak":      0,      # текущая серия побед подряд
+            "max_win_streak":  0,      # лучшая серия за сессию
+            "best_trade_ton":  0.0,    # лучшая одиночная сделка (TON)
+            "worst_trade_ton": 0.0,    # худшая одиночная сделка (TON)
+            "daily_pnl":       0.0,    # P&L за текущие сутки UTC
+            "daily_start_ts":  0.0,    # unix-timestamp 00:00 UTC сегодня
+            "daily_start_equity": 0.0, # equity портфеля на начало дня (для %% расчёта CB)
+            "circuit_breaker_active": False,  # флаг: дневной CB сработал
         }
         self._thread = None
         # ── Ручной выключатель торговли ──────────────────────────────────
@@ -125,13 +168,24 @@ class Trader:
         self._last_large_sell_buy_ts = 0.0
         # DCA кулдаун: время последней DCA-докупки (защита от переторговли)
         self._last_dca_entry_ts = 0.0
+        # Дроссель логирования заблокированного первого DCA-входа
+        self._last_dca_entry_block_log_ts = 0.0
         # Кулдаун после убыточного закрытия: не входить сразу в нисходящий тренд
         self._last_loss_ts = 0.0
         # Защита прибыли: пик стоимости портфеля (TON) для детектора разворота
         self.portfolio_high_water_ton = 0.0
+        # Флаг: прибыль хотя бы раз достигла порога PROFIT_PROTECT_TON (не сбрасывается при откате)
+        self.profit_protect_activated = False
         # Health-check: время и статус последнего успешного тика торгового цикла
         self.last_tick_ts = 0.0
         self.last_tick_ok = None
+        # ── EntryOptimizer: снимок входа для честного обучения ──────────────
+        # Фичи на момент РЕАЛЬНОГО входа — record_outcome использует их,
+        # а не пересчитанный прокси (avg_drop = константа × (n-1)/2).
+        self._last_eo_feats: list = []
+        # wait_floor: EntryOpt сказал «жди ещё X%» — не спрашиваем снова,
+        # пока drop не достигнет этого уровня. Сбрасывается при входе.
+        self._eo_wait_floor_pct: float = 0.0
 
         # Кеш баланса: не долбим блокчейн при каждом /api/status (TTL 180 сек)
         self._balance_cache     = {}
@@ -140,13 +194,21 @@ class Trader:
         # ── Долговременная память + само-управление ИИ ───────────────────
         self.exp = experience_manager
         self.exp.restore_trader(self)
+        # ── Расширенная статистика (best/worst/streak/daily) из БД ───────
+        self._restore_stats_from_db()
+        # ── Живой организм: восстанавливаем из статистики ────────────────
+        try:
+            if _organism is not None:
+                _organism.restore(self)
+        except Exception as _oe:
+            self.log(f"⚠️ Organism restore: {_oe}", "WARN")
         # Восстанавливаем Smart BUY из DB (если был при перезапуске)
         # Примечание: ai/analysis не сохраняются (тяжёлые объекты), поэтому
         # восстановленный ордер помечаем флагом restored=True — в _tick()
         # он будет исполнен по текущей рыночной цене без ожидания откатa.
         try:
-            import db_store as _dbs2
-            pb_raw = _dbs2.settings_get("trader_state", "pending_buy")
+            from settings_store import get_section
+            pb_raw = get_section("trader_state").get("pending_buy")
             if pb_raw:
                 import json as _json2
                 pb_data = _json2.loads(pb_raw)
@@ -157,8 +219,8 @@ class Trader:
             pass
         # Восстанавливаем timestamp последней DCA-докупки (кулдаун переживает рестарт)
         try:
-            import db_store as _dbs3
-            _ts_raw = _dbs3.settings_get("trader_state", "last_dca_entry_ts")
+            from settings_store import get_section
+            _ts_raw = get_section("trader_state").get("last_dca_entry_ts")
             if _ts_raw:
                 self._last_dca_entry_ts = float(_ts_raw)
         except Exception:
@@ -169,6 +231,22 @@ class Trader:
         # условие `dca_last_buy_price > 0` никогда не выполнялось.
         try:
             _dca_trades = [t for t in self.open_trades if t.get("dca_entry")]
+            # Fallback: если open_trades есть, но ни у одной нет dca_entry=True,
+            # значит позиция была открыта до добавления поля или через старый путь.
+            # В DCA-режиме любая открытая LONG-позиция — это DCA-вход.
+            if not _dca_trades and self.open_trades and Config.DCA_MODE:
+                _long_trades = [t for t in self.open_trades if t.get("trade_type") != "short"]
+                if _long_trades:
+                    _dca_trades = _long_trades
+                    # Помечаем на лету, чтобы save_open_trades сохранил флаг в БД
+                    for _idx, _t in enumerate(_long_trades, start=1):
+                        _t.setdefault("dca_entry", True)
+                        _t.setdefault("dca_index", _idx)
+                    self.log(
+                        f"🔧 DCA fallback: {len(_dca_trades)} позиций без dca_entry — "
+                        f"помечены как DCA-входы автоматически",
+                        "WARN",
+                    )
             if _dca_trades:
                 # Берём цену последней по времени DCA-покупки
                 _dca_sorted = sorted(
@@ -178,9 +256,13 @@ class Trader:
                 self.dca_last_buy_price = float(
                     _dca_sorted[-1].get("entry_price") or 0
                 )
-                # Количество входов = максимальный dca_index среди открытых
+                # Количество входов = максимальный dca_index среди открытых.
+                # BUG-FIX: merged trade хранит реальное кол-во входов в merged_count;
+                # используем max(dca_index, merged_count) чтобы не занизить счётчик
+                # после слияния позиций и рестарта бота.
                 self.dca_entries_count = max(
-                    int(t.get("dca_index") or 1) for t in _dca_trades
+                    max(int(t.get("dca_index") or 1) for t in _dca_trades),
+                    max(int(t.get("merged_count") or 1) for t in _dca_trades),
                 )
                 # Суммарные затраты
                 self.dca_total_stake = sum(
@@ -193,6 +275,25 @@ class Trader:
                 )
         except Exception as _dca_restore_err:
             self.log(f"⚠️ DCA restore error: {_dca_restore_err}", "WARN")
+
+        # Восстанавливаем dca_wait_pullback и dca_peak_price из открытых позиций.
+        # Если позиция открыта — бот был в активном DCA-цикле и ждёт отката цены
+        # для следующей докупки. high_water из сделки содержит реальный пик сессии.
+        try:
+            if self.open_trades:
+                self.dca_wait_pullback = True
+                _hw_prices = [float(t.get("high_water") or 0) for t in self.open_trades if t.get("high_water")]
+                _peak = max(_hw_prices) if _hw_prices else 0.0
+                if _peak <= 0 and self.dca_last_buy_price > 0:
+                    _peak = self.dca_last_buy_price  # fallback: пик = цена входа
+                if _peak > 0:
+                    self.dca_peak_price = _peak
+                self.log(
+                    f"🔄 DCA wait_pullback восстановлен: пик=${self.dca_peak_price:.8f}",
+                    "INFO",
+                )
+        except Exception as _dca_pull_err:
+            self.log(f"⚠️ DCA pullback restore error: {_dca_pull_err}", "WARN")
 
         # ── Сверка с реальным балансом кошелька ────────────────────────
         # Сохранённая в БД/памяти позиция может отстать от реальности
@@ -207,12 +308,22 @@ class Trader:
             if book_grinch > 0 and real_grinch < 1.0:
                 # Кошелёк пустой, а в БД висит открытая позиция —
                 # значит продажа прошла, но запись не была очищена.
-                self.open_trades = []
+                with self._ot_lock:
+                    self.open_trades = []
                 self.log(
                     f"🔧 Сверка баланса: кошелёк пуст ({real_grinch:.6f} GRINCH), "
                     f"но в БД открытая позиция {book_grinch:.2f} — позиция автоматически закрыта",
                     "WARN",
                 )
+                # BUG-FIX: сбрасываем wait_pullback, чтобы _restore_volatile_state()
+                # не восстановил True с устаревшим пиком из предыдущей сессии.
+                # Без этого бот с пустым кошельком ждёт 7% откат бесконечно.
+                self.dca_wait_pullback = False
+                self.dca_peak_price    = 0.0
+                try:
+                    self._save_volatile_state()
+                except Exception:
+                    pass
                 try:
                     self.exp.save_open_trades([])
                 except Exception:
@@ -231,6 +342,13 @@ class Trader:
                             # stake_ton масштабируем так же, иначе прибыль будет
                             # завышена (ставка заниженная относительно реального количества).
                             t["stake_ton"] = round((t.get("stake_ton") or 0) * scale, 4)
+                        # Обновляем dca_total_stake под тем же локом, иначе wallet_manager
+                        # может прочитать открытые позиции (уже с новым stake_ton) и
+                        # одновременно trader.dca_total_stake (ещё со старым значением),
+                        # получив несогласованные данные и неверный P&L.
+                        self.dca_total_stake = sum(
+                            float(t.get("stake_ton") or 0) for t in self.open_trades
+                        )
                     self.log(
                         f"🔧 Сверка баланса: БД показывала {book_grinch:.2f} GRINCH, "
                         f"на кошельке {real_grinch:.2f} (расхождение {diff_pct:.1f}%) — "
@@ -241,8 +359,32 @@ class Trader:
                         self.exp.save_open_trades(self._combined_open_trades())
                     except Exception:
                         pass
+                    # Прямая запись в DB с повтором — exp.save_open_trades может
+                    # тихо провалить DB-часть (пул ещё не прогрет), а молчаливый
+                    # провал оставляет в DB устаревшие 85050/50 навсегда. Пишем
+                    # напрямую через db_store и повторяем дважды для надёжности.
+                    _corrected = self._combined_open_trades()
+                    for _attempt in range(3):
+                        try:
+                            import db_store as _ds
+                            if _ds.is_available():
+                                _ds.open_trades_save(_corrected)
+                                self.log(
+                                    f"✅ Прямая DB-запись self-heal (попытка {_attempt+1}): "
+                                    f"amount={sum(t.get('amount',0) for t in _corrected):.2f} "
+                                    f"stake={sum(t.get('stake_ton',0) for t in _corrected):.4f}",
+                                    "INFO",
+                                )
+                                break
+                        except Exception as _dbe:
+                            self.log(f"⚠️ Прямая DB-запись self-heal попытка {_attempt+1}: {_dbe}", "WARN")
+                            time.sleep(1)
         except Exception as _bal_check_err:
             self.log(f"⚠️ Сверка баланса при старте не удалась: {_bal_check_err}", "WARN")
+
+        # ── Летучие поля DCA/profit-protect/cooldown ───────────────────
+        # Восстанавливаем после рестарта (cascade, compound bonus, HWM, cooldowns)
+        self._restore_volatile_state()
 
         # ── Санитайз статистики ────────────────────────────────────────
         # winning_trades не может быть больше total_trades (иначе winrate
@@ -251,17 +393,14 @@ class Trader:
             tt = int(self.stats.get("total_trades", 0) or 0)
             wt = int(self.stats.get("winning_trades", 0) or 0)
             if wt > tt:
-                # Не теряем подтверждённые победы: если старый счётчик
-                # total_trades был занижен после рестарта, восстанавливаем его
-                # до количества wins.
-                self.stats["total_trades"] = wt
+                self.stats["winning_trades"] = tt
                 try:
                     self.exp.data["stats"] = dict(self.stats)
                     self.exp._save_locked()
                 except Exception:
                     pass
                 self.log(
-                    f"🔧 Санитайз статистики: total_trades ({tt}) < winning_trades ({wt}) — total восстановлен",
+                    f"🔧 Санитайз статистики: winning_trades ({wt}) > total_trades ({tt}) — исправлено",
                     "WARN",
                 )
         except Exception:
@@ -284,6 +423,14 @@ class Trader:
         self._thread.start()
         self._start_deep_retrain_thread()
         self.log("Торговый агент запущен", "INFO")
+        # Явно сообщаем о состоянии ручного переключателя сразу при старте,
+        # чтобы не ждать первого тика (который может прийти через 15 секунд).
+        if not self.trading_enabled:
+            self.log(
+                "⏸️ Торговля ВЫКЛЮЧЕНА (ручной переключатель сохранён из прошлого сеанса) — "
+                "сделки не будут выполняться. Включите торговлю кнопкой на дашборде.",
+                "WARN"
+            )
 
     _DEEP_RETRAIN_INTERVAL_S = 2 * 24 * 3600  # раз в 2 дня
 
@@ -406,22 +553,178 @@ class Trader:
     # ──────────────────────────────────────────
     @staticmethod
     def _load_trading_enabled() -> bool:
-        """Загружает последнее состояние кнопки торговли из DB/settings.
-        Возвращает False если сохранённого состояния нет (первый запуск / деплой)."""
+        """Загружает последнее состояние кнопки торговли из DB/settings (с JSON fallback).
+        Возвращает True если сохранённого состояния нет (первый запуск / деплой) —
+        бот стартует с включённой торговлей, не требует ручного нажатия."""
         try:
-            import db_store as _dbs
-            val = _dbs.settings_get("trader_state", "trading_enabled")
-            return str(val).lower() == "true" if val is not None else False
+            from settings_store import get_section
+            val = get_section("trader_state").get("trading_enabled")
+            return str(val).lower() == "true" if val is not None else True
         except Exception:
-            return False
+            return True
 
     def _save_trading_enabled(self, state: bool) -> None:
-        """Сохраняет состояние кнопки торговли в DB для пережития рестартов."""
+        """Сохраняет состояние кнопки торговли в DB + JSON (settings_store) для пережития
+        перезапуска и отказа БД."""
         try:
-            import db_store as _dbs
-            _dbs.settings_update_section("trader_state", {"trading_enabled": str(state)})
+            from settings_store import update_section
+            update_section("trader_state", {"trading_enabled": str(state)})
         except Exception:
             pass
+
+    def _save_volatile_state(self) -> None:
+        """Персистирует летучие поля DCA/profit-protect/cooldown в trader_state (DB+JSON).
+        Вызывается при каждом изменении этих полей и периодически из тик-цикла.
+        Best-effort: ошибка не должна ронять торговый цикл."""
+        try:
+            from settings_store import update_section
+            update_section("trader_state", {
+                "dca_cascade_half_sold":    str(self.dca_cascade_half_sold),
+                "dca_compound_bonus_ton":   str(self.dca_compound_bonus_ton),
+                "portfolio_high_water_ton": str(self.portfolio_high_water_ton),
+                "profit_protect_activated": str(self.profit_protect_activated),
+                "last_loss_ts":             str(self._last_loss_ts),
+                "last_large_sell_buy_ts":   str(self._last_large_sell_buy_ts),
+                # BUG-FIX: после продажи всех позиций бот выставляет wait_pullback=True
+                # и запоминает peak_price, но эти два поля НЕ сохранялись ранее.
+                # При рестарте с open_trades=[] restore-блок пропускался и бот
+                # сразу входил в новую позицию, не дождавшись отката.
+                "dca_wait_pullback":        str(self.dca_wait_pullback),
+                "dca_peak_price":           str(self.dca_peak_price),
+            })
+        except Exception:
+            pass
+
+    def _restore_stats_from_db(self) -> None:
+        """Восстанавливает расширенную статистику из истории сделок в БД.
+
+        experience_manager восстанавливает только total_trades/winning_trades/total_pnl.
+        Поля best_trade_ton, worst_trade_ton, win_streak, max_win_streak, daily_pnl
+        хранились только в памяти — пересчитываем из bot_trades при каждом старте.
+        """
+        try:
+            import db_store as _dbs
+            from datetime import timezone as _tz
+            rows = _dbs.trades_get_recent(500)
+            if not rows:
+                return
+
+            closed = sorted(
+                [r for r in rows if r.get("pnl") is not None and r.get("closed_at")],
+                key=lambda r: str(r.get("closed_at", "")),
+            )
+            if not closed:
+                return
+
+            pnls  = [float(r["pnl"]) for r in closed]
+            best  = max(pnls)
+            worst = min(pnls)
+
+            # max_win_streak — сканируем все сделки
+            max_streak = cur_run = 0
+            for p in pnls:
+                if p > 0:
+                    cur_run += 1
+                    max_streak = max(max_streak, cur_run)
+                else:
+                    cur_run = 0
+
+            # текущий win_streak — считаем с конца
+            cur_streak = 0
+            for p in reversed(pnls):
+                if p > 0:
+                    cur_streak += 1
+                else:
+                    break
+
+            # daily_pnl — только сделки закрытые сегодня UTC
+            today_str = datetime.now(_tz.utc).strftime("%Y-%m-%d")
+            daily = round(sum(
+                float(r["pnl"])
+                for r in closed
+                if str(r.get("closed_at", "")).startswith(today_str)
+            ), 6)
+
+            with self._close_lock:
+                self.stats["best_trade_ton"]  = best
+                self.stats["worst_trade_ton"] = worst
+                self.stats["win_streak"]      = cur_streak
+                self.stats["max_win_streak"]  = max_streak
+                self.stats["daily_pnl"]       = daily
+
+            self.log(
+                f"📊 Расширенная статистика восстановлена из БД: "
+                f"best={best:+.4f} worst={worst:+.4f} "
+                f"streak={cur_streak} max_streak={max_streak} "
+                f"daily={daily:+.4f} TON ({len(closed)} сд.)",
+                "INFO",
+            )
+        except Exception as _e:
+            self.log(f"⚠️ _restore_stats_from_db: {_e}", "WARN")
+
+    def _restore_volatile_state(self) -> None:
+        """Восстанавливает летучие поля из trader_state при старте бота."""
+        try:
+            from settings_store import get_section
+            st = get_section("trader_state")
+            if not st:
+                return
+
+            def _float(key, default=0.0):
+                v = st.get(key)
+                try:
+                    return float(v) if v not in (None, "", "None") else default
+                except (ValueError, TypeError):
+                    return default
+
+            def _bool(key, default=False):
+                v = st.get(key)
+                if v is None:
+                    return default
+                return str(v).lower() == "true"
+
+            self.dca_cascade_half_sold    = _bool("dca_cascade_half_sold")
+            self.dca_compound_bonus_ton   = _float("dca_compound_bonus_ton")
+            self.portfolio_high_water_ton = _float("portfolio_high_water_ton")
+            self.profit_protect_activated = _bool("profit_protect_activated")
+            self._last_loss_ts            = _float("last_loss_ts")
+            self._last_large_sell_buy_ts  = _float("last_large_sell_buy_ts")
+            # BUG-FIX: восстанавливаем wait_pullback/peak_price.
+            # Используем OR-логику: True перезаписывает только если там True.
+            # Если open_trades уже установили wait_pullback=True (строки 231-242),
+            # этот блок не перезапишет их в False — мы сохраняем более сильное значение.
+            # Ключевой сценарий: после DCA sell-all (open_trades=[]) restore-блок
+            # выше пропускается, но здесь мы правильно восстанавливаем True.
+            #
+            # BUG-FIX 2: НЕ восстанавливаем wait_pullback=True если нет открытых позиций.
+            # Если кошелёк опустел (внешняя продажа, ручное вмешательство, auto-close при
+            # старте), saved wait_pullback=True с устаревшим пиком застрянет навсегда —
+            # бот с 400+ TON будет ждать 7% отката который никогда не наступит.
+            # Решение: восстанавливать True только если есть живые open_trades.
+            if _bool("dca_wait_pullback") and self.open_trades:
+                self.dca_wait_pullback = True
+                _saved_peak = _float("dca_peak_price")
+                if _saved_peak > 0 and _saved_peak > self.dca_peak_price:
+                    self.dca_peak_price = _saved_peak
+
+            parts = []
+            if self.dca_cascade_half_sold:
+                parts.append("cascade=True")
+            if self.dca_compound_bonus_ton > 0:
+                parts.append(f"compound={self.dca_compound_bonus_ton:.2f} TON")
+            if self.portfolio_high_water_ton > 0:
+                parts.append(f"hwm={self.portfolio_high_water_ton:.4f} TON")
+            if self.profit_protect_activated:
+                parts.append("profit_protect=ON")
+            if self.dca_wait_pullback:
+                parts.append(f"wait_pullback=True пик=${self.dca_peak_price:.6f}")
+            cd_left = Config.LOSS_COOLDOWN_SEC - (time.time() - self._last_loss_ts)
+            if cd_left > 0:
+                parts.append(f"loss_cd={cd_left/60:.1f} мин")
+            if parts:
+                self.log(f"🔄 Volatile state восстановлен: {' | '.join(parts)}", "INFO")
+        except Exception as _e:
+            self.log(f"⚠️ _restore_volatile_state: {_e}", "WARN")
 
     def enable_trading(self):
         self.trading_enabled = True
@@ -454,7 +757,14 @@ class Trader:
             # LOW_MEMORY_MODE (Bothost и т.п.): меньше свечей → меньше признаков
             # и меньше пиковая память при обучении 3 моделей на старте.
             _pretrain_limit = 150 if os.getenv("LOW_MEMORY_MODE", "1") == "1" else 300
-            ohlcv = self.exchange.get_ohlcv(limit=_pretrain_limit)
+            # Используем реальные свечи GeckoTerminal (15-мин) вместо fake_ohlcv,
+            # которую возвращает get_ohlcv() в DeDust-режиме — иначе ML-модели
+            # обучаются на синтетике и выдают ai_conf=0.0 на каждом тике.
+            ohlcv = (self.exchange.get_real_ohlcv(limit=_pretrain_limit, currency="token",
+                                                  token="base", tf="minute", aggregate=15)
+                     or self.exchange.get_real_ohlcv(limit=_pretrain_limit, currency="token",
+                                                      token="base", tf="hour", aggregate=1)
+                     or [])
             self.ai.pretrain(ohlcv, on_progress=self._emit_progress)
         except Exception as e:
             self.log(f"⚠️ Ошибка предобучения: {e}", "WARN")
@@ -488,11 +798,23 @@ class Trader:
                     f"подтверждённых сделок (обучение НЕ с нуля)", "INFO"
                 )
             elif mem["confirmed"] == 0:
-                self.log(
-                    "ℹ️ В памяти пока нет закрытых сделок — учиться не на чем. "
-                    "Первая же закрытая сделка сохранится и переживёт перезапуск.",
-                    "INFO"
-                )
+                if mem["trades"] > 0:
+                    # Сделки есть, но без AI-примеров — значит, это DCA/ручные входы:
+                    # AI не давал сигнал на вход, поэтому feature-вектор не был сохранён.
+                    # Это нормальная ситуация для DCA-режима.
+                    self.log(
+                        f"ℹ️ В истории {mem['trades']} закрытых сделок, "
+                        "но AI-примеров нет — входы были в DCA/ручном режиме "
+                        "(AI-сигнал не использовался). Обучение ИИ начнётся "
+                        "автоматически после первой сделки по AI-сигналу.",
+                        "INFO"
+                    )
+                else:
+                    self.log(
+                        "ℹ️ В памяти пока нет закрытых сделок — учиться не на чем. "
+                        "Первая же закрытая сделка сохранится и переживёт перезапуск.",
+                        "INFO"
+                    )
             else:
                 self.log(
                     "⚠️ Опыт на диске несовместим с текущей моделью (изменился "
@@ -503,21 +825,37 @@ class Trader:
             self.log(f"Восстановление опыта ИИ: {e}", "WARN")
 
         _last_db_sync = 0.0
+        _consec_errors = 0  # M3: счётчик последовательных ошибок для backoff
         while self.running:
             try:
                 self._tick()
                 self._record_equity()
                 # Обновляем live-поля открытых сделок в DB раз в 60 секунд
                 now = time.time()
-                if self.open_trades and (now - _last_db_sync) >= 60:
+                if self.open_trades and (now - _last_db_sync) >= 15:
                     self._sync_open_trades_to_db()
                     _last_db_sync = now
+                # Летучие поля DCA/profit-protect/cooldown — сохраняем раз в 60 сек
+                # (страховка: даже если точечный save в точке мутации не сработал)
+                if not hasattr(self, "_last_volatile_save_ts"):
+                    self._last_volatile_save_ts = 0.0
+                if now - self._last_volatile_save_ts >= 60:
+                    self._save_volatile_state()
+                    self._last_volatile_save_ts = now
                 self.last_tick_ts = time.time()
                 self.last_tick_ok = True
+                _consec_errors = 0  # M3: сброс счётчика после успешного тика
             except Exception as e:
-                self.log(f"Ошибка в цикле: {e}", "ERROR")
+                _consec_errors += 1
+                self.log(f"Ошибка в цикле ({_consec_errors}): {e}", "ERROR")
                 self.last_tick_ts = time.time()
                 self.last_tick_ok = False
+                # M3: экспоненциальный backoff при повторяющихся ошибках
+                # 1 ошибка → 0 доп. задержки, 2 → 4с, 3 → 8с, 4+ → 16с (макс)
+                if _consec_errors >= 2:
+                    _backoff = min(4 * (2 ** (_consec_errors - 2)), 16)
+                    self.log(f"⏳ Backoff {_backoff}с ({_consec_errors} ошибок подряд)", "WARN")
+                    self._loop_stop_event.wait(timeout=_backoff)
             # На маломощных хостах (LOW_MEMORY_MODE) периодически отдаём ОС
             # память, освобождённую GC (glibc malloc иначе держит её в аренах).
             if os.getenv("LOW_MEMORY_MODE", "1") == "1":
@@ -527,7 +865,8 @@ class Trader:
                 except Exception:
                     pass
             # Прерываемый сон: stop() немедленно разбудит через _loop_stop_event
-            self._loop_stop_event.wait(timeout=15)
+            # 4 сек = оптимум: price_feed prefetch каждые 5с, реакция на откат быстрее
+            self._loop_stop_event.wait(timeout=4)
 
     def _record_equity(self):
         """Снимок капитала кошелька в память (троттлинг внутри менеджера)."""
@@ -539,11 +878,11 @@ class Trader:
             pass
 
     def _clear_pending_buy(self):
-        """Сбрасывает Smart BUY и удаляет его из DB."""
+        """Сбрасывает Smart BUY и удаляет его из DB + JSON."""
         self._pending_buy = None
         try:
-            import db_store as _dbs
-            _dbs.settings_update_section("trader_state", {"pending_buy": ""})
+            from settings_store import update_section
+            update_section("trader_state", {"pending_buy": ""})
         except Exception:
             pass
 
@@ -561,10 +900,37 @@ class Trader:
                 return
             grinch_ton = price_feed.get_grinch_ton_price() or 0.0
             enriched   = self._enriched_open_trades(grinch_ton) + self._enriched_short_trades(grinch_ton)
+
+            # Санитайз перед записью: если amount в памяти меньше 10% от того,
+            # что уже лежит в DB — это признак чтения устаревших данных (race /
+            # stale snapshot). Пропускаем запись, чтобы не откатить DB назад.
+            try:
+                cur_db = db_store.open_trades_get()
+                if cur_db:
+                    db_total  = sum(float(t.get("amount", 0) or 0) for t in cur_db)
+                    new_total = sum(float(t.get("amount", 0) or 0) for t in enriched)
+                    if db_total > 0 and new_total > 0 and new_total < db_total * 0.1:
+                        self.log(
+                            f"⚠️ _sync_open_trades_to_db: пропуск записи — "
+                            f"in-memory amount {new_total:.2f} << DB {db_total:.2f} "
+                            f"(возможен stale snapshot)",
+                            "WARN",
+                        )
+                        return
+            except Exception as _chk_e:
+                self.log(f"⚠️ _sync_open_trades_to_db sanity-check: {_chk_e}", "WARN")
+
+            mem_amount = sum(float(t.get("amount", 0) or 0) for t in enriched)
+            mem_stake  = sum(float(t.get("stake_ton", 0) or 0) for t in enriched)
+            self.log(
+                f"[DB-sync] open_trades → amount={mem_amount:.2f} stake={mem_stake:.4f} "
+                f"n={len(enriched)}",
+                "INFO",
+            )
             db_store.open_trades_save(enriched)
             self._last_db_sync_ts = time.time()
-        except Exception:
-            pass  # молча: live-синк не критичен
+        except Exception as _sync_e:
+            self.log(f"⚠️ _sync_open_trades_to_db ошибка: {_sync_e}", "WARN")
 
     def _merge_long_trades(self):
         """Объединяет все открытые LONG-позиции в одну с взвешенной средней ценой.
@@ -596,9 +962,11 @@ class Trader:
         min_gross = Config.required_gross_pct_with_gas(total_stake)
         tp        = round(avg_entry_usd * (1 + Config.TAKE_PROFIT_PCT / 100), 8)
 
-        # Основа — новейшая (последняя) позиция
+        # Основа — новейшая (последняя) позиция, но ID берём от самой старой,
+        # чтобы слияние не меняло идентификатор позиции (ликвидатор/UI кешируют id).
         newest = long_trades[-1]
         merged = dict(newest)
+        merged["id"]              = long_trades[0].get("id", newest.get("id", ""))
         merged["amount"]          = round(total_amount, 6)
         merged["stake_ton"]       = round(total_stake, 4)
         merged["entry_price"]     = round(avg_entry_usd, 8)
@@ -611,12 +979,36 @@ class Trader:
         merged["trail_pct"]       = Config.TRAILING_STOP_PCT
         merged["opened_at"]       = min((t.get("opened_at") or "") for t in long_trades) or newest["opened_at"]
         merged["ai_confidence"]   = max(t.get("ai_confidence", 0) for t in long_trades)
+        # Сохраняем контекст каждого DCA-входа. После объединения одна
+        # виртуальная позиция закрывается одним sell-all, но AI должен
+        # получить отдельный результат по каждому реальному входу.
+        _entry_contexts = []
+        for _t in long_trades:
+            _contexts = _t.get("entry_ai_contexts")
+            if _contexts:
+                _entry_contexts.extend(_contexts)
+            elif _t.get("entry_ai_features"):
+                _entry_contexts.append({
+                    "features": _t["entry_ai_features"],
+                    "regime": _t.get("entry_regime") or "DCA",
+                    "confidence": float(_t.get("ai_confidence", 0) or 0),
+                })
+        if _entry_contexts:
+            merged["entry_ai_contexts"] = _entry_contexts
         merged["merged"]          = True
         merged["merged_count"]    = len(long_trades)
+        # BUG-FIX: сохраняем dca_index = общее количество входов (= merged_count),
+        # чтобы при рестарте dca_entries_count восстанавливался корректно.
+        # Без этого merged trade имел dca_index=1 (от первого входа) → бот считал
+        # что сделан только 1 DCA-вход и докупал снова после рестарта.
+        _max_dca_idx = max((t.get("dca_index") or 1) for t in long_trades)
+        merged["dca_index"]       = max(_max_dca_idx, len(long_trades))
 
         # Оставляем SHORT-позиции, заменяем все LONG на одну объединённую
-        shorts = [t for t in self.open_trades if t.get("side") != "buy"]
-        self.open_trades = shorts + [merged]
+        # M1-fix: всегда держим _ot_lock при переприсвоении open_trades
+        with self._ot_lock:
+            shorts = [t for t in self.open_trades if t.get("side") != "buy"]
+            self.open_trades = shorts + [merged]
 
         # Обновляем запись в полном журнале сделок
         for t in self.trades:
@@ -637,16 +1029,23 @@ class Trader:
 
     def _check_profit_protection(self, price_usd: float, grinch_ton: float) -> bool:
         """
-        Защита прибыли: если портфель в плюсе >= PROFIT_PROTECT_TON TON
-        И рынок начал падать (откат от пика портфеля >= PROFIT_PROTECT_DROP_PCT%
-        ИЛИ AI-сигнал SELL с уверенностью >= 55%) — продаём ВСЁ немедленно.
+        Защита прибыли: как только прибыль портфеля хотя бы раз достигла
+        PROFIT_PROTECT_TON TON — ставим тесный трейл 2% от пика стоимости.
+        При откате >= 2% или AI SELL >= 55% — продаём ВСЁ немедленно.
+
+        Ключевое отличие от старой логики: флаг активации (profit_protect_activated)
+        НЕ сбрасывается при временном откате ниже порога. Это гарантирует, что
+        защита сработает даже если прибыль к моменту отката уже частично убралась
+        (старая логика возвращала False при profit_ton < порог, из-за чего
+        при малом пороге 3 TON откат в 4%+ уже съедал всю прибыль).
 
         Работает в DCA-режиме и AI-режиме. Уважает ONLY_PROFIT_EXIT.
-        Сбрасывает portfolio_high_water_ton после продажи.
+        Сбрасывает portfolio_high_water_ton и флаг после продажи.
         """
         if not Config.PROFIT_PROTECT_ENABLED:
             return False
         if not self.open_trades:
+            self.profit_protect_activated = False   # сброс при закрытии всех позиций
             return False
         if grinch_ton <= 0 or price_usd <= 0:
             return False
@@ -658,22 +1057,28 @@ class Trader:
 
         profit_ton = total_value_ton - total_cost_ton
 
-        # Обновляем пик стоимости портфеля
+        # Обновляем пик стоимости портфеля (всегда, не только в профите)
         if total_value_ton > self.portfolio_high_water_ton:
             self.portfolio_high_water_ton = total_value_ton
+            self._save_volatile_state()  # новый HWM → сохраняем
 
-        # Активируем только когда прибыль достигла порога
-        if profit_ton < Config.PROFIT_PROTECT_TON:
+        # Активируем защиту как только прибыль достигла порога — флаг остаётся
+        # активным даже если цена временно откатилась ниже порога
+        if profit_ton >= Config.PROFIT_PROTECT_TON:
+            if not self.profit_protect_activated:  # только при первой активации
+                self.profit_protect_activated = True
+                self._save_volatile_state()
+            else:
+                self.profit_protect_activated = True
+
+        if not self.profit_protect_activated:
             return False
 
-        # ── Детектор разворота ── 1: откат от пика портфеля ───────────
-        # Порог отката адаптивный (та же логика, что и trailing по сделкам):
-        # в сильном тренде/пампе даём портфелю больше пространства для роста
-        # (не срезаем прибыль слишком рано), в боковике/слабости — режем туже,
-        # чтобы не отдать назад уже заработанное. Пределы 4–12% защищают от
-        # экстремальных значений на волатильных режимах.
-        adaptive_drop_pct = self._adaptive_trail_pct(Config.PROFIT_PROTECT_DROP_PCT)
-        adaptive_drop_pct = max(4.0, min(adaptive_drop_pct, 12.0))
+        # ── Детектор разворота ── 1: трейл от пика портфеля ───────────
+        # Раньше здесь были жёсткие 2%, из-за чего настройка
+        # PROFIT_PROTECT_DROP_PCT не влияла на живую защиту и нормальный
+        # GRINCH-шум преждевременно закрывал позицию.
+        TIGHT_TRAIL_PCT = max(0.3, float(Config.PROFIT_PROTECT_DROP_PCT))
 
         drop_from_peak = 0.0
         if self.portfolio_high_water_ton > total_value_ton:
@@ -681,7 +1086,7 @@ class Trader:
                 (self.portfolio_high_water_ton - total_value_ton)
                 / self.portfolio_high_water_ton * 100
             )
-        price_fell = drop_from_peak >= adaptive_drop_pct
+        price_fell = drop_from_peak >= TIGHT_TRAIL_PCT
 
         # ── Детектор разворота ── 2: AI говорит SELL ────────────────
         ai_sell = False
@@ -697,7 +1102,7 @@ class Trader:
         reason_parts = []
         if price_fell:
             reason_parts.append(
-                f"откат -{drop_from_peak:.1f}% от пика портфеля (порог {adaptive_drop_pct:.1f}%)"
+                f"откат -{drop_from_peak:.1f}% от пика портфеля (трейл {TIGHT_TRAIL_PCT:.1f}%)"
             )
         if ai_sell:
             ai_conf2 = float((self.last_ai or {}).get("confidence", 0) or 0)
@@ -707,24 +1112,39 @@ class Trader:
         portfolio_pct = (total_value_ton - total_cost_ton) / total_cost_ton * 100
         total_grinch  = sum(t.get("amount", 0) for t in self.open_trades)
 
+        # ONLY_PROFIT_EXIT: никогда не продаём в убыток даже через защиту прибыли.
+        # Сценарий: прибыль была ≥ PROFIT_PROTECT_TON (флаг взведён), потом цена
+        # упала ниже средней цены входа → portfolio_pct < 0. Продажа сейчас —
+        # это реализованный убыток. Блокируем и ждём возврата в прибыль.
+        if Config.ONLY_PROFIT_EXIT and portfolio_pct < 0:
+            self.log(
+                f"🛡️ ONLY_PROFIT_EXIT: защита прибыли заблокирована — "
+                f"портфель {portfolio_pct:+.1f}% (убыток). Держим до возврата в плюс.",
+                "WARN"
+            )
+            return False
+
         self.log(
-            f"🛡️ ЗАЩИТА ПРИБЫЛИ: +{profit_ton:.4f} TON (+{portfolio_pct:.1f}%) | "
+            f"🛡️ ЗАЩИТА ПРИБЫЛИ: {profit_ton:+.4f} TON ({portfolio_pct:+.1f}%) | "
+            f"пик {self.portfolio_high_water_ton:.4f} TON | "
             f"{reason} | продаём {total_grinch:.2f} GRINCH @ ${price_usd:.8f}",
             "INFO"
         )
 
         closed = self._dca_sell_all(price_usd, grinch_ton, portfolio_pct)
         if closed:
-            self.portfolio_high_water_ton = 0.0   # сброс после продажи
+            self.portfolio_high_water_ton = 0.0    # сброс пика после продажи
+            self.profit_protect_activated = False   # сброс флага активации
             self._emit_signal("SELL", price_usd, self.last_ai)
             self.log(
-                f"✅ Защита прибыли ИСПОЛНЕНА: +{profit_ton:.4f} TON зафиксировано | {reason}",
+                f"✅ Защита прибыли ИСПОЛНЕНА: {profit_ton:+.4f} TON зафиксировано | {reason}",
                 "INFO"
             )
             # В DCA-режиме — ждём откат перед следующим входом
             if Config.DCA_MODE:
                 self.dca_wait_pullback = True
                 self.dca_peak_price    = price_usd
+                self._save_volatile_state()  # persist wait state
         return closed
 
     def _check_large_sell_dca(self, price_usd: float, grinch_ton: float) -> bool:
@@ -770,6 +1190,7 @@ class Trader:
         _cfg.Config.TRADE_AMOUNT = orig
         if opened:
             self._last_large_sell_buy_ts = now
+            self._save_volatile_state()  # large-sell cooldown переживёт рестарт
             self._emit_signal("BUY", price_usd, ai)
             self.log(
                 f"✅ Large Sell DCA: куплено {Config.LARGE_SELL_DCA_TON:.0f} TON @ ${price_usd:.8f}",
@@ -781,6 +1202,8 @@ class Trader:
 
     def force_buy(self, amount_ton=None):
         """Ручная покупка — обходит сигнальную логику, открывает по текущей цене."""
+        if not self.trading_enabled:
+            return {"ok": False, "error": "Торговля выключена вручную"}
         try:
             from price_feed import price_feed
             price = price_feed.get("GRINCH") or 0
@@ -825,7 +1248,8 @@ class Trader:
     def _get_analysis_snapshot(self):
         """Быстрый снимок анализа без блокировки."""
         try:
-            ohlcv = self.exchange.get_ohlcv(limit=60)
+            ohlcv = (self.exchange.get_real_ohlcv(limit=60, currency="token",
+                                                  token="base", tf="minute", aggregate=15) or [])
             from strategy import analyze
             return analyze(ohlcv)
         except Exception:
@@ -841,6 +1265,11 @@ class Trader:
     # ══════════════════════════════════════════════════════════════════
     # DCA (Усреднение позиции) стратегия
     # ══════════════════════════════════════════════════════════════════
+    def _is_dead_hour(self) -> bool:
+        """True если текущий UTC час — «мёртвый» (низкий объём, новые входы блокируются)."""
+        import datetime as _dt
+        return _dt.datetime.utcnow().hour in Config.DEAD_HOURS_UTC
+
     def _tick_dca(self):
         """
         DCA-стратегия торговли GRINCH/TON:
@@ -854,6 +1283,8 @@ class Trader:
            ПОСЛЕДНЕЙ покупки → докупаем ещё DCA_STAKE_TON.
         4. После достижения цели и продажи всего: ждём отката 25-30%
            от максимальной цены, затем начинаем новый цикл.
+        Временной фильтр: в DEAD_HOURS_UTC первые входы и ре-входы блокируются;
+        докупка к уже открытым позициям допускается с расширенным триггером x DEAD_HOURS_DROP_MULT.
         """
         if self._trading_disabled_guard():
             return
@@ -864,6 +1295,12 @@ class Trader:
         if price_usd <= 0:
             self.log("⚠️ DCA: нет цены GRINCH, пропускаем тик", "WARN")
             return
+        # ── Живой организм: обновляем биосистемы (DCA тик) ───────────────
+        try:
+            if _organism is not None:
+                _organism.update_tick(price_usd, None)
+        except Exception:
+            pass
 
         grinch_ton = price_feed.get_grinch_ton_price() or 0.0
 
@@ -949,6 +1386,14 @@ class Trader:
 
             if drop_from_peak_pct >= pullback_needed:
                 mode_label = "умный реentri (AI бычий)" if _smart_reentry_possible else "новый цикл после отката"
+                # Временной фильтр: не открываем новый цикл в мёртвые часы
+                if self._is_dead_hour():
+                    self.log(
+                        f"🌙 DCA: откат {drop_from_peak_pct:.1f}% достигнут, но мёртвый час "
+                        f"({datetime.utcnow().hour:02d}:xx UTC) — ждём активного времени",
+                        "INFO"
+                    )
+                    return
                 self.log(
                     f"✅ DCA: откат {drop_from_peak_pct:.1f}% ≥ {pullback_needed:.0f}% — "
                     f"{mode_label}!",
@@ -958,6 +1403,7 @@ class Trader:
                 self.dca_peak_price     = 0.0
                 self.dca_entries_count  = 0
                 self.dca_total_stake    = 0.0
+                self._save_volatile_state()  # persist wait_pullback=False
                 self._dca_buy(price_usd, grinch_ton, mode_label)
             return
 
@@ -1014,6 +1460,7 @@ class Trader:
                         if closed:
                             self.dca_wait_pullback = True
                             self.dca_peak_price    = price_usd
+                            self._save_volatile_state()  # persist wait state
                             self._emit_signal("SELL", price_usd, self.last_ai)
                             self.log(
                                 f"✅ Каскад завершён! Ждём откат "
@@ -1040,8 +1487,39 @@ class Trader:
                         return
 
                 else:
+                    # ── TP Optimizer: динамический целевой % ────────────
+                    _dynamic_tp = Config.DCA_TARGET_PROFIT_PCT
+                    if _tp_opt is not None:
+                        try:
+                            _ai_state = self.last_ai or {}
+                            _tp_res = _tp_opt.predict_tp(
+                                regime       = ((_ai_state.get("regime") or {}).get("name") or "UNKNOWN"),
+                                pump_score   = float(_ai_state.get("pump_score", 0) or 0),
+                                momentum     = str(_ai_state.get("momentum", "CALM") or "CALM"),
+                                rsi          = float(_ai_state.get("rsi", 50) or 50),
+                                atr_pct      = float(_ai_state.get("atr_pct", 2) or 2),
+                                sm_score     = float(_ai_state.get("sm_score", 0) or 0),
+                                volume_ratio = float(_ai_state.get("volume_ratio", 1) or 1),
+                                dca_entries  = int(self.dca_entries_count or 1),
+                                hours_in_trade = max(0.0,
+                                    (time.time() - (self._last_dca_entry_ts or time.time())) / 3600
+                                ),
+                                confidence   = float(_ai_state.get("confidence", 50) or 50) / 100,
+                            )
+                            # Принимаем TP от оптимизатора только если он ≥ конфигурационного
+                            # (никогда не берём меньше чем задано в Config — защита прибыли)
+                            _dynamic_tp = max(Config.DCA_TARGET_PROFIT_PCT, _tp_res["tp_pct"])
+                            if abs(_dynamic_tp - Config.DCA_TARGET_PROFIT_PCT) > 0.5:
+                                self.log(
+                                    f"🎯 TPOpt: {_tp_res['regime_label']} "
+                                    f"(Config={Config.DCA_TARGET_PROFIT_PCT:.1f}% → "
+                                    f"dynamic={_dynamic_tp:.1f}%, src={_tp_res['source']})",
+                                    "INFO"
+                                )
+                        except Exception as _tpe:
+                            self.log(f"⚠️ TPOpt error: {_tpe}", "DEBUG")
                     # ── Стандартный выход: продаём ВСЁ на целевом % ─────
-                    if portfolio_pct >= Config.DCA_TARGET_PROFIT_PCT:
+                    if portfolio_pct >= _dynamic_tp:
                         if profit_ton_abs < min_ton:
                             self.log(
                                 f"⏳ DCA: цель +{portfolio_pct:.1f}% но прибыль "
@@ -1051,7 +1529,7 @@ class Trader:
                         else:
                             self.log(
                                 f"🎯 DCA ЦЕЛЬ: +{portfolio_pct:.1f}% ≥ "
-                                f"+{Config.DCA_TARGET_PROFIT_PCT:.0f}% | "
+                                f"+{_dynamic_tp:.1f}% | "
                                 f"{profit_ton_abs:.2f} TON — продаём ВСЁ!",
                                 "INFO"
                             )
@@ -1060,6 +1538,7 @@ class Trader:
                         if closed:
                             self.dca_wait_pullback = True
                             self.dca_peak_price    = price_usd
+                            self._save_volatile_state()  # persist wait state
                             self._emit_signal("SELL", price_usd, self.last_ai)
                             self.log(
                                 f"⏳ DCA: продали всё, ждём откат "
@@ -1075,15 +1554,24 @@ class Trader:
                         (self.dca_last_buy_price - price_usd) / self.dca_last_buy_price * 100
                     )
                     # Адаптивный порог: рынок летит → докупаем агрессивнее
+                    # В мёртвые часы — расширяем триггер (меньше ложных докупок в низком объёме)
+                    _dead_now = self._is_dead_hour()
                     drop_trigger = (
                         Config.DCA_ADAPTIVE_FAST_DROP_PCT
                         if _fast_market
                         else Config.DCA_DROP_TRIGGER_PCT
                     )
-                    _trigger_tag = f"⚡ адаптивный {drop_trigger:.0f}%" if _fast_market \
+                    if _dead_now and not _fast_market:
+                        drop_trigger = drop_trigger * Config.DEAD_HOURS_DROP_MULT
+                    _trigger_tag = (
+                        f"⚡ адаптивный {drop_trigger:.0f}%" if _fast_market
+                        else f"🌙 мёртвый час {drop_trigger:.1f}%" if _dead_now
                         else f"стандартный {drop_trigger:.0f}%"
+                    )
                     _dca_cooldown_left = Config.DCA_REENTRY_COOLDOWN_SEC - (time.time() - self._last_dca_entry_ts)
-                    if drop_from_last_pct >= drop_trigger:
+                    # Если EntryOpt ранее сказал «жди ещё X%» — выполняем это условие
+                    # прежде чем снова спрашивать модель или делать докупку.
+                    if drop_from_last_pct >= drop_trigger and drop_from_last_pct >= self._eo_wait_floor_pct:
                         if self.dca_entries_count < Config.DCA_MAX_ENTRIES and _dca_cooldown_left <= 0:
                             # Guard: не докупаем в "падающий нож" если AI уверен в SELL
                             _ai_sell_conf = float((self.last_ai or {}).get("confidence", 0) or 0)
@@ -1100,17 +1588,51 @@ class Trader:
                                     "WARN"
                                 )
                             else:
-                                self.log(
-                                    f"📉 DCA ДОКУПКА: цена упала {drop_from_last_pct:.1f}% "
-                                    f"(триггер: {_trigger_tag}) | "
-                                    f"вход #{self.dca_entries_count + 1}",
-                                    "INFO"
-                                )
-                                self._dca_buy(
-                                    price_usd, grinch_ton,
-                                    f"докупка #{self.dca_entries_count + 1} "
-                                    f"(падение {drop_from_last_pct:.1f}%, {_trigger_tag})"
-                                )
+                                # ── AI Entry Optimizer: входить сейчас или ждать дна? ─────
+                                _entry_decision = {"enter": True, "reason": "fallback", "wait_drop_pct": 0}
+                                if _entry_opt is not None:
+                                    try:
+                                        _ai_state = self.last_ai or {}
+                                        _entry_decision = _entry_opt.should_enter_now(
+                                            drop_pct       = drop_from_last_pct,
+                                            rsi            = float(_ai_state.get("rsi", 50) or 50),
+                                            volume_ratio   = float(_ai_state.get("volume_ratio", 1) or 1),
+                                            momentum       = str(_ai_state.get("momentum", "CALM") or "CALM"),
+                                            regime         = ((_ai_state.get("regime") or {}).get("name") or "UNKNOWN"),
+                                            sm_score       = float(_ai_state.get("sm_score", 0) or 0),
+                                            atr_pct        = float(_ai_state.get("atr_pct", 2) or 2),
+                                            pump_score     = float(_ai_state.get("pump_score", 0) or 0),
+                                        )
+                                    except Exception as _eo_ex:
+                                        self.log(f"⚠️ EntryOpt error: {_eo_ex}", "DEBUG")
+                                if not _entry_decision.get("enter", True):
+                                    _wait_extra = _entry_decision.get("wait_drop_pct", 0.0) or 0.0
+                                    # Устанавливаем порог: следующая докупка только при
+                                    # drop_from_last_pct >= текущий_drop + рекомендация
+                                    self._eo_wait_floor_pct = drop_from_last_pct + _wait_extra
+                                    self.log(
+                                        f"🧠 EntryOpt: ждём дна "
+                                        f"(–{_wait_extra:.1f}% ещё, порог={self._eo_wait_floor_pct:.1f}%) "
+                                        f"— {_entry_decision.get('reason', '')}",
+                                        "INFO"
+                                    )
+                                else:
+                                    # Сохраняем РЕАЛЬНЫЕ фичи входа — record_outcome
+                                    # использует их вместо теоретического прокси
+                                    self._last_eo_feats = _entry_decision.get("features", [])
+                                    self._eo_wait_floor_pct = 0.0  # сброс порога ожидания
+                                    self.log(
+                                        f"📉 DCA ДОКУПКА: цена упала {drop_from_last_pct:.1f}% "
+                                        f"(триггер: {_trigger_tag}) | "
+                                        f"вход #{self.dca_entries_count + 1} "
+                                        f"[EntryOpt: {_entry_decision.get('reason', 'ok')}]",
+                                        "INFO"
+                                    )
+                                    self._dca_buy(
+                                        price_usd, grinch_ton,
+                                        f"докупка #{self.dca_entries_count + 1} "
+                                        f"(падение {drop_from_last_pct:.1f}%, {_trigger_tag})"
+                                    )
                         elif _dca_cooldown_left > 0:
                             self.log(
                                 f"⏸️ DCA: кулдаун {_dca_cooldown_left:.0f}с до следующей докупки",
@@ -1126,6 +1648,107 @@ class Trader:
 
         # ── Фаза 3: Нет позиций, не ждём — первый вход ───────────────
         if self.dca_entries_count == 0:
+            # Временной фильтр: в мёртвые часы не открываем новый цикл
+            if self._is_dead_hour():
+                self.log(
+                    f"🌙 DCA: мёртвый час ({datetime.utcnow().hour:02d}:xx UTC) — "
+                    f"первый вход отложен до активного времени",
+                    "INFO"
+                )
+                return
+
+            # ── Confluence для первого DCA-входа ─────────────────────
+            # DCA исторически обходил AI-фильтры полностью и мог открыть
+            # позицию на перекупленности/без объёмного подтверждения.
+            # Существующие позиции и докупки здесь не блокируем: для них
+            # действуют отдельные DCA_DROP_TRIGGER и AI SELL guard.
+            if Config.CONFLUENCE_ENABLED:
+                _dca_ai = self.last_ai or {}
+                _dca_ta = self.last_analysis or {}
+                try:
+                    _dca_rsi = float(
+                        _dca_ai.get("rsi", _dca_ta.get("rsi", 50)) or 50
+                    )
+                except (TypeError, ValueError):
+                    _dca_rsi = 50.0
+                try:
+                    _dca_vol = float(
+                        _dca_ai.get(
+                            "volume_ratio",
+                            _dca_ta.get("vol_ratio", 1.0),
+                        ) or 1.0
+                    )
+                except (TypeError, ValueError):
+                    _dca_vol = 1.0
+                _dca_ai_signal = str(_dca_ai.get("ai_signal", "HOLD") or "HOLD")
+                try:
+                    _dca_ai_conf = float(_dca_ai.get("confidence", 0) or 0)
+                except (TypeError, ValueError):
+                    _dca_ai_conf = 0.0
+
+                _dca_block_reason = None
+                if (
+                    _dca_ai_signal == "SELL"
+                    and _dca_ai_conf >= Config.DCA_AI_SELL_BLOCK_CONF
+                ):
+                    _dca_block_reason = (
+                        f"AI SELL {_dca_ai_conf:.0f}%"
+                        f" >= {Config.DCA_AI_SELL_BLOCK_CONF:.0f}%"
+                    )
+                elif _dca_rsi >= Config.CONFLUENCE_RSI_MAX:
+                    _dca_block_reason = (
+                        f"RSI {_dca_rsi:.1f} >= "
+                        f"{Config.CONFLUENCE_RSI_MAX:.0f}"
+                    )
+                elif _dca_vol < Config.CONFLUENCE_VOL_MIN_RATIO:
+                    _dca_block_reason = (
+                        f"объём {_dca_vol:.2f}x < "
+                        f"{Config.CONFLUENCE_VOL_MIN_RATIO:.1f}x MA20"
+                    )
+
+                if _dca_block_reason:
+                    _now = time.time()
+                    if _now - self._last_dca_entry_block_log_ts >= 60:
+                        self.log(
+                            f"🛡️ DCA: первый вход отложен — {_dca_block_reason}",
+                            "INFO",
+                        )
+                        self._last_dca_entry_block_log_ts = _now
+                    return
+
+            # ── EntryOpt: стоит ли входить сейчас? ──────────────────────
+            _first_entry_ok = True
+            if _entry_opt is not None:
+                try:
+                    _ai_state = self.last_ai or {}
+                    _eo = _entry_opt.should_enter_now(
+                        drop_pct     = 0.0,
+                        rsi          = float(_ai_state.get("rsi", 50) or 50),
+                        volume_ratio = float(_ai_state.get("volume_ratio", 1) or 1),
+                        momentum     = str(_ai_state.get("momentum", "CALM") or "CALM"),
+                        regime       = ((_ai_state.get("regime") or {}).get("name") or "UNKNOWN"),
+                        sm_score     = float(_ai_state.get("sm_score", 0) or 0),
+                        atr_pct      = float(_ai_state.get("atr_pct", 2) or 2),
+                        pump_score   = float(_ai_state.get("pump_score", 0) or 0),
+                    )
+                    if not _eo.get("enter", True) and _eo.get("confidence", 0) > 0.70:
+                        self.log(
+                            f"🧠 EntryOpt: первый вход отложен "
+                            f"({_eo.get('reason', '')} | conf={_eo.get('confidence',0):.0%})",
+                            "INFO"
+                        )
+                        _first_entry_ok = False
+                except Exception:
+                    pass
+            if not _first_entry_ok:
+                return
+            # Сохраняем фичи первого входа для честного обучения EntryOpt
+            try:
+                if _entry_opt is not None and _eo.get("features"):
+                    self._last_eo_feats = _eo["features"]
+                    self._eo_wait_floor_pct = 0.0
+            except Exception:
+                pass
             self.log(
                 f"🚀 DCA: нет позиций — открываем первый вход "
                 f"({Config.DCA_STAKE_TON:.0f} TON @ ${price_usd:.8f})",
@@ -1142,7 +1765,13 @@ class Trader:
         total_cost_ton  = 0.0
         total_value_ton = 0.0
 
-        for trade in self.open_trades:
+        # BUG-FIX: итерируем снапшот под _ot_lock — иначе фоновые потоки
+        # (wallet_manager, _sync_open_trades_to_db) могут модифицировать список
+        # одновременно и вызвать RuntimeError или вернуть рваные данные P&L.
+        with self._ot_lock:
+            trades_snap = list(self.open_trades)
+
+        for trade in trades_snap:
             stake_ton = trade.get("stake_ton", 0) or 0
             amount    = trade.get("amount", 0) or 0
             total_cost_ton  += stake_ton + buy_gas
@@ -1157,20 +1786,20 @@ class Trader:
         """Открывает одну DCA позицию на DCA_STAKE_TON (+ compound-бонус если накоплен)."""
         stake_ton = Config.DCA_STAKE_TON
         # ── Компаундирование: прибавляем реинвест-бонус к первой покупке цикла ──
+        _compound_applied = False
         if (Config.DCA_COMPOUND_ENABLED
                 and self.dca_compound_bonus_ton > 0
                 and self.dca_entries_count == 0):
             stake_ton = stake_ton + self.dca_compound_bonus_ton
-            self.log(
-                f"🔄 Компаунд: базовая ставка {Config.DCA_STAKE_TON:.1f} TON "
-                f"+ бонус {self.dca_compound_bonus_ton:.2f} TON "
-                f"= {stake_ton:.2f} TON (реинвест накоплен за прошлые циклы)",
-                "INFO"
-            )
+            _compound_applied = True
 
-        # Проверяем баланс
+        # Проверяем баланс ДО лога компаунда — чтобы не спамить при ошибках
         bal     = self.exchange.get_balance() or {}
         ton_bal = bal.get("TON", 0) or 0
+        # Preflight-резерв газа: dedust_client прикладывает ~0.30-0.35 TON к транзакции
+        # покупки (из которых ~0.25 TON возвращается рефандом пула ПОСЛЕ свопа).
+        # Для preflight-проверки ДОСТУПНОГО баланса используем 0.30 TON (максимум временного
+        # оттока), а НЕ Config.BUY_GAS_TON=0.103 (это чистые сгоревшие потери, приходит позже).
         buy_gas = 0.30
         reserve = Config.GAS_RESERVE_TON
         spendable = ton_bal - buy_gas - reserve
@@ -1191,10 +1820,59 @@ class Trader:
             )
             stake_ton = spendable
 
-        # Изменяем TRADE_AMOUNT_TON временно для _open_trade
-        orig_amount = Config.TRADE_AMOUNT
+        # ── Bottom Detector: если дно — all-in на весь доступный баланс ──────
+        if (getattr(Config, "ALLIN_ON_BOTTOM", False)
+                and spendable >= getattr(Config, "ALLIN_MIN_FREE_TON", 50.0)):
+            try:
+                from bottom_detector import bottom_detector as _bd
+                _la = self.last_analysis or {}
+                _ai = self.last_ai or {}
+                _pump_d = _ai.get("pump_detector") or _ai.get("pump") or {}
+                _bd_result = _bd.analyze(
+                    rsi            = float(_la.get("rsi",        50) or 50),
+                    stoch_rsi      = float(_la.get("stoch_rsi", 0.5) or 0.5),
+                    bb_pct         = float(_la.get("bb_pct",     50) or 50),
+                    vol_ratio      = float(_la.get("vol_ratio",   1) or 1),
+                    macd_hist      = float(_la.get("macd_hist",   0) or 0),
+                    macd_hist_prev = float(getattr(self, "_prev_macd_hist",
+                                                   _la.get("macd_hist", 0) or 0)),
+                    willr          = float(_la.get("willr",     -50) or -50),
+                    ai_signal      = str(_ai.get("ai_signal", "HOLD") or "HOLD"),
+                    ai_conf        = float(_ai.get("confidence",  0) or 0),
+                    pump_score     = float(_pump_d.get("score",   0) or 0),
+                )
+                _score = _bd_result.get("score", 0)
+                if _bd_result.get("all_in"):
+                    _old = stake_ton
+                    stake_ton = spendable
+                    self.log(
+                        f"🔥 BOTTOM ALL-IN: score={_score:.0f}/100 | "
+                        f"{_bd_result.get('reason', '')} | "
+                        f"ставка {_old:.1f} → {stake_ton:.2f} TON (весь баланс)",
+                        "INFO",
+                    )
+                elif _score >= 40:
+                    self.log(
+                        f"📊 BottomScore={_score:.0f}/100 "
+                        f"(нужно {Config.ALLIN_BOTTOM_CONF:.0f} для all-in) | "
+                        f"{_bd_result.get('reason', '')}",
+                        "DEBUG",
+                    )
+            except Exception as _bd_ex:
+                self.log(f"⚠️ BottomDetector: {_bd_ex}", "DEBUG")
+
+        # Логируем компаунд только после успешной проверки баланса
+        if _compound_applied:
+            self.log(
+                f"🔄 Компаунд: базовая ставка {Config.DCA_STAKE_TON:.1f} TON "
+                f"+ бонус {self.dca_compound_bonus_ton:.2f} TON "
+                f"= {stake_ton:.2f} TON (реинвест накоплен за прошлые циклы)",
+                "INFO"
+            )
+
+        # ton_stake передаётся напрямую в place_order (DeDust-путь) —
+        # мутировать Config.TRADE_AMOUNT небезопасно (race condition с дашбордом).
         try:
-            Config.TRADE_AMOUNT = stake_ton
             # Используем price_usd как entry price; amount считается через stake/price
             amount = stake_ton / price_usd if price_usd > 0 else 0
 
@@ -1213,6 +1891,37 @@ class Trader:
             sl = 0.0
             tp = price_usd * 100  # практически бесконечный TP (выход только через _dca_sell_all)
 
+            _ai_now  = self.last_ai or {}
+            _ta_now  = self.last_analysis or {}
+            # Захватываем признаки до добавления позиции и до возможного
+            # объединения DCA-позиций. Каждый вход получает свой immutable
+            # снимок, даже если AI-сигналом был HOLD.
+            _entry_ai_features = None
+            try:
+                _ohlcv_ctx = self.exchange.get_real_ohlcv(
+                    limit=100, currency="token", token="base",
+                    tf="minute", aggregate=15
+                )
+                if _ohlcv_ctx and self.ai.capture_buy_context(_ohlcv_ctx):
+                    with self.ai._lock:
+                        if self.ai._last_buy_features is not None:
+                            _entry_ai_features = [
+                                float(v) for v in self.ai._last_buy_features
+                            ]
+                            # Контекст уже скопирован в trade и больше не
+                            # должен случайно попасть в следующую обычную
+                            # AI-сделку через общий pending-слот.
+                            self.ai._last_buy_features = None
+            except Exception:
+                pass
+            # Контекст строится всегда — даже без features, чтобы regime и
+            # confidence попадали в AI feedback() при закрытии позиции.
+            _entry_ai_context = {
+                "features": _entry_ai_features,   # None если захват не удался
+                "regime": ((_ai_now.get("regime") or {}).get("name") or "DCA"),
+                "confidence": float(_ai_now.get("confidence", 0) or 0),
+                "stake_ton": float(stake_ton),
+            }
             trade = {
                 "id":              order["id"],
                 "symbol":          Config.SYMBOL,
@@ -1228,29 +1937,40 @@ class Trader:
                 "opened_at":       datetime.utcnow().isoformat(),
                 "pnl":             0.0,
                 "status":          "open",
-                "ai_confidence":   0.0,
+                # AI-контекст на момент входа (раньше был захардкожен нулями —
+                # из-за этого feedback() не получал данные и AI не самообучался)
+                "ai_signal":       str(_ai_now.get("ai_signal", "HOLD") or "HOLD"),
+                "ai_confidence":   float(_ai_now.get("confidence", 0) or 0),
                 "dca_entry":       True,
                 "dca_index":       self.dca_entries_count + 1,
                 "breakeven_price": price_usd,
                 "min_gross_pct":   Config.required_gross_pct_with_gas(stake_ton),
-                "entry_regime":    "DCA",
-                "entry_rsi":       0.0,
-                "entry_atr_pct":   0.0,
+                "entry_regime":    ((_ai_now.get("regime") or {}).get("name") or "DCA"),
+                "entry_rsi":       float(_ta_now.get("rsi", 0) or 0),
+                "entry_atr_pct":   float((_ai_now.get("regime") or {}).get("atr_pct", 0) or 0),
                 "entry_anomaly":   False,
-                "entry_sm_score":  0.0,
+                "entry_sm_score":  float(_ai_now.get("sm_score", 0) or 0),
                 "entry_sm_label":  "",
                 "entry_sm_buys_1h": 0,
                 "entry_sm_sells_1h": 0,
                 "entry_bo_signal": "FLAT",
                 "entry_bo_score":  0.0,
-                "entry_mom_signal": "CALM",
+                "entry_mom_signal": str(_ai_now.get("momentum", "CALM") or "CALM"),
             }
-            self.open_trades.append(trade)
+            trade["entry_ai_contexts"] = [_entry_ai_context]
+            if _entry_ai_features:
+                trade["entry_ai_features"] = _entry_ai_features
+            # M2-fix: _ot_lock при append чтобы другие потоки не видели
+            # частично обновлённый список
+            with self._ot_lock:
+                self.open_trades.append(trade)
             self.trades.append(trade)
-            self.stats["total_trades"] += 1
-            # Синхронизируем stats в experience_manager немедленно — иначе при
-            # рестарте до закрытия позиции этот инкремент теряется, и при закрытии
-            # winning_trades оказывается > total_trades (накопительный баг).
+            # Обрезаем историю до 500 записей чтобы не копить RAM бесконечно
+            if len(self.trades) > 500:
+                self.trades = self.trades[-500:]
+            # total_trades теперь считается только в момент закрытия (там же,
+            # где вызывается record_trade) — единая точка учёта, чтобы счётчик
+            # никогда не расходился с журналом сделок bot_trades.
             self.exp.data["stats"] = dict(self.stats)
             # Объединяем с уже открытыми LONG-позициями в одну
             self._merge_long_trades()
@@ -1260,10 +1980,10 @@ class Trader:
             self.dca_entries_count  += 1
             self.dca_total_stake    += stake_ton
             self._last_dca_entry_ts  = time.time()   # кулдаун: фиксируем время входа
-            # Персистируем timestamp в DB чтобы выжить перезапуск
+            # Персистируем timestamp в DB + JSON чтобы выжить перезапуск (и отказ БД)
             try:
-                import db_store as _dbs_dca, json as _json_dca
-                _dbs_dca.settings_update_section("trader_state", {
+                from settings_store import update_section
+                update_section("trader_state", {
                     "last_dca_entry_ts": str(self._last_dca_entry_ts)
                 })
             except Exception:
@@ -1292,7 +2012,7 @@ class Trader:
                 pass
             return True
         finally:
-            Config.TRADE_AMOUNT = orig_amount
+            pass  # Config.TRADE_AMOUNT не изменялся — восстанавливать нечего
 
     def _dca_sell_partial(self, price_usd, grinch_ton, portfolio_pct, sell_fraction=0.5):
         """Каскадный выход: продаёт sell_fraction (0.5 = 50%) от всей позиции.
@@ -1316,11 +2036,44 @@ class Trader:
         )
 
         if self.exchange.mode == "dedust":
-            sell_result = self.exchange.place_order("sell", sell_amount)
+            # AMM preflight: считаем min_net_ton для доли продажи
+            _total_stake   = sum(t.get("stake_ton", 0) or 0 for t in self.open_trades)
+            _n_entries     = max(1, len(self.open_trades))
+            _min_net_ton   = (_total_stake + Config.BUY_GAS_TON * _n_entries) * sell_fraction
+            sell_result = self.exchange.place_order("sell", sell_amount, min_net_ton=_min_net_ton)
+            if not sell_result or (sell_result.get("error") and not sell_result.get("amm_blocked")):
+                # Retry только при сетевых ошибках, но НЕ при блокировке AMM preflight
+                self.log("⚠️ Каскад: продажа Ур.1 не прошла — retry через 5с…", "WARN")
+                time.sleep(5)
+                sell_result = self.exchange.place_order("sell", sell_amount, min_net_ton=_min_net_ton)
             if not sell_result or sell_result.get("error"):
                 err = (sell_result or {}).get("error", "нет ответа")
-                self.log(f"⚠️ Каскад: продажа Ур.1 не исполнена — {err}", "WARN")
-                return False
+                blocked = (sell_result or {}).get("amm_blocked", False)
+                if blocked:
+                    self.log(f"🛡️ Каскад: продажа заблокирована AMM preflight — {err}", "WARN")
+                    return False
+                # ── Та же логика восстановления что и в _dca_sell_all:
+                # "balance=0" на retry = первый своп дошёл, подтверждение потерялось.
+                _zero_err = ("равен 0" in err or "нечего продавать" in err)
+                if _zero_err:
+                    try:
+                        _rb = self.exchange.get_balance() or {}
+                        _real_grinch = float(_rb.get("GRINCH", 0) or 0)
+                    except Exception:
+                        _real_grinch = sell_amount
+                    if _real_grinch < 1.0:
+                        self.log(
+                            f"✅ Каскад Ур.1: on-chain GRINCH={_real_grinch:.4f} — "
+                            f"своп прошёл, регистрируем закрытие.",
+                            "WARN",
+                        )
+                        sell_result = {"ok": True, "id": "recovered_after_retry"}
+                    else:
+                        self.log(f"⚠️ Каскад: продажа Ур.1 не исполнена после retry — {err}", "WARN")
+                        return False
+                else:
+                    self.log(f"⚠️ Каскад: продажа Ур.1 не исполнена после retry — {err}", "WARN")
+                    return False
             self.log(
                 f"✅ Каскад Ур.1: продажа исполнена | id={sell_result.get('id', '—')}",
                 "INFO"
@@ -1330,10 +2083,19 @@ class Trader:
         buy_gas  = Config.BUY_GAS_TON
         sell_gas = Config.SELL_GAS_TON
 
+        # Сохраняем stake проданной доли ДО изменения позиций (нужно для pnl_pct)
+        _stake_sold = round(
+            sum(t.get("stake_ton", 0) or 0 for t in self.open_trades) * sell_fraction, 4
+        )
+
         # Уменьшаем amount/stake_ton во всех открытых позициях пропорционально
         # (под общим локом — см. _ot_lock: без него wallet_manager мог прочитать
         # позицию между обновлением amount и stake_ton и получить рваные данные).
         partial_pnl = 0.0
+        # BUG-FIX: газ продажи платится ОДИН РАЗ за всю транзакцию (не на каждую позицию
+        # и не масштабируется на sell_fraction). Делим его поровну между позициями.
+        _n_partial_trades = max(1, len(self.open_trades))
+        _sell_gas_per_trade = sell_gas / _n_partial_trades
         with self._ot_lock:
             for trade in self.open_trades:
                 old_amount = trade.get("amount", 0) or 0
@@ -1343,7 +2105,10 @@ class Trader:
                 # PNL от проданной части
                 sold_part = old_amount * sell_fraction
                 if grinch_ton > 0 and sold_part > 0:
-                    proceeds = sold_part * grinch_ton * (1 - fee) - sell_gas * sell_fraction
+                    # Газ продажи: фиксированный за транзакцию, делённый по числу позиций
+                    proceeds = sold_part * grinch_ton * (1 - fee) - _sell_gas_per_trade
+                    # Газ покупки: был уплачен в полном размере при входе;
+                    # атрибутируем пропорциональную часть к закрытой доле.
                     cost     = old_stake * sell_fraction + buy_gas * sell_fraction
                     partial_pnl += round(proceeds - cost, 6)
                 trade["amount"]    = new_amount
@@ -1351,13 +2116,17 @@ class Trader:
 
             self.dca_total_stake   = sum(t.get("stake_ton", 0) for t in self.open_trades)
         self.dca_cascade_half_sold = True
-        self.stats["total_pnl"] = round(self.stats["total_pnl"] + partial_pnl, 6)
-        # Каскадная частичная продажа закрывает часть позиции как отдельную
-        # сделку статистически — считаем total_trades вместе с winning_trades,
-        # иначе winning_trades может превысить total_trades (некорректный winrate).
-        self.stats["total_trades"] += 1
-        if partial_pnl > 0:
-            self.stats["winning_trades"] += 1
+        self._save_volatile_state()  # cascade флаг переживёт рестарт
+        # Лок: self.stats мутируется из нескольких потоков — без него возможна
+        # гонка при одновременном закрытии позиций (потерянный инкремент).
+        with self._close_lock:
+            self.stats["total_pnl"] = round(self.stats["total_pnl"] + partial_pnl, 6)
+            # Каскадная частичная продажа закрывает часть позиции как отдельную
+            # сделку статистически — считаем total_trades вместе с winning_trades,
+            # иначе winning_trades может превысить total_trades (некорректный winrate).
+            self.stats["total_trades"] += 1
+            if partial_pnl > 0:
+                self.stats["winning_trades"] += 1
 
         try:
             self.exp.save_open_trades(self._combined_open_trades())
@@ -1372,9 +2141,11 @@ class Trader:
                 "id":           f"cascade1_{int(time.time())}",
                 "side":         "sell_partial",
                 "amount":       sell_amount,
+                "stake_ton":    _stake_sold,
                 "entry_price":  None,
                 "exit_price":   price_usd,
                 "pnl":          partial_pnl,
+                "pnl_pct":      round(partial_pnl / _stake_sold * 100, 2) if _stake_sold else 0.0,
                 "opened_at":    None,
                 "closed_at":    now_iso,
                 "close_reason": f"dca_cascade_level1_{portfolio_pct:.1f}pct",
@@ -1400,6 +2171,17 @@ class Trader:
         total_stake  = sum(t.get("stake_ton", 0) for t in self.open_trades)
 
         if total_grinch <= 0:
+            return False
+
+        # ── ЖЕЛЕЗНЫЙ ЗАМОК ONLY_PROFIT_EXIT ──────────────────────────────────
+        # Второй барьер (первый — в вызывающем коде). Блокируем продажу в убыток
+        # независимо от того, кто вызвал эту функцию.
+        if Config.ONLY_PROFIT_EXIT and portfolio_pct < 0:
+            self.log(
+                f"🛡️ ONLY_PROFIT_EXIT (_dca_sell_all): портфель {portfolio_pct:+.1f}% — "
+                f"продажа заблокирована, ждём возврата в прибыль.",
+                "WARN"
+            )
             return False
 
         # ── Консолидация: продаём ВЕСЬ GRINCH на балансе одной сделкой,
@@ -1432,11 +2214,53 @@ class Trader:
         )
 
         if self.exchange.mode == "dedust":
-            sell_result = self.exchange.place_order("sell", sell_amount)
+            # AMM preflight: полная стоимость всех позиций
+            _total_stake  = sum(t.get("stake_ton", 0) or 0 for t in self.open_trades)
+            _n_entries    = max(1, len(self.open_trades))
+            _min_net_ton  = _total_stake + Config.BUY_GAS_TON * _n_entries
+            self.log(
+                f"🔍 AMM preflight: нужно ≥ {_min_net_ton:.3f} TON нетто "
+                f"(стейк {_total_stake:.3f} + газ покупки {Config.BUY_GAS_TON * _n_entries:.3f})",
+                "INFO"
+            )
+            sell_result = self.exchange.place_order("sell", sell_amount, min_net_ton=_min_net_ton)
+            if not sell_result or (sell_result.get("error") and not sell_result.get("amm_blocked")):
+                # Retry только при сетевых ошибках, НЕ при блокировке AMM preflight
+                self.log("⚠️ DCA: продажа не прошла — retry через 5с…", "WARN")
+                time.sleep(5)
+                sell_result = self.exchange.place_order("sell", sell_amount, min_net_ton=_min_net_ton)
             if not sell_result or sell_result.get("error"):
                 err = (sell_result or {}).get("error", "нет ответа")
-                self.log(f"⚠️ DCA: продажа не исполнена — {err}. Позиции остаются.", "WARN")
-                return False
+                if (sell_result or {}).get("amm_blocked"):
+                    self.log(f"🛡️ DCA: продажа заблокирована AMM preflight — {err}", "WARN")
+                    return False
+                # ── Сверяем on-chain: "balance=0" при retry означает, что
+                # первый своп дошёл до блокчейна, но подтверждение потерялось.
+                # Если GRINCH на кошельке действительно 0 → считаем продажу успешной.
+                _zero_err = ("равен 0" in err or "нечего продавать" in err)
+                if _zero_err:
+                    try:
+                        _rb = self.exchange.get_balance() or {}
+                        _real_grinch = float(_rb.get("GRINCH", 0) or 0)
+                    except Exception:
+                        _real_grinch = sell_amount  # не смогли проверить — не рискуем
+                    if _real_grinch < 1.0:
+                        self.log(
+                            f"✅ DCA: on-chain GRINCH={_real_grinch:.4f} — "
+                            f"своп прошёл, регистрируем закрытие позиций.",
+                            "WARN",
+                        )
+                        sell_result = {"ok": True, "id": "recovered_after_retry"}
+                    else:
+                        self.log(
+                            f"⚠️ DCA: продажа не исполнена после retry — {err}. "
+                            f"Позиции остаются (GRINCH на кошельке: {_real_grinch:.2f}).",
+                            "WARN",
+                        )
+                        return False
+                else:
+                    self.log(f"⚠️ DCA: продажа не исполнена после retry — {err}. Позиции остаются.", "WARN")
+                    return False
             self.log(
                 f"✅ DCA: продажа GRINCH → TON исполнена | "
                 f"id={sell_result.get('id', '—')}",
@@ -1448,39 +2272,96 @@ class Trader:
         buy_gas  = Config.BUY_GAS_TON
         sell_gas = Config.SELL_GAS_TON
 
+        # ── BUG-FIX: газ за продажу платится ОДИН РАЗ (одна on-chain транзакция),
+        # не за каждую виртуальную позицию. Считаем суммарную выручку один раз,
+        # затем распределяем по позициям пропорционально долям GRINCH.
+        _grinch_in_loop = sum((t.get("amount", 0) or 0) for t in self.open_trades)
+        if grinch_ton > 0 and _grinch_in_loop > 0:
+            _total_proceeds = _grinch_in_loop * grinch_ton * (1 - fee) - sell_gas
+        else:
+            _total_proceeds = 0.0
+
         total_pnl = 0.0
         for trade in list(self.open_trades):
             amount    = trade.get("amount", 0) or 0
             stake_ton = trade.get("stake_ton", 0) or 0
-            if grinch_ton > 0 and amount > 0:
-                proceeds   = amount * grinch_ton * (1 - fee) - sell_gas
+            if grinch_ton > 0 and amount > 0 and _grinch_in_loop > 0:
+                # Пропорциональная выручка от этой позиции (газ уже вычтен из суммарной)
+                proceeds   = _total_proceeds * (amount / _grinch_in_loop)
                 total_cost = stake_ton + buy_gas
                 pnl_ton    = round(proceeds - total_cost, 6)
             else:
                 pnl_ton = 0.0
             trade["pnl"]          = pnl_ton
+            trade["pnl_pct"]      = round(pnl_ton / stake_ton * 100, 2) if stake_ton else 0.0
+            trade["fee"]          = round(
+                amount * grinch_ton * fee + sell_gas * (amount / max(_grinch_in_loop, 1.0)), 6
+            ) if grinch_ton > 0 else 0.0
             trade["exit_price"]   = price_usd
             trade["closed_at"]    = datetime.utcnow().isoformat()
             trade["close_reason"] = f"dca_target_{portfolio_pct:.1f}pct"
             trade["status"]       = "closed"
             trade["outcome"]      = "win" if pnl_ton > 0 else "loss"
+            # Bug-fix #2: удаляем пересчитанные по текущей цене поля —
+            # они создаются _enriched_open_trades() и не должны попадать в историю закрытых сделок
+            for _ef in ("net_ton_now", "value_ton_now", "net_pct_now", "in_profit", "breakeven_price"):
+                trade.pop(_ef, None)
             total_pnl            += pnl_ton
-            self.stats["total_pnl"] = round(self.stats["total_pnl"] + pnl_ton, 6)
-            # total_trades раньше не увеличивался в этой функции — winning_trades
-            # рос сам по себе, что могло дать winrate>100% или расхождение со
-            # счётчиком сделок. Считаем total_trades вместе с winning_trades.
-            self.stats["total_trades"] = self.stats.get("total_trades", 0) + 1
-            if pnl_ton > 0:
-                self.stats["winning_trades"] += 1
+            # Лок: self.stats мутируется из нескольких потоков — без него
+            # возможна гонка при одновременном закрытии позиций.
+            with self._close_lock:
+                self.stats["total_pnl"] = round(self.stats["total_pnl"] + pnl_ton, 6)
+                # total_trades раньше не увеличивался в этой функции — winning_trades
+                # рос сам по себе, что могло дать winrate>100% или расхождение со
+                # счётчиком сделок. Считаем total_trades вместе с winning_trades.
+                self.stats["total_trades"] = self.stats.get("total_trades", 0) + 1
+                if pnl_ton > 0:
+                    self.stats["winning_trades"] += 1
+                # Circuit breaker / win-streak stats — внутри лока (по доке _record_trade_pnl)
+                try:
+                    self._record_trade_pnl(pnl_ton)
+                except Exception as _rp_e:
+                    self.log(f"⚠️ _record_trade_pnl (dca sell-all): {_rp_e}", "WARN")
             # AI feedback
             try:
-                ai_snap  = self.last_ai or {}
-                reg_name = (ai_snap.get("regime") or {}).get("name", "UNKNOWN")
-                ai_conf  = float(ai_snap.get("confidence", 0) or 0)
-                self.ai.feedback(outcome=trade["outcome"], pnl=float(pnl_ton),
-                                 regime=reg_name, conf=ai_conf)
-            except Exception:
-                pass
+                _contexts = trade.get("entry_ai_contexts") or []
+                _valid_contexts = [
+                    _ctx for _ctx in _contexts
+                    if isinstance(_ctx, dict) and _ctx.get("features")
+                ]
+                if _valid_contexts:
+                    _context_stake = sum(
+                        max(float(_ctx.get("stake_ton", 0) or 0), 0.0)
+                        for _ctx in _valid_contexts
+                    )
+                    for _ctx in _valid_contexts:
+                        _stake_share = (
+                            max(float(_ctx.get("stake_ton", 0) or 0), 0.0)
+                            / _context_stake
+                            if _context_stake > 0
+                            else 1.0 / len(_valid_contexts)
+                        )
+                        self.ai.feedback(
+                            outcome=trade["outcome"],
+                            pnl=float(pnl_ton) * _stake_share,
+                            regime=str(_ctx.get("regime") or "DCA"),
+                            conf=float(_ctx.get("confidence", 0) or 0),
+                            features=_ctx["features"],
+                        )
+                else:
+                    # Совместимость со старыми открытыми позициями без
+                    # сохранённого контекста.
+                    ai_snap  = self.last_ai or {}
+                    reg_name = (ai_snap.get("regime") or {}).get("name", "UNKNOWN")
+                    ai_conf  = float(ai_snap.get("confidence", 0) or 0)
+                    self.ai.feedback(
+                        outcome=trade["outcome"],
+                        pnl=float(pnl_ton),
+                        regime=reg_name,
+                        conf=ai_conf,
+                    )
+            except Exception as e:
+                self.log(f"⚠️ AI feedback (DCA sell-all): {e}", "WARN")
             # Сохраняем в историю
             for t in self.trades:
                 if t["id"] == trade["id"]:
@@ -1507,13 +2388,17 @@ class Trader:
                 f"(лимит {Config.DCA_COMPOUND_MAX_TON:.0f} TON)",
                 "INFO"
             )
+            self._save_volatile_state()  # compound bonus переживёт рестарт
 
         # Снимаем dca_entries ПЕРЕД сбросом (иначе советник получит 0)
         _dca_entries_snap = self.dca_entries_count
-        self.open_trades         = []
-        self.dca_entries_count   = 0
-        self.dca_total_stake     = 0.0
-        self.dca_cascade_half_sold = False   # сбрасываем каскад-флаг на новый цикл
+        self.open_trades            = []
+        self.dca_entries_count      = 0
+        self.dca_total_stake        = 0.0
+        self.dca_cascade_half_sold  = False   # сбрасываем каскад-флаг на новый цикл
+        # Сбрасываем HWM — иначе profit_protection не сработает на новом цикле
+        # (требует total_value > portfolio_high_water_ton, который уже выше прежнего пика).
+        self.portfolio_high_water_ton = 0.0
 
         # ── AI Советник: ОДИН триггер на закрытие DCA-цикла ──────────
         try:
@@ -1546,7 +2431,9 @@ class Trader:
                 "regime":       (ai_snap.get("regime") or {}).get("name") or "DCA",
                 "ai_conf":      float(ai_snap.get("confidence", 0) or 0),
                 "close_reason": f"dca_target_{portfolio_pct:.1f}pct",
-                "dca_entries":  self.dca_entries_count,
+                # BUG-FIX: self.dca_entries_count уже обнулён к этому моменту
+                # (reset выше). Используем снапшот, снятый до сброса.
+                "dca_entries":  _dca_entries_snap,
             })
         except Exception:
             pass
@@ -1557,6 +2444,60 @@ class Trader:
             f"портфель был +{portfolio_pct:.1f}%",
             "SELL"
         )
+        # ── AI-модули: обратная связь для онлайн-обучения ────────────────
+        try:
+            _ai_snap = self.last_ai or {}
+            # Извлекаем имя режима — last_ai["regime"] это dict {"name":...}
+            _regime_name = ((_ai_snap.get("regime") or {}).get("name") or "UNKNOWN")
+            # EntryOpt: был ли вход хорошим? (цикл закрыт с прибылью)
+            if _entry_opt is not None:
+                _entry_was_good = total_pnl > 0
+                # Task #5 fix: используем РЕАЛЬНЫЕ фичи момента входа,
+                # сохранённые в _last_eo_feats при вызове _dca_buy().
+                # Ранее здесь пересчитывался теоретический прокси avg_drop =
+                # DCA_DROP_TRIGGER_PCT × (n-1)/2, который никогда не совпадал
+                # с реальным рыночным состоянием на момент входа.
+                if self._last_eo_feats:
+                    _eo_feats = self._last_eo_feats
+                else:
+                    # Fallback: пересчёт если фичи не были сохранены
+                    _avg_drop = 0.0
+                    try:
+                        if _dca_entries_snap > 1:
+                            _avg_drop = Config.DCA_DROP_TRIGGER_PCT * (_dca_entries_snap - 1) / 2
+                    except Exception:
+                        pass
+                    _eo_feats = _entry_opt._build_features(
+                        drop_pct     = _avg_drop,
+                        rsi          = float(_ai_snap.get("rsi", 50) or 50),
+                        volume_ratio = float(_ai_snap.get("volume_ratio", 1) or 1),
+                        momentum     = str(_ai_snap.get("momentum", "CALM") or "CALM"),
+                        regime       = _regime_name,
+                        sm_score     = float(_ai_snap.get("sm_score", 0) or 0),
+                        atr_pct      = float(_ai_snap.get("atr_pct", 2) or 2),
+                        pump_score   = float(_ai_snap.get("pump_score", 0) or 0),
+                    )
+                _entry_opt.record_outcome(_eo_feats, _entry_was_good)
+                self._last_eo_feats = []   # сбрасываем после использования
+            # TPOpt: фактический % прибыли портфеля → обучаем модель
+            if _tp_opt is not None:
+                _tp_feats = _tp_opt._build_features(
+                    regime       = _regime_name,
+                    pump_score   = float(_ai_snap.get("pump_score", 0) or 0),
+                    momentum     = str(_ai_snap.get("momentum", "CALM") or "CALM"),
+                    rsi          = float(_ai_snap.get("rsi", 50) or 50),
+                    atr_pct      = float(_ai_snap.get("atr_pct", 2) or 2),
+                    sm_score     = float(_ai_snap.get("sm_score", 0) or 0),
+                    volume_ratio = float(_ai_snap.get("volume_ratio", 1) or 1),
+                    dca_entries  = int(_dca_entries_snap or 1),
+                    hours_in_trade = max(0.0,
+                        (time.time() - (self._last_dca_entry_ts or time.time())) / 3600
+                    ),
+                    confidence   = float(_ai_snap.get("confidence", 50) or 50) / 100,
+                )
+                _tp_opt.record_trade_result(_tp_feats, max(0.0, portfolio_pct))
+        except Exception as _aim_ex:
+            self.log(f"⚠️ AI-модули обратная связь: {_aim_ex}", "DEBUG")
         # ── BrainFusion: обратная связь после закрытия ───────────────────
         try:
             _bf.on_trade_closed(total_pnl, was_scalp=self._last_entry_was_scalp)
@@ -1593,6 +2534,7 @@ class Trader:
             import liquidity_guard as _lg
 
             ai      = self.last_ai or {}
+            _ta     = self.last_analysis or {}          # TA: rsi/macd/bb/stoch_rsi
             regime  = ai.get("regime") or {}
             bo      = ai.get("breakout") or {}
             mom     = ai.get("momentum") or {}
@@ -1642,13 +2584,13 @@ class Trader:
             _ab.push_tick({
                 "price_usd":      price_usd,
                 "price_ton":      price_ton,
-                "rsi":            float(ai.get("rsi") or last_dec.get("rsi") or 50),
+                "rsi":            float(ai.get("rsi") or _ta.get("rsi") or last_dec.get("rsi") or 50),
                 "adx":            float(regime.get("adx") or 0),
                 "atr_pct":        float(regime.get("atr_pct") or 0),
-                "bb_pct":         float(ai.get("bb_pct") or 0),
-                "vol_ratio":      float(ai.get("vol_ratio") or 1.0),
-                "macd_hist":      float(ai.get("macd_hist") or 0),
-                "stoch_rsi":      float(ai.get("stoch_rsi") or 0.5),
+                "bb_pct":         float(ai.get("bb_pct") or _ta.get("bb_pct") or 0),
+                "vol_ratio":      float(ai.get("vol_ratio") or _ta.get("vol_ratio") or 1.0),
+                "macd_hist":      float(ai.get("macd_hist") or _ta.get("macd_hist") or 0),
+                "stoch_rsi":      float(ai.get("stoch_rsi") or _ta.get("stoch_rsi") or 0.5),
                 "regime":         regime.get("name") or last_dec.get("regime") or "?",
                 "ai_signal":      ai.get("ai_signal") or last_dec.get("ai_sig") or "HOLD",
                 "ai_conf":        float(ai.get("confidence") or last_dec.get("conf") or 0),
@@ -1679,6 +2621,92 @@ class Trader:
             pass  # буфер НИКОГДА не ломает торговлю
 
     # ──────────────────────────────────────────
+    # Расширенная статистика и Circuit Breaker
+    # ──────────────────────────────────────────
+
+    def _reset_daily_stats_if_needed(self):
+        """Сбрасывает daily_pnl и circuit_breaker в полночь UTC.
+        Безопасно вызывать каждый тик — проверяет сами, нужно ли сбросить."""
+        from datetime import datetime, timezone
+        now_utc   = datetime.now(timezone.utc)
+        day_start = now_utc.replace(hour=0, minute=0, second=0, microsecond=0).timestamp()
+        with self._close_lock:
+            if self.stats.get("daily_start_ts", 0.0) >= day_start:
+                return  # ещё тот же день UTC
+            # ── Новый день: обнуляем дневные счётчики ────────────────────────
+            self.stats["daily_pnl"]              = 0.0
+            self.stats["daily_start_ts"]          = day_start
+            self.stats["circuit_breaker_active"]  = False
+            # Снапшот equity для расчёта % просадки в новом дне
+            try:
+                from price_feed import price_feed as _pf2
+                from wallet_manager import wallet_manager as _wm2
+                snap2  = _wm2.get_snapshot() or {}
+                ton2   = float(snap2.get("ton",    0) or 0)
+                grin2  = float(snap2.get("grinch", 0) or 0)
+                gprice2 = _pf2.get_grinch_ton_price() or 0.0
+                self.stats["daily_start_equity"] = round(ton2 + grin2 * gprice2, 3)
+            except Exception:
+                self.stats["daily_start_equity"] = 0.0
+        self.log("📅 Новый день UTC — счётчики daily_pnl и circuit_breaker сброшены", "INFO")
+
+    def _record_trade_pnl(self, pnl_ton: float):
+        """Единая точка обновления расширенной статистики после закрытой сделки.
+        ВЫЗЫВАТЬ ВНУТРИ self._close_lock — иначе гонка данных!
+        Обновляет: daily_pnl, win_streak, max_win_streak, best/worst_trade_ton."""
+        import math as _math
+        if not _math.isfinite(pnl_ton):
+            return
+        self.stats["daily_pnl"] = round(
+            float(self.stats.get("daily_pnl", 0.0)) + pnl_ton, 6
+        )
+        if pnl_ton > 0:
+            streak = self.stats.get("win_streak", 0) + 1
+            self.stats["win_streak"]     = streak
+            self.stats["max_win_streak"] = max(
+                self.stats.get("max_win_streak", 0), streak
+            )
+        else:
+            self.stats["win_streak"] = 0
+        self.stats["best_trade_ton"]  = max(
+            float(self.stats.get("best_trade_ton",   0.0)), pnl_ton
+        )
+        self.stats["worst_trade_ton"] = min(
+            float(self.stats.get("worst_trade_ton",  0.0)), pnl_ton
+        )
+
+    def _check_circuit_breaker(self) -> bool:
+        """Проверяет дневной лимит убытков (Circuit Breaker).
+        Возвращает True если CB активен → торговлю нужно пропустить.
+        НЕ вызывать внутри _close_lock (сам захватывает лок)."""
+        if not Config.CIRCUIT_BREAKER_ENABLED:
+            return False
+        with self._close_lock:
+            if self.stats.get("circuit_breaker_active"):
+                return True   # уже сработал ранее в этот день
+            daily_pnl    = float(self.stats.get("daily_pnl",          0.0))
+            start_equity = float(self.stats.get("daily_start_equity",  0.0))
+        if daily_pnl >= 0 or start_equity <= 0:
+            return False   # нет убытков или нет данных о начале дня
+        loss_pct = abs(daily_pnl) / start_equity * 100
+        if loss_pct >= Config.CIRCUIT_BREAKER_DAILY_LOSS_PCT:
+            with self._close_lock:
+                self.stats["circuit_breaker_active"] = True
+            msg = (
+                f"🔴 Circuit Breaker: суточный убыток {daily_pnl:+.3f} TON "
+                f"({loss_pct:.1f}% ≥ {Config.CIRCUIT_BREAKER_DAILY_LOSS_PCT}%) — "
+                f"торговля приостановлена до 00:00 UTC"
+            )
+            self.log(msg, "ERROR")
+            try:
+                from alerts import send_alert
+                send_alert(msg)
+            except Exception:
+                pass
+            return True
+        return False
+
+    # ──────────────────────────────────────────
     # Торговый тик
     # ──────────────────────────────────────────
     def _run_market_analysis_only(self) -> None:
@@ -1688,12 +2716,36 @@ class Trader:
         - тики в bot_ticks имели реальные regime/signal/conf данные
         Все ошибки подавляются — не должен влиять на основной цикл."""
         try:
-            ohlcv = self.exchange.get_ohlcv(limit=100)
+            ohlcv = (self.exchange.get_real_ohlcv(limit=100, currency="token",
+                                                  token="base", tf="minute", aggregate=15) or [])
             if not ohlcv:
                 return
             result = analyze(ohlcv)
             self.last_analysis = result
-            ai = self.ai.analyze(ohlcv)
+            # Wallet-state для фонового heartbeat-анализа
+            _ws_hb = None
+            try:
+                from price_feed import price_feed as _pf_hb
+                _gton_hb = _pf_hb.get_grinch_ton_price() or 0.0
+                _bal_hb  = getattr(self, "_last_balance_cache", {}) or {}
+                _ton_hb  = float(_bal_hb.get("TON",    0) or 0)
+                _grn_hb  = float(_bal_hb.get("GRINCH", 0) or 0)
+                _tot_hb  = _ton_hb + _grn_hb * _gton_hb
+                _exp_hb  = (_grn_hb * _gton_hb / _tot_hb * 100) if _tot_hb > 0.1 else 0.0
+                _pnl_hb  = 0.0
+                if self.open_trades and _gton_hb > 0:
+                    _ep0_hb = self.open_trades[0].get("entry_price_ton", 0)
+                    if _ep0_hb > 0:
+                        _pnl_hb = (_gton_hb - _ep0_hb) / _ep0_hb * 100.0
+                _ws_hb = {
+                    "exposure_pct": round(min(100.0, max(0.0, _exp_hb)), 1),
+                    "pnl_pct":      round(_pnl_hb, 2),
+                    "has_position": _grn_hb > 100,
+                    "ton_ratio":    round(max(0.0, 1.0 - _exp_hb / 100), 3),
+                }
+            except Exception:
+                pass
+            ai = self.ai.analyze(ohlcv, wallet_state=_ws_hb)
             self.last_ai = ai
             # Обновляем BrainFusion без торговых решений
             try:
@@ -1705,6 +2757,12 @@ class Trader:
             pass  # никогда не ломаем цикл
 
     def _tick(self):
+        # ── Дневной сброс счётчиков (полночь UTC) ──────────────────────────
+        try:
+            self._reset_daily_stats_if_needed()
+        except Exception:
+            pass
+
         # ── Ручной выключатель торговли: блокирует ОБА режима (DCA и AI) ──
         if self._trading_disabled_guard():
             # Анализируем рынок и пишем тики в bot_ticks даже при выключенной торговле —
@@ -1716,8 +2774,28 @@ class Trader:
                 pass
             return
 
+        # ── Circuit Breaker: суточный лимит убытков ─────────────────────────
+        try:
+            if self._check_circuit_breaker():
+                self._run_market_analysis_only()
+                try:
+                    self._push_tick_analytics()
+                except Exception:
+                    pass
+                return
+        except Exception:
+            pass
+
         # ── DCA режим: полностью заменяет AI-логику ─────────────────
         if Config.DCA_MODE:
+            # Обновляем last_ai и last_analysis в DCA-режиме — ОБЯЗАТЕЛЬНО:
+            # без этого смарт-реентри, AI sell block, TPOpt, EntryOpt работают
+            # с пустым last_ai={} и никогда не видят реальных сигналов.
+            # get_real_ohlcv кэшируется 45с → реальный API-запрос раз в 45с, не каждый тик.
+            try:
+                self._run_market_analysis_only()
+            except Exception:
+                pass
             try:
                 self._tick_dca()
             except Exception as e:
@@ -1743,11 +2821,44 @@ class Trader:
         except Exception as _lse:
             self.log(f"⚠️ Profit/LargeSell check (AI mode): {_lse}", "WARN")
 
-        ohlcv  = self.exchange.get_ohlcv(limit=100)
+        ohlcv  = (self.exchange.get_real_ohlcv(limit=100, currency="token",
+                                                token="base", tf="minute", aggregate=15) or [])
+        # Сохраняем предыдущий MACD_hist ДО обновления last_analysis (нужен BottomDetector)
+        self._prev_macd_hist = float((self.last_analysis or {}).get("macd_hist", 0) or 0)
         result = analyze(ohlcv)
         self.last_analysis = result   # кэш для get_status() — не пересчитываем каждые 2с
-        ai     = self.ai.analyze(ohlcv)
+
+        # ── Wallet-aware AI: строим состояние портфеля для ML-корректировок ──
+        _ws_ai = None
+        try:
+            from price_feed import price_feed as _pf_ws
+            _gton_ws = _pf_ws.get_grinch_ton_price() or 0.0
+            _bal_ws  = getattr(self, "_last_balance_cache", {}) or {}
+            _ton_ws  = float(_bal_ws.get("TON",    0) or 0)
+            _grn_ws  = float(_bal_ws.get("GRINCH", 0) or 0)
+            _tot_ws  = _ton_ws + _grn_ws * _gton_ws
+            _exp_ws  = (_grn_ws * _gton_ws / _tot_ws * 100) if _tot_ws > 0.1 else 0.0
+            _pnl_ws  = 0.0
+            if self.open_trades and _gton_ws > 0:
+                _ep0_ws = self.open_trades[0].get("entry_price_ton", 0)
+                if _ep0_ws > 0:
+                    _pnl_ws = (_gton_ws - _ep0_ws) / _ep0_ws * 100.0
+            _ws_ai = {
+                "exposure_pct": round(min(100.0, max(0.0, _exp_ws)), 1),
+                "pnl_pct":      round(_pnl_ws, 2),
+                "has_position": _grn_ws > 100,
+                "ton_ratio":    round(max(0.0, 1.0 - _exp_ws / 100), 3),
+            }
+        except Exception:
+            pass
+        ai     = self.ai.analyze(ohlcv, wallet_state=_ws_ai)
         self.last_ai = ai
+        # ── Живой организм: обновляем все 7 биосистем ────────────────────
+        try:
+            if _organism is not None:
+                _organism.update_tick(result.get("price", 0), ai)
+        except Exception:
+            pass
 
         # ── BrainFusion: обновляем единый мозг ───────────────────────────
         try:
@@ -1813,10 +2924,11 @@ class Trader:
         #   A (≥7 очков) — элитный вход: 1 подтверждение, откат -0.3%
         #   B (≥3 очков) — стандарт:    2 подтверждения, откат -0.8%
         #   C (<3 очков) — слабый:      3 подтверждения, откат -1.5%
+        # L2-fix: параметры грейдов A/C берутся из Config (не хардкодированы)
         _grade_params = {
-            "A": {"confirm": 1, "pullback": 0.3},
-            "B": {"confirm": 2, "pullback": Config.SMART_BUY_PULLBACK_PCT},
-            "C": {"confirm": 3, "pullback": 1.5},
+            "A": {"confirm": Config.SMART_BUY_GRADE_A_CONFIRM, "pullback": Config.SMART_BUY_GRADE_A_PULLBACK},
+            "B": {"confirm": 2,                                 "pullback": Config.SMART_BUY_PULLBACK_PCT},
+            "C": {"confirm": Config.SMART_BUY_GRADE_C_CONFIRM, "pullback": Config.SMART_BUY_GRADE_C_PULLBACK},
         }
         _gp = _grade_params.get(entry_quality, _grade_params["B"])
         confirm_needed = _gp["confirm"]
@@ -1919,6 +3031,13 @@ class Trader:
                     Config.SMART_MONEY_MIN_FLOOR,
                     min_conf - Config.SMART_MONEY_CONF_BONUS,
                 )
+            # ── Организм: голод/настроение/сон/эволюция корректируют порог
+            try:
+                if _organism is not None:
+                    _org_delta = _organism.get_conf_modifier()
+                    min_conf   = max(20.0, min_conf + _org_delta)
+            except Exception:
+                pass
             if ai_signal != "HOLD" and conf >= min_conf:
                 final_signal = ai_signal
                 signal_source = "AI🤖"
@@ -1939,6 +3058,19 @@ class Trader:
             self._buy_confirm_count += 1
         else:
             self._buy_confirm_count = 0
+
+        # ── Инстинкт-рефлекс организма (приоритет над ML) ───────────────
+        try:
+            if _organism is not None:
+                _inst = _organism.get_instinct_override()
+                if _inst == "SELL_PANIC" and self.open_trades:
+                    final_signal  = "SELL"
+                    signal_source = "🧬ПАНИКА"
+                elif _inst == "BUY_EXCITEMENT" and not self.open_trades:
+                    final_signal  = "BUY"
+                    signal_source = "🧬ВОЗБУЖДЕНИЕ"
+        except Exception:
+            pass
 
         # ── Фильтры входа (ТОЛЬКО для BUY) ─────────────────────────────
         blocked = None
@@ -2161,11 +3293,12 @@ class Trader:
                     "pullback_pct":  pullback_pct,
                     "mode_params":   _mode_params,   # скальп/памп параметры для будущего входа
                 }
-                # Персистируем в DB — переживёт перезапуск
+                # Персистируем в DB + JSON — переживёт перезапуск и отказ БД
                 try:
-                    import db_store as _dbs, json as _json
+                    from settings_store import update_section
+                    import json as _json
                     _pb_save = {k: v for k, v in self._pending_buy.items() if k not in ("ai", "analysis")}
-                    _dbs.settings_update_section("trader_state", {"pending_buy": _json.dumps(_pb_save)})
+                    update_section("trader_state", {"pending_buy": _json.dumps(_pb_save)})
                 except Exception:
                     pass
                 self.log(
@@ -2326,6 +3459,12 @@ class Trader:
             return False
 
         ai_conf = ai.get("confidence", 0) if ai else 0
+        # ── Организм: сделка открывается (сброс голода, обновление ts) ──
+        try:
+            if _organism is not None:
+                _organism.on_trade_opened()
+        except Exception:
+            pass
 
         # ── Kelly-adjusted position sizing ────────────────────────────────
         # Base: пропорционально уверенности AI (50%→0.5× .. 90%→1.0×)
@@ -2397,9 +3536,11 @@ class Trader:
                 )
                 stake = spendable
             ton_stake = stake
-            amount = stake / price
-        else:
-            amount = stake / price
+        # Guard: price должен быть > 0, иначе деление вызовет ZeroDivisionError
+        if not price or price <= 0:
+            self.log(f"⛔ _open_trade: price={price} недопустима — отмена", "ERROR")
+            return False
+        amount = stake / price
 
         # ── Детальный расчёт комиссий и цели (до исполнения) ────────────
         if side == "buy" and ton_stake:
@@ -2422,8 +3563,9 @@ class Trader:
             )
 
         order = self.exchange.place_order(side, amount, ton_stake=ton_stake)
-        if not order:
-            self.log("⚠️ BUY ордер не исполнен — пропускаем", "WARN")
+        if not order or order.get("error"):
+            err = (order or {}).get("error", "нет ответа") if order else "нет ответа"
+            self.log(f"⚠️ BUY ордер не исполнен — {err}", "WARN")
             return False
 
         # В DeDust-режиме используем реальное кол-во GRINCH из подтверждённого свопа,
@@ -2508,11 +3650,13 @@ class Trader:
             "entry_mom_signal": str((ai_snap_entry.get("momentum") or {}).get("signal") or "CALM"),
             "entry_mom_score":  _sf((ai_snap_entry.get("momentum") or {}).get("score")),
         }
-        self.open_trades.append(trade)
+        # M2-fix: _ot_lock при append
+        with self._ot_lock:
+            self.open_trades.append(trade)
         self.trades.append(dict(trade))
-        self.stats["total_trades"] += 1
-        # Синхронизируем stats немедленно — без этого рестарт между открытием
-        # и закрытием позиции обнуляет total_trades, создавая winning > total.
+        # total_trades теперь считается только в момент закрытия (там же,
+        # где вызывается record_trade) — единая точка учёта, чтобы счётчик
+        # никогда не расходился с журналом сделок bot_trades.
         self.exp.data["stats"] = dict(self.stats)
         # Если уже есть другие LONG-позиции — объединяем всё в одну
         self._merge_long_trades()
@@ -2568,7 +3712,9 @@ class Trader:
         """
         closed_any = False
         for trade in list(self.open_short_trades):
-            entry_usd  = trade["entry_price"]
+            entry_usd  = trade.get("entry_price", 0)
+            if not entry_usd:
+                continue  # позиция без цены входа — пропускаем, не можем рассчитать P&L
             low_water  = trade.get("low_water", entry_usd)
             grinch_val = trade.get("grinch_value_ton")
             required_drop = Config.required_drop_pct_for_short(grinch_val)
@@ -2662,11 +3808,27 @@ class Trader:
             "INFO"
         )
 
+        # AMM preflight для шорта: блокируем если пул вернёт меньше ожидаемого
+        # (grinch_value_ton * (1 - SLIPPAGE)) — защита от чрезмерного проскальзывания.
+        # min_net_ton — нетто после газа продажи; CPMM в dedust_client учитывает price impact.
+        _short_min_net = max(0.0, grinch_value_ton * (1 - Config.SLIPPAGE_PCT / 100) - Config.SELL_GAS_TON)
+        self.log(
+            f"🔍 Шорт AMM preflight: продаём {target_grinch:.2f} GRINCH "
+            f"(≈{grinch_value_ton:.3f} TON), нетто ≥ {_short_min_net:.3f} TON",
+            "INFO"
+        )
+
         # Исполняем продажу GRINCH → TON
-        order = self.exchange.place_order("sell", target_grinch)
+        order = self.exchange.place_order("sell", target_grinch, min_net_ton=_short_min_net)
         if not order or order.get("error"):
             err = (order or {}).get("error", "нет ответа")
-            self.log(f"⚠️ Шорт: продажа GRINCH не исполнена — {err}", "WARN")
+            if (order or {}).get("amm_blocked"):
+                self.log(
+                    f"🛡️ Шорт заблокирован AMM preflight: {err} "
+                    f"(пул вернёт меньше {_short_min_net:.3f} TON нетто)", "WARN"
+                )
+            else:
+                self.log(f"⚠️ Шорт: продажа GRINCH не исполнена — {err}", "WARN")
             return False
 
         # Реально полученный TON из ордера (если DEX вернул)
@@ -2691,8 +3853,8 @@ class Trader:
             "entry_regime":     (ai.get("regime") or {}).get("name") if ai else None,
         }
         self.open_short_trades.append(trade)
-        self.stats["total_trades"] += 1
-        # Синхронизируем stats немедленно — без этого total_trades теряется при рестарте.
+        # total_trades теперь считается только в момент закрытия (см. _close_short_trade),
+        # единая точка учёта, чтобы счётчик не расходился с журналом bot_trades.
         self.exp.data["stats"] = dict(self.stats)
         try:
             self.exp.save_open_trades(self._combined_open_trades())
@@ -2720,6 +3882,17 @@ class Trader:
         grinch_sold    = trade.get("amount", 0)
         grinch_val_ton = trade.get("grinch_value_ton", 0)
         entry_price    = trade.get("entry_price", price)
+
+        # Guard: price=0 ломает все деления ниже — используем entry_price как fallback
+        if not price or price <= 0:
+            self.log(
+                f"⚠️ _close_short_trade: price={price} недопустима, "
+                f"используем entry_price={entry_price:.8f}", "WARN"
+            )
+            price = entry_price or 0
+            if not price or price <= 0:
+                self.log("⛔ _close_short_trade: нет ни price ни entry_price — отмена", "ERROR")
+                return False
 
         if self.exchange.mode == "dedust" and ton_to_spend > 0:
             # Необходимо оставить газ на покупку
@@ -2762,10 +3935,22 @@ class Trader:
         trade["drop_pct"]        = round(drop_pct, 2)
         trade["pnl_pct"]         = round(profit_grinch / grinch_sold * 100, 2) if grinch_sold else 0
 
-        self.open_short_trades = [t for t in self.open_short_trades if t["id"] != trade_id]
-        self.stats["total_pnl"] = round(self.stats["total_pnl"] + pnl_ton, 6)
-        if pnl_ton > 0:
-            self.stats["winning_trades"] += 1
+        # Лок: self.stats мутируется из нескольких потоков (тик трейдера,
+        # ликвидатор, ручное закрытие) — без него возможна гонка при
+        # одновременном закрытии позиций (потерянный инкремент total_trades).
+        with self._close_lock:
+            self.open_short_trades = [t for t in self.open_short_trades if t["id"] != trade_id]
+            self.stats["total_pnl"] = round(self.stats["total_pnl"] + pnl_ton, 6)
+            # Единая точка учёта: total_trades считается только здесь, в момент
+            # закрытия — синхронно с вызовом record_trade() ниже.
+            self.stats["total_trades"] = self.stats.get("total_trades", 0) + 1
+            if pnl_ton > 0:
+                self.stats["winning_trades"] += 1
+            # Circuit breaker / win-streak stats — внутри лока (по доке _record_trade_pnl)
+            try:
+                self._record_trade_pnl(pnl_ton)
+            except Exception as _rp_e:
+                self.log(f"⚠️ _record_trade_pnl (short): {_rp_e}", "WARN")
         try:
             self.exp.save_open_trades(self._combined_open_trades())
             self.exp.record_trade(dict(trade), self.stats, self.ai)
@@ -2787,8 +3972,8 @@ class Trader:
             ai_conf  = float(ai_snap.get("confidence", 0) or 0)
             self.ai.feedback(outcome=outcome, pnl=float(pnl_ton),
                              regime=reg_name, conf=ai_conf)
-        except Exception:
-            pass
+        except Exception as e:
+            self.log(f"⚠️ AI feedback (шорт-закрытие): {e}", "WARN")
         return True
 
     def _check_stop_loss_take_profit(self, price):
@@ -2801,8 +3986,42 @@ class Trader:
             if trade.get("symbol", Config.SYMBOL) != Config.SYMBOL:
                 continue
 
-            entry      = trade["entry_price"]
+            entry = trade.get("entry_price", 0)
+            if not entry:
+                self.log(
+                    f"⚠️ SL/TP: позиция {trade.get('id','?')} без entry_price — пропускаем",
+                    "WARN"
+                )
+                continue
             profit_pct = (price - entry) / entry * 100
+
+            # ── Stale Position Reaper ─────────────────────────────────────────
+            # Если позиция открыта дольше MAX_HOURS без прибыли — выходим,
+            # высвобождая капитал. Применяется только если прибыль < порога.
+            if Config.STALE_POSITION_ENABLED:
+                opened_at_str = trade.get("opened_at")
+                if opened_at_str:
+                    try:
+                        from datetime import datetime as _dt2, timezone as _tz
+                        opened_dt = _dt2.fromisoformat(
+                            opened_at_str.replace("Z", "+00:00")
+                        )
+                        age_hours = (
+                            _dt2.now(_tz.utc) - opened_dt
+                        ).total_seconds() / 3600
+                        if (age_hours > Config.STALE_POSITION_MAX_HOURS
+                                and profit_pct < Config.STALE_POSITION_MIN_PROFIT_PCT):
+                            self.log(
+                                f"⏰ Stale Reaper: позиция открыта {age_hours:.1f}ч "
+                                f"(лимит {Config.STALE_POSITION_MAX_HOURS}ч), "
+                                f"P&L {profit_pct:.2f}% < {Config.STALE_POSITION_MIN_PROFIT_PCT}% — "
+                                f"закрываем (освобождаем капитал)", "WARN"
+                            )
+                            self._close_trade(trade, price, f"stale_{age_hours:.0f}h")
+                            closed_any = True
+                            continue
+                    except Exception:
+                        pass
 
             # Минимальный нетто-пол прибыли (в gross %): учитывает DEX-комиссию
             # И газ обоих свопов для данной ставки. Для мелких сделок порог выше.
@@ -2815,7 +4034,7 @@ class Trader:
                 # «Взведённый» стоп = трейлинг уже активирован (стоп ≥ floor_price).
                 # До взведения стоп = 0 и вниз не срабатывает (держим позицию,
                 # никакого стоп-лосса в убыток не существует).
-                armed = trade["stop_loss"] > 0
+                armed = trade.get("stop_loss", 0) > 0
 
                 # Прибыль достигла пола → взводим/подтягиваем трейлинг. Стоп
                 # НИКОГДА не опускается ниже floor_price (гарантия +N% нетто).
@@ -2857,8 +4076,8 @@ class Trader:
                     new_sl = self.exchange._round(high_water * (1 - trail_pct / 100))
                     new_sl = max(new_sl, floor_price)    # пол ≥ +N% нетто
 
-                    if new_sl > trade["stop_loss"]:
-                        old_sl = trade["stop_loss"]
+                    if new_sl > trade.get("stop_loss", 0):
+                        old_sl = trade.get("stop_loss", 0)
                         trade["stop_loss"] = new_sl
                         regime_name = ((self.last_ai or {}).get("regime") or {}).get("name", "")
                         smart_label = " [🧠 Smart TP]" if smart_active else ""
@@ -2873,7 +4092,7 @@ class Trader:
                 # Если стоп взведён — проверяем выход КАЖДЫЙ тик (даже если цена
                 # уже просела ниже пола): иначе зафиксированную прибыль можно
                 # «забыть» снять. Стоп всегда ≥ floor_price → выход в плюс.
-                if armed and price <= trade["stop_loss"]:
+                if armed and price <= trade.get("stop_loss", 0):
                     if self._close_trade(trade, price, "take_profit"):
                         closed_any = True
                 continue
@@ -2899,8 +4118,8 @@ class Trader:
                 breakeven_sl = self.exchange._round(entry * (1 + Config.FEE_ROUND_TRIP / 100))
                 new_sl = max(new_sl, breakeven_sl)
 
-            if new_sl > trade["stop_loss"]:
-                old_sl = trade["stop_loss"]
+            if new_sl > trade.get("stop_loss", 0):
+                old_sl = trade.get("stop_loss", 0)
                 trade["stop_loss"] = new_sl
                 stage_label = (
                     f"≥{Config.TRAIL_STAGE4_AT:.0f}% (trail {trail_pct}%)" if profit_pct >= Config.TRAIL_STAGE4_AT else
@@ -2914,11 +4133,11 @@ class Trader:
                     f"прибыль {profit_pct:+.1f}% | {stage_label}", "INFO"
                 )
 
-            if price <= trade["stop_loss"]:
-                reason = "trailing_stop" if trade["stop_loss"] > entry else "stop_loss"
+            if price <= trade.get("stop_loss", 0):
+                reason = "trailing_stop" if trade.get("stop_loss", 0) > entry else "stop_loss"
                 if self._close_trade(trade, price, reason):
                     closed_any = True
-            elif price >= trade["take_profit"]:
+            elif price >= trade.get("take_profit", float("inf")):
                 if self._close_trade(trade, price, "take_profit"):
                     closed_any = True
 
@@ -2930,8 +4149,12 @@ class Trader:
             return True
         return False
 
-    def close_trade(self, trade_id):
-        """Ручное закрытие ОДНОЙ позиции по её id (рыночная продажа сейчас)."""
+    def close_trade(self, trade_id, force: bool = False):
+        """Ручное закрытие ОДНОЙ позиции по её id (рыночная продажа сейчас).
+
+        force=True — принудительное закрытие тестовой / ошибочной позиции;
+        обходит проверку ONLY_PROFIT_EXIT, но всё равно исполняет реальный своп.
+        """
         trade = next((t for t in self.open_trades
                       if str(t.get("id")) == str(trade_id)), None)
         if not trade:
@@ -2943,7 +4166,8 @@ class Trader:
             price = trade.get("entry_price")
         # Режим «только в плюс»: даже РУЧНОЕ закрытие не продаёт в минус.
         # Порог включает газ обоих свопов — настоящая гарантия реальной прибыли.
-        if Config.ONLY_PROFIT_EXIT:
+        # Исключение: force=True (закрытие тестовой/ошибочной позиции вручную).
+        if Config.ONLY_PROFIT_EXIT and not force:
             entry         = trade.get("entry_price") or 0
             stake_ton     = trade.get("stake_ton") or None
             pnl_pct       = (price - entry) / entry * 100 if entry else 0.0
@@ -2957,20 +4181,25 @@ class Trader:
                 return {"ok": False, "error": (
                     f"Продажа в минус отключена: прибыль {pnl_pct:+.1f}% ниже "
                     f"минимума +{net_floor_pct:.1f}% (с учётом газа). Ждём роста цены.")}
-        self.log(f"🖐 Ручное закрытие позиции {trade_id} @ {price}", "INFO")
-        ok = self._close_trade(trade, price, "manual")
+        if force:
+            self.log(f"⚡ ПРИНУДИТЕЛЬНОЕ закрытие позиции {trade_id} @ {price} "
+                     f"(force=True, ONLY_PROFIT_EXIT обойдён)", "WARNING")
+        else:
+            self.log(f"🖐 Ручное закрытие позиции {trade_id} @ {price}", "INFO")
+        ok = self._close_trade(trade, price, "manual", force=force)
         return {"ok": True} if ok else {
             "ok": False, "error": "Продажа не исполнена — попробуйте ещё раз позже"}
 
     def delete_trade(self, trade_id):
         """Удалить позицию из списка БЕЗ продажи на блокчейне (только из памяти/БД)."""
         with self._close_lock:
-            trade = next((t for t in self.open_trades
-                          if str(t.get("id")) == str(trade_id)), None)
-            if not trade:
-                return {"ok": False, "error": "Позиция не найдена или уже удалена"}
-            self.open_trades = [t for t in self.open_trades
-                                if str(t.get("id")) != str(trade_id)]
+            with self._ot_lock:
+                trade = next((t for t in self.open_trades
+                              if str(t.get("id")) == str(trade_id)), None)
+                if not trade:
+                    return {"ok": False, "error": "Позиция не найдена или уже удалена"}
+                self.open_trades = [t for t in self.open_trades
+                                    if str(t.get("id")) != str(trade_id)]
             self.trades = [t for t in self.trades
                            if str(t.get("id")) != str(trade_id)]
         self.log(f"🗑 Позиция {trade_id} удалена вручную (без продажи)", "WARNING")
@@ -2993,9 +4222,10 @@ class Trader:
         ghost-запись, чтобы дашборд не показывал несуществующую позицию.
         """
         with self._close_lock:
-            if not self.open_trades:
-                return
-            long_trades = [t for t in self.open_trades if t.get("side") != "short"]
+            with self._ot_lock:
+                if not self.open_trades:
+                    return
+                long_trades = [t for t in self.open_trades if t.get("side") != "short"]
             if not long_trades:
                 return
             now_iso = datetime.utcnow().isoformat()
@@ -3004,6 +4234,8 @@ class Trader:
                 trade["closed_at"]    = now_iso
                 trade["close_reason"] = "liquidator_auto_sell"
                 trade["status"]       = "closed"
+                for _ef in ("net_ton_now", "value_ton_now", "net_pct_now", "in_profit", "breakeven_price"):
+                    trade.pop(_ef, None)
                 # PnL посчитаем честно с учётом комиссии
                 fee = Config.FEE_PCT / 100.0
                 buy_gas  = Config.BUY_GAS_TON
@@ -3032,7 +4264,8 @@ class Trader:
                     self.stats["winning_trades"] = self.stats.get("winning_trades", 0) + 1
                 self.stats["total_trades"] = self.stats.get("total_trades", 0) + 1
             # Удаляем лонги из открытых
-            self.open_trades = [t for t in self.open_trades if t.get("side") == "short"]
+            with self._ot_lock:
+                self.open_trades = [t for t in self.open_trades if t.get("side") == "short"]
             self.dca_entries_count = 0
             self.dca_total_stake   = 0.0
         self.log(
@@ -3063,19 +4296,24 @@ class Trader:
         except Exception:
             pass
 
-    def _close_trade(self, trade, price, reason):
+    def _close_trade(self, trade, price, reason, force: bool = False):
         """Сериализует закрытие (лок) и защищает от двойной продажи позиции."""
         with self._close_lock:
-            if trade.get("id") not in {t.get("id") for t in self.open_trades}:
+            # FIX#1/#6: читаем open_trades под _ot_lock (RLock), чтобы снапшот
+            # был атомарным — исключаем гонку с параллельными _ot_lock-write операциями.
+            with self._ot_lock:
+                _trade_open = trade.get("id") in {t.get("id") for t in self.open_trades}
+            if not _trade_open:
                 return False   # уже закрыта другим потоком
-            return self._close_trade_locked(trade, price, reason)
+            return self._close_trade_locked(trade, price, reason, force=force)
 
-    def _close_trade_locked(self, trade, price, reason):
+    def _close_trade_locked(self, trade, price, reason, force: bool = False):
         """
         Закрывает позицию:
         1. Исполняет реальную продажу GRINCH на блокчейне (DeDust режим)
         2. Рассчитывает виртуальный P&L
         3. Обновляет статистику и AI feedback
+        force=True — обходит все ONLY_PROFIT_EXIT / ЖЕЛЕЗНЫЙ ЗАМОК проверки.
         """
         # ── 1. РЕАЛЬНАЯ продажа GRINCH через DeDust ─────────────────────
         if self.exchange.mode == "dedust":
@@ -3110,11 +4348,23 @@ class Trader:
                 # Даже если все верхние проверки пройдены, делаем финальную
                 # верификацию по РЕАЛЬНОЙ on-chain цене (TON/GRINCH).
                 # Продажа в минус по TON абсолютно невозможна.
-                if Config.ONLY_PROFIT_EXIT:
+                # Исключение: force=True (закрытие тестовой/ошибочной позиции).
+                if Config.ONLY_PROFIT_EXIT and not force:
                     try:
                         from price_feed import price_feed as _pf2
                         cur_ton = _pf2.get_grinch_ton_price() or 0.0
                         entry_ton = trade.get("entry_price_ton") or 0.0
+                        # Восстанавливаем entry_price_ton из stake/amount для старых позиций
+                        # где поле не было записано — иначе замок пропускался.
+                        if entry_ton <= 0:
+                            _st = float(trade.get("stake_ton", 0) or 0)
+                            _am = float(trade.get("amount", 0) or 0)
+                            if _st > 0 and _am > 0:
+                                entry_ton = _st / _am
+                                self.log(
+                                    f"🔧 entry_price_ton восстановлен: {entry_ton:.8f} TON "
+                                    f"(stake {_st:.3f} / amount {_am:.3f})", "INFO"
+                                )
                         if cur_ton > 0 and entry_ton > 0:
                             min_sell_ton = entry_ton * (1.0 + Config.FEE_ROUND_TRIP / 100.0)
                             if cur_ton < min_sell_ton:
@@ -3125,15 +4375,37 @@ class Trader:
                                     "WARN"
                                 )
                                 return False
-                    except Exception:
-                        pass
+                        elif cur_ton > 0 and entry_ton <= 0:
+                            # entry_price_ton совсем не восстановить — блокируем продажу
+                            # принудительно: лучше подождать, чем продать в минус.
+                            self.log(
+                                f"🛡️ ЖЕЛЕЗНЫЙ ЗАМОК: не удалось восстановить цену входа "
+                                f"(entry_price_ton=0, stake={trade.get('stake_ton')}, "
+                                f"amount={trade.get('amount')}) — продажа отклонена. Держим.",
+                                "WARN"
+                            )
+                            return False
+                    except Exception as _lock_err:
+                        # Ошибка при проверке цены: fail-closed — НЕ продаём.
+                        # Без подтверждённой цены мы не можем гарантировать прибыль.
+                        self.log(
+                            f"🛡️ ЖЕЛЕЗНЫЙ ЗАМОК: ошибка проверки цены ({_lock_err}) — "
+                            f"продажа отклонена (fail-closed). Держим.",
+                            "WARN"
+                        )
+                        return False
+                # AMM preflight: стоимость этой конкретной позиции.
+                # force=True → min_net_ton=0 (принимаем убыток, но всё равно продаём).
+                _stake_ton   = float(trade.get("stake_ton", 0) or 0)
+                _min_net_ton = 0.0 if force else (_stake_ton + Config.BUY_GAS_TON)
                 self.log(
                     f"💸 Продаём {grinch_amount:.6f} GRINCH на DeDust "
-                    f"(причина: {reason})...", "INFO"
+                    f"(причина: {reason}, AMM min_net ≥ {_min_net_ton:.3f} TON"
+                    f"{', FORCE' if force else ''})...", "INFO"
                 )
                 sell_ok = False
                 try:
-                    sell_result = self.exchange.place_order("sell", grinch_amount)
+                    sell_result = self.exchange.place_order("sell", grinch_amount, min_net_ton=_min_net_ton)
                     if sell_result and not sell_result.get("error"):
                         sell_ok = True
                         self.log(
@@ -3142,7 +4414,10 @@ class Trader:
                         )
                     else:
                         err = sell_result.get("error", "нет ответа") if sell_result else "нет ответа"
-                        self.log(f"⚠️ Продажа не исполнена: {err}", "WARN")
+                        if (sell_result or {}).get("amm_blocked"):
+                            self.log(f"🛡️ AMM preflight заблокировал продажу: {err}", "WARN")
+                        else:
+                            self.log(f"⚠️ Продажа не исполнена: {err}", "WARN")
                 except Exception as e:
                     self.log(f"⚠️ Ошибка продажи GRINCH: {e}", "WARN")
 
@@ -3163,8 +4438,21 @@ class Trader:
         # В DeDust-режиме цены в USD → конвертируем P&L в TON для корректного отображения
         if self.exchange.mode == "dedust":
             from price_feed import price_feed
-            ton_usd = price_feed.get("TON") or 2.44
-            pnl = round(pnl_raw / ton_usd, 6)
+            # FIX#5: не использовать хардкодный fallback — price_feed уже отдаёт
+            # stale-кэш при недоступности API. Если кэш пуст (первый старт),
+            # ставим pnl=0 вместо ложного значения по устаревшей цене.
+            ton_usd = price_feed.get("TON") or 0.0
+            if ton_usd > 0:
+                # BUG-FIX: вычитаем газ обоих свопов — он платится on-chain реально,
+                # но ранее не учитывался в P&L этого пути (только в DCA-путях учитывался).
+                # buy_gas уже уплачен при входе (sunk cost), sell_gas — сейчас.
+                pnl = round(
+                    pnl_raw / ton_usd - Config.BUY_GAS_TON - Config.SELL_GAS_TON,
+                    6
+                )
+            else:
+                self.log("⚠️ P&L: цена TON/USD недоступна — P&L помечен как 0 (уточнится позже)", "WARN")
+                pnl = 0.0
         else:
             pnl = round(pnl_raw, 6)
 
@@ -3174,12 +4462,27 @@ class Trader:
         trade["closed_at"]    = datetime.utcnow().isoformat()
         trade["close_reason"] = reason
         trade["status"]       = "closed"
+        # Bug-fix #2: убираем пересчитанные по текущей цене поля из истории
+        for _ef in ("net_ton_now", "value_ton_now", "net_pct_now", "in_profit", "breakeven_price"):
+            trade.pop(_ef, None)
 
         self.stats["total_pnl"] = round(self.stats["total_pnl"] + pnl, 6)
+        # Единая точка учёта: total_trades считается только здесь, в момент
+        # закрытия — синхронно с вызовом record_trade() ниже (в блоке 4).
+        self.stats["total_trades"] = self.stats.get("total_trades", 0) + 1
         if pnl > 0:
             self.stats["winning_trades"] += 1
+        # Расширенная pro-статистика (серия побед, daily P&L, best/worst)
+        self._record_trade_pnl(pnl)
+        # ── Организм: обратная связь о закрытой сделке ───────────────────
+        try:
+            if _organism is not None:
+                _organism.on_trade_closed(float(pnl), pnl > 0)
+        except Exception:
+            pass
 
-        self.open_trades = [t for t in self.open_trades if t["id"] != trade["id"]]
+        with self._ot_lock:
+            self.open_trades = [t for t in self.open_trades if t["id"] != trade["id"]]
         for t in self.trades:
             if t["id"] == trade["id"]:
                 t.update(trade)
@@ -3197,6 +4500,7 @@ class Trader:
             # Кулдаун после убытка: фиксируем время для защиты от повторного входа
             if outcome == "loss":
                 self._last_loss_ts = time.time()
+                self._save_volatile_state()  # cooldown переживёт рестарт
                 self.log(
                     f"⏸️ Loss cooldown активирован: пауза {Config.LOSS_COOLDOWN_SEC//60} мин перед следующим входом",
                     "WARN"
@@ -3290,6 +4594,26 @@ class Trader:
             })
         except Exception:
             pass
+
+        # ── DCA: после любого закрытия последней позиции — ждать откат ──────
+        # Автоматические пути (TP, каскад, profit_protect) уже ставят
+        # wait_pullback=True явно в своих ветках.
+        # Ручное закрытие (reason="manual") этот путь пропускало → бот мог
+        # войти заново сразу, без ожидания отката цены.
+        # FIX#6: читаем open_trades под _ot_lock — снапшот после удаления сделки.
+        with self._ot_lock:
+            _no_open = not self.open_trades
+        if Config.DCA_MODE and _no_open:
+            if not self.dca_wait_pullback:
+                self.dca_wait_pullback = True
+                self.dca_peak_price    = price
+                self._save_volatile_state()
+                self.log(
+                    f"⏳ DCA wait_pullback: ждём откат -{Config.DCA_PULLBACK_WAIT_PCT:.0f}% "
+                    f"от пика ${price:.6f} после закрытия ({reason})",
+                    "INFO",
+                )
+
         return True
 
     # ──────────────────────────────────────────
@@ -3401,7 +4725,8 @@ class Trader:
     def get_status(self):
         # Используем last_analysis из последнего торгового тика (обновляется каждые 15с).
         # Fallback: считаем напрямую только при первом обращении до первого тика.
-        ohlcv    = self.exchange.get_ohlcv(limit=100)
+        ohlcv    = (self.exchange.get_real_ohlcv(limit=100, currency="token",
+                                                  token="base", tf="minute", aggregate=15) or [])
         analysis = self.last_analysis if self.last_analysis else analyze(ohlcv)
         # Единый источник «текущей цены» для всего UI: спотовая цена DexScreener
         # (price_feed.get), та же, что использует авто-ликвидатор и карточка монеты.
@@ -3421,8 +4746,14 @@ class Trader:
         ai       = self.last_ai if self.last_ai else self.ai.analyze(ohlcv)
         balance  = self._get_balance_cached()
         winrate  = 0
-        if self.stats["total_trades"] > 0:
-            winrate = round(self.stats["winning_trades"] / self.stats["total_trades"] * 100, 1)
+        _tt = int(self.stats.get("total_trades") or 0)
+        _wt = int(self.stats.get("winning_trades") or 0)
+        if _tt > 0:
+            winrate = round(_wt / _tt * 100, 1)
+        # Гарантируем что stats не содержит None (защита от устаревших БД-записей)
+        self.stats["total_trades"]   = _tt
+        self.stats["winning_trades"] = _wt
+        self.stats["total_pnl"]      = float(self.stats.get("total_pnl") or 0)
         pb = self._pending_buy
         # AI-управление: текущие адаптированные параметры (просадка, пауза, порог)
         ai_mgmt = {}
@@ -3437,14 +4768,46 @@ class Trader:
             _ai_conf >= Config.AI_FULL_RIGHTS_MIN_CONF
         )
         # ── DCA статус ───────────────────────────────────────────────
-        dca_portfolio_pct = None
-        if Config.DCA_MODE and self.open_trades and grinch_ton:
+        # Self-heal: если open_trades есть, но счётчики цикла = 0 (рассинхрон
+        # после рестарта или кратковременного сброса) — восстановить из позиций.
+        # FIX#7: модификация DCA-state только под _ot_lock.
+        if Config.DCA_MODE and self.open_trades and self.dca_entries_count == 0:
             try:
-                cost_ton, val_ton = self._dca_portfolio_value(grinch_ton)
-                if cost_ton > 0:
-                    dca_portfolio_pct = round((val_ton - cost_ton) / cost_ton * 100, 2)
+                with self._ot_lock:
+                    _sh_trades = [t for t in self.open_trades if t.get("dca_entry")]
+                    if not _sh_trades:
+                        _sh_trades = [t for t in self.open_trades
+                                      if t.get("trade_type") != "short"]
+                    if _sh_trades:
+                        self.dca_entries_count = max(
+                            int(t.get("dca_index") or 1) for t in _sh_trades)
+                        self.dca_total_stake = sum(
+                            float(t.get("stake_ton") or 0) for t in _sh_trades)
+                        if not self.dca_last_buy_price:
+                            _sh_sorted = sorted(
+                                _sh_trades,
+                                key=lambda t: (t.get("dca_index") or 0, t.get("opened_at") or ""))
+                            self.dca_last_buy_price = float(
+                                _sh_sorted[-1].get("entry_price") or 0)
+                        self.log(
+                            f"[get_status] DCA self-heal: entries={self.dca_entries_count} "
+                            f"stake={self.dca_total_stake:.2f} TON", "DEBUG")
             except Exception:
                 pass
+
+        dca_portfolio_pct = None
+        dca_portfolio_ton = None
+        if Config.DCA_MODE and self.open_trades:
+            # Fallback: если price_feed вернул 0, берём цену последней покупки
+            _gt = grinch_ton or self.dca_last_buy_price
+            if _gt and _gt > 0:
+                try:
+                    cost_ton, val_ton = self._dca_portfolio_value(_gt)
+                    if cost_ton > 0:
+                        dca_portfolio_pct = round((val_ton - cost_ton) / cost_ton * 100, 2)
+                        dca_portfolio_ton = round(val_ton - cost_ton, 4)
+                except Exception:
+                    pass
 
         return {
             "running":       self.running,
@@ -3487,6 +4850,7 @@ class Trader:
                 "entries_count":   self.dca_entries_count,
                 "total_stake":     self.dca_total_stake,
                 "portfolio_pct":   dca_portfolio_pct,
+                "portfolio_ton":   dca_portfolio_ton,
                 "target_pct":      Config.DCA_TARGET_PROFIT_PCT,
                 "drop_trigger_pct": Config.DCA_DROP_TRIGGER_PCT,
                 "pullback_wait_pct": Config.DCA_PULLBACK_WAIT_PCT,

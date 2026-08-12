@@ -9,6 +9,9 @@ build/
 .eggs/
 *.egg
 .env
+.env.*
+cookies.txt
+cookies*.txt
 .venv
 venv/
 env/
@@ -32,7 +35,18 @@ artifacts/
 .local/
 .upm/
 .pythonlibs/
-.replit
 pyproject.toml
 attached_assets/
 backups/
+
+deploy_secrets_local/
+ai_advisor.py.bak
+.env.bak_*
+fix_stats_test.py
+.deploy.lock
+.last_docker_prune
+
+# Файлы которые пересоздаются на VPS и не должны трекаться git
+/app.js
+/index.html
+.local/keys/

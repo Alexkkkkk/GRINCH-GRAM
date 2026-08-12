@@ -61,7 +61,7 @@ FILE = os.getenv("EXPERIENCE_FILE", os.path.join(_DATA_DIR, "experience.json"))
 # ── Параметры адаптации (само-управление) ────────────────────────────────────
 MAX_TRADES_KEPT   = 1000     # сколько последних сделок хранить в журнале
 MAX_EQUITY_KEPT   = 3000     # сколько точек кривой капитала хранить
-EQUITY_MIN_GAP    = 60       # не чаще раза в N секунд писать точку капитала
+EQUITY_MIN_GAP    = 30       # не чаще раза в N секунд писать точку капитала
 RECENT_WINDOW     = 5        # окно «недавних» сделок — быстрее реагирует (было 10)
 CONF_CAP          = 90.0     # потолок порога уверенности
 DD_SHRINK_1       = 8.0      # просадка 8% → уменьшаем ставку (было 10)
@@ -113,6 +113,52 @@ class ExperienceManager:
             "ai_avg_win_pct":         0.0,      # средний % прибыли в выигрышных сделках
         }
 
+    @staticmethod
+    def _reconcile_stats_from_trades(trades, existing=None) -> dict:
+        """Build the durable counters from the journal, not from a stale snapshot.
+
+        ``bot_trades``/``experience.json`` are the source of truth for completed
+        trades.  The old implementation persisted the journal and the counters
+        independently, so a crash between those writes could leave the dashboard
+        one trade behind.
+        """
+        stats = dict(existing or {})
+        closed = [
+            t for t in (trades or [])
+            if isinstance(t, dict)
+            and (t.get("status") == "closed" or t.get("closed_at") or t.get("exit_time"))
+        ]
+        if not closed:
+            return stats
+
+        pnls = []
+        for trade in closed:
+            try:
+                pnls.append(float(trade.get("pnl") or 0.0))
+            except (TypeError, ValueError):
+                pnls.append(0.0)
+
+        wins = sum(1 for pnl in pnls if pnl > 0)
+        current_streak = 0
+        max_streak = 0
+        for pnl in pnls:
+            if pnl > 0:
+                current_streak += 1
+                max_streak = max(max_streak, current_streak)
+            else:
+                current_streak = 0
+
+        stats.update({
+            "total_trades": len(closed),
+            "winning_trades": wins,
+            "total_pnl": round(sum(pnls), 6),
+            "best_trade_ton": round(max(pnls), 6),
+            "worst_trade_ton": round(min(pnls), 6),
+            "win_streak": current_streak,
+            "max_win_streak": max_streak,
+        })
+        return stats
+
     # ── Чтение / запись ──────────────────────────────────────────────────────
     def _load(self):
         db = _db()
@@ -129,41 +175,28 @@ class ExperienceManager:
                 stats_raw   = ai_state.get("stats")
                 ai_raw      = ai_state.get("ai_export")
 
-                if trades or equity or open_trades or control_raw or stats_raw or ai_raw:
-                    if trades:
-                        self.data["trades"] = [
-                            dict(t, trade_type=t.get("trade_type", t.get("side", "long")))
-                            if isinstance(t, dict) else t
-                            for t in trades
-                        ]
+                if trades or equity or control_raw:
+                    if trades:      self.data["trades"]      = trades
                     if equity:      self.data["equity"]      = equity
-                    if open_trades:
-                        self.data["open_trades"] = [
-                            dict(t, trade_type=t.get("trade_type", t.get("side", "long")))
-                            if isinstance(t, dict) else t
-                            for t in open_trades
-                        ]
+                    if open_trades: self.data["open_trades"] = open_trades
                     if control_raw: self.data["control"]     = control_raw if isinstance(control_raw, dict) else json.loads(control_raw)
                     if stats_raw:
                         _s = stats_raw if isinstance(stats_raw, dict) else json.loads(stats_raw)
-                        # Санитайз при загрузке: winning_trades ≤ total_trades (атомарно,
-                        # до того как любой фоновый поток успеет прочитать self.data["stats"])
-                        _wt = int(_s.get("winning_trades", 0) or 0)
-                        _tt = int(_s.get("total_trades", 0) or 0)
-                        if _wt > _tt:
-                            _s = dict(_s)
-                            # Победы уже подтверждены закрытыми сделками.
-                            # Восстанавливаем заниженный total, не выбрасываем wins.
-                            _s["total_trades"] = _wt
-                            logger.warning(
-                                f"[Experience] 🔧 _load: winning_trades ({_wt}) > total_trades ({_tt})"
-                                f" — total расширен до {_wt} при загрузке из DB"
-                            )
                         self.data["stats"] = _s
                     if ai_raw:      self.data["ai"]          = ai_raw if isinstance(ai_raw, dict) else json.loads(ai_raw)
                     ctrl = self._default_control()
                     ctrl.update(self.data.get("control") or {})
                     self.data["control"] = ctrl
+                    reconciled = self._reconcile_stats_from_trades(
+                        self.data.get("trades") or [], self.data.get("stats") or {}
+                    )
+                    if reconciled != (self.data.get("stats") or {}):
+                        self.data["stats"] = reconciled
+                        self._save_locked()
+                        logger.info(
+                            "[Experience] 🔧 Агрегаты статистики пересчитаны по журналу: "
+                            f"{reconciled.get('total_trades', 0)} сделок"
+                        )
                     print(f"[Experience] загружено из DB: {len(self.data['trades'])} сделок, "
                           f"{len(self.data['equity'])} точек капитала")
                     loaded_from_db = True
@@ -180,26 +213,21 @@ class ExperienceManager:
                 for k in ("trades", "open_trades", "equity", "stats", "ai", "control", "created"):
                     if k in disk and disk[k] is not None:
                         self.data[k] = disk[k]
-                self.data["trades"] = [
-                    dict(t, trade_type=t.get("trade_type", t.get("side", "long")))
-                    if isinstance(t, dict) else t
-                    for t in (self.data.get("trades") or [])
-                ]
-                self.data["open_trades"] = [
-                    dict(t, trade_type=t.get("trade_type", t.get("side", "long")))
-                    if isinstance(t, dict) else t
-                    for t in (self.data.get("open_trades") or [])
-                ]
+                # Санитайз stats из JSON — поля могут быть null если файл был записан
+                # в момент сбоя или устаревшей версией без защиты
                 if isinstance(self.data.get("stats"), dict):
-                    _s = dict(self.data["stats"])
-                    _wt = int(_s.get("winning_trades", 0) or 0)
-                    _tt = int(_s.get("total_trades", 0) or 0)
-                    if _wt > _tt:
-                        _s["total_trades"] = _wt
-                        self.data["stats"] = _s
+                    _sj = self.data["stats"]
+                    _sj["total_trades"]   = int(_sj.get("total_trades")   or 0)
+                    _sj["winning_trades"] = int(_sj.get("winning_trades") or 0)
+                    _sj["total_pnl"]      = float(_sj.get("total_pnl")    or 0.0)
+                    if _sj["winning_trades"] > _sj["total_trades"]:
+                        _sj["winning_trades"] = _sj["total_trades"]
                 ctrl = self._default_control()
                 ctrl.update(self.data.get("control") or {})
                 self.data["control"] = ctrl
+                self.data["stats"] = self._reconcile_stats_from_trades(
+                    self.data.get("trades") or [], self.data.get("stats") or {}
+                )
                 print(f"[Experience] загружено из JSON: {len(self.data['trades'])} сделок, "
                       f"{len(self.data['equity'])} точек капитала")
                 # Миграция JSON → DB (однократно)
@@ -242,15 +270,19 @@ class ExperienceManager:
             logger.warning(f"[Experience] migrate_to_db error: {e}")
 
     def _save_locked(self):
+        # Пересчитываем до записи JSON, чтобы DB и fallback-файл получали один
+        # и тот же снимок, даже если процесс остановится сразу после записи.
+        stats = self._reconcile_stats_from_trades(
+            self.data.get("trades") or [], self.data.get("stats") or {}
+        )
+        self.data["stats"] = stats
         # JSON (локальный backup)
         try:
             tmp = self.path + ".tmp"
             with open(tmp, "w", encoding="utf-8") as f:
                 _jdump(self.data, f, ensure_ascii=False)
                 f.flush()
-                os.fsync(f.fileno())
-                f.flush()
-                os.fsync(f.fileno())
+                os.fsync(f.fileno())   # L3-fix: гарантируем запись на диск перед атомарной заменой
             os.replace(tmp, self.path)
         except Exception as e:
             print(f"[Experience] ошибка записи {self.path}: {e}")
@@ -259,17 +291,6 @@ class ExperienceManager:
         if db:
             try:
                 ctrl  = self.data.get("control") or {}
-                stats = self.data.get("stats") or {}
-                # Инвариант: winning_trades ≤ total_trades (иначе winrate >100%)
-                # Проверяем здесь потому что _save_locked вызывается из analyze_and_adapt
-                # ДО того как санитайзер в trader.__init__ успевает исправить значение.
-                if stats:
-                    _tt = int(stats.get("total_trades", 0) or 0)
-                    _wt = int(stats.get("winning_trades", 0) or 0)
-                    if _wt > _tt:
-                        stats = dict(stats)
-                        stats["total_trades"] = _wt
-                        self.data["stats"] = stats
                 if ctrl:  db.ai_state_set("control", ctrl)
                 if stats: db.ai_state_set("stats", stats)
             except Exception as e:
@@ -285,49 +306,21 @@ class ExperienceManager:
         """Возвращает статистику в трейдер и применяет сохранённые параметры
         управления к Config (тёплый старт)."""
         with self._lock:
-            stats = self.data.get("stats") or {}
-            if stats:
-                for k in ("total_trades", "winning_trades", "total_pnl"):
-                    if k in stats:
-                        trader.stats[k] = stats[k]
-            # ── Само-исцеление: stats должны быть согласованы с реальным
-            # журналом сделок (self.data["trades"] — источник истины).
-            # Каскадные частичные продажи (_dca_sell_partial) увеличивают
-            # total_trades/winning_trades/total_pnl напрямую, минуя
-            # record_trade(), поэтому счётчик может «уехать» от журнала
-            # (например показывать 3 сделки при 0 записей в журнале).
-            # Пересчитываем счётчики из журнала, если есть явное расхождение.
-            try:
-                real_trades = self.data.get("trades") or []
-                real_total  = len(real_trades)
-                real_wins   = sum(1 for t in real_trades if float(t.get("pnl", 0) or 0) > 0)
-                real_pnl    = round(sum(float(t.get("pnl", 0) or 0) for t in real_trades), 6)
-                cached_total = int(trader.stats.get("total_trades", 0) or 0)
-                # Расхождение возможно только В БОЛЬШУЮ сторону от журнала
-                # (кэш "опережает" из-за каскадных частичных продаж) —
-                # если кэш меньше журнала, это не баг, просто журнал новее.
-                #
-                # ВАЖНО: не трогаем stats если журнал пустой (real_total == 0).
-                # Пустой журнал = потеря данных (DCA-продажи инкрементируют
-                # счётчик через notify_trade_closed, но не вызывают record_trade,
-                # поэтому trades-список всегда 0 при non-zero stats). Занулять
-                # накопленную статистику из-за пустого журнала — неверно.
-                if cached_total > real_total > 0:
-                    _note = (
-                        f"🔧 Само-исцеление stats: кэш показывал total_trades="
-                        f"{cached_total}, winning_trades={trader.stats.get('winning_trades')}, "
-                        f"total_pnl={trader.stats.get('total_pnl')}, но в журнале сделок "
-                        f"{real_total} записей — сброшено до журнала "
-                        f"({real_total}/{real_wins}/{real_pnl})"
-                    )
-                    logger.warning(f"[Experience] {_note}")
-                    trader.stats["total_trades"]   = real_total
-                    trader.stats["winning_trades"] = real_wins
-                    trader.stats["total_pnl"]      = real_pnl
-                    self.data["stats"] = dict(trader.stats)
-                    self._save_locked()
-            except Exception as _stats_heal_err:
-                logger.warning(f"[Experience] stats self-heal error: {_stats_heal_err}")
+            # Восстанавливаем накопленные счётчики (total_trades / winning_trades / total_pnl)
+            # из DB при каждом рестарте, чтобы дашборд показывал ВСЕ исторические сделки,
+            # а не только текущую сессию. Исторические данные хранятся в bot_ai_state["stats"].
+            saved_stats = self.data.get("stats") or {}
+            if saved_stats and isinstance(saved_stats, dict):
+                for _k in ("total_trades", "winning_trades", "total_pnl"):
+                    if _k in saved_stats and saved_stats[_k] is not None:
+                        trader.stats[_k] = saved_stats[_k]
+            # Гарантируем что trader.stats не содержит None — защита от
+            # устаревших БД-записей где поля были сохранены как null
+            trader.stats["total_trades"]   = int(trader.stats.get("total_trades")   or 0)
+            trader.stats["winning_trades"] = int(trader.stats.get("winning_trades") or 0)
+            trader.stats["total_pnl"]      = float(trader.stats.get("total_pnl")    or 0.0)
+            if trader.stats["winning_trades"] > trader.stats["total_trades"]:
+                trader.stats["winning_trades"] = trader.stats["total_trades"]
             # ВОССТАНАВЛИВАЕМ открытые позиции: цена покупки + цель продажи —
             # чтобы после перезапуска бот знал почём купил и НЕ продал дешевле.
             all_open = [dict(t) for t in (self.data.get("open_trades") or [])]
@@ -393,12 +386,24 @@ class ExperienceManager:
         except Exception as _hist_err:
             logger.warning(f"[Experience] restore closed trades error: {_hist_err}")
         try:
+            # Показываем ставку, актуальную для текущего режима:
+            # в DCA — стейк на вход из конфига, в AI-режиме — адаптивная ставка.
+            try:
+                from config import Config as _Cfg
+                _dca = _Cfg.DCA_MODE
+                _stake_label = (f"ставка DCA={_Cfg.DCA_STAKE_TON:.0f} TON/вход"
+                                if _dca else f"ставка AI={ctrl['trade_amount']:.3f} TON")
+            except Exception:
+                _dca = False
+                _stake_label = f"ставка={ctrl['trade_amount']:.3f}"
             note = (
                 f"🧠 Память загружена: {len(self.data['trades'])} сделок"
                 + (f" | ⏳ {len(open_trades)} LONG восстановлено" if open_trades else "")
                 + (f" | 📉 {len(open_short_trades)} SHORT восстановлено" if open_short_trades else "")
-                + f" | порог={ctrl['min_conf']:.0f}% ставка={ctrl['trade_amount']:.3f} | "
-                f"{'⏸️ ПАУЗА' if ctrl['paused'] else '▶️ активна'}"
+                + f" | порог={ctrl['min_conf']:.0f}% {_stake_label}"
+                # «AI-пауза» — авто-пауза по статистике, не то же что ручной выключатель торговли.
+                # Ручной статус («торговля вкл/выкл») логируется отдельно при старте агента.
+                + f" | {'⏸️ AI-пауза активна' if ctrl['paused'] else '▶️ AI-пауза: нет'}"
             )
             trader.log(note, "INFO")
             for t in open_trades:
@@ -542,37 +547,33 @@ class ExperienceManager:
             trade_rec.setdefault("reason",      trade.get("close_reason"))
             trade_rec.setdefault("opened_at",   trade.get("opened_at"))
             trade_rec.setdefault("closed_at",   trade.get("closed_at"))
+            trade_rec.setdefault("trade_type",  trade.get("trade_type", "long"))   # C3-fix: short-позиции восстанавливаются правильно после рестарта
             self.data["trades"].append(trade_rec)
             if len(self.data["trades"]) > MAX_TRADES_KEPT:
                 self.data["trades"] = self.data["trades"][-MAX_TRADES_KEPT:]
-            if stats:
-                _s = dict(stats)
-                # Инвариант: winning_trades ≤ total_trades (защита от race condition
-                # когда запись_trade вызывается с устаревшими/некорректными stats)
-                _wt2 = int(_s.get("winning_trades", 0) or 0)
-                _tt2 = int(_s.get("total_trades", 0) or 0)
-                if _wt2 > _tt2:
-                    _s["total_trades"] = _wt2
-                    logger.warning(
-                        f"[Experience] record_trade sanitize: winning({_wt2})>total({_tt2})"
-                        f" — total расширен до {_wt2}"
-                    )
-                self.data["stats"] = _s
+            self.data["stats"] = self._reconcile_stats_from_trades(
+                self.data["trades"], stats
+            )
             if ai is not None:
                 try:
                     self.data["ai"] = ai.export_experience()
                 except Exception as e:  # noqa: BLE001
                     print(f"[Experience] export_experience error: {e}")
-            self._save_locked()
-            # DB: уписываем сделку + AI-опыт
+            # Сначала фиксируем саму сделку в журнале БД. Затем _save_locked()
+            # запишет JSON и агрегаты; так аварийная остановка не оставит
+            # счётчики впереди журнала сделок.
             db = _db()
             if db:
                 try:
                     db.trades_upsert(trade_rec)
-                    if self.data.get("ai"):
-                        db.ai_state_set("ai_export", self.data["ai"])
                 except Exception as e:
                     logger.warning(f"[Experience] DB record_trade error: {e}")
+            self._save_locked()
+            if db and self.data.get("ai"):
+                try:
+                    db.ai_state_set("ai_export", self.data["ai"])
+                except Exception as e:
+                    logger.warning(f"[Experience] DB AI export error: {e}")
 
     # ── Запись капитала (кривая баланса) ─────────────────────────────────────
     def record_balance(self, balance: dict, grinch_price_usd: float, force: bool = False):
@@ -592,6 +593,13 @@ class ExperienceManager:
         # точку: иначе капитал «схлопнется» до TON-only и даст ложную просадку
         # → ошибочную паузу торговли.
         if grinch > 0 and (ton_usd <= 0 or gp <= 0):
+            return
+        # Защита от «битого» снимка баланса: TON=0 при ненулевом GRINCH почти
+        # всегда означает временный сбой чтения on-chain баланса (реальный
+        # кошелёк с открытой позицией всегда держит газовый резерв, TON
+        # никогда не бывает ровно 0). Не пишем такую точку — иначе капитал на
+        # графике «проваливается» до нуля и сразу же возвращается обратно.
+        if ton == 0 and grinch > 0:
             return
         equity_ton = ton + (grinch * gp / ton_usd if ton_usd else 0.0)
         point = {
@@ -627,16 +635,19 @@ class ExperienceManager:
             base_conf = float(ctrl["base_min_conf"])
             base_amt  = float(ctrl["base_trade_amount"])
 
+            # FIX#26: считаем только закрытые сделки с реальным pnl (не None/0),
+            # незакрытые (pnl=None) и ошибочные (pnl=0) не влияют на серию.
+            _closed = [t for t in trades if t.get("pnl") is not None and t.get("status") != "open"]
             # — серия убытков подряд (с конца журнала) —
             streak = 0
-            for t in reversed(trades):
+            for t in reversed(_closed):
                 if (t.get("pnl") or 0) < 0:
                     streak += 1
                 else:
                     break
             # — серия ПРИБЫЛЬНЫХ сделок подряд (для безопасного роста ставки) —
             win_streak = 0
-            for t in reversed(trades):
+            for t in reversed(_closed):
                 if (t.get("pnl") or 0) > 0:
                     win_streak += 1
                 else:
@@ -648,23 +659,18 @@ class ExperienceManager:
             # — просадка от пика капитала —
             peak = ctrl.get("peak_equity", 0) or 0
             cur_eq = equity[-1]["equity_ton"] if equity else peak
+            # M8-fix: если peak==0 но cur_eq>0 (первый запуск или сброс),
+            # инициализируем peak текущим капиталом, чтобы DD_PAUSE мог
+            # сработать при последующей просадке (иначе drawdown всегда 0%).
+            if peak <= 0 and cur_eq > 0:
+                peak = cur_eq
+                ctrl["peak_equity"] = round(peak, 6)
             drawdown = ((peak - cur_eq) / peak * 100) if peak > 0 else 0.0
             drawdown = max(0.0, drawdown)
 
             # ── Per-regime win rate tracking ──────────────────────────────
-            regime_stats = ctrl.get("regime_stats") or {}
-            for t in trades[-20:]:   # обновляем по последним 20 сделкам
-                reg = (t.get("regime") or t.get("entry_regime") or "UNKNOWN").upper()
-                if reg not in REGIME_KEYS:
-                    reg = "TRANSITION"
-                rs = regime_stats.setdefault(reg, {"wins": 0, "total": 0, "net": 0.0})
-                if t.get("pnl") is not None:
-                    rs["total"] += 1
-                    if (t.get("pnl") or 0) > 0:
-                        rs["wins"] += 1
-                    rs["net"] = round(rs.get("net", 0.0) + (t.get("pnl") or 0), 4)
-            # Дедупликация: берём только уникальные combo из последних 20 сделок
-            # (повторный анализ завышает счётчики) — перестраиваем с нуля каждый раз
+            # Перестраиваем с нуля каждый раз по последним 50 сделкам, чтобы
+            # избежать задвоения счётчиков при повторных анализах.
             regime_stats = {}
             for t in trades[-50:]:
                 reg = (t.get("regime") or t.get("entry_regime") or "UNKNOWN").upper()
