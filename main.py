@@ -4,7 +4,7 @@ import stat
 # ── Восстанавливаем GitHub deploy key из workspace-файла при каждом старте ──
 _key_src = os.path.join(os.path.dirname(__file__), ".local", "keys", "github_deploy")
 _key_dst = os.path.expanduser("~/.ssh/github_deploy")
-_ssh_cfg  = os.path.expanduser("~/.ssh/config")
+_ssh_cfg = os.path.expanduser("~/.ssh/config")
 try:
     if os.path.exists(_key_src):
         os.makedirs(os.path.expanduser("~/.ssh"), exist_ok=True)
@@ -31,4 +31,6 @@ from app import app, socketio
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
-    socketio.run(app, host="0.0.0.0", port=port, debug=False, allow_unsafe_werkzeug=True)
+    socketio.run(
+        app, host="0.0.0.0", port=port, debug=False, allow_unsafe_werkzeug=True
+    )
