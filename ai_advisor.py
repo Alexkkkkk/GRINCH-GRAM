@@ -242,7 +242,10 @@ AUTO_INTERVAL_MIN    = 150  # минимум 150 мин: защищает бес
 AUTO_TRADES_TRIGGER  = 2    # авто-запуск после закрытых сделок (было 1 — слишком часто жгло токены)
 
 # Восстанавливаем сохранённые настройки интервала (переживают перезапуск)
+_adv_sec = {}
 try:
+    from settings_store import get_section as _get_advisor_section
+    _adv_sec = _get_advisor_section("advisor") or {}
     if _adv_sec.get("interval_min"):
         AUTO_INTERVAL_MIN = max(150, min(360, int(_adv_sec["interval_min"])))
     if _adv_sec.get("trades_trigger"):

@@ -11,6 +11,11 @@ updates:
     labels:
       - "dependencies"
       - "security"
+    groups:
+      python-patch-and-minor:
+        update-types:
+          - "patch"
+          - "minor"
     allow:
       - dependency-name: "ccxt"
       - dependency-name: "cryptography"
@@ -35,3 +40,8 @@ updates:
     labels:
       - "ci"
       - "dependencies"
+    groups:
+      actions-minor-and-patch:
+        update-types:
+          - "patch"
+          - "minor"
