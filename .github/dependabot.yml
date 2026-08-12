@@ -1,47 +1,75 @@
 version: 2
 updates:
+  # 🐍 1. Мониторинг Python-зависимостей (requirements.txt)
   - package-ecosystem: "pip"
     directory: "/"
     schedule:
       interval: "weekly"
       day: "monday"
-    open-pull-requests-limit: 10
-    reviewers:
+      time: "03:00"
+      timezone: "UTC"
+    open-pull-requests-limit: 5
+    assignees:
       - "Alexkkkkk"
     labels:
       - "dependencies"
-      - "security"
+      - "python"
+      - "automerge-candidate"
+    commit-message:
+      prefix: "chore(deps-pip)"
+      include: "scope"
+    # Игнорируем breaking changes (мажорные апдейты)
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
+    # Группировка мелких патчей в один аккуратный PR
     groups:
-      python-patch-and-minor:
+      python-patches:
+        applies-to: version-updates
+        patterns:
+          - "*"
         update-types:
           - "patch"
           - "minor"
-    allow:
-      - dependency-name: "ccxt"
-      - dependency-name: "cryptography"
-      - dependency-name: "pytoniq*"
-      - dependency-name: "requests"
-      - dependency-name: "aiohttp"
+
+  # ⚡ 2. Мониторинг GitHub Actions Workflows (.github/workflows)
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "03:30"
+      timezone: "UTC"
+    open-pull-requests-limit: 3
+    assignees:
+      - "Alexkkkkk"
+    labels:
+      - "ci/cd"
+      - "github-actions"
+      - "automerge-candidate"
     commit-message:
-      prefix: "deps"
+      prefix: "ci(actions)"
       include: "scope"
+    groups:
+      actions-dependencies:
+        applies-to: version-updates
+        patterns:
+          - "*"
+
+  # 🐳 3. Мониторинг Dockerfile и контейнеров
   - package-ecosystem: "docker"
     directory: "/"
     schedule:
       interval: "weekly"
-    open-pull-requests-limit: 5
+      day: "monday"
+      time: "04:00"
+      timezone: "UTC"
+    open-pull-requests-limit: 2
+    assignees:
+      - "Alexkkkkk"
     labels:
       - "docker"
-      - "dependencies"
-  - package-ecosystem: "github-actions"
-    directory: "/"
-    schedule:
-      interval: "monthly"
-    labels:
-      - "ci"
-      - "dependencies"
-    groups:
-      actions-minor-and-patch:
-        update-types:
-          - "patch"
-          - "minor"
+      - "infrastructure"
+    commit-message:
+      prefix: "fix(docker)"
+      include: "scope"
