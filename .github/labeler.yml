@@ -1,23 +1,42 @@
-# Авто-метки по изменённым файлам
 docker:
-  - Dockerfile
-  - docker-compose.yml
-  - .dockerignore
+  - changed-files:
+      - any-glob-to-any-file:
+          - Dockerfile
+          - docker-compose.yml
+          - .dockerignore
 
 ci/cd:
-  - .github/workflows/*
-  - .github/dependabot.yml
+  - changed-files:
+      - any-glob-to-any-file:
+          - .github/workflows/*
+          - .github/dependabot.yml
+          - .github/labeler.yml
 
 python:
-  - "*.py"
-  - "requirements.txt"
+  - changed-files:
+      - any-glob-to-any-file:
+          - "*.py"
+          - "requirements.txt"
+          - "pyproject.toml"
 
 frontend:
-  - static/**/*
-  - "*.html"
-  - "*.css"
-  - "*.js"
+  - changed-files:
+      - any-glob-to-any-file:
+          - static/**/*
+          - "*.html"
+          - "*.css"
+          - "*.js"
 
 security:
-  - .github/workflows/security.yml
-  - .github/workflows/codeql.yml
+  - changed-files:
+      - any-glob-to-any-file:
+          - .github/workflows/security.yml
+          - .github/workflows/codeql.yml
+          - .github/workflows/nightly-audit.yml
+
+documentation:
+  - changed-files:
+      - any-glob-to-any-file:
+          - README.md
+          - "*.md"
+          - .github/*.md
