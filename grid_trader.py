@@ -296,10 +296,18 @@ class GridAIManager:
         # → clamped к MIN=4.0% → бесконечная осцилляция 5.5%↔4.0%.
 
         # ── 3. Авто-перестройка ───────────────────────────────────────────
-        if grinch_balance > 1000 and price_ton > 0:
+        if price_ton > 0:
             now = time.time()
             rebuild_reason = self._need_rebuild(
-                sell_levels, regime, now, ton_balance)
+                sell_levels, regime, now, ton_balance, grinch_balance)
+
+            if rebuild_reason:
+                # Не строим обычную сетку из пыли/нулевого баланса. Исключение
+                # только для reserve-reconcile: он должен убрать stale SELL
+                # даже когда физический GRINCH уже стал нулевым.
+                if grinch_balance <= 1000 and not rebuild_reason.startswith(
+                        "сверка резерва"):
+                    rebuild_reason = ""
 
             if rebuild_reason:
                 target_levels = policy["levels"]
@@ -343,14 +351,37 @@ class GridAIManager:
                      atr_pct, ai_buy_conf, ai_sell_conf)
 
     def _need_rebuild(self, sell_levels: list, regime: str, now: float,
-                      ton_balance: float = 0.0) -> str:
+                      ton_balance: float = 0.0,
+                      grinch_balance: float = 0.0) -> str:
         """Возвращает причину перестройки или ''."""
+
+        with self._trader._lock:
+            buy_levels_copy = list(self._trader._state.buy_levels)
+            grid_reserved = max(
+                0.0, float(self._trader._state.grid_reserved_grinch or 0.0))
+
+        # ── Сверка резерва с физическим балансом ───────────────────────────
+        # После закрытия/изменения DCA старый grid_reserved_grinch может
+        # пережить фактический баланс. Это отдельный rebuild-сигнал и он
+        # намеренно проверяется до общего cooldown: иначе stale SELL-уровни
+        # продолжали бы показывать/продавать несуществующие монеты.
+        try:
+            dca_reserved = self._trader._get_total_dca_reserved_grinch()
+        except Exception:
+            dca_reserved = 0.0
+        available_for_grid = max(
+            0.0, float(grinch_balance or 0.0) - dca_reserved)
+        reserve_delta = abs(grid_reserved - available_for_grid)
+        reserve_tolerance = max(
+            100.0, max(grid_reserved, available_for_grid) * 0.01)
+        if reserve_delta > reserve_tolerance:
+            return (
+                f"сверка резерва Grid: сохранено {grid_reserved:.0f}, "
+                f"доступно после DCA {available_for_grid:.0f}")
 
         # ── Без кулдауна: все BUY-уровни no_funds, но TON есть ──────────────
         # Проверяем при каждом вызове — кулдаун здесь не применяем,
         # иначе пополнение кошелька не активирует сетку 30 минут.
-        with self._trader._lock:
-            buy_levels_copy = list(self._trader._state.buy_levels)
         original_buys = [l for l in buy_levels_copy if -100 < l.id < 0]
         if original_buys:
             no_funds_buys = [l for l in original_buys if l.status == "no_funds"]
@@ -762,14 +793,37 @@ class GridTrader:
                 0.0,
                 self._get_dca_reserved_grinch() + old_dca_reserved,
             )
-            old_grid_reserved = max(
-                float(self._state.grid_reserved_grinch or 0),
-                sum(
-                    float(l.amount_grinch or 0)
-                    for l in old_sell_levels
-                    if l.owner == "grid"
-                ),
-            )
+            # Самосверка резерва: физический кошелёк после DCA — верхняя
+            # граница того, чем действительно может владеть Grid. Раньше
+            # здесь безусловно сохранялся старый reserve из JSON, поэтому
+            # после изменения DCA появлялись SELL на уже отсутствующие монеты.
+            grid_balance_now = max(
+                0.0, float(grinch_balance or 0.0) - old_total_dca_reserved)
+            old_grid_reserved = grid_balance_now
+
+            # Если старых SELL больше, чем позволяет актуальный резерв,
+            # убираем самые дальние уровни целиком. Частичный SELL оставил бы
+            # трудно проверяемую пыль и мог бы снова попасть в следующий
+            # rebuild; удалённые слоты будут восстановлены ниже из остатка.
+            old_grid_levels = [
+                l for l in old_sell_levels
+                if l.owner == "grid" and (l.amount_grinch or 0) > 0
+            ]
+            allocated_grid = sum(
+                float(l.amount_grinch or 0) for l in old_grid_levels)
+            excess_grid = max(0.0, allocated_grid - old_grid_reserved)
+            if excess_grid > 0:
+                for level in sorted(
+                        old_grid_levels,
+                        key=lambda item: item.price_ton,
+                        reverse=True):
+                    if excess_grid <= 0:
+                        break
+                    old_sell_levels.remove(level)
+                    excess_grid -= float(level.amount_grinch or 0)
+                    log.info(
+                        "[Grid] reserve reconcile: удалён stale SELL L%d "
+                        "(%.0f GRINCH)", level.id, level.amount_grinch)
 
             state = GridState()
             state.center_price_ton    = current_price_ton
@@ -823,16 +877,27 @@ class GridTrader:
                 if l.owner == "grid" and l.status != "filled"
             )
             new_grid_slots = max(0, sell_levels - existing_grid_sell_count)
+            new_weights = [
+                max(0.0, float(pyramid_weights[i - 1]))
+                for i in range(1, new_grid_slots + 1)
+            ]
+            weight_total = sum(new_weights)
+            # Нормируем по фактическим новым слотам, а не по общему числу
+            # уровней. После удаления stale SELL первый вес может быть 1.3;
+            # деление только на new_grid_slots тогда превышало бы резерв.
             base_grinch = (
-                unallocated_grinch / new_grid_slots
-                if new_grid_slots > 0 else 0
+                unallocated_grinch / weight_total
+                if weight_total > 0 else 0
             )
             grinch_per_level = base_grinch  # для обратной совместимости отчёта
             next_id = max((l.id for l in state.sell_levels), default=0) + 1
             for i in range(1, new_grid_slots + 1):
                 trigger = current_price_ton * (1 + step_pct / 100) ** i
-                w = pyramid_weights[i - 1] if i - 1 < len(pyramid_weights) else 1.0
-                amount = round(base_grinch * w, 2)
+                w = new_weights[i - 1] if i - 1 < len(new_weights) else 1.0
+                amount = min(
+                    round(base_grinch * w, 2),
+                    round(unallocated_grinch, 2),
+                )
                 if amount * trigger < GridConfig.MIN_ORDER_TON:
                     continue
                 state.sell_levels.append(GridLevel(
@@ -846,6 +911,7 @@ class GridTrader:
                     owner="grid",
                 ))
                 next_id += 1
+                unallocated_grinch = max(0.0, unallocated_grinch - amount)
 
             # ── BUY-уровни ─────────────────────────────────────────────
             usable_ton    = max(0.0, ton_balance - GridConfig.GAS_RESERVE_TON)
