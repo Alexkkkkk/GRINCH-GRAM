@@ -6,10 +6,10 @@
 пропорциональную долю прибыли (минус 9.5% комиссии платформы).
 """
 
-import threading
-import logging
-import hashlib
 import base64
+import hashlib
+import logging
+import threading
 from datetime import datetime
 from typing import Optional
 
@@ -25,6 +25,7 @@ OWNER_ADDRESS = "UQDDgb2BTM-KCjntOoUg6uHllvnu3KGqEquKw6IySVP3hDgM"
 def encrypt_mnemonic(mnemonic: str) -> str:
     try:
         from cryptography.fernet import Fernet
+
         from config import Config
 
         raw = hashlib.sha256(Config.SECRET_KEY.encode()).digest()
@@ -37,6 +38,7 @@ def encrypt_mnemonic(mnemonic: str) -> str:
 def decrypt_mnemonic(encrypted: str) -> str:
     try:
         from cryptography.fernet import Fernet
+
         from config import Config
 
         raw = hashlib.sha256(Config.SECRET_KEY.encode()).digest()
@@ -157,8 +159,8 @@ class UserTradingManager:
         # потери обновления при параллельных депозитах одного пользователя.
         if app:
             try:
-                from models import UserWallet
                 from database import db
+                from models import UserWallet
 
                 with app.app_context():
                     uw = UserWallet.query.filter_by(token=token).first()
@@ -252,8 +254,8 @@ class UserTradingManager:
         if not app:
             return True  # нет app-контекста (например, тесты) — не блокируем
         try:
-            from models import UserWallet
             from database import db
+            from models import UserWallet
 
             with app.app_context():
                 uw = UserWallet.query.filter_by(token=token).first()
@@ -454,8 +456,8 @@ class UserTradingManager:
     def _sync_db(self, token, user):
         try:
             from app import app as flask_app
-            from models import UserWallet
             from database import db
+            from models import UserWallet
 
             with flask_app.app_context():
                 uw = UserWallet.query.filter_by(token=token).first()

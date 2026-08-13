@@ -15,9 +15,9 @@ data_hub.py — многоисточниковый агрегатор рыноч
 Нет API-ключей — всё бесплатно.
 """
 
+import logging
 import threading
 import time
-import logging
 
 log = logging.getLogger("data_hub")
 
@@ -151,7 +151,7 @@ def _fetch_cg_trending() -> dict:
         return {}
     coins = [c.get("item", {}) for c in d.get("coins", [])]
     symbols = [c.get("symbol", "").upper() for c in coins]
-    ids = [c.get("id", "").lower() for c in coins]
+    [c.get("id", "").lower() for c in coins]
     ton_rank = next(
         (i + 1 for i, s in enumerate(symbols) if s in ("TON", "TONCOIN")), 0
     )

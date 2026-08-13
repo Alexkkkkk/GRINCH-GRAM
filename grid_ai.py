@@ -32,15 +32,15 @@ grid_ai.py v6 — QuantumGrid AI: Самая умная сетка в мире (
      accuracy перед активацией новых моделей
 """
 
-import os
 import gc
 import json
-import time
-import math
-import threading
 import logging
+import math
+import os
+import threading
+import time
 from collections import deque
-from typing import Optional, List, Dict, Tuple
+from typing import Dict, List, Optional, Tuple
 
 log = logging.getLogger("grid_ai")
 
@@ -355,8 +355,8 @@ class RegimeSpecializedModels:
             return
         try:
             from sklearn.ensemble import RandomForestRegressor
-            from sklearn.preprocessing import StandardScaler
             from sklearn.pipeline import Pipeline
+            from sklearn.preprocessing import StandardScaler
 
             m = Pipeline(
                 [
@@ -427,9 +427,9 @@ class HyperEvolver:
             return self.CONFIGS[self._best_config_idx]
         try:
             from sklearn.ensemble import RandomForestRegressor
-            from sklearn.preprocessing import StandardScaler
-            from sklearn.pipeline import Pipeline
             from sklearn.model_selection import TimeSeriesSplit
+            from sklearn.pipeline import Pipeline
+            from sklearn.preprocessing import StandardScaler
 
             best_r2 = -999.0
             best_idx = self._best_config_idx
@@ -1243,7 +1243,7 @@ class GridAI:
         # v5: учитываем рыночный контекст
         mkt = self._mkt_ctx
         if mkt:
-            rsi = _safe_float(mkt.get("rsi"), 50.0)
+            _safe_float(mkt.get("rsi"), 50.0)
             pump = _safe_float(mkt.get("pump_score"), 0.0)
             if pump > 75:
                 return 1  # памп = средний риск (волатильность)
@@ -1372,7 +1372,7 @@ class GridAI:
     def get_stats(self) -> dict:
         """Расширенная статистика для дашборда."""
         with self._lock:
-            now = time.time()
+            time.time()
             exp = self._experience
             sells = [e for e in exp if e.get("side") == "sell"]
             buys = [e for e in exp if e.get("side") == "buy"]
@@ -1920,7 +1920,7 @@ class GridAI:
     def _incremental_update(self, entry: dict):
         """Инкрементальное обновление SGD-моделей после каждой сделки."""
         try:
-            from sklearn.linear_model import SGDRegressor, SGDClassifier
+            from sklearn.linear_model import SGDClassifier, SGDRegressor
 
             feat = [
                 self._make_features(
@@ -1979,8 +1979,8 @@ class GridAI:
 
         try:
             from sklearn.ensemble import RandomForestRegressor
-            from sklearn.preprocessing import StandardScaler
             from sklearn.pipeline import Pipeline
+            from sklearn.preprocessing import StandardScaler
 
             X, y = [], []
             atr_history = [_safe_float(e.get("atr_pct", 0)) for e in sells]
@@ -2053,8 +2053,8 @@ class GridAI:
 
         try:
             from sklearn.ensemble import ExtraTreesRegressor
-            from sklearn.preprocessing import StandardScaler
             from sklearn.pipeline import Pipeline
+            from sklearn.preprocessing import StandardScaler
 
             # Обучаем только на прибыльных сделках (что реально работало)
             X_exit = []
@@ -2105,10 +2105,10 @@ class GridAI:
             return 0.0, 0.5
 
         try:
-            from sklearn.model_selection import TimeSeriesSplit
             from sklearn.ensemble import ExtraTreesRegressor
-            from sklearn.preprocessing import StandardScaler
+            from sklearn.model_selection import TimeSeriesSplit
             from sklearn.pipeline import Pipeline
+            from sklearn.preprocessing import StandardScaler
 
             tscv = TimeSeriesSplit(n_splits=3)
             r2_scores = []
@@ -2171,21 +2171,21 @@ class GridAI:
         """Полное переобучение ансамбля моделей (v6)."""
         try:
             from sklearn.ensemble import (
-                RandomForestRegressor,
+                ExtraTreesClassifier,
                 ExtraTreesRegressor,
                 GradientBoostingRegressor,
                 RandomForestClassifier,
-                ExtraTreesClassifier,
+                RandomForestRegressor,
             )
-            from sklearn.linear_model import Ridge, LogisticRegression
-            from sklearn.preprocessing import StandardScaler
-            from sklearn.pipeline import Pipeline
+            from sklearn.linear_model import LogisticRegression, Ridge
             from sklearn.model_selection import TimeSeriesSplit
+            from sklearn.pipeline import Pipeline
+            from sklearn.preprocessing import StandardScaler
 
             try:
                 from sklearn.ensemble import (
-                    HistGradientBoostingRegressor,
                     HistGradientBoostingClassifier,
+                    HistGradientBoostingRegressor,
                 )
 
                 _has_hgb = True
@@ -2607,8 +2607,7 @@ class GridAI:
         if len(sells) < 15:
             return
         try:
-            from sklearn.preprocessing import StandardScaler
-            from sklearn.pipeline import Pipeline
+            pass
 
             by_regime: Dict[str, list] = {}
             for e in sells:

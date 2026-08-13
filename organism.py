@@ -11,12 +11,12 @@
 7. Здоровье             — составная метрика жизнеспособности (дашборд)
 """
 
-import time
+import logging
 import math
 import random
 import threading
-import logging
-from typing import Dict, Any, Optional, List, Tuple
+import time
+from typing import Any, Dict, List, Optional, Tuple
 
 logger = logging.getLogger("organism")
 

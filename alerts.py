@@ -198,7 +198,8 @@ def _build_report() -> str:
     """Собирает полный снимок состояния бота. Никогда не кидает исключений."""
     lines = []
     try:
-        import os, resource
+        import resource
+
         from db_store import ai_state_get_all, open_trades_get
         from price_feed import price_feed
 

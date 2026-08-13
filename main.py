@@ -1,7 +1,5 @@
 import os
 import stat
-import errno
-import time
 
 # ── Восстанавливаем GitHub deploy key из workspace-файла при каждом старте ──
 _key_src = os.path.join(os.path.dirname(__file__), ".local", "keys", "github_deploy")
@@ -26,10 +24,10 @@ try:
         with open(_ssh_cfg, "w") as _f:
             _f.write(_cfg)
         os.chmod(_ssh_cfg, stat.S_IRUSR | stat.S_IWUSR)
-except Exception as _e:
+except Exception:
     pass  # не ломаем запуск бота если что-то пошло не так
 
-from app import app, socketio, start_background, _free_port
+from app import app, socketio
 
 if __name__ == "__main__":
     # Workflow запускает main.py, поэтому используем ту же защиту от

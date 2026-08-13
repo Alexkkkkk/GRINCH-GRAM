@@ -13,7 +13,6 @@ import threading
 import time
 from collections import deque
 
-from config import Config
 from coin_info import coin_info
 
 logger = logging.getLogger(__name__)

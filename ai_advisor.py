@@ -4,9 +4,14 @@ ai_advisor.py — Мета-ИИ советник с полной автоном�
 Авто-выбор лучшего доступного провайдера. Chain-of-Thought: AI думает пошагово перед решением.
 """
 
-import os, json, logging, threading, time, re
-from datetime import datetime
+import json
+import logging
+import os
+import re
+import threading
+import time
 from collections import deque
+from datetime import datetime
 from typing import Optional, Tuple
 
 try:
@@ -1121,7 +1126,7 @@ def _build_snapshot(user_message: str = "", compact: bool = False) -> dict:
             )
         except Exception:
             pass
-    except Exception as ex:
+    except Exception:
         snap["market"] = {}
         snap["portfolio"] = {}
 
@@ -1205,7 +1210,8 @@ def _build_snapshot(user_message: str = "", compact: bool = False) -> dict:
 
     # ── DataHub: внешние рыночные данные из 6 бесплатных источников ─────────
     try:
-        from data_hub import get_snapshot as _hub_snap, get_source_status as _hub_st
+        from data_hub import get_snapshot as _hub_snap
+        from data_hub import get_source_status as _hub_st
 
         _hub = _hub_snap()
         if _hub:
@@ -1402,8 +1408,8 @@ def _apply_recommendations(recs: list) -> list[str]:
         return applied
 
     try:
-        from config import Config
         import ai_engine as ae
+        from config import Config
         from settings_store import update_section
     except Exception as ex:
         logger.error(f"[Advisor] импорт: {ex}")
@@ -1914,7 +1920,7 @@ def run_advisor(
                 advice=parsed.get("analysis", "")[:200],
                 next_check_min=suggested_next,
             )
-        except Exception as _bfe:
+        except Exception:
             pass
 
         return result

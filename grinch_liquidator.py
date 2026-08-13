@@ -5,13 +5,12 @@
 Как только цена поднимается на SELL_RISE_PCT% от опорной — продаёт всё автоматически.
 """
 
+import logging
 import threading
 import time
-import logging
-import urllib.parse
 from datetime import datetime
 from typing import Optional
-import requests as _requests
+
 from config import Config
 from price_feed import price_feed
 
@@ -208,7 +207,8 @@ class GrinchLiquidator:
         Получаем GRINCH баланс. Приоритет: TonCenter v3 (стабильный, без rate-limit)
         → TonAPI v2 (запасной).
         """
-        import urllib.request, json as _json
+        import json as _json
+        import urllib.request
 
         wallet = Config.TON_WALLET
         token = Config.GRINCH_TOKEN_ADDRESS
@@ -246,7 +246,8 @@ class GrinchLiquidator:
 
     def _fetch_ton_balance_http(self) -> Optional[float]:
         """Баланс TON кошелька. Приоритет: TonCenter v2 → TonAPI v2."""
-        import urllib.request, json as _json
+        import json as _json
+        import urllib.request
 
         wallet = Config.TON_WALLET
 

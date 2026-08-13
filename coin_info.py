@@ -1,8 +1,8 @@
-import time
 import threading
-import requests
-from http_client import SESSION as _HTTP
+import time
+
 from config import Config
+from http_client import SESSION as _HTTP
 from price_feed import COINGECKO_IDS
 
 

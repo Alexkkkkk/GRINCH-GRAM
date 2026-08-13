@@ -12,11 +12,9 @@ AI Entry Optimizer — умный оптимизатор момента вход
 Интеграция: вызывается из trader.py в момент DCA-сигнала.
 """
 
-import time
-import math
 import logging
 import threading
-from typing import Optional
+import time
 
 log = logging.getLogger("ai_entry_optimizer")
 
@@ -77,8 +75,8 @@ def _try_retrain():
         if n < 15:
             return
         try:
-            from sklearn.ensemble import GradientBoostingClassifier
             import numpy as np
+            from sklearn.ensemble import GradientBoostingClassifier
 
             X = np.array([s[0] for s in _samples])
             y = np.array([s[1] for s in _samples])
@@ -169,7 +167,7 @@ def should_enter_now(
 
     if model is not None:
         try:
-            import numpy as np
+            pass
 
             prob = model.predict_proba([feats])[0]
             p_good = float(prob[1])  # вероятность что вход хороший

@@ -9,13 +9,12 @@ TONTracker стартует через 5s, DepositMonitor через 65s — ч�
 и не нарушать rate-limit TonCenter (~1 req/s бесплатно).
 """
 
+import json
+import logging
 import os
 import threading
-import logging
-import time
-import urllib.request
 import urllib.parse
-import json
+import urllib.request
 
 log = logging.getLogger(__name__)
 
@@ -120,8 +119,8 @@ class DepositMonitor:
 
         code = comment[3:].strip().lower()
 
-        from models import UserWallet
         from database import db
+        from models import UserWallet
 
         # FIX#13: LIKE-поиск по префиксу совпадал с чужими токенами, если код короткий.
         # Мемо записывается как "GG-{token[:8]}", поэтому ищем точное совпадение первых 8 символов.

@@ -1,6 +1,7 @@
 import time
-import pandas as pd
+
 import numpy as np
+import pandas as pd
 
 # ── Кэш результата analyze(): trader.py и ручные снапшоты (/api/candles,
 # force_buy/sell) вызывают analyze() на тех же свечах несколько раз за тик —

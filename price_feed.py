@@ -1,9 +1,9 @@
 import os
-import time
 import threading
-import requests
-from http_client import SESSION as _HTTP
+import time
+
 from config import Config
+from http_client import SESSION as _HTTP
 
 
 def _tc_headers() -> dict:

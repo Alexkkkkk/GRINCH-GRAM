@@ -90,10 +90,10 @@ def main():
     X_tr, y_tr, w_tr, X_te, y_te, w_te = _split(X, y, w)
 
     from sklearn.ensemble import HistGradientBoostingClassifier
-    from sklearn.neural_network import MLPClassifier
-    from sklearn.preprocessing import StandardScaler
-    from sklearn.pipeline import Pipeline
     from sklearn.metrics import accuracy_score
+    from sklearn.neural_network import MLPClassifier
+    from sklearn.pipeline import Pipeline
+    from sklearn.preprocessing import StandardScaler
 
     models = {}
 

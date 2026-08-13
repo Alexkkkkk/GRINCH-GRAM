@@ -11,11 +11,11 @@ security.py — Многоуровневая защита Flask-приложен
 Вызывается из app.py: before_request / after_request / login-маршрут.
 """
 
-import time
-import threading
+import json
 import logging
 import os
-import json
+import threading
+import time
 from collections import defaultdict, deque
 
 log = logging.getLogger("security")
@@ -210,7 +210,8 @@ def check_request():
     Возвращает None если запрос разрешён,
     либо Flask-response при блокировке.
     """
-    from flask import request as _req, jsonify
+    from flask import jsonify
+    from flask import request as _req
 
     ip = get_client_ip()
     path = _req.path or "/"

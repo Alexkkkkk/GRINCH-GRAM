@@ -1,9 +1,9 @@
+import gc
 import json
+import logging
 import math
 import os
-import gc
 import resource
-import logging
 import subprocess
 
 # ── Настройка логирования — как можно раньше, до любых импортов ──────────────
@@ -25,7 +25,7 @@ _startup_log.info("=== APP IMPORT START ===")
 import numpy as np
 
 _startup_log.info("numpy OK")
-from flask import Flask, render_template, jsonify, request, session, redirect, url_for
+from flask import Flask, jsonify, redirect, render_template, request, session, url_for
 from flask.json.provider import DefaultJSONProvider
 from flask_socketio import SocketIO, emit
 
@@ -658,14 +658,14 @@ _startup_log.info("Trader() OK")
 ton = TONTracker(Config.TON_WALLET)
 _startup_log.info("TONTracker OK")
 
-from user_trader import UserTradingManager, encrypt_mnemonic, decrypt_mnemonic
+from user_trader import UserTradingManager
 
 user_mgr = UserTradingManager()
 trader.signal_callbacks.append(user_mgr.on_signal)
 _startup_log.info("UserTradingManager OK")
 
-from grinch_liquidator import grinch_liquidator
 import liquidity_guard
+from grinch_liquidator import grinch_liquidator
 
 _startup_log.info("grinch_liquidator OK")
 
@@ -987,8 +987,8 @@ def start_background():
 
         # -- Grid Trader v2: compound-реинвест + DCA + GridAI --
         try:
-            from grid_trader import get_grid_trader
             from grid_ai import get_grid_ai
+            from grid_trader import get_grid_trader
 
             _grid = get_grid_trader()
             _grid_ai = get_grid_ai()
@@ -2134,6 +2134,7 @@ def api_ai_decisions():
 def api_filters_status():
     """Статус защитных фильтров: loss cooldown, Confluence, DCA AI-guard."""
     import time as _t
+
     from config import Config
 
     # ── Loss cooldown ─────────────────────────────────────────────────────────
@@ -2219,7 +2220,6 @@ def api_filters_status():
 def api_ai_history():
     """История обучения ИИ: накопление примеров в БД + статус тяжёлых моделей."""
     import db_store
-    from datetime import datetime, timedelta
 
     # ── Всего примеров в БД ──────────────────────────────────────────────────
     total_db = db_store.ai_examples_count()
@@ -2355,6 +2355,7 @@ def api_ai_examples_export():
     Использует серверный курсор — не тянет всё в RAM сразу."""
     import csv
     import io
+
     import db_store
 
     # Имена признаков из живого AI (если доступны)
@@ -2417,7 +2418,7 @@ def api_advisor_status():
 
 @app.route("/api/advisor/run", methods=["POST"])
 def api_advisor_run():
-    from ai_advisor import run_advisor, reload_key
+    from ai_advisor import reload_key, run_advisor
 
     reload_key()
     data = request.json or {}
@@ -2441,7 +2442,7 @@ def api_advisor_config():
         err = _require_login()
         if err:
             return err
-    from ai_advisor import set_config, AUTO_INTERVAL_MIN, AUTO_TRADES_TRIGGER
+    from ai_advisor import AUTO_INTERVAL_MIN, AUTO_TRADES_TRIGGER, set_config
 
     if request.method == "POST":
         data = request.json or {}
@@ -2509,7 +2510,7 @@ def api_advisor_providers():
 @app.route("/api/advisor/providers/<provider_id>/key", methods=["POST"])
 def api_advisor_provider_key(provider_id):
     """Сохранить API-ключ для указанного провайдера."""
-    from ai_advisor import reload_key, PROVIDER_CONFIGS
+    from ai_advisor import PROVIDER_CONFIGS, reload_key
 
     if provider_id not in PROVIDER_CONFIGS:
         return (
@@ -2599,7 +2600,9 @@ def webhook_github():
     """GitHub Webhook — мгновенный триггер деплоя при push в main.
     Настрой в GitHub: Settings → Webhooks → Payload URL = http://ВАШ_IP/webhook/github
     """
-    import hmac, hashlib, subprocess, threading
+    import hashlib
+    import hmac
+    import threading
 
     # Проверяем подпись (опционально, если задан WEBHOOK_SECRET)
     secret = os.getenv("WEBHOOK_SECRET", "").encode()
@@ -2851,7 +2854,8 @@ def api_ton_refresh():
 
 @app.route("/api/ton/price")
 def api_ton_price():
-    import urllib.request, json as _json
+    import json as _json
+    import urllib.request
 
     try:
         url = "https://api.dexscreener.com/latest/dex/pairs/ton/EQCM3B12QK1e4yZSf8GtBRT0aLMNyEsBc_9Qsof7gbCmkjvi"
@@ -3896,9 +3900,9 @@ def api_grid_status():
 @app.route("/api/grid/build", methods=["POST"])
 def api_grid_build():
     try:
-        from grid_trader import get_grid_trader, GridConfig
-        from price_feed import price_feed
         from dedust_client import get_shared_balance
+        from grid_trader import GridConfig, get_grid_trader
+        from price_feed import price_feed
 
         data = request.get_json(silent=True) or {}
         bal = get_shared_balance()
@@ -3995,7 +3999,7 @@ def api_grid_reset_errors():
 @app.route("/api/grid/step", methods=["POST"])
 def api_grid_set_step():
     try:
-        from grid_trader import get_grid_trader, GridConfig
+        from grid_trader import GridConfig, get_grid_trader
 
         data = request.get_json(silent=True) or {}
         step = float(data.get("step_pct", GridConfig.DEFAULT_STEP_PCT))

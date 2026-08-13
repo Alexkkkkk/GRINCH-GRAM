@@ -13,11 +13,9 @@ AI Take-Profit Optimizer — динамический предиктор опт�
 Обучается на реальных закрытых сделках бота.
 """
 
-import time
-import math
 import logging
 import threading
-from typing import Optional
+import time
 
 log = logging.getLogger("ai_tp_optimizer")
 
@@ -94,8 +92,8 @@ def _try_retrain():
         if n < 12:
             return
     try:
-        from sklearn.ensemble import ExtraTreesRegressor
         import numpy as np
+        from sklearn.ensemble import ExtraTreesRegressor
 
         with _lock:
             data = list(_samples)

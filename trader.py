@@ -2,12 +2,13 @@ import os
 import threading
 import time
 from datetime import datetime
+
+import liquidity_guard
+from ai_engine import AIEngine
 from config import Config
 from exchange import ExchangeClient
-from strategy import analyze
-from ai_engine import AIEngine
 from experience_manager import experience_manager
-import liquidity_guard
+from strategy import analyze
 
 try:
     import ai_entry_optimizer as _entry_opt
@@ -730,8 +731,9 @@ class Trader:
         хранились только в памяти — пересчитываем из bot_trades при каждом старте.
         """
         try:
-            import db_store as _dbs
             from datetime import timezone as _tz
+
+            import db_store as _dbs
 
             rows = _dbs.trades_get_recent(500)
             if not rows:
@@ -1059,8 +1061,8 @@ class Trader:
     def _sync_open_trades_to_db(self):
         """Обновляет live-поля открытых позиций (LONG + SHORT) в PostgreSQL (раз в 60 сек)."""
         try:
-            from price_feed import price_feed
             import db_store
+            from price_feed import price_feed
 
             if not db_store.is_available():
                 return
@@ -2902,9 +2904,9 @@ class Trader:
         Не должен ломать торговлю — все ошибки подавляются.
         """
         try:
+            import liquidity_guard as _lg
             from analytics_buffer import analytics_buffer as _ab
             from price_feed import price_feed as _pf
-            import liquidity_guard as _lg
 
             ai = self.last_ai or {}
             _ta = self.last_analysis or {}  # TA: rsi/macd/bb/stoch_rsi
@@ -3299,7 +3301,7 @@ class Trader:
             _bal = getattr(self, "_last_balance_cache", {}) or {}
             _open_pnl = 0.0
             if self.open_trades and _gton > 0:
-                _stake0 = self.open_trades[0].get("stake_ton", 0)
+                self.open_trades[0].get("stake_ton", 0)
                 _amt0 = self.open_trades[0].get("amount", 0)
                 _ep0 = self.open_trades[0].get("entry_price_ton", 0)
                 if _ep0 > 0 and _amt0 > 0:
@@ -3310,7 +3312,7 @@ class Trader:
                 grinch_price_ton=_gton,
                 open_pnl_pct=_open_pnl,
             )
-        except Exception as _bfe:
+        except Exception:
             pass
 
         signal = result["signal"]
@@ -3693,7 +3695,6 @@ class Trader:
         elif final_signal == "BUY" and not self.open_short_trades:
             # ── BrainFusion: скальпинг + памп-ускоритель ─────────────────
             _scalp_mode = False
-            _pump_mode = False
 
             _fusion_sig = _bf.get_fusion_signal() if Config.FUSION_ENABLED else None
 
@@ -3734,7 +3735,6 @@ class Trader:
                         Config.FUSION_PUMP_BOOST_MAX, Config.AI_SIZE_MULT * _boost
                     )
                     _mode_params["size_mult"] = _pump_size
-                    _pump_mode = True
                     self.log(
                         f"🚀 BrainFusion ПАМП-УСКОРИТЕЛЬ: позиция ×{_boost:.2f} "
                         f"(AI_SIZE_MULT {Config.AI_SIZE_MULT:.2f} → {_pump_size:.2f})",
@@ -3770,8 +3770,9 @@ class Trader:
                 }
                 # Персистируем в DB + JSON — переживёт перезапуск и отказ БД
                 try:
-                    from settings_store import update_section
                     import json as _json
+
+                    from settings_store import update_section
 
                     _pb_save = {
                         k: v
@@ -4440,7 +4441,7 @@ class Trader:
 
         ton_to_spend = trade.get("ton_received", 0)
         grinch_sold = trade.get("amount", 0)
-        grinch_val_ton = trade.get("grinch_value_ton", 0)
+        trade.get("grinch_value_ton", 0)
         entry_price = trade.get("entry_price", price)
 
         # Guard: price=0 ломает все деления ниже — используем entry_price как fallback
@@ -4460,7 +4461,7 @@ class Trader:
 
         if self.exchange.mode == "dedust" and ton_to_spend > 0:
             # Необходимо оставить газ на покупку
-            buy_gas = Config.BUY_GAS_TON
+            Config.BUY_GAS_TON
             spend_net = ton_to_spend
             est_grinch = spend_net / price  # примерное количество для place_order
             self.log(
@@ -4578,7 +4579,8 @@ class Trader:
                 opened_at_str = trade.get("opened_at")
                 if opened_at_str:
                     try:
-                        from datetime import datetime as _dt2, timezone as _tz
+                        from datetime import datetime as _dt2
+                        from datetime import timezone as _tz
 
                         opened_dt = _dt2.fromisoformat(
                             opened_at_str.replace("Z", "+00:00")
@@ -4870,7 +4872,7 @@ class Trader:
                     from price_feed import price_feed as _pf
 
                     _gtpy = _pf.get("TON") or 1.0
-                    grinch_ton = price_usd / _gtpy if _gtpy else 0
+                    price_usd / _gtpy if _gtpy else 0
                 except Exception:
                     pass
                 amount = trade.get("amount", 0) or 0
@@ -5186,6 +5188,7 @@ class Trader:
             opened_ts = None
             try:
                 from datetime import timezone
+
                 from dateutil import parser as _dp
 
                 opened_ts = (

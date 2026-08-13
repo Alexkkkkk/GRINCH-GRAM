@@ -4,7 +4,11 @@
 Запустить на VPS: docker exec bot-bot-1 python3 /usr/src/app/fix_grid_ids.py
 """
 
-import json, collections, shutil, time, os
+import collections
+import json
+import os
+import shutil
+import time
 
 STATE_FILE = "/app/data/grid_state.json"
 BACKUP = STATE_FILE + f".bak.{int(time.time())}"

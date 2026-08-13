@@ -34,11 +34,11 @@ BrainFusion v2 — единый интеллект торгового бота G
         confirm_needed = 0
 """
 
+import logging
 import threading
 import time
-import logging
 from dataclasses import dataclass, field
-from typing import Optional
+
 from config import Config
 
 log = logging.getLogger("brain_fusion")

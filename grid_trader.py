@@ -14,15 +14,15 @@ grid_trader.py — AI-управляемая сеточная торговля G
   DeDust комиссия 1%×2 + газ 0.3 TON на ~44 TON/уровень ≈ 3.8% → MIN_STEP_PCT = 4.0%
 """
 
-import os
 import json
-import math
-import tempfile
-import time
-import threading
 import logging
+import math
+import os
+import tempfile
+import threading
+import time
 from collections import deque
-from dataclasses import dataclass, field, asdict
+from dataclasses import asdict, dataclass, field
 from typing import List, Optional
 
 log = logging.getLogger("grid")
@@ -354,8 +354,8 @@ class GridAIManager:
         with t._lock:
             tick_n = t._state.tick_count
             currently_active = t._state.active
-            step_now = t._state.step_pct
-            center = t._state.center_price_ton
+            t._state.step_pct
+            t._state.center_price_ton
             sell_levels = list(t._state.sell_levels)
 
         # Только каждые N тиков
@@ -1451,13 +1451,13 @@ class GridTrader:
                     GridConfig.SPIKE_DROP_MULT,
                     GridConfig.SPIKE_PROTECTION_SEC,
                 )
-        _spike_active = time.time() < self._spike_protection_until
+        time.time() < self._spike_protection_until
         self._prev_tick_price = price_ton
 
         # ── [УЛУЧШ] Adaptive tick: ускоряемся если цена рядом с уровнем ──
         try:
             _near = False
-            _step_p = self._state.step_pct or GridConfig.DEFAULT_STEP_PCT
+            self._state.step_pct or GridConfig.DEFAULT_STEP_PCT
             for _lv in list(self._state.sell_levels) + list(self._state.buy_levels):
                 if _lv.status != "waiting" or _lv.price_ton <= 0:
                     continue
@@ -2518,7 +2518,8 @@ class GridTrader:
                     pass
 
             # Получаем трейдер-синглтон
-            import sys as _sys, time as _time
+            import sys as _sys
+            import time as _time
 
             _app = _sys.modules.get("app") or _sys.modules.get("__main__")
             tr = getattr(_app, "trader", None)

@@ -29,27 +29,28 @@ AI Engine v4 — QuantumBrain ULTRA: World-Class Self-Learning Trading AI for GR
   • Полная персистентность: PostgreSQL + experience.json
 """
 
-import os
+import concurrent.futures as _cf
 import ctypes
-import numpy as np
-import pandas as pd
+import gc
+import logging
+import os
 import threading
 import time
-import logging
-import gc
+import warnings
 from collections import deque
 
+import numpy as np
+import pandas as pd
 from sklearn.ensemble import (
-    RandomForestClassifier,
-    GradientBoostingClassifier,
     ExtraTreesClassifier,
+    GradientBoostingClassifier,
+    RandomForestClassifier,
 )
-from sklearn.linear_model import LogisticRegression, RidgeClassifier
+from sklearn.linear_model import LogisticRegression
 from sklearn.neural_network import MLPClassifier
-from sklearn.preprocessing import StandardScaler, RobustScaler
 from sklearn.pipeline import Pipeline
-import warnings
-import concurrent.futures as _cf
+from sklearn.preprocessing import RobustScaler, StandardScaler
+
 from config import Config
 
 warnings.filterwarnings("ignore")
@@ -558,7 +559,7 @@ class GRINCHPumpDetector:
                 return self._empty()
 
             n = len(df)
-            c = df["close"].values
+            df["close"].values
             score = 0.0
 
             # ── 1. RSI в зоне накопления 42-68 (идеал: 48-62) ──────────────
@@ -1213,8 +1214,9 @@ class AIEngine:
             log.info("[AI] deep-модели пропущены: LOW_MEMORY_MODE=1 (только в БД)")
             return 0
         try:
-            import db_store
             import pickle
+
+            import db_store
         except Exception as e:
             log.warning(
                 f"[AI] load_deep_models: не удалось импортировать зависимости: {e}"
@@ -1315,7 +1317,7 @@ class AIEngine:
         self._replay_y = list(y)
         self._replay_w = [1.0] * len(X)
 
-        model_names = [s.name for s in self._slots]
+        [s.name for s in self._slots]
         pct_per_step = (82 - 36) / max(len(self._slots), 1)
 
         for i, slot in enumerate(self._slots):
@@ -1356,7 +1358,6 @@ class AIEngine:
                 df[self._feature_names].iloc[[-1]].values
             )  # реальная последняя свеча, не X[[-1]] (обрезан на 13 баров)
             ensemble = self._ensemble_proba(last)
-            classes_list = [-1, 0, 1]
             best_idx = int(np.argmax(ensemble))
             best_pct = round(float(ensemble[best_idx]) * 100, 1)
             fi_top = self._top_feature(self._slots[0])
@@ -2319,7 +2320,7 @@ class AIEngine:
 
         # ── Recency decay: более свежий опыт важнее ──────────────────────
         # Исторические данные: равный вес 1.0
-        n_hist = len(self._replay_X)
+        len(self._replay_X)
         hist_w = list(self._replay_w)
 
         # Подтверждённые сделки: затухание по давности (последние = ×1.5, старые = ×0.5)

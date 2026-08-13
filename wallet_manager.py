@@ -9,9 +9,8 @@ wallet_manager.py — Полное отслеживание баланса ко�
 Не зависит от app.py и может запускаться в любой момент после init.
 """
 
-import threading
-import time
 import logging
+import threading
 from datetime import datetime
 
 log = logging.getLogger(__name__)
@@ -89,8 +88,8 @@ class WalletManager:
         self._poll_call_count = _call
         log.info("[WalletManager] _poll_body #%d thread=%s", _call, _tid)
 
-        from price_feed import price_feed
         import db_store
+        from price_feed import price_feed
 
         # 1. Реальный баланс с блокчейна
         bal = {}

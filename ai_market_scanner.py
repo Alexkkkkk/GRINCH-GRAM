@@ -19,11 +19,11 @@ AI Market Scanner — фоновый сканер высоковероятных
     sig = scanner.get_last_signal() # в торговом цикле
 """
 
-import time
-import math
 import logging
+import math
 import threading
-from typing import Optional, Callable, List
+import time
+from typing import Callable, Optional
 
 log = logging.getLogger("ai_market_scanner")
 

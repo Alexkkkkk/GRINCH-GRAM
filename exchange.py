@@ -3,9 +3,10 @@ import os
 import random
 import threading
 import time
-from config import Config
-from http_client import SESSION as _HTTP_EX, RATE_LIMITED_SESSION as _HTTP_RATE_LIMITED
 from datetime import datetime
+
+from config import Config
+from http_client import RATE_LIMITED_SESSION as _HTTP_RATE_LIMITED
 from price_feed import price_feed
 
 # Базовые ориентировочные цены экосистемы TON для демо-режима (USDT).

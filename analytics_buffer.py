@@ -17,13 +17,13 @@ Token address: EQA6G0uVERDZTkLNa0drWBna1F5TSbogy7UXEWU5ERHz4uJL
 
 from __future__ import annotations
 
-import math
 import logging
+import math
 import queue
 import threading
 import time
 from datetime import datetime
-from typing import Dict, List, Optional
+from typing import Dict, List
 
 import db_store as _db
 
