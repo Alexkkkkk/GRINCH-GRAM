@@ -1,0 +1,568 @@
+name: 🤖 SUPREME AI AGENT v2.0 — Autonomous DevTeam
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+    branches: [main, master]
+  push:
+    branches: [main, master]
+  schedule:
+    - cron: "0 3 * * *"   # Ночной deep audit
+    - cron: "0 */6 * * *" # Каждые 6 часов — health check
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "AI Agent Mode"
+        required: true
+        default: "auto"
+        type: choice
+        options:
+          - auto
+          - deep-scan
+          - emergency-fix
+          - learn-from-history
+
+permissions: read-all
+
+env:
+  AI_MODEL: "llama-3.1-70b-versatile"
+  AI_TEMPERATURE: "0.1"
+  AI_MAX_TOKENS: "4000"
+  AI_TIMEOUT: "120"
+  CACHE_DIR: ".ai-cache"
+  LEARNING_DB: ".ai-learning.db"
+
+concurrency:
+  group: supreme-ai-${{ github.ref }}-${{ github.run_id }}
+  cancel-in-progress: false
+
+jobs:
+  # ═══════════════════════════════════════════════════════════════
+  # PHASE 1: CONTEXT INTELLIGENCE GATHERING
+  # ═══════════════════════════════════════════════════════════════
+  context-gathering:
+    name: 🧠 Phase 1 — Context Intelligence
+    runs-on: ubuntu-latest
+    outputs:
+      trigger: ${{ steps.context.outputs.trigger }}
+      changed_files: ${{ steps.context.outputs.files }}
+      changed_py: ${{ steps.context.outputs.py_files }}
+      complexity_score: ${{ steps.metrics.outputs.complexity }}
+      has_secrets: ${{ steps.secrets.outputs.found }}
+      risk_level: ${{ steps.risk.outputs.level }}
+      ai_plan: ${{ steps.planner.outputs.plan }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: 📊 Gather Code Metrics
+        id: metrics
+        run: |
+          pip install radon 2>/dev/null || true
+          COMPLEXITY=$(radon cc . -s -a 2>/dev/null | tail -1 || echo "N/A")
+          echo "complexity=$COMPLEXITY" >> $GITHUB_OUTPUT
+
+      - name: 🔍 Secret Scan (Pre-flight)
+        id: secrets
+        run: |
+          FOUND="false"
+          if grep -rn -E "(password|secret|token|api_key)\s*=\s*['\"][^'\"]{8,}['\"]" --include="*.py" . 2>/dev/null | grep -v "os.environ" | grep -v "getenv" | head -1; then
+            FOUND="true"
+          fi
+          echo "found=$FOUND" >> $GITHUB_OUTPUT
+
+      - name: 📋 Analyze Context
+        id: context
+        run: |
+          if [ "${{ github.event_name }}" == "pull_request" ]; then
+            echo "trigger=pr" >> $GITHUB_OUTPUT
+            git diff --name-only origin/${{ github.base_ref }}...HEAD > changed_files.txt
+          else
+            echo "trigger=push" >> $GITHUB_OUTPUT
+            git diff --name-only HEAD~1 HEAD > changed_files.txt
+          fi
+          echo "files=$(cat changed_files.txt | tr '\n' ' ')" >> $GITHUB_OUTPUT
+          echo "py_files=$(grep '\.py$' changed_files.txt | tr '\n' ' ')" >> $GITHUB_OUTPUT
+
+      - name: 🎯 AI Risk Assessment & Planning
+        id: planner
+        env:
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+        run: |
+          if [ -z "$GROQ_API_KEY" ]; then
+            echo "plan=local-only" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+
+          python3 - <<'PY'
+          import os, json, urllib.request
+
+          try:
+            with open("changed_files.txt", encoding="utf-8") as f:
+              files = f.read()[:1000]
+          except Exception:
+            files = "No files"
+
+          prompt = (
+            "You are an AI project manager. Based on changed files, decide what checks to run. "
+            f"Changed files: {files}\n\n"
+            "Return ONLY a JSON object:\n"
+            '{"plan": ["code-review", "bug-hunt", "security", "tests", "perf"], "priority": "high"}'
+          )
+
+          payload = {
+            "model": os.environ.get("AI_MODEL", "llama-3.1-70b-versatile"),
+            "messages": [{"role": "user", "content": prompt}],
+            "temperature": 0.1,
+            "max_tokens": 500,
+          }
+
+          req = urllib.request.Request(
+            "https://api.groq.com/openai/v1/chat/completions",
+            data=json.dumps(payload).encode(),
+            headers={
+              "Authorization": f"Bearer {os.environ['GROQ_API_KEY']}",
+              "Content-Type": "application/json",
+            },
+          )
+
+          try:
+            with urllib.request.urlopen(req, timeout=30) as resp:
+              result = json.loads(resp.read())
+              plan = result["choices"][0]["message"]["content"]
+            # Extract JSON
+            import re
+            json_match = re.search(r'\{.*\}', plan, re.DOTALL)
+            if json_match:
+              with open("ai_plan.json", "w") as f:
+                f.write(json_match.group())
+              print("plan=ai-generated" >> open(os.environ.get("GITHUB_ENV", "/dev/null"), "a"))
+            else:
+              print("plan=default" >> open(os.environ.get("GITHUB_ENV", "/dev/null"), "a"))
+          except Exception:
+            print("plan=fallback" >> open(os.environ.get("GITHUB_ENV", "/dev/null"), "a"))
+          PY
+          echo "plan=${AI_PLAN:-default}" >> $GITHUB_OUTPUT
+
+      - name: 💾 Cache Intelligence
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.CACHE_DIR }}
+          key: ai-context-${{ github.sha }}-${{ github.run_id }}
+          restore-keys: |
+            ai-context-
+
+  # ═══════════════════════════════════════════════════════════════
+  # PHASE 2: PARALLEL AI ANALYSIS (Matrix Strategy)
+  # ═══════════════════════════════════════════════════════════════
+  ai-analysis:
+    name: 🔬 Phase 2 — ${{ matrix.agent }} Analysis
+    needs: context-gathering
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        agent:
+          - code-reviewer
+          - bug-hunter
+          - security-auditor
+          - test-generator
+          - performance-profiler
+    permissions:
+      pull-requests: write
+      contents: read
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: 📦 Install Agent Tools
+        run: |
+          pip install ruff bandit radon vulture 2>/dev/null || true
+          if [ "${{ matrix.agent }}" == "test-generator" ]; then
+            pip install pytest pytest-asyncio pytest-cov 2>/dev/null || true
+          fi
+          if [ "${{ matrix.agent }}" == "performance-profiler" ]; then
+            pip install line_profiler memory_profiler 2>/dev/null || true
+          fi
+
+      - name: 🧠 Run AI Agent — ${{ matrix.agent }}
+        id: ai-agent
+        env:
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+          AGENT_TYPE: ${{ matrix.agent }}
+          CHANGED_FILES: ${{ needs.context-gathering.outputs.changed_py }}
+        run: |
+          if [ -z "$GROQ_API_KEY" ]; then
+            echo "status=skipped-no-key" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+
+          python3 - <<'PY'
+          import os, json, urllib.request, urllib.error, glob, sys
+
+          AGENT = os.environ.get("AGENT_TYPE", "code-reviewer")
+          CHANGED = os.environ.get("CHANGED_FILES", "")
+          MODEL = os.environ.get("AI_MODEL", "llama-3.1-70b-versatile")
+
+          # Collect code context
+          code_blocks = []
+          if CHANGED.strip():
+            for f in CHANGED.strip().split():
+              try:
+                with open(f, encoding="utf-8") as fh:
+                  content = fh.read()
+                code_blocks.append(f"=== {f} ===\n{content[:5000]}")
+              except Exception:
+                pass
+          else:
+            # Fallback: main project files
+            for pattern in ["main.py", "app.py", "grid_trader.py", "config.py"]:
+              try:
+                with open(pattern, encoding="utf-8") as fh:
+                  code_blocks.append(f"=== {pattern} ===\n{fh.read()[:3000]}")
+              except Exception:
+                pass
+
+          code = "\n\n".join(code_blocks) if code_blocks else "No code available."
+
+          # Agent-specific prompts
+          PROMPTS = {
+            "code-reviewer": (
+              "You are a senior Python architect. Review the code for:\n"
+              "1. Design patterns and SOLID principles\n"
+              "2. Async/await correctness\n"
+              "3. Error handling completeness\n"
+              "4. Code readability and maintainability\n"
+              "5. Type hints usage\n"
+              "Provide specific line-by-line feedback with severity ratings."
+            ),
+            "bug-hunter": (
+              "You are an elite bug hunter specializing in financial/trading systems. Find:\n"
+              "1. Race conditions in balance/position updates\n"
+              "2. Float precision errors in monetary calculations\n"
+              "3. Missing transaction atomicity\n"
+              "4. Off-by-one errors in grid logic\n"
+              "5. Resource leaks (connections, files, locks)\n"
+              "6. Incorrect exception handling that hides bugs\n"
+              "For each bug: severity, file:line, explanation, fix."
+            ),
+            "security-auditor": (
+              "You are a cybersecurity expert auditing a crypto trading bot. Check:\n"
+              "1. Input validation on all external data\n"
+              "2. SQL injection (if any DB queries)\n"
+              "3. Path traversal in file operations\n"
+              "4. SSRF via user-controlled URLs\n"
+              "5. Timing attacks on sensitive comparisons\n"
+              "6. Insufficient logging of security events\n"
+              "7. Secrets exposure in logs/errors\n"
+              "Rate each: CRITICAL/HIGH/MEDIUM/LOW with CVE-like IDs."
+            ),
+            "test-generator": (
+              "You are a test automation engineer. Generate comprehensive pytest tests:\n"
+              "1. Unit tests for all public functions\n"
+              "2. Async test examples with pytest-asyncio\n"
+              "3. Edge cases (zero, negative, max values)\n"
+              "4. Mock examples for external APIs\n"
+              "5. Parametrized tests for grid calculations\n"
+              "Return complete test files ready to run."
+            ),
+            "performance-profiler": (
+              "You are a performance engineer. Analyze for:\n"
+              "1. O(n^2) or worse algorithms\n"
+              "2. Unnecessary DB queries or API calls\n"
+              "3. Memory leaks in long-running loops\n"
+              "4. Blocking operations in async code\n"
+              "5. Inefficient string concatenation\n"
+              "6. Missing caching opportunities\n"
+              "Provide optimized code alternatives with Big-O analysis."
+            ),
+          }
+
+          prompt = PROMPTS.get(AGENT, PROMPTS["code-reviewer"]) + f"\n\nCode:\n{code}"
+
+          payload = {
+            "model": MODEL,
+            "messages": [{"role": "user", "content": prompt}],
+            "temperature": 0.1,
+            "max_tokens": 4000,
+          }
+
+          req = urllib.request.Request(
+            "https://api.groq.com/openai/v1/chat/completions",
+            data=json.dumps(payload).encode(),
+            headers={
+              "Authorization": f"Bearer {os.environ['GROQ_API_KEY']}",
+              "Content-Type": "application/json",
+            },
+          )
+
+          report_file = f"ai_report_{AGENT}.md"
+          try:
+            with urllib.request.urlopen(req, timeout=120) as resp:
+              result = json.loads(resp.read())
+              content = result["choices"][0]["message"]["content"]
+            with open(report_file, "w", encoding="utf-8") as f:
+              f.write(f"# 🤖 AI Agent: {AGENT.upper()}\n\n")
+              f.write(content)
+            print(f"status=success" >> open(os.environ.get("GITHUB_ENV", "/dev/null"), "a"))
+            print(f"Report saved: {report_file}")
+          except urllib.error.HTTPError as e:
+            with open(report_file, "w", encoding="utf-8") as f:
+              f.write(f"# 🤖 AI Agent: {AGENT.upper()}\n\nAPI Error: HTTP {e.code}\n")
+            print(f"status=api-error" >> open(os.environ.get("GITHUB_ENV", "/dev/null"), "a"))
+          except Exception as e:
+            with open(report_file, "w", encoding="utf-8") as f:
+              f.write(f"# 🤖 AI Agent: {AGENT.upper()}\n\nError: {e}\n")
+            print(f"status=failed" >> open(os.environ.get("GITHUB_ENV", "/dev/null"), "a"))
+          PY
+
+      - name: 📝 Post Agent Report to PR
+        if: github.event_name == 'pull_request' && steps.ai-agent.outputs.status == 'success'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const agent = '${{ matrix.agent }}';
+            const reportFile = `ai_report_${agent}.md`;
+            try {
+              const report = fs.readFileSync(reportFile, 'utf8');
+              const emoji = {
+                'code-reviewer': '👁️',
+                'bug-hunter': '🐛',
+                'security-auditor': '🛡️',
+                'test-generator': '🧪',
+                'performance-profiler': '⚡'
+              };
+              const truncated = report.length > 60000 
+                ? report.substring(0, 60000) + '\n\n...(truncated — see full report in artifacts)' 
+                : report;
+              
+              await github.rest.issues.createComment({
+                issue_number: context.issue.number,
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                body: `## ${emoji[agent] || '🤖'} AI Agent: ${agent.replace('-', ' ').toUpperCase()}\n\n${truncated}`,
+              });
+            } catch (e) {
+              console.log("Could not post report:", e.message);
+            }
+
+      - name: 📤 Upload Report Artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ai-report-${{ matrix.agent }}
+          path: ai_report_${{ matrix.agent }}.md
+          retention-days: 30
+
+  # ═══════════════════════════════════════════════════════════════
+  # PHASE 3: AI SELF-HEALING (Emergency Fix Generation)
+  # ═══════════════════════════════════════════════════════════════
+  ai-healing:
+    name: 🏥 Phase 3 — AI Self-Healing
+    needs: [context-gathering, ai-analysis]
+    if: |
+      always() && 
+      (needs.ai-analysis.result == 'failure' || needs.context-gathering.outputs.risk_level == 'high')
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: 🧠 Generate Emergency Fix
+        env:
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+        run: |
+          if [ -z "$GROQ_API_KEY" ]; then
+            echo "No API key for healing."
+            exit 0
+          fi
+
+          # Collect all agent reports
+          cat ai_report_*.md > all_reports.md 2>/dev/null || echo "No reports" > all_reports.md
+
+          python3 - <<'PY'
+          import os, json, urllib.request
+
+          try:
+            with open("all_reports.md", encoding="utf-8") as f:
+              reports = f.read()[:6000]
+          except Exception:
+            reports = "No reports."
+
+          prompt = (
+            "You are an emergency fix engineer. Based on these bug reports, "
+            "generate MINIMAL, SAFE fixes. Only fix CRITICAL and HIGH severity issues. "
+            "Return in format:\n\n"
+            "FILE: filename.py\n```python\n# FIX: description\nfixed_code\n```\n\n"
+            f"Reports:\n{reports}"
+          )
+
+          payload = {
+            "model": os.environ.get("AI_MODEL", "llama-3.1-70b-versatile"),
+            "messages": [{"role": "user", "content": prompt}],
+            "temperature": 0.05,
+            "max_tokens": 4000,
+          }
+
+          req = urllib.request.Request(
+            "https://api.groq.com/openai/v1/chat/completions",
+            data=json.dumps(payload).encode(),
+            headers={
+              "Authorization": f"Bearer {os.environ['GROQ_API_KEY']}",
+              "Content-Type": "application/json",
+            },
+          )
+
+          try:
+            with urllib.request.urlopen(req, timeout=120) as resp:
+              result = json.loads(resp.read())
+              fix = result["choices"][0]["message"]["content"]
+            with open("ai_emergency_fix.md", "w", encoding="utf-8") as f:
+              f.write(fix)
+          except Exception as e:
+            with open("ai_emergency_fix.md", "w", encoding="utf-8") as f:
+              f.write(f"Fix generation failed: {e}")
+          PY
+
+      - name: 🔧 Apply Fixes
+        run: |
+          python3 - <<'PY'
+          import re, os
+
+          try:
+            with open("ai_emergency_fix.md", encoding="utf-8") as f:
+              content = f.read()
+          except Exception:
+            exit(0)
+
+          pattern = r'FILE:\s*(\S+)\s*```python\s*\n(.*?)\n```'
+          matches = re.findall(pattern, content, re.DOTALL)
+
+          for filename, code in matches:
+            code = code.strip()
+            if not code or ".." in filename or filename.startswith("/"):
+              continue
+            if not filename.endswith(".py"):
+              continue
+            os.makedirs(os.path.dirname(filename) or ".", exist_ok=True)
+            with open(filename, "w", encoding="utf-8") as f:
+              f.write(code + "\n")
+            print(f"Applied emergency fix: {filename}")
+          PY
+
+      - name: 🚀 Create Emergency Fix PR
+        uses: peter-evans/create-pull-request@v7
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          branch: ai/emergency-fix-${{ github.run_id }}
+          delete-branch: true
+          title: "🚨 AI Emergency Fix — Critical Issues Detected"
+          commit-message: "ai(heal): emergency fix for critical issues [skip ci]"
+          body: |
+            ## 🚨 AI-Generated Emergency Fix
+
+            **Triggered by:** CI failure or high-risk code detection
+
+            ### ⚠️ CRITICAL: Review before merge!
+            - [ ] I understand what this fix changes
+            - [ ] The fix addresses the actual problem
+            - [ ] No new bugs introduced
+            - [ ] CI passes after this fix
+
+            ### 🧠 AI Reasoning
+            See `ai_emergency_fix.md` in this branch.
+          labels: |
+            ai-generated
+            emergency
+            needs-review
+            critical
+
+  # ═══════════════════════════════════════════════════════════════
+  # PHASE 4: LEARNING & EVOLUTION
+  # ═══════════════════════════════════════════════════════════════
+  ai-learning:
+    name: 🧬 Phase 4 — Learning & Evolution
+    needs: [context-gathering, ai-analysis]
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: 📚 Update Learning Database
+        run: |
+          mkdir -p .ai-learning
+          
+          # Collect this run's results
+          echo "run_id=${{ github.run_id }}" >> .ai-learning/run_${{ github.run_id }}.log
+          echo "trigger=${{ github.event_name }}" >> .ai-learning/run_${{ github.run_id }}.log
+          echo "status=${{ needs.ai-analysis.result }}" >> .ai-learning/run_${{ github.run_id }}.log
+          echo "timestamp=$(date -Iseconds)" >> .ai-learning/run_${{ github.run_id }}.log
+
+          # Keep only last 50 runs
+          ls -t .ai-learning/run_*.log 2>/dev/null | tail -n +51 | xargs rm -f 2>/dev/null || true
+
+      - name: 🧠 Generate Insights from History
+        env:
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+        run: |
+          if [ -z "$GROQ_API_KEY" ]; then
+            exit 0
+          fi
+
+          # Build history context
+          cat .ai-learning/run_*.log 2>/dev/null | tail -100 > history_context.txt || true
+
+          python3 - <<'PY'
+          import os, json, urllib.request
+
+          try:
+            with open("history_context.txt", encoding="utf-8") as f:
+              history = f.read()[:3000]
+          except Exception:
+            history = "No history."
+
+          prompt = (
+            "You are an AI learning from its own performance. Based on this history:\n\n"
+            f"{history}\n\n"
+            "Generate insights:\n"
+            "1. What types of bugs are most common?\n"
+            "2. Which files break most often?\n"
+            "3. What checks should be prioritized?\n"
+            "4. How to improve future analysis?\n"
+            "Return as markdown."
+          )
+
+          payload = {
+            "model": os.environ.get("AI_MODEL", "llama-3.1-70b-versatile"),
+            "messages": [{"role": "user", "content": prompt}],
+            "temperature": 0.3,
+            "max_tokens": 2000,
+          }
+
+          req = urllib.request.Request(
+            "https://api.groq.com/openai/v1/chat/completions",
+            data=json.dumps(payload).encode(),
+            headers={
+              "Authorization": f"Bearer {os.environ['GROQ_API
