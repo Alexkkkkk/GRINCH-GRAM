@@ -1,0 +1,117 @@
+name: 🤖 AI Docs Sync — Smart Documentation
+
+on:
+  workflow_call:
+  workflow_dispatch:
+
+permissions: read-all
+
+jobs:
+  sync:
+    name: 📚 Documentation Update
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: 📊 Collect Code Changes
+        run: |
+          git diff --name-only HEAD~5 HEAD | grep '\.py$' > changed_py.txt || true
+          echo "Changed files since last 5 commits:"
+          cat changed_py.txt 2>/dev/null || echo "None"
+
+      - name: 🧠 AI Documentation Update
+        env:
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+        run: |
+          if [ -z "$GROQ_API_KEY" ]; then
+            echo "Skipping docs sync."
+            exit 0
+          fi
+
+          python3 - <<'PY'
+          import os, json, urllib.request, glob
+
+          # Собираем docstrings и сигнатуры функций
+          docs = []
+          for pyfile in glob.glob("*.py"):
+            try:
+              with open(pyfile, encoding="utf-8") as f:
+                content = f.read()
+              # Извлекаем docstrings (простой парсер)
+              lines = content.split('\n')
+              for i, line in enumerate(lines):
+                if 'def ' in line or 'class ' in line:
+                  docs.append(f"{pyfile}:{i+1} {line.strip()}")
+            except Exception:
+              pass
+
+          docs_text = "\n".join(docs[:100]) if docs else "No Python files found."
+
+          prompt = (
+            "You are a technical writer. Based on the following code signatures, "
+            "generate or update a concise ARCHITECTURE.md document describing:\n"
+            "1. System overview\n"
+            "2. Key components and their responsibilities\n"
+            "3. Data flow\n"
+            "4. Configuration options\n"
+            "5. Deployment notes\n\n"
+            f"Code signatures:\n{docs_text}\n\n"
+            "Return only the markdown content."
+          )
+
+          payload = {
+            "model": "llama-3.1-70b-versatile",
+            "messages": [{"role": "user", "content": prompt}],
+            "temperature": 0.2,
+            "max_tokens": 4000,
+          }
+
+          req = urllib.request.Request(
+            "https://api.groq.com/openai/v1/chat/completions",
+            data=json.dumps(payload).encode(),
+            headers={
+              "Authorization": f"Bearer {os.environ['GROQ_API_KEY']}",
+              "Content-Type": "application/json",
+            },
+          )
+
+          try:
+            with urllib.request.urlopen(req, timeout=120) as resp:
+              result = json.loads(resp.read())
+              content = result["choices"][0]["message"]["content"]
+            with open("ARCHITECTURE.md", "w", encoding="utf-8") as f:
+              f.write(content)
+            print("docs_generated=true" >> open(os.environ.get("GITHUB_ENV", "/dev/null"), "a"))
+          except Exception as e:
+            print(f"Docs generation failed: {e}")
+            print("docs_generated=false" >> open(os.environ.get("GITHUB_ENV", "/dev/null"), "a"))
+          PY
+
+      - name: 🚀 Create Docs PR
+        if: env.docs_generated == 'true'
+        uses: peter-evans/create-pull-request@v7
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          branch: ai/docs-update-${{ github.run_id }}
+          delete-branch: true
+          title: "📚 AI Docs: Architecture update"
+          commit-message: "docs(ai): auto-generated architecture update [skip ci]"
+          body: |
+            ## 🤖 AI-Generated Documentation Update
+
+            This PR updates ARCHITECTURE.md based on recent code changes.
+
+            **Review required before merge.**
+          labels: |
+            documentation
+            ai-generated
