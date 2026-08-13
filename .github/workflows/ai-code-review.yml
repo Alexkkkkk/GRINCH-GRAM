@@ -10,7 +10,6 @@ permissions:
   contents: read
   pull-requests: write
   checks: write
-  security-events: write
 
 concurrency:
   group: godmode-ai-review-${{ github.workflow }}-${{ github.ref }}
@@ -24,17 +23,17 @@ jobs:
 
     steps:
       - name: 📥 Checkout Repository Code
-        uses: actions/checkout@v7
+        uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
       - name: 🐍 Set up Python 3.11 Environment
-        uses: actions/setup-python@v7
+        uses: actions/setup-python@v5
         with:
           python-version: '3.11'
 
       - name: ⚡ High-Speed Cache Engine
-        uses: actions/cache@v6
+        uses: actions/cache@v4
         with:
           path: ~/.cache/pip
           key: ${{ runner.os }}-pip-godmode-${{ hashFiles('requirements.txt') }}
@@ -44,23 +43,38 @@ jobs:
       - name: 📦 Install High-End Security & Code Analysis Tools
         run: |
           python -m pip install --upgrade pip
-          pip install ruff bandit radon safety
+          pip install ruff bandit radon
 
       - name: 🔬 Deep Code Intelligence & Cyclomatic Analysis
         id: metrics
         run: |
           echo "📐 Вычисление метрик Radon..."
-          RAW_CC=$(radon cc main.py -s -a | tail -n 1 || echo "Average complexity: A (1.0)")
-          RAW_MI=$(radon mi main.py -s || echo "A")
+          RAW_CC=$(radon cc . -s -a | tail -n 1 || echo "Average complexity: N/A")
+          RAW_MI=$(radon mi . -s | tail -n 1 || echo "N/A")
           echo "COMPLEXITY_SCORE=$RAW_CC" >> $GITHUB_ENV
           echo "MAINTAINABILITY_INDEX=$RAW_MI" >> $GITHUB_ENV
 
       - name: 🔒 Static Security & Bug Audit
         id: linter
         run: |
-          echo "🔍 Сканирование linter (Ruff) и безопасности (Bandit)..."
-          ruff check main.py --output-format=github || true
-          bandit -r main.py -ll -iii -f txt || true
+          echo "🔍 Сканирование linter (Ruff)..."
+          if ruff check . --output-format=github > ruff-output.txt 2>&1; then
+            echo "RUFF_STATUS=✅ Пройдено (ошибок не найдено)" >> $GITHUB_ENV
+            echo "RUFF_SHORT=🟢" >> $GITHUB_ENV
+          else
+            echo "RUFF_STATUS=⚠️ Найдено замечаний (см. логи job)" >> $GITHUB_ENV
+            echo "RUFF_SHORT=🟡" >> $GITHUB_ENV
+          fi
+
+          echo "🔒 Сканирование безопасности (Bandit)..."
+          if bandit -r . -ll -iii -f txt > bandit-output.txt 2>&1; then
+            echo "BANDIT_STATUS=✅ Уязвимостей не обнаружено" >> $GITHUB_ENV
+            echo "BANDIT_SHORT=🟢" >> $GITHUB_ENV
+          else
+            echo "BANDIT_STATUS=🔴 Обнаружены потенциальные уязвимости (см. логи job)" >> $GITHUB_ENV
+            echo "BANDIT_SHORT=🔴" >> $GITHUB_ENV
+          fi
+        continue-on-error: true
 
       - name: 🛡️ Strict UI & Static Safeguard Inspection
         id: ui_check
@@ -69,7 +83,9 @@ jobs:
           CHANGED_STATIC=$(git diff --name-only origin/${{ github.base_ref }}...HEAD | grep "^static/" || true)
           if [ -n "$CHANGED_STATIC" ]; then
             echo "STATIC_MODIFIED=true" >> $GITHUB_ENV
-            echo "CHANGED_FILES=$CHANGED_STATIC" >> $GITHUB_ENV
+            echo "CHANGED_FILES<<EOF" >> $GITHUB_ENV
+            echo "$CHANGED_STATIC" >> $GITHUB_ENV
+            echo "EOF" >> $GITHUB_ENV
           else
             echo "STATIC_MODIFIED=false" >> $GITHUB_ENV
           fi
@@ -77,35 +93,46 @@ jobs:
       - name: 📑 Extract Git Diff for AI Inspection
         id: get_diff
         run: |
-          # Извлечение только изменённого кода в текущем PR
-          git diff origin/${{ github.base_ref }}...HEAD main.py > patch.diff || true
-          echo "DIFF_SIZE=$(wc -l < patch.diff)" >> $GITHUB_ENV
+          git diff origin/${{ github.base_ref }}...HEAD --stat > diff-stat.txt || true
+          DIFF_FILES=$(cat diff-stat.txt | tail -n 1 || echo "N/A")
+          echo "DIFF_STAT=$DIFF_FILES" >> $GITHUB_ENV
 
       - name: 🧠 GOD-MODE AI Synthesis & Interactive PR Report
-        uses: actions/github-script@v9
+        uses: actions/github-script@v7
         if: github.event_name == 'pull_request'
         with:
           script: |
             const staticModified = process.env.STATIC_MODIFIED === 'true';
-            const complexityScore = process.env.COMPLEXITY_SCORE || 'A (1.0)';
-            const maintainabilityIndex = process.env.MAINTAINABILITY_INDEX || 'A';
-            const diffSize = process.env.DIFF_SIZE || '0';
+            const complexityScore = process.env.COMPLEXITY_SCORE || 'N/A';
+            const maintainabilityIndex = process.env.MAINTAINABILITY_INDEX || 'N/A';
+            const diffStat = process.env.DIFF_STAT || 'N/A';
+            const ruffStatus = process.env.RUFF_STATUS || '⏳ Не проверено';
+            const ruffShort = process.env.RUFF_SHORT || '⚪';
+            const banditStatus = process.env.BANDIT_STATUS || '⏳ Не проверено';
+            const banditShort = process.env.BANDIT_SHORT || '⚪';
 
-            let uiShieldBanner = `🟢 **UI Guard Status:** Папка \`static/\` untouched. Ваш дизайн и картинки в абсолютной безопасности.`;
+            let uiShieldBanner = `🟢 **UI Guard Status:** Папка \`static/\` не изменена.`;
             if (staticModified) {
-              uiShieldBanner = `🔴 **CRITICAL UI SHIELD WARNING:** Внесены изменения в папку \`static/\`!\n> **Изменённые ресурсы:**\n\`\`\`\n${process.env.CHANGED_FILES}\n\`\`\`\n⚠️ *Убедитесь, что дизайн \`index.html\` и графические файлы не сбились!*`;
+              const changedFiles = process.env.CHANGED_FILES || '';
+              uiShieldBanner = `🟡 **UI Shield Warning:** Внесены изменения в \`static/\`!\n\`\`\`\n${changedFiles}\n\`\`\`\n⚠️ *Убедитесь, что дизайн и графические файлы не повреждены.*`;
             }
 
             const reportMarkdown = `## 🔮 GOD-MODE AI Autonomous Code Reviewer
 
-            ### 📊 Метрики качества кода (Senior Level):
-            | Параметр | Позаказатель | Статус |
-            | :--- | :--- | :--- |
-            | 📐 **Сложность (Cyclomatic Complexity)** | \`${complexityScore}\` | 🟢 Отлично |
-            | 🛠️ **Индекс поддерживаемости (MI)** | \`${maintainabilityIndex}\` | 🟢 Высокий |
-            | 📝 **Объем изменений в diff** | \`${diffSize} строк\` | ⚡ Проанализировано |
-            | ⚡ **Синтаксис & Async (Ruff)** | Пройдено | ✅ Без ошибок |
-            | 🔒 **Аудит безопасности (Bandit)** | Пройдено | 🛡️ Уязвимости отсутствуют |
+            ### 📊 Метрики качества кода:
+            | Параметр | Значение |
+            | :--- | :--- |
+            | 📐 **Цикломатическая сложность** | \`${complexityScore}\` |
+            | 🛠️ **Индекс поддерживаемости** | \`${maintainabilityIndex}\` |
+            | 📝 **Изменения в PR** | \`${diffStat}\` |
+
+            ---
+
+            ### 🧪 Результаты автоматических проверок:
+            | Проверка | Результат |
+            | :--- | :--- |
+            | ${ruffShort} **Linter (Ruff)** | ${ruffStatus} |
+            | ${banditShort} **Безопасность (Bandit)** | ${banditStatus} |
 
             ---
 
@@ -114,14 +141,13 @@ jobs:
 
             ---
 
-            ### 🤖 ИИ-Рекомендации по PR:
-            1. **Асинхронность (asyncio):** Все \`await\` сессии и запросы обработаны правильно.
-            2. **Безопасность токенов:** Утечек \`BOT_TOKEN\` или ключей не обнаружено.
-            3. **Структура файлов:** Соответствует стандарту проекта.
+            ### 📝 Рекомендации:
+            1. Проверьте логи данного job для детального анализа замечаний.
+            2. При изменениях в \`static/\` — убедитесь в визуальной целостности интерфейса.
+            3. Если Bandit нашёл уязвимости — исправьте их до мержа.
 
-            > 👑 *GOD-MODE AI разрешает слияние данного Pull Request в ветку \`main\`!*`;
+            > 🤖 *Это автоматический отчёт. Окончательное решение о мерже остаётся за мейнтейнером.*`;
 
-            // Обновляем существующий комментарий бота, чтобы не засорять переписку
             const comments = await github.rest.issues.listComments({
               issue_number: context.issue.number,
               owner: context.repo.owner,
