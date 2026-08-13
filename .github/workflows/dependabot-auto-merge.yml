@@ -89,7 +89,7 @@ jobs:
 
       - name: 📊 Post Executive DevSecOps Audit Summary
         if: always()
-        uses: actions/github-script@v7
+        uses: actions/github-script@v9
         with:
           script: |
             const ecosystem = "${{ steps.metadata.outputs.package-ecosystem }}";
