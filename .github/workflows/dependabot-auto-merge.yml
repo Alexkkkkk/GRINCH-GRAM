@@ -1,15 +1,11 @@
 name: 👑 BEYOND GOD-MODE Dependabot Governance Agent
 
 on:
-  pull_request_target:
+  pull_request:
     types: [opened, synchronize, reopened, labeled]
+    branches: [main, master]
 
-permissions:
-  contents: write
-  pull-requests: write
-  checks: read
-  statuses: read
-  workflows: write
+permissions: read-all
 
 concurrency:
   group: automerge-supreme-${{ github.event.pull_request.number }}
@@ -20,6 +16,12 @@ jobs:
     name: 🛡️ Autonomous CI/CD Gatekeeper & Auto-Merge Engine
     runs-on: ubuntu-latest
     if: github.actor == 'dependabot[bot]'
+    timeout-minutes: 15
+    permissions:
+      contents: write
+      pull-requests: write
+      checks: read
+      statuses: read
 
     steps:
       - name: 📥 Fetch Dependabot Intelligence Metadata
@@ -87,7 +89,7 @@ jobs:
 
       - name: 📊 Post Executive DevSecOps Audit Summary
         if: always()
-        uses: actions/github-script@v9
+        uses: actions/github-script@v7
         with:
           script: |
             const ecosystem = "${{ steps.metadata.outputs.package-ecosystem }}";
@@ -109,8 +111,8 @@ jobs:
 
             ### ⚡ Автономный статус:
             ${isSafe 
-              ? '1. ✅ Пройден фильтр безопасности.\n2. 🔑 Одобрение выставлено (**Approved**).\n3. 🧪 Подтвержден зеленый статус CI/CD.\n4. 🧹 Ветка будет удалена автоматически после Squash-слияния.'
-              : '⚠️ **Ахтунг!** Обнаружен мажорный релиз. Во избежание поломок кода в `main.py` или интерфейса в `static/`, авто-слив приостановлен.'
+              ? '1. ✅ Пройден фильтр безопасности.\\n2. 🔑 Одобрение выставлено (**Approved**).\\n3. 🧪 Подтвержден зеленый статус CI/CD.\\n4. 🧹 Ветка будет удалена автоматически после Squash-слияния.'
+              : '⚠️ **Ахтунг!** Обнаружен мажорный релиз. Во избежание поломок кода в \\`main.py\\` или интерфейса в \\`static/\\`, авто-слив приостановлен.'
             }`;
 
             const comments = await github.rest.issues.listComments({
