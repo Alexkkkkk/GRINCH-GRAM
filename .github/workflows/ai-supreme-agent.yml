@@ -8,7 +8,6 @@ on:
     branches: [main, master]
   schedule:
     - cron: "0 3 * * *"   # Ночной deep audit
-    - cron: "0 */6 * * *" # Каждые 6 часов — health check
   workflow_dispatch:
     inputs:
       mode:
@@ -22,18 +21,15 @@ on:
           - emergency-fix
           - learn-from-history
 
-permissions: read-all
-
 env:
-  AI_MODEL: "llama-3.1-70b-versatile"
+  AI_MODEL: "llama-3.3-70b-versatile"
   AI_TEMPERATURE: "0.1"
   AI_MAX_TOKENS: "4000"
   AI_TIMEOUT: "120"
   CACHE_DIR: ".ai-cache"
-  LEARNING_DB: ".ai-learning.db"
 
 concurrency:
-  group: supreme-ai-${{ github.ref }}-${{ github.run_id }}
+  group: supreme-ai-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
@@ -43,6 +39,8 @@ jobs:
   context-gathering:
     name: 🧠 Phase 1 — Context Intelligence
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     outputs:
       trigger: ${{ steps.context.outputs.trigger }}
       changed_files: ${{ steps.context.outputs.files }}
@@ -51,6 +49,7 @@ jobs:
       has_secrets: ${{ steps.secrets.outputs.found }}
       risk_level: ${{ steps.risk.outputs.level }}
       ai_plan: ${{ steps.planner.outputs.plan }}
+      has_groq_key: ${{ steps.check-key.outputs.has_key }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -60,6 +59,16 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
+
+      - name: 🔑 Check GROQ API Key
+        id: check-key
+        run: |
+          if [ -n "${{ secrets.GROQ_API_KEY }}" ]; then
+            echo "has_key=true" >> $GITHUB_OUTPUT
+          else
+            echo "has_key=false" >> $GITHUB_OUTPUT
+            echo "::warning::GROQ_API_KEY not set. AI agents will be skipped."
+          fi
 
       - name: 📊 Gather Code Metrics
         id: metrics
@@ -71,9 +80,18 @@ jobs:
       - name: 🔍 Secret Scan (Pre-flight)
         id: secrets
         run: |
+          pip install detect-secrets 2>/dev/null || true
           FOUND="false"
-          if grep -rn -E "(password|secret|token|api_key)\s*=\s*['\"][^'\"]{8,}['\"]" --include="*.py" . 2>/dev/null | grep -v "os.environ" | grep -v "getenv" | head -1; then
-            FOUND="true"
+          if command -v detect-secrets &> /dev/null; then
+            detect-secrets scan --all-files --force-use-all-plugins > .secrets.baseline 2>/dev/null || true
+            if detect-secrets audit .secrets.baseline 2>/dev/null | grep -q "True"; then
+              FOUND="true"
+            fi
+          else
+            # Fallback: naive grep только если detect-secrets недоступен
+            if grep -rn -E "(password|secret|token|api_key)\s*=\s*['\"][^'\"]{8,}['\"]" --include="*.py" . 2>/dev/null | grep -v "os.environ\|getenv\|environ\." | head -1; then
+              FOUND="true"
+            fi
           fi
           echo "found=$FOUND" >> $GITHUB_OUTPUT
 
@@ -82,26 +100,22 @@ jobs:
         run: |
           if [ "${{ github.event_name }}" == "pull_request" ]; then
             echo "trigger=pr" >> $GITHUB_OUTPUT
-            git diff --name-only origin/${{ github.base_ref }}...HEAD > changed_files.txt
+            git diff --name-only origin/${{ github.base_ref }}...HEAD > changed_files.txt || git diff --name-only ${{ github.base_ref }}...HEAD > changed_files.txt
           else
             echo "trigger=push" >> $GITHUB_OUTPUT
-            git diff --name-only HEAD~1 HEAD > changed_files.txt
+            git diff --name-only HEAD~1 HEAD > changed_files.txt || echo "" > changed_files.txt
           fi
           echo "files=$(cat changed_files.txt | tr '\n' ' ')" >> $GITHUB_OUTPUT
-          echo "py_files=$(grep '\.py$' changed_files.txt | tr '\n' ' ')" >> $GITHUB_OUTPUT
+          echo "py_files=$(grep '\.py$' changed_files.txt | tr '\n' ' ' || echo '')" >> $GITHUB_OUTPUT
 
       - name: 🎯 AI Risk Assessment & Planning
         id: planner
+        if: steps.check-key.outputs.has_key == 'true'
         env:
           GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
         run: |
-          if [ -z "$GROQ_API_KEY" ]; then
-            echo "plan=local-only" >> $GITHUB_OUTPUT
-            exit 0
-          fi
-
           python3 - <<'PY'
-          import os, json, urllib.request
+          import os, json, urllib.request, re
 
           try:
             with open("changed_files.txt", encoding="utf-8") as f:
@@ -117,7 +131,7 @@ jobs:
           )
 
           payload = {
-            "model": os.environ.get("AI_MODEL", "llama-3.1-70b-versatile"),
+            "model": os.environ.get("AI_MODEL", "llama-3.3-70b-versatile"),
             "messages": [{"role": "user", "content": prompt}],
             "temperature": 0.1,
             "max_tokens": 500,
@@ -132,23 +146,40 @@ jobs:
             },
           )
 
+          plan_result = "fallback"
           try:
             with urllib.request.urlopen(req, timeout=30) as resp:
               result = json.loads(resp.read())
               plan = result["choices"][0]["message"]["content"]
-            # Extract JSON
-            import re
             json_match = re.search(r'\{.*\}', plan, re.DOTALL)
             if json_match:
               with open("ai_plan.json", "w") as f:
                 f.write(json_match.group())
-              print("plan=ai-generated" >> open(os.environ.get("GITHUB_ENV", "/dev/null"), "a"))
+              plan_result = "ai-generated"
             else:
-              print("plan=default" >> open(os.environ.get("GITHUB_ENV", "/dev/null"), "a"))
+              plan_result = "default"
           except Exception:
-            print("plan=fallback" >> open(os.environ.get("GITHUB_ENV", "/dev/null"), "a"))
+            plan_result = "fallback"
+
+          with open(os.environ.get("GITHUB_OUTPUT", "/dev/null"), "a") as f:
+            f.write(f"plan={plan_result}\n")
           PY
-          echo "plan=${AI_PLAN:-default}" >> $GITHUB_OUTPUT
+
+      - name: 🎯 Risk Level Assessment
+        id: risk
+        run: |
+          RISK="low"
+          if [ "${{ steps.secrets.outputs.found }}" == "true" ]; then
+            RISK="critical"
+          elif echo "${{ steps.metrics.outputs.complexity }}" | grep -q "complexity"; then
+            AVG=$(echo "${{ steps.metrics.outputs.complexity }}" | grep -oP 'average complexity: \K[0-9.]+' || echo "0")
+            if (( $(echo "$AVG > 15" | bc -l 2>/dev/null || echo "0") )); then
+              RISK="high"
+            elif (( $(echo "$AVG > 10" | bc -l 2>/dev/null || echo "0") )); then
+              RISK="medium"
+            fi
+          fi
+          echo "level=$RISK" >> $GITHUB_OUTPUT
 
       - name: 💾 Cache Intelligence
         uses: actions/cache@v4
@@ -164,6 +195,7 @@ jobs:
   ai-analysis:
     name: 🔬 Phase 2 — ${{ matrix.agent }} Analysis
     needs: context-gathering
+    if: needs.context-gathering.outputs.has_groq_key == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 25
     strategy:
@@ -205,17 +237,12 @@ jobs:
           AGENT_TYPE: ${{ matrix.agent }}
           CHANGED_FILES: ${{ needs.context-gathering.outputs.changed_py }}
         run: |
-          if [ -z "$GROQ_API_KEY" ]; then
-            echo "status=skipped-no-key" >> $GITHUB_OUTPUT
-            exit 0
-          fi
-
           python3 - <<'PY'
-          import os, json, urllib.request, urllib.error, glob, sys
+          import os, json, urllib.request, urllib.error, sys
 
           AGENT = os.environ.get("AGENT_TYPE", "code-reviewer")
           CHANGED = os.environ.get("CHANGED_FILES", "")
-          MODEL = os.environ.get("AI_MODEL", "llama-3.1-70b-versatile")
+          MODEL = os.environ.get("AI_MODEL", "llama-3.3-70b-versatile")
 
           # Collect code context
           code_blocks = []
@@ -228,17 +255,17 @@ jobs:
               except Exception:
                 pass
           else:
-            # Fallback: main project files
-            for pattern in ["main.py", "app.py", "grid_trader.py", "config.py"]:
+            # Fallback: auto-discover Python files
+            import glob
+            for f in sorted(glob.glob("**/*.py", recursive=True))[:5]:
               try:
-                with open(pattern, encoding="utf-8") as fh:
-                  code_blocks.append(f"=== {pattern} ===\n{fh.read()[:3000]}")
+                with open(f, encoding="utf-8") as fh:
+                  code_blocks.append(f"=== {f} ===\n{fh.read()[:3000]}")
               except Exception:
                 pass
 
           code = "\n\n".join(code_blocks) if code_blocks else "No code available."
 
-          # Agent-specific prompts
           PROMPTS = {
             "code-reviewer": (
               "You are a senior Python architect. Review the code for:\n"
@@ -310,6 +337,7 @@ jobs:
           )
 
           report_file = f"ai_report_{AGENT}.md"
+          status = "failed"
           try:
             with urllib.request.urlopen(req, timeout=120) as resp:
               result = json.loads(resp.read())
@@ -317,16 +345,18 @@ jobs:
             with open(report_file, "w", encoding="utf-8") as f:
               f.write(f"# 🤖 AI Agent: {AGENT.upper()}\n\n")
               f.write(content)
-            print(f"status=success" >> open(os.environ.get("GITHUB_ENV", "/dev/null"), "a"))
+            status = "success"
             print(f"Report saved: {report_file}")
           except urllib.error.HTTPError as e:
             with open(report_file, "w", encoding="utf-8") as f:
               f.write(f"# 🤖 AI Agent: {AGENT.upper()}\n\nAPI Error: HTTP {e.code}\n")
-            print(f"status=api-error" >> open(os.environ.get("GITHUB_ENV", "/dev/null"), "a"))
+            status = f"api-error-{e.code}"
           except Exception as e:
             with open(report_file, "w", encoding="utf-8") as f:
               f.write(f"# 🤖 AI Agent: {AGENT.upper()}\n\nError: {e}\n")
-            print(f"status=failed" >> open(os.environ.get("GITHUB_ENV", "/dev/null"), "a"))
+
+          with open(os.environ.get("GITHUB_OUTPUT", "/dev/null"), "a") as f:
+            f.write(f"status={status}\n")
           PY
 
       - name: 📝 Post Agent Report to PR
@@ -376,7 +406,8 @@ jobs:
     needs: [context-gathering, ai-analysis]
     if: |
       always() && 
-      (needs.ai-analysis.result == 'failure' || needs.context-gathering.outputs.risk_level == 'high')
+      needs.context-gathering.outputs.has_groq_key == 'true' &&
+      (needs.ai-analysis.result == 'failure' || needs.context-gathering.outputs.risk_level == 'high' || github.event.inputs.mode == 'emergency-fix')
     runs-on: ubuntu-latest
     timeout-minutes: 20
     permissions:
@@ -386,18 +417,20 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: 📥 Download Agent Reports
+        uses: actions/download-artifact@v4
+        with:
+          path: ai_reports
+          pattern: ai-report-*
+          merge-multiple: true
 
       - name: 🧠 Generate Emergency Fix
         env:
           GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
         run: |
-          if [ -z "$GROQ_API_KEY" ]; then
-            echo "No API key for healing."
-            exit 0
-          fi
-
-          # Collect all agent reports
-          cat ai_report_*.md > all_reports.md 2>/dev/null || echo "No reports" > all_reports.md
+          cat ai_reports/ai_report_*.md > all_reports.md 2>/dev/null || echo "No reports" > all_reports.md
 
           python3 - <<'PY'
           import os, json, urllib.request
@@ -417,7 +450,7 @@ jobs:
           )
 
           payload = {
-            "model": os.environ.get("AI_MODEL", "llama-3.1-70b-versatile"),
+            "model": os.environ.get("AI_MODEL", "llama-3.3-70b-versatile"),
             "messages": [{"role": "user", "content": prompt}],
             "temperature": 0.05,
             "max_tokens": 4000,
@@ -443,7 +476,7 @@ jobs:
               f.write(f"Fix generation failed: {e}")
           PY
 
-      - name: 🔧 Apply Fixes
+      - name: 🔧 Apply Fixes (Safe Patch Mode)
         run: |
           python3 - <<'PY'
           import re, os
@@ -457,16 +490,35 @@ jobs:
           pattern = r'FILE:\s*(\S+)\s*```python\s*\n(.*?)\n```'
           matches = re.findall(pattern, content, re.DOTALL)
 
+          repo_root = os.getcwd()
           for filename, code in matches:
             code = code.strip()
-            if not code or ".." in filename or filename.startswith("/"):
+            if not code:
               continue
-            if not filename.endswith(".py"):
+            
+            # Strict path traversal protection
+            target_path = os.path.abspath(os.path.join(repo_root, filename))
+            if not target_path.startswith(repo_root + os.sep):
+              print(f"SKIPPED (path traversal): {filename}")
               continue
-            os.makedirs(os.path.dirname(filename) or ".", exist_ok=True)
-            with open(filename, "w", encoding="utf-8") as f:
+            if not target_path.endswith(".py"):
+              print(f"SKIPPED (not .py): {filename}")
+              continue
+            if not os.path.exists(target_path):
+              print(f"SKIPPED (file not found): {filename}")
+              continue
+
+            # Create backup
+            backup = target_path + ".ai-backup"
+            with open(target_path, "r", encoding="utf-8") as orig:
+              original = orig.read()
+            with open(backup, "w", encoding="utf-8") as b:
+              b.write(original)
+
+            # Apply fix (whole file replacement — with backup)
+            with open(target_path, "w", encoding="utf-8") as f:
               f.write(code + "\n")
-            print(f"Applied emergency fix: {filename}")
+            print(f"Applied emergency fix: {filename} (backup: {backup})")
           PY
 
       - name: 🚀 Create Emergency Fix PR
@@ -502,23 +554,35 @@ jobs:
   ai-learning:
     name: 🧬 Phase 4 — Learning & Evolution
     needs: [context-gathering, ai-analysis]
-    if: always()
+    if: always() && needs.context-gathering.outputs.has_groq_key == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
+      - name: 📥 Download Learning History
+        uses: actions/cache@v4
+        with:
+          path: .ai-learning
+          key: ai-learning-history-${{ github.repository }}
+          restore-keys: |
+            ai-learning-history-
+
       - name: 📚 Update Learning Database
         run: |
           mkdir -p .ai-learning
           
-          # Collect this run's results
-          echo "run_id=${{ github.run_id }}" >> .ai-learning/run_${{ github.run_id }}.log
-          echo "trigger=${{ github.event_name }}" >> .ai-learning/run_${{ github.run_id }}.log
-          echo "status=${{ needs.ai-analysis.result }}" >> .ai-learning/run_${{ github.run_id }}.log
-          echo "timestamp=$(date -Iseconds)" >> .ai-learning/run_${{ github.run_id }}.log
+          cat <<EOF >> .ai-learning/run_${{ github.run_id }}.log
+          run_id=${{ github.run_id }}
+          trigger=${{ github.event_name }}
+          status=${{ needs.ai-analysis.result }}
+          timestamp=$(date -Iseconds)
+          changed_files=${{ needs.context-gathering.outputs.changed_files }}
+          EOF
 
           # Keep only last 50 runs
           ls -t .ai-learning/run_*.log 2>/dev/null | tail -n +51 | xargs rm -f 2>/dev/null || true
@@ -527,12 +591,10 @@ jobs:
         env:
           GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
         run: |
-          if [ -z "$GROQ_API_KEY" ]; then
-            exit 0
-          fi
-
-          # Build history context
           cat .ai-learning/run_*.log 2>/dev/null | tail -100 > history_context.txt || true
+          if [ ! -s history_context.txt ]; then
+            echo "No history data available." > history_context.txt
+          fi
 
           python3 - <<'PY'
           import os, json, urllib.request
@@ -555,7 +617,7 @@ jobs:
           )
 
           payload = {
-            "model": os.environ.get("AI_MODEL", "llama-3.1-70b-versatile"),
+            "model": os.environ.get("AI_MODEL", "llama-3.3-70b-versatile"),
             "messages": [{"role": "user", "content": prompt}],
             "temperature": 0.3,
             "max_tokens": 2000,
@@ -565,4 +627,36 @@ jobs:
             "https://api.groq.com/openai/v1/chat/completions",
             data=json.dumps(payload).encode(),
             headers={
-              "Authorization": f"Bearer {os.environ['GROQ_API
+              "Authorization": f"Bearer {os.environ['GROQ_API_KEY']}",
+              "Content-Type": "application/json",
+            },
+          )
+
+          try:
+            with urllib.request.urlopen(req, timeout=60) as resp:
+              result = json.loads(resp.read())
+              insights = result["choices"][0]["message"]["content"]
+            with open("ai_insights.md", "w", encoding="utf-8") as f:
+              f.write(f"# 🧬 AI Learning Insights\n\n{insights}")
+            print("Insights generated successfully.")
+          except Exception as e:
+            with open("ai_insights.md", "w", encoding="utf-8") as f:
+              f.write(f"# 🧬 AI Learning Insights\n\nError generating insights: {e}")
+            print(f"Insight generation failed: {e}")
+          PY
+
+      - name: 📤 Upload Insights Artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ai-learning-insights
+          path: ai_insights.md
+          retention-days: 90
+
+      - name: 💾 Persist Learning Database
+        uses: actions/cache@v4
+        with:
+          path: .ai-learning
+          key: ai-learning-history-${{ github.repository }}-${{ github.run_id }}
+          restore-keys: |
+            ai-learning-history-${{ github.repository }}
