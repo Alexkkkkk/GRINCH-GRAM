@@ -14,7 +14,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Остальной код
 COPY . .
 
-# Постоянные данные (experience.json, wallets.json, settings.json, backups/)
+# Постоянные данные
 RUN mkdir -p /app/data
 VOLUME ["/app/data"]
 
@@ -24,11 +24,20 @@ ENV PORT=3000
 
 EXPOSE 3000
 
-CMD gunicorn main:app \
+# Создаём непривилегированного пользователя
+RUN useradd -m -u 1000 appuser && chown -R appuser:appuser /usr/src/app /app/data
+USER appuser
+
+# HEALTHCHECK — проверяем, что приложение отвечает
+HEALTHCHECK --interval=30s --timeout=10s --start-period=10s --retries=3 \
+    CMD curl -f http://localhost:${PORT}/health || exit 1
+
+# JSON-формат CMD (exec) — корректно обрабатывает сигналы ОС
+CMD ["sh", "-c", "exec gunicorn main:app \
     --worker-class gthread \
     --threads 4 \
     --workers 1 \
     --bind 0.0.0.0:${PORT} \
     --timeout 120 \
     --keep-alive 5 \
-    --log-level info
+    --log-level info"]
