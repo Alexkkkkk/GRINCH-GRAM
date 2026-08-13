@@ -5,9 +5,7 @@ on:
   schedule:
     - cron: "17 3 1 * *"
 
-permissions:
-  contents: write
-  pull-requests: write
+permissions: read-all
 
 concurrency:
   group: ai-readme
@@ -18,15 +16,19 @@ jobs:
     name: Generate reviewable README proposal
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    permissions:
+      contents: write
+      pull-requests: write
+
     steps:
       - name: Check out default branch
-        uses: actions/checkout@v7
+        uses: actions/checkout@v4
         with:
           ref: main
           fetch-depth: 0
 
       - name: Set up Python
-        uses: actions/setup-python@v7
+        uses: actions/setup-python@v5
         with:
           python-version: "3.11"
 
@@ -90,7 +92,7 @@ jobs:
           PY
 
       - name: Open or update a documentation PR
-        uses: peter-evans/create-pull-request@v8
+        uses: peter-evans/create-pull-request@v7
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
           branch: automation/ai-readme
@@ -105,3 +107,14 @@ jobs:
           labels: |
             documentation
             automation
+
+      - name: 📊 AI README Generation Summary
+        if: always()
+        run: |
+          echo "# 🤖 AI README Proposal Report" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          if [ -z "${GROQ_API_KEY:-}" ]; then
+            echo "> ⏭️ **Skipped:** GROQ_API_KEY is not configured." >> $GITHUB_STEP_SUMMARY
+          else
+            echo "> ✅ **Executed:** AI proposal generated and submitted as PR." >> $GITHUB_STEP_SUMMARY
+          fi
