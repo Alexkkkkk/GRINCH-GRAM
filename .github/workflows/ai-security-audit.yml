@@ -1,0 +1,125 @@
+name: 🤖 AI Security Auditor — Deep Vulnerability Scan
+
+on:
+  workflow_call:
+  workflow_dispatch:
+
+permissions: read-all
+
+jobs:
+  audit:
+    name: 🔐 AI Security Analysis
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: 🔍 Secret Pattern Detection
+        id: secrets
+        run: |
+          # Ищем подозрительные паттерны, которые Bandit/Gitleaks могут пропустить
+          grep -rn -E "(password|secret|token|key|api_key)\s*=\s*['\"][^'\"]{8,}['\"]" --include="*.py" . > suspicious_patterns.txt 2>/dev/null || true
+          grep -rn -E "eval\s*\(|exec\s*\(" --include="*.py" . >> suspicious_patterns.txt 2>/dev/null || true
+          grep -rn -E "subprocess\..*shell\s*=\s*True" --include="*.py" . >> suspicious_patterns.txt 2>/dev/null || true
+          grep -rn -E "pickle\.loads|yaml\.load\s*\(" --include="*.py" . >> suspicious_patterns.txt 2>/dev/null || true
+
+      - name: 🧠 AI Security Analysis
+        env:
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+        run: |
+          if [ -z "$GROQ_API_KEY" ]; then
+            echo "Skipping AI security audit."
+            exit 0
+          fi
+
+          python3 - <<'PY'
+          import os, json, urllib.request
+
+          # Собираем конфиги и основные файлы
+          files = []
+          for pattern in ["config.py", "app.py", "main.py", "grid_trader.py", "wallet_manager.py"]:
+            try:
+              with open(pattern, encoding="utf-8") as f:
+                files.append(f"=== {pattern} ===\n{f.read()[:3000]}")
+            except Exception:
+              pass
+
+          try:
+            with open("suspicious_patterns.txt", encoding="utf-8") as f:
+              suspicious = f.read()[:2000]
+          except Exception:
+            suspicious = "No suspicious patterns found."
+
+          prompt = (
+            "You are a cybersecurity expert auditing a cryptocurrency trading bot. "
+            "Analyze the code for these advanced vulnerabilities:\n"
+            "1. Timing attacks on password comparison\n"
+            "2. Integer overflow in financial calculations\n"
+            "3. Reentrancy in async operations\n"
+            "4. Insufficient entropy in random operations\n"
+            "5. Log injection / log forging\n"
+            "6. SSRF via user-controlled URLs\n"
+            "7. Deserialization vulnerabilities\n"
+            "8. Race conditions in balance checks\n\n"
+            f"Suspicious patterns found:\n{suspicious}\n\n"
+            f"Source code:\n{'\\n\\n'.join(files)}\n\n"
+            "Rate each finding: CRITICAL / HIGH / MEDIUM / LOW. Provide fix code."
+          )
+
+          payload = {
+            "model": "llama-3.1-70b-versatile",
+            "messages": [{"role": "user", "content": prompt}],
+            "temperature": 0.1,
+            "max_tokens": 4000,
+          }
+
+          req = urllib.request.Request(
+            "https://api.groq.com/openai/v1/chat/completions",
+            data=json.dumps(payload).encode(),
+            headers={
+              "Authorization": f"Bearer {os.environ['GROQ_API_KEY']}",
+              "Content-Type": "application/json",
+            },
+          )
+
+          try:
+            with urllib.request.urlopen(req, timeout=120) as resp:
+              result = json.loads(resp.read())
+              report = result["choices"][0]["message"]["content"]
+            with open("ai_security_report.md", "w", encoding="utf-8") as f:
+              f.write("# 🔐 AI Security Audit\n\n")
+              f.write(report)
+          except Exception as e:
+            with open("ai_security_report.md", "w", encoding="utf-8") as f:
+              f.write(f"# 🔐 AI Security Audit\n\nAI unavailable: {e}\n\n")
+              f.write("Manual review required for:\n")
+              f.write("- All subprocess calls\n")
+              f.write("- All eval/exec usage\n")
+              f.write("- All file operations with user input\n")
+          PY
+
+      - name: 📝 Post Security Report
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            try {
+              const fs = require('fs');
+              const report = fs.readFileSync('ai_security_report.md', 'utf8');
+              await github.rest.issues.createComment({
+                issue_number: context.issue.number,
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                body: report.substring(0, 65000),
+              });
+            } catch (e) {
+              console.log("Could not post security report");
+            }
