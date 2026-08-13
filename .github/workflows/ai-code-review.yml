@@ -23,17 +23,17 @@ jobs:
 
     steps:
       - name: 📥 Checkout Repository Code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
       - name: 🐍 Set up Python 3.11 Environment
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v7
         with:
           python-version: '3.11'
 
       - name: ⚡ High-Speed Cache Engine
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: ~/.cache/pip
           key: ${{ runner.os }}-pip-godmode-${{ hashFiles('requirements.txt') }}
@@ -98,7 +98,7 @@ jobs:
           echo "DIFF_STAT=$DIFF_FILES" >> $GITHUB_ENV
 
       - name: 🧠 GOD-MODE AI Synthesis & Interactive PR Report
-        uses: actions/github-script@v7
+        uses: actions/github-script@v9
         if: github.event_name == 'pull_request'
         with:
           script: |
