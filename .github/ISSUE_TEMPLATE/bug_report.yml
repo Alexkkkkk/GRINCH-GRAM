@@ -1,0 +1,47 @@
+name: 🐛 Bug Report
+description: Сообщить об ошибке
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Спасибо за репорт! Пожалуйста, заполните все поля.
+
+  - type: textarea
+    id: description
+    attributes:
+      label: Описание
+      description: Что произошло? Что ожидали?
+      placeholder: "Бот не отвечает на команду /start..."
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Как воспроизвести
+      description: Шаги для воспроизведения
+      placeholder: |
+        1. Отправить /start
+        2. Нажать кнопку "Кошелёк"
+        3. Ошибка: ...
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: Версия / Commit
+      description: git commit hash или тег
+      placeholder: "main@a1b2c3d"
+    validations:
+      required: false
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Логи
+      description: Вставьте релевантные логи (если есть)
+      render: shell
+    validations:
+      required: false
