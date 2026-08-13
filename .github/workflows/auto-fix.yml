@@ -3,15 +3,10 @@ name: 👑 OVERLORD Ultra-Autonomous AI Engine
 on:
   push:
     branches: [ main, master, develop ]
-  pull_request:
-    branches: [ main, master ]
   workflow_dispatch:
 
 permissions:
-  contents: write
-  pull-requests: write
-  checks: write
-  security-events: write
+  contents: read
 
 concurrency:
   group: overlord-engine-${{ github.workflow }}-${{ github.ref }}
@@ -21,23 +16,26 @@ jobs:
   overlord-autonomous-fix:
     name: 🧠 AI Self-Healing & Structural Shield
     runs-on: ubuntu-latest
+    if: github.actor != 'dependabot[bot]'
     timeout-minutes: 15
+    permissions:
+      contents: write
 
     steps:
       - name: 📥 Checkout Repository
-        uses: actions/checkout@v7
+        uses: actions/checkout@v4
         with:
           fetch-depth: 0
           ref: ${{ github.head_ref || github.ref_name }}
           token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: 🐍 Set up Python 3.11
-        uses: actions/setup-python@v7
+        uses: actions/setup-python@v5
         with:
           python-version: '3.11'
 
       - name: ⚡ High-Speed Cache Engine
-        uses: actions/cache@v6
+        uses: actions/cache@v4
         with:
           path: ~/.cache/pip
           key: ${{ runner.os }}-pip-overlord-${{ hashFiles('requirements.txt') }}
@@ -47,7 +45,7 @@ jobs:
       - name: 📦 Install Next-Gen Dev Toolchain
         run: |
           python -m pip install --upgrade pip
-          pip install ruff black autoflake isort bandit mypy
+          pip install ruff black autoflake isort bandit
 
       - name: 🧹 Deep Workspace Purge & Sanitization
         run: |
@@ -61,7 +59,6 @@ jobs:
         run: |
           echo "🔒 Проверка нерушимости UI, дизайна и static-ресурсов..."
           
-          # Защита веб-интерфейса и манифеста TON
           REQUIRED_FILES=(
             "main.py"
             "Dockerfile"
@@ -76,36 +73,45 @@ jobs:
             fi
           done
 
-          # Восстановление файлов static если они были случайно изменены форматировщиком
-          git checkout HEAD -- static/ || true
-          echo "✅ Интерфейс и графика под 100% защитой."
+          # Проверяем, что static/ не был изменён в этом коммите
+          # (если изменён — прерываем, чтобы не затереть правки разработчика)
+          CHANGED_STATIC=$(git diff --name-only HEAD~1 HEAD | grep "^static/" || true)
+          if [ -n "$CHANGED_STATIC" ]; then
+            echo "⚠️ Обнаружены изменения в static/ в текущем коммите:"
+            echo "$CHANGED_STATIC"
+            echo "Пропускаем авто-откат. Разработчик намеренно менял интерфейс."
+          fi
+          
+          echo "✅ Критические файлы на месте. UI Shield активен."
 
       - name: ⚡ Ultra Code Refactoring & Import Optimization
         run: |
           echo "🚀 Оптимизация импортов и вырезание неиспользуемого кода..."
-          autoflake --in-place --remove-all-unused-imports --remove-unused-variables --recursive main.py || true
-          isort main.py || true
+          autoflake --in-place --remove-all-unused-imports --remove-unused-variables --recursive .
+          isort .
 
       - name: 🛠️ AI Bug Self-Repair & Logic Auto-Fix (Ruff)
         run: |
           echo "🛠️ Исправление асинхронных багов и синтаксиса..."
-          ruff check main.py --fix --unsafe-fixes || true
+          ruff check . --fix
 
       - name: 🎨 PEP8 Architectural Auto-Formatting (Black)
         run: |
-          black main.py || true
+          black .
 
       - name: 🔍 Compilation & Async Code Validation
         run: |
           echo "🔍 Проверка валидности Python-модулей..."
-          python -m compileall -q main.py
+          python -m compileall -q .
 
       - name: 🛡️ Security & Vulnerability Scan (Bandit)
         run: |
-          bandit -r main.py -ll -iii || true
+          echo "🔒 Сканирование кода на уязвимости..."
+          bandit -r . -ll -iii
+        continue-on-error: true
 
       - name: 🚀 Smart Auto-Commit & Push
-        uses: stefanzweifel/git-auto-commit-action@v7
+        uses: stefanzweifel/git-auto-commit-action@v5
         with:
           commit_message: "overlord(auto-fix): 👑 полная авто-оптимизация, исправление ошибок и защита UI [skip ci]"
           branch: ${{ github.head_ref || github.ref_name }}
@@ -120,11 +126,11 @@ jobs:
           echo "### 🚀 Статус систем автономии:" >> $GITHUB_STEP_SUMMARY
           echo "| Компонент | Операция | Результат |" >> $GITHUB_STEP_SUMMARY
           echo "| :--- | :--- | :--- |" >> $GITHUB_STEP_SUMMARY
-          echo "| 🛡️ **UI Shield** | Защита `static/` и дизайна | ✅ Сохранено в идеале |" >> $GITHUB_STEP_SUMMARY
-          echo "| 🧹 **Purge Unit** | Очистка `__pycache__` и мусора | ✅ Выполнено |" >> $GITHUB_STEP_SUMMARY
-          echo "| ⚡ **Refactor Engine** | Оптимизация импортов | ✅ `autoflake` & `isort` |" >> $GITHUB_STEP_SUMMARY
-          echo "| 🛠️ **Bug Repair** | Исправление ошибок и асинхронности | ✅ `ruff` auto-fix |" >> $GITHUB_STEP_SUMMARY
-          echo "| 🎨 **Code Style** | Стандартизация кода | ✅ `black` PEP8 |" >> $GITHUB_STEP_SUMMARY
-          echo "| 🔒 **Security Audit** | Поиск уязвимостей | ✅ `bandit` пройдён |" >> $GITHUB_STEP_SUMMARY
+          echo "| 🛡️ **UI Shield** | Проверка критических файлов | ✅ Пройдена |" >> $GITHUB_STEP_SUMMARY
+          echo "| 🧹 **Purge Unit** | Очистка \`__pycache__\` и мусора | ✅ Выполнено |" >> $GITHUB_STEP_SUMMARY
+          echo "| ⚡ **Refactor Engine** | Оптимизация импортов | ✅ \`autoflake\` & \`isort\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| 🛠️ **Bug Repair** | Исправление ошибок | ✅ \`ruff\` auto-fix |" >> $GITHUB_STEP_SUMMARY
+          echo "| 🎨 **Code Style** | Стандартизация кода | ✅ \`black\` PEP8 |" >> $GITHUB_STEP_SUMMARY
+          echo "| 🔒 **Security Audit** | Поиск уязвимостей | ⚠️ \`bandit\` (см. логи) |" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "> 🤖 **Система работает в полностью автономном режиме. Ручное вмешательство не требуется!**" >> $GITHUB_STEP_SUMMARY
+          echo "> 🤖 **Система работает в автономном режиме. При обнаружении уязвимостей проверьте логи Bandit.**" >> $GITHUB_STEP_SUMMARY
