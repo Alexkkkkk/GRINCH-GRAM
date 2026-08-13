@@ -1,5 +1,24 @@
-# Require the repository owner to review application and workflow changes.
+# CODEOWNERS — обязательные ревьюеры для изменений.
+# Порядок важен: последнее совпадение имеет приоритет.
+# Добавьте backup-мейнтейнера, заменив @backup-maintainer на реальный аккаунт.
+
+# Глобальное правило: все изменения требуют ревью
 * @Alexkkkkk
-.github/ @Alexkkkkk
-Dockerfile @Alexkkkkk
-docker-compose.yml @Alexkkkkk
+
+# CI/CD и workflow — критичная инфраструктура
+/.github/ @Alexkkkkk
+/.github/workflows/ @Alexkkkkk
+
+# Исходный код приложения
+/main.py @Alexkkkkk
+/grid_trader.py @Alexkkkkk
+
+# Инфраструктура и контейнеры
+/Dockerfile @Alexkkkkk
+/docker-compose.yml @Alexkkkkk
+
+# Статические ресурсы и UI
+/static/ @Alexkkkkk
+
+# Сам файл CODEOWNERS — защита от подмены правил ревью
+/.github/CODEOWNERS @Alexkkkkk
