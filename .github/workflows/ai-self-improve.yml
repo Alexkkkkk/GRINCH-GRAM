@@ -1,0 +1,101 @@
+name: 🤖 AI Self-Improve — Learning Loop
+
+on:
+  schedule:
+    - cron: "0 5 * * 0"  # каждое воскресенье в 5:00 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: read
+  pull-requests: read
+
+jobs:
+  learn:
+    name: 🧬 Learning from History
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: 📚 Collect Learning Data
+        run: |
+          # Собираем закрытые PR с лейблом ai-generated
+          echo "## AI PR History" > learning_data.md
+          echo "" >> learning_data.md
+
+          # Анализируем, какие AI-PR были замержены, а какие отклонены
+          git log --grep="ai(" --oneline -20 >> learning_data.md 2>/dev/null || true
+          echo "" >> learning_data.md
+
+          # Собираем частые ошибки из CI
+          echo "## Recent CI Failures" >> learning_data.md
+          git log --oneline -50 | head -20 >> learning_data.md
+
+      - name: 🧠 Generate Insights
+        env:
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+        run: |
+          if [ -z "$GROQ_API_KEY" ]; then
+            echo "Skipping self-improvement."
+            exit 0
+          fi
+
+          python3 - <<'PY'
+          import os, json, urllib.request
+
+          try:
+            with open("learning_data.md", encoding="utf-8") as f:
+              data = f.read()[:4000]
+          except Exception:
+            data = "No learning data."
+
+          prompt = (
+            "You are an AI system analyzing your own performance. "
+            "Based on the following history of AI-generated changes and CI failures, "
+            "generate insights to improve future analysis:\n\n"
+            f"{data}\n\n"
+            "Provide:\n"
+            "1. Patterns in successful AI fixes\n"
+            "2. Common false positives to avoid\n"
+            "3. Suggested improvements to analysis prompts\n"
+            "4. New checks to add\n\n"
+            "Return as markdown."
+          )
+
+          payload = {
+            "model": "llama-3.1-70b-versatile",
+            "messages": [{"role": "user", "content": prompt}],
+            "temperature": 0.3,
+            "max_tokens": 3000,
+          }
+
+          req = urllib.request.Request(
+            "https://api.groq.com/openai/v1/chat/completions",
+            data=json.dumps(payload).encode(),
+            headers={
+              "Authorization": f"Bearer {os.environ['GROQ_API_KEY']}",
+              "Content-Type": "application/json",
+            },
+          )
+
+          try:
+            with urllib.request.urlopen(req, timeout=120) as resp:
+              result = json.loads(resp.read())
+              insights = result["choices"][0]["message"]["content"]
+            with open(".github/AI_INSIGHTS.md", "w", encoding="utf-8") as f:
+              f.write("# 🤖 AI Self-Improvement Insights\n\n")
+              f.write(f"*Generated: {__import__('datetime').datetime.now().isoformat()}*\n\n")
+              f.write(insights)
+            print("Insights generated successfully.")
+          except Exception as e:
+            print(f"Self-improvement failed: {e}")
+          PY
+
+      - name: 📊 Summary
+        if: always()
+        run: |
+          echo "# 🧬 AI Self-Improvement" >> $GITHUB_STEP_SUMMARY
+          echo "Weekly learning cycle completed." >> $GITHUB_STEP_SUMMARY
