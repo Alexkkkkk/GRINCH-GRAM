@@ -1,0 +1,25 @@
+name: Stale Bot
+
+on:
+  schedule:
+    - cron: "0 0 * * *"  # каждую ночь
+  workflow_dispatch:
+
+permissions:
+  issues: write
+  pull-requests: write
+
+jobs:
+  stale:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/stale@v9
+        with:
+          stale-issue-message: "⏳ Этот issue неактивен 60 дней. Закроется через 7 дней без активности."
+          stale-pr-message: "⏳ Этот PR неактивен 30 дней. Закроется через 7 дней."
+          close-issue-message: "🔒 Issue закрыт из-за неактивности. Переоткрой, если актуально."
+          close-pr-message: "🔒 PR закрыт из-за неактивности."
+          days-before-stale: 60
+          days-before-close: 7
+          exempt-issue-labels: "pinned,security"
+          exempt-pr-labels: "wip,pinned"
