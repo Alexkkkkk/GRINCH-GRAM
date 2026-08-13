@@ -1,0 +1,10 @@
+name: ✨ Feature Request
+description: Предложить идею
+labels: [enhancement]
+body:
+  - type: textarea
+    attributes:
+      label: Описание
+      description: Что хотите добавить?
+    validations:
+      required: true
