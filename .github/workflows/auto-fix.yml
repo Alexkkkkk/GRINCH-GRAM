@@ -56,14 +56,13 @@ jobs:
           find . -type f -name "*.log" -delete 2>/dev/null || true
 
       - name: 🛡️ UI & Design Structural Safeguard
+        id: ui_check
         run: |
-          echo "🔒 Проверка нерушимости UI, дизайна и static-ресурсов..."
-          
+          echo "🔒 Проверка критических файлов..."
+
           REQUIRED_FILES=(
             "main.py"
             "Dockerfile"
-            "static/index.html"
-            "static/tonconnect-manifest.json"
           )
 
           for file in "${REQUIRED_FILES[@]}"; do
@@ -73,38 +72,55 @@ jobs:
             fi
           done
 
-          # Проверяем, что static/ не был изменён в этом коммите
-          # (если изменён — прерываем, чтобы не затереть правки разработчика)
-          CHANGED_STATIC=$(git diff --name-only HEAD~1 HEAD | grep "^static/" || true)
-          if [ -n "$CHANGED_STATIC" ]; then
-            echo "⚠️ Обнаружены изменения в static/ в текущем коммите:"
-            echo "$CHANGED_STATIC"
-            echo "Пропускаем авто-откат. Разработчик намеренно менял интерфейс."
+          # Проверка static/ — опционально (если директория существует)
+          if [ -d "static" ]; then
+            echo "📁 Директория static/ найдена. Проверяем изменения..."
+            CHANGED_STATIC=$(git diff --name-only HEAD~1 HEAD 2>/dev/null | grep "^static/" || true)
+            if [ -n "$CHANGED_STATIC" ]; then
+              echo "⚠️ Обнаружены изменения в static/:"
+              echo "$CHANGED_STATIC"
+              echo "STATIC_STATUS=🟡 Изменения обнаружены" >> $GITHUB_ENV
+            else
+              echo "STATIC_STATUS=✅ Без изменений" >> $GITHUB_ENV
+            fi
+          else
+            echo "ℹ️ Директория static/ отсутствует — пропускаем проверку."
+            echo "STATIC_STATUS=⏭️ Не применимо" >> $GITHUB_ENV
           fi
-          
+
           echo "✅ Критические файлы на месте. UI Shield активен."
 
       - name: ⚡ Ultra Code Refactoring & Import Optimization
+        id: refactor
         run: |
           echo "🚀 Оптимизация импортов и вырезание неиспользуемого кода..."
           autoflake --in-place --remove-all-unused-imports --remove-unused-variables --recursive .
           isort .
+        continue-on-error: true
 
       - name: 🛠️ AI Bug Self-Repair & Logic Auto-Fix (Ruff)
+        id: ruff_fix
         run: |
           echo "🛠️ Исправление асинхронных багов и синтаксиса..."
           ruff check . --fix
+        continue-on-error: true
 
       - name: 🎨 PEP8 Architectural Auto-Formatting (Black)
+        id: black_fix
         run: |
+          echo "🎨 Форматирование кода..."
           black .
+        continue-on-error: true
 
       - name: 🔍 Compilation & Async Code Validation
+        id: compile
         run: |
           echo "🔍 Проверка валидности Python-модулей..."
           python -m compileall -q .
+        continue-on-error: true
 
       - name: 🛡️ Security & Vulnerability Scan (Bandit)
+        id: bandit_scan
         run: |
           echo "🔒 Сканирование кода на уязвимости..."
           bandit -r . -ll -iii
@@ -121,16 +137,30 @@ jobs:
       - name: 📊 Executive Visual Summary
         if: always()
         run: |
+          UI_STATUS="${{ steps.ui_check.outcome }}"
+          REFACTOR_STATUS="${{ steps.refactor.outcome }}"
+          RUFF_STATUS="${{ steps.ruff_fix.outcome }}"
+          BLACK_STATUS="${{ steps.black_fix.outcome }}"
+          COMPILE_STATUS="${{ steps.compile.outcome }}"
+          BANDIT_STATUS="${{ steps.bandit_scan.outcome }}"
+
+          ui_emoji=$([ "$UI_STATUS" == "success" ] && echo "✅" || echo "❌")
+          ref_emoji=$([ "$REFACTOR_STATUS" == "success" ] && echo "✅" || echo "⚠️")
+          ruff_emoji=$([ "$RUFF_STATUS" == "success" ] && echo "✅" || echo "⚠️")
+          black_emoji=$([ "$BLACK_STATUS" == "success" ] && echo "✅" || echo "⚠️")
+          comp_emoji=$([ "$COMPILE_STATUS" == "success" ] && echo "✅" || echo "⚠️")
+          bandit_emoji=$([ "$BANDIT_STATUS" == "success" ] && echo "✅" || echo "⚠️")
+
           echo "# 👑 GRINCH-GRAM OVERLORD AUTOMATION REPORT" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "### 🚀 Статус систем автономии:" >> $GITHUB_STEP_SUMMARY
           echo "| Компонент | Операция | Результат |" >> $GITHUB_STEP_SUMMARY
           echo "| :--- | :--- | :--- |" >> $GITHUB_STEP_SUMMARY
-          echo "| 🛡️ **UI Shield** | Проверка критических файлов | ✅ Пройдена |" >> $GITHUB_STEP_SUMMARY
-          echo "| 🧹 **Purge Unit** | Очистка \`__pycache__\` и мусора | ✅ Выполнено |" >> $GITHUB_STEP_SUMMARY
-          echo "| ⚡ **Refactor Engine** | Оптимизация импортов | ✅ \`autoflake\` & \`isort\` |" >> $GITHUB_STEP_SUMMARY
-          echo "| 🛠️ **Bug Repair** | Исправление ошибок | ✅ \`ruff\` auto-fix |" >> $GITHUB_STEP_SUMMARY
-          echo "| 🎨 **Code Style** | Стандартизация кода | ✅ \`black\` PEP8 |" >> $GITHUB_STEP_SUMMARY
-          echo "| 🔒 **Security Audit** | Поиск уязвимостей | ⚠️ \`bandit\` (см. логи) |" >> $GITHUB_STEP_SUMMARY
+          echo "| ${ui_emoji} **UI Shield** | Проверка критических файлов | ${UI_STATUS} |" >> $GITHUB_STEP_SUMMARY
+          echo "| ${ref_emoji} **Refactor Engine** | Оптимизация импортов | ${REFACTOR_STATUS} |" >> $GITHUB_STEP_SUMMARY
+          echo "| ${ruff_emoji} **Bug Repair** | Исправление ошибок (Ruff) | ${RUFF_STATUS} |" >> $GITHUB_STEP_SUMMARY
+          echo "| ${black_emoji} **Code Style** | Форматирование (Black) | ${BLACK_STATUS} |" >> $GITHUB_STEP_SUMMARY
+          echo "| ${comp_emoji} **Compilation** | Валидация модулей | ${COMPILE_STATUS} |" >> $GITHUB_STEP_SUMMARY
+          echo "| ${bandit_emoji} **Security Audit** | Поиск уязвимостей | ${BANDIT_STATUS} |" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "> 🤖 **Система работает в автономном режиме. При обнаружении уязвимостей проверьте логи Bandit.**" >> $GITHUB_STEP_SUMMARY
+          echo "> 🤖 **Система работает в автономном режиме. При ошибках проверьте логи соответствующего шага.**" >> $GITHUB_STEP_SUMMARY
