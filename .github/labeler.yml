@@ -1,0 +1,23 @@
+# Авто-метки по изменённым файлам
+docker:
+  - Dockerfile
+  - docker-compose.yml
+  - .dockerignore
+
+ci/cd:
+  - .github/workflows/*
+  - .github/dependabot.yml
+
+python:
+  - "*.py"
+  - "requirements.txt"
+
+frontend:
+  - static/**/*
+  - "*.html"
+  - "*.css"
+  - "*.js"
+
+security:
+  - .github/workflows/security.yml
+  - .github/workflows/codeql.yml
