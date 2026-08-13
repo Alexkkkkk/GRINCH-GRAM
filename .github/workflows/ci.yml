@@ -8,10 +8,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write
-  pull-requests: write
-  checks: write
-  security-events: write
+  contents: read
 
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
@@ -22,21 +19,25 @@ jobs:
     name: 🧠 Self-Healing Code Doctor
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    permissions:
+      contents: write
+      pull-requests: write
 
     steps:
       - name: 📥 Check out repository
-        uses: actions/checkout@v7
+        uses: actions/checkout@v4
         with:
+          fetch-depth: 0
           ref: ${{ github.head_ref || github.ref_name }}
           token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: 🐍 Set up Python 3.11
-        uses: actions/setup-python@v7
+        uses: actions/setup-python@v5
         with:
           python-version: "3.11"
 
       - name: ⚡ High-Speed Cache Dependencies
-        uses: actions/cache@v6
+        uses: actions/cache@v4
         with:
           path: ~/.cache/pip
           key: ${{ runner.os }}-pip-ci-${{ hashFiles('requirements.txt') }}
@@ -56,16 +57,17 @@ jobs:
 
       - name: 🛡️ Security Audit (Bandit)
         run: |
-          bandit -r main.py -ll -iii || true
+          bandit -r . -ll -iii
+        continue-on-error: true
 
       - name: 🛠️ Auto-Fix Code Issues (Ruff & Black)
         run: |
-          ruff check . --fix --unsafe-fixes || true
-          black main.py || true
+          ruff check . --fix
+          black .
 
       - name: 🚀 Commit & Push Auto-Fixes (Skipped on Dependabot)
         if: github.actor != 'dependabot[bot]'
-        uses: stefanzweifel/git-auto-commit-action@v7
+        uses: stefanzweifel/git-auto-commit-action@v5
         with:
           commit_message: "robot(auto-fix): 🛠️ автономное исправление синтаксиса и стиля [skip ci]"
           branch: ${{ github.head_ref || github.ref_name }}
@@ -80,13 +82,13 @@ jobs:
 
     steps:
       - name: 📥 Check out repository
-        uses: actions/checkout@v7
+        uses: actions/checkout@v4
 
       - name: 🔧 Set up Docker Buildx
-        uses: docker/setup-buildx-action@v4
+        uses: docker/setup-buildx-action@v3
 
       - name: 🏗️ Build Docker Image (GHA Cache)
-        uses: docker/build-push-action@v7
+        uses: docker/build-push-action@v6
         with:
           context: .
           load: true
@@ -118,8 +120,8 @@ jobs:
 
           IS_HEALTHY=false
           for attempt in $(seq 1 10); do
-            if curl --fail --silent http://127.0.0.1:3000/health || curl --fail --silent http://127.0.0.1:3000/ ; then
-              echo "✅ Сервер и веб-интерфейс работают!"
+            if curl --fail --silent http://127.0.0.1:3000/health; then
+              echo "✅ Health endpoint отвечает!"
               IS_HEALTHY=true
               break
             fi
@@ -127,12 +129,9 @@ jobs:
           done
 
           if [ "$IS_HEALTHY" = false ]; then
-            if docker exec grinch-gram-ci ps aux | grep -E "python|node" > /dev/null; then
-              echo "✅ Процесс запущен внутри контейнера!"
-            else
-              echo "❌ Процесс приложения не найден!"
-              exit 1
-            fi
+            echo "❌ Health endpoint не отвечает после 10 попыток!"
+            docker logs grinch-gram-ci || true
+            exit 1
           fi
 
       - name: 📊 Interactive Dashboard Summary
@@ -145,9 +144,9 @@ jobs:
           echo "| :--- | :--- | :--- |" >> $GITHUB_STEP_SUMMARY
           echo "| 🐍 **Синтаксис Python** | ✅ OK | Ошибок компиляции нет |" >> $GITHUB_STEP_SUMMARY
           echo "| 🛠️ **Авто-исправление (Ruff & Black)** | ✅ Завершено | Код отформатирован и оптимизирован |" >> $GITHUB_STEP_SUMMARY
-          echo "| 🛡️ **Анализ безопасности (Bandit)** | ✅ Пройдено | Критических уязвимостей не найдено |" >> $GITHUB_STEP_SUMMARY
+          echo "| 🛡️ **Анализ безопасности (Bandit)** | ⚠️ Проверен | См. логи на предмет уязвимостей |" >> $GITHUB_STEP_SUMMARY
           echo "| 🐳 **Docker-сборка** | ✅ Успешно | Образ успешно собран через Buildx |" >> $GITHUB_STEP_SUMMARY
-          echo "| 🧪 **Дымовой тест контейнера** | ✅ Пройден | Контейнер стартует и держит порт |" >> $GITHUB_STEP_SUMMARY
+          echo "| 🧪 **Дымовой тест контейнера** | ✅ Пройден | Контейнер стартует и отвечает на /health |" >> $GITHUB_STEP_SUMMARY
           echo "| 🎨 **Защита UI / static** | ✅ Сохранено | Дизайн и статика не повреждены |" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "> 🚀 **Статус:** Все проверки пройдены. Проект готов к деплою!" >> $GITHUB_STEP_SUMMARY
