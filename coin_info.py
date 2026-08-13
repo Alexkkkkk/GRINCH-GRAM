@@ -21,15 +21,17 @@ class CoinInfo:
         self.ttl_market = ttl_market
         self.ttl_trades = ttl_trades
         self._lock = threading.Lock()
-        self._market_cache = {}   # base -> (data, ts)
-        self._trades_cache = {}   # base -> (data, ts)
-        self._pool_cache = {}     # base -> (pool_addr, ts)
-        self._exch_cache = {}     # base -> (data, ts)
+        self._market_cache = {}  # base -> (data, ts)
+        self._trades_cache = {}  # base -> (data, ts)
+        self._pool_cache = {}  # base -> (pool_addr, ts)
+        self._exch_cache = {}  # base -> (data, ts)
 
     # ---------------- Рыночная статистика ----------------
     def market(self, base):
         base = (base or "").upper()
-        return self._cached(self._market_cache, base, self._fetch_market, self.ttl_market)
+        return self._cached(
+            self._market_cache, base, self._fetch_market, self.ttl_market
+        )
 
     def _fetch_market(self, base):
         cid = COINGECKO_IDS.get(base)
@@ -82,54 +84,59 @@ class CoinInfo:
             # Берём только пары, где GRINCH — именно базовый токен (по адресу контракта)
             want = (addr or "").lower()
             grinch_pairs = [
-                p for p in pairs
+                p
+                for p in pairs
                 if (p.get("baseToken", {}) or {}).get("address", "").lower() == want
             ]
             pairs = grinch_pairs or pairs
             if not pairs:
                 return None
-            pairs.sort(key=lambda p: (p.get("liquidity", {}) or {}).get("usd", 0), reverse=True)
+            pairs.sort(
+                key=lambda p: (p.get("liquidity", {}) or {}).get("usd", 0), reverse=True
+            )
             p = pairs[0]
             info = p.get("info", {}) or {}
             pc = p.get("priceChange", {}) or {}
             vol = p.get("volume", {}) or {}
             all_txns = p.get("txns", {}) or {}
             txns_h24 = all_txns.get("h24", {}) or {}
-            txns_h6  = all_txns.get("h6",  {}) or {}
-            txns_h1  = all_txns.get("h1",  {}) or {}
+            txns_h6 = all_txns.get("h6", {}) or {}
+            txns_h1 = all_txns.get("h1", {}) or {}
             pool = p.get("pairAddress")
             if pool:
                 with self._lock:
                     self._pool_cache[base] = (pool, time.time())
+
             # Вычисляем buy/sell ratios по всем таймфреймам
             def _ratio(t):
                 b, s = t.get("buys", 0) or 0, t.get("sells", 0) or 0
                 return round(b / s, 3) if s else None
+
             return {
                 "name": p["baseToken"].get("name"),
                 "symbol": p["baseToken"].get("symbol"),
                 "image": info.get("imageUrl"),
                 "price_usd": _f(p.get("priceUsd")),
                 "price_native": _f(p.get("priceNative")),
-                "change_m5":  _f(pc.get("m5")),
-                "change_h1":  _f(pc.get("h1")),
-                "change_h6":  _f(pc.get("h6")),
+                "change_m5": _f(pc.get("m5")),
+                "change_h1": _f(pc.get("h1")),
+                "change_h6": _f(pc.get("h6")),
                 "change_h24": _f(pc.get("h24")),
                 "volume_h24": _f(vol.get("h24")),
-                "volume_h6":  _f(vol.get("h6")),
-                "volume_h1":  _f(vol.get("h1")),
+                "volume_h6": _f(vol.get("h6")),
+                "volume_h1": _f(vol.get("h1")),
                 "liquidity": _f((p.get("liquidity", {}) or {}).get("usd")),
                 "market_cap": _f(p.get("marketCap")),
                 "fdv": _f(p.get("fdv")),
-                "buys_h24":  txns_h24.get("buys"),
+                "buys_h24": txns_h24.get("buys"),
                 "sells_h24": txns_h24.get("sells"),
                 "ratio_h24": _ratio(txns_h24),
-                "buys_h6":   txns_h6.get("buys"),
-                "sells_h6":  txns_h6.get("sells"),
-                "ratio_h6":  _ratio(txns_h6),
-                "buys_h1":   txns_h1.get("buys"),
-                "sells_h1":  txns_h1.get("sells"),
-                "ratio_h1":  _ratio(txns_h1),
+                "buys_h6": txns_h6.get("buys"),
+                "sells_h6": txns_h6.get("sells"),
+                "ratio_h6": _ratio(txns_h6),
+                "buys_h1": txns_h1.get("buys"),
+                "sells_h1": txns_h1.get("sells"),
+                "ratio_h1": _ratio(txns_h1),
                 "url": p.get("url"),
                 "pool": pool,
                 "source": "DexScreener",
@@ -141,10 +148,12 @@ class CoinInfo:
     def trades(self, base, limit=25):
         base = (base or "").upper()
         if base != "GRINCH":
-            return []   # лента отдельных сделок доступна только для GRINCH-джеттона
+            return []  # лента отдельных сделок доступна только для GRINCH-джеттона
         data = self._cached(
-            self._trades_cache, base,
-            lambda b: self._fetch_trades(b, limit), self.ttl_trades,
+            self._trades_cache,
+            base,
+            lambda b: self._fetch_trades(b, limit),
+            self.ttl_trades,
         )
         return data or []
 
@@ -159,7 +168,7 @@ class CoinInfo:
             entry = self._pool_cache.get(base)
             if entry and time.time() - entry[1] < 600:
                 return entry[0]
-        self._fetch_market(base)   # подтянет адрес пула в кэш
+        self._fetch_market(base)  # подтянет адрес пула в кэш
         with self._lock:
             entry = self._pool_cache.get(base)
             return entry[0] if entry else None
@@ -182,12 +191,12 @@ class CoinInfo:
                 from_addr = (a.get("from_token_address") or "").lower()
                 # Определяем сторону по адресу токена GRINCH (надёжнее, чем поле kind)
                 if to_addr == grinch:
-                    kind = "buy"      # GRINCH получен
+                    kind = "buy"  # GRINCH получен
                     token_amount = _f(a.get("to_token_amount"))
                     ton_amount = _f(a.get("from_token_amount"))
                     price = _f(a.get("price_to_in_usd"))
                 elif from_addr == grinch:
-                    kind = "sell"     # GRINCH продан
+                    kind = "sell"  # GRINCH продан
                     token_amount = _f(a.get("from_token_amount"))
                     ton_amount = _f(a.get("to_token_amount"))
                     price = _f(a.get("price_from_in_usd"))
@@ -202,15 +211,17 @@ class CoinInfo:
                         token_amount = _f(a.get("from_token_amount"))
                         ton_amount = _f(a.get("to_token_amount"))
                         price = _f(a.get("price_from_in_usd"))
-                out.append({
-                    "kind": kind,
-                    "amount_usd": _f(a.get("volume_in_usd")),
-                    "price_usd": price,
-                    "token_amount": token_amount,
-                    "ton_amount": ton_amount,
-                    "ts": a.get("block_timestamp"),
-                    "addr": a.get("tx_from_address") or "",
-                })
+                out.append(
+                    {
+                        "kind": kind,
+                        "amount_usd": _f(a.get("volume_in_usd")),
+                        "price_usd": price,
+                        "token_amount": token_amount,
+                        "ton_amount": ton_amount,
+                        "ts": a.get("block_timestamp"),
+                        "addr": a.get("tx_from_address") or "",
+                    }
+                )
             return out
         except Exception:
             return []
@@ -218,7 +229,9 @@ class CoinInfo:
     # ---------------- Цены на всех биржах TON ----------------
     def exchanges(self, base):
         base = (base or "").upper()
-        data = self._cached(self._exch_cache, base, self._fetch_exchanges, self.ttl_market)
+        data = self._cached(
+            self._exch_cache, base, self._fetch_exchanges, self.ttl_market
+        )
         return data or {"exchanges": [], "agg": None}
 
     def _fetch_exchanges(self, base):
@@ -240,22 +253,24 @@ class CoinInfo:
             r.raise_for_status()
             want = (addr or "").lower()
             rows = []
-            for p in (r.json().get("pairs") or []):
+            for p in r.json().get("pairs") or []:
                 if (p.get("baseToken", {}) or {}).get("address", "").lower() != want:
                     continue
                 price = _f(p.get("priceUsd"))
                 if not price:
                     continue
-                rows.append({
-                    "name": (p.get("dexId") or "DEX").title(),
-                    "pair": f"{p['baseToken'].get('symbol')}/{p['quoteToken'].get('symbol')}",
-                    "kind": "DEX",
-                    "price": price,
-                    "liquidity": _f((p.get("liquidity", {}) or {}).get("usd")),
-                    "volume24h": _f((p.get("volume", {}) or {}).get("h24")),
-                    "change24h": _f((p.get("priceChange", {}) or {}).get("h24")),
-                    "url": p.get("url"),
-                })
+                rows.append(
+                    {
+                        "name": (p.get("dexId") or "DEX").title(),
+                        "pair": f"{p['baseToken'].get('symbol')}/{p['quoteToken'].get('symbol')}",
+                        "kind": "DEX",
+                        "price": price,
+                        "liquidity": _f((p.get("liquidity", {}) or {}).get("usd")),
+                        "volume24h": _f((p.get("volume", {}) or {}).get("h24")),
+                        "change24h": _f((p.get("priceChange", {}) or {}).get("h24")),
+                        "url": p.get("url"),
+                    }
+                )
             rows.sort(key=lambda x: x.get("liquidity") or 0, reverse=True)
             return rows
         except Exception:
@@ -270,7 +285,7 @@ class CoinInfo:
             r.raise_for_status()
             # Одна строка на биржу — выбираем тикер с наибольшим объёмом
             best = {}
-            for t in (r.json().get("tickers") or []):
+            for t in r.json().get("tickers") or []:
                 price = _f((t.get("converted_last") or {}).get("usd"))
                 if not price:
                     continue
@@ -315,7 +330,10 @@ class CoinInfo:
         total_vol = sum((r.get("volume24h") or 0) for r in rows)
         # Кросс-биржевой AI-сигнал
         if spread >= 1.5:
-            signal, note = "АРБИТРАЖ", "Расхождение цен между биржами — возможен арбитраж"
+            signal, note = (
+                "АРБИТРАЖ",
+                "Расхождение цен между биржами — возможен арбитраж",
+            )
         elif spread >= 0.4:
             signal, note = "РАСХОЖДЕНИЕ", "Небольшое расхождение цен между биржами"
         else:
@@ -333,7 +351,10 @@ class CoinInfo:
             "signal": signal,
             "note": note,
             "best_buy": {"name": best_buy.get("name"), "price": best_buy.get("price")},
-            "best_sell": {"name": best_sell.get("name"), "price": best_sell.get("price")},
+            "best_sell": {
+                "name": best_sell.get("name"),
+                "price": best_sell.get("price"),
+            },
         }
 
     # ---------------- Общий кэш ----------------
@@ -345,7 +366,7 @@ class CoinInfo:
                 return e[0]
             # FIX#23: cache stampede — если уже идёт запрос по этому ключу,
             # возвращаем stale-значение вместо параллельного дублирующего запроса.
-            if not hasattr(self, '_fetching_keys'):
+            if not hasattr(self, "_fetching_keys"):
                 self._fetching_keys = set()
             if key in self._fetching_keys:
                 return e[0] if e else None

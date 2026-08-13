@@ -27,9 +27,9 @@ import numpy as np
 logging.basicConfig(level=logging.INFO, format="[deep-retrain] %(message)s")
 log = logging.getLogger(__name__)
 
-WINDOW        = 3000
+WINDOW = 3000
 TEST_FRACTION = 0.15
-MIN_EXAMPLES  = 30
+MIN_EXAMPLES = 30
 
 
 def _split(X, y, w):
@@ -40,11 +40,17 @@ def _split(X, y, w):
     Правильный подход: последние TEST_FRACTION% записей идут в test-set,
     всё остальное — в train. Данные уже отсортированы по времени (БД).
     """
-    n         = len(X)
-    n_test    = max(1, int(n * TEST_FRACTION))
+    n = len(X)
+    n_test = max(1, int(n * TEST_FRACTION))
     train_end = n - n_test
-    return (X[:train_end], y[:train_end], w[:train_end],
-            X[train_end:], y[train_end:], w[train_end:])
+    return (
+        X[:train_end],
+        y[:train_end],
+        w[:train_end],
+        X[train_end:],
+        y[train_end:],
+        w[train_end:],
+    )
 
 
 def _result(kind, n=0):
@@ -73,8 +79,8 @@ def main():
         return _result("skipped")
 
     X = np.array([e["features"] for e in examples], dtype=float)
-    y = np.array([e["label"]    for e in examples], dtype=int)
-    w = np.array([e["weight"]   for e in examples], dtype=float)
+    y = np.array([e["label"] for e in examples], dtype=int)
+    w = np.array([e["weight"] for e in examples], dtype=float)
     w = w / (w.mean() + 1e-10)
 
     if len(np.unique(y)) < 2:
@@ -92,38 +98,62 @@ def main():
     models = {}
 
     models["HGB"] = HistGradientBoostingClassifier(
-        max_iter=200, max_depth=6, learning_rate=0.06, random_state=42)
+        max_iter=200, max_depth=6, learning_rate=0.06, random_state=42
+    )
 
     try:
         from xgboost import XGBClassifier
+
         models["XGB"] = XGBClassifier(
-            n_estimators=300, max_depth=5, learning_rate=0.05,
-            subsample=0.8, colsample_bytree=0.8,
-            objective="multi:softprob", num_class=3,
-            eval_metric="mlogloss", tree_method="hist",
-            n_jobs=2, random_state=42)
+            n_estimators=300,
+            max_depth=5,
+            learning_rate=0.05,
+            subsample=0.8,
+            colsample_bytree=0.8,
+            objective="multi:softprob",
+            num_class=3,
+            eval_metric="mlogloss",
+            tree_method="hist",
+            n_jobs=2,
+            random_state=42,
+        )
     except Exception as e:
         log.info(f"XGBoost недоступен: {e}")
 
     try:
         from lightgbm import LGBMClassifier
+
         models["LGB"] = LGBMClassifier(
-            n_estimators=400, max_depth=6, learning_rate=0.05,
-            subsample=0.8, colsample_bytree=0.8,
-            n_jobs=2, random_state=42, verbosity=-1)
+            n_estimators=400,
+            max_depth=6,
+            learning_rate=0.05,
+            subsample=0.8,
+            colsample_bytree=0.8,
+            n_jobs=2,
+            random_state=42,
+            verbosity=-1,
+        )
     except Exception as e:
         log.info(f"LightGBM недоступен: {e}")
 
-    models["MLP"] = Pipeline([
-        ("scaler", StandardScaler()),
-        ("clf",    MLPClassifier(
-            hidden_layer_sizes=(128, 64, 32), max_iter=300,
-            early_stopping=True, random_state=42)),
-    ])
+    models["MLP"] = Pipeline(
+        [
+            ("scaler", StandardScaler()),
+            (
+                "clf",
+                MLPClassifier(
+                    hidden_layer_sizes=(128, 64, 32),
+                    max_iter=300,
+                    early_stopping=True,
+                    random_state=42,
+                ),
+            ),
+        ]
+    )
 
     # XGBClassifier ожидает 0..N-1, а не {-1,0,1}
     classes_sorted = sorted(np.unique(y_tr).tolist())
-    remap    = {c: i for i, c in enumerate(classes_sorted)}
+    remap = {c: i for i, c in enumerate(classes_sorted)}
     y_tr_enc = np.array([remap[v] for v in y_tr])
     y_te_enc = np.array([remap[v] for v in y_te])
 
@@ -138,8 +168,14 @@ def main():
                 acc = accuracy_score(y_te, model.predict(X_te))
 
             buf = io.BytesIO()
-            pickle.dump({"model": model, "classes_sorted": classes_sorted,
-                         "uses_remap": name == "XGB"}, buf)
+            pickle.dump(
+                {
+                    "model": model,
+                    "classes_sorted": classes_sorted,
+                    "uses_remap": name == "XGB",
+                },
+                buf,
+            )
             db_store.deep_model_save(name, buf.getvalue(), float(acc), n_ex)
             log.info(f"{name}: acc={acc:.3f} на {n_ex} примерах — сохранено в БД")
             saved += 1

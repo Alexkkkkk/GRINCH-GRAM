@@ -16,26 +16,26 @@ class TONTracker:
     баланс + транзакции. Интервал 120s даёт большой запас.
     """
 
-    API_BASE     = "https://toncenter.com/api/v2"
-    POLL_DEFAULT = 120   # секунд между циклами (без API-ключа)
-    POLL_MIN     = 60    # минимум при наличии ключа
-    BACKOFF_MAX  = 600   # максимальный backoff при 429 (10 мин)
+    API_BASE = "https://toncenter.com/api/v2"
+    POLL_DEFAULT = 120  # секунд между циклами (без API-ключа)
+    POLL_MIN = 60  # минимум при наличии ключа
+    BACKOFF_MAX = 600  # максимальный backoff при 429 (10 мин)
 
     def __init__(self, address: str):
-        self.address      = address
-        self.api_key      = os.getenv("TONCENTER_API_KEY", "")
-        self.poll_interval= self.POLL_MIN if self.api_key else self.POLL_DEFAULT
+        self.address = address
+        self.api_key = os.getenv("TONCENTER_API_KEY", "")
+        self.poll_interval = self.POLL_MIN if self.api_key else self.POLL_DEFAULT
 
-        self._lock        = threading.Lock()
-        self._deposits    : list = []
+        self._lock = threading.Lock()
+        self._deposits: list = []
         self._total_received = 0.0
-        self._balance     = 0.0
-        self._last_error  = None
+        self._balance = 0.0
+        self._last_error = None
         self._last_update = 0
-        self._running     = False
-        self._thread      = None
-        self._backoff     = 0       # текущий backoff в секундах (при 429)
-        self._stop_event  = threading.Event()   # мгновенная остановка
+        self._running = False
+        self._thread = None
+        self._backoff = 0  # текущий backoff в секундах (при 429)
+        self._stop_event = threading.Event()  # мгновенная остановка
 
     # ── Публичные методы ──────────────────────────────────────────────────
 
@@ -44,31 +44,34 @@ class TONTracker:
             return
         self._running = True
         self._stop_event.clear()
-        self._thread  = threading.Thread(target=self._loop, daemon=True,
-                                         name="ton-tracker")
+        self._thread = threading.Thread(
+            target=self._loop, daemon=True, name="ton-tracker"
+        )
         self._thread.start()
 
     def stop(self):
         self._running = False
-        self._stop_event.set()   # мгновенно пробуждает спящий поток
+        self._stop_event.set()  # мгновенно пробуждает спящий поток
 
     def get_data(self) -> dict:
         with self._lock:
             return {
-                "address":       self.address,
-                "balance":       round(self._balance, 4),
+                "address": self.address,
+                "balance": round(self._balance, 4),
                 "total_received": round(self._total_received, 4),
-                "deposits":      list(self._deposits),
+                "deposits": list(self._deposits),
                 "deposit_count": len(self._deposits),
-                "last_update":   self._last_update,
-                "last_error":    self._last_error,
-                "configured":    bool(self.address),
+                "last_update": self._last_update,
+                "last_error": self._last_error,
+                "configured": bool(self.address),
             }
 
     def refresh(self):
         """Принудительное обновление (с уважением к backoff)."""
         if self._backoff > 0:
-            log.debug(f"[TONTracker] backoff активен ({self._backoff}s) — пропускаем refresh")
+            log.debug(
+                f"[TONTracker] backoff активен ({self._backoff}s) — пропускаем refresh"
+            )
             return
         self._do_refresh()
 
@@ -79,12 +82,12 @@ class TONTracker:
 
     def _get(self, path: str, params: dict) -> dict | None:
         """HTTP GET с обработкой 429 и общих ошибок."""
-        qs  = urllib.parse.urlencode(params)
+        qs = urllib.parse.urlencode(params)
         url = f"{self.API_BASE}/{path}?{qs}"
         req = urllib.request.Request(url, headers=self._headers())
         try:
             with urllib.request.urlopen(req, timeout=12) as r:
-                self._backoff = 0   # успех — сбрасываем
+                self._backoff = 0  # успех — сбрасываем
                 return json.loads(r.read())
         except urllib.error.HTTPError as e:
             if e.code == 429:
@@ -92,7 +95,9 @@ class TONTracker:
                 self._backoff = min(max(self._backoff * 2, 60), self.BACKOFF_MAX)
                 log.warning(f"[TONTracker] 429 Rate limit — ждём {self._backoff}s")
                 with self._lock:
-                    self._last_error = f"TonCenter rate limit (429) — пауза {self._backoff}s"
+                    self._last_error = (
+                        f"TonCenter rate limit (429) — пауза {self._backoff}s"
+                    )
             else:
                 log.warning(f"[TONTracker] HTTP {e.code}: {e}")
                 with self._lock:
@@ -126,45 +131,52 @@ class TONTracker:
         if tdata is None:
             return
 
-        txs      = tdata.get("result", [])
+        txs = tdata.get("result", [])
         deposits = []
-        total    = 0.0
+        total = 0.0
 
         for tx in txs:
             in_msg = tx.get("in_msg", {}) or {}
-            value  = self._nano_to_ton(in_msg.get("value", 0))
+            value = self._nano_to_ton(in_msg.get("value", 0))
             source = in_msg.get("source", "")
             if value >= 0.001 and source:
                 comment = in_msg.get("message") or in_msg.get("comment") or ""
-                ts      = int(tx.get("utime", 0))
+                ts = int(tx.get("utime", 0))
                 # Человеко-читаемое время
                 try:
                     import datetime as _dt
+
                     dt_str = _dt.datetime.utcfromtimestamp(ts).strftime("%d.%m, %H:%M")
                 except Exception:
                     dt_str = ""
-                deposits.append({
-                    "amount":     round(value, 4),
-                    "from":       source,
-                    "from_short": source[:6] + "…" + source[-4:] if len(source) > 12 else source,
-                    "comment":    comment[:40],
-                    "time":       ts,
-                    "time_str":   dt_str,
-                    "hash":       (tx.get("transaction_id", {}) or {}).get("hash", ""),
-                })
+                deposits.append(
+                    {
+                        "amount": round(value, 4),
+                        "from": source,
+                        "from_short": (
+                            source[:6] + "…" + source[-4:]
+                            if len(source) > 12
+                            else source
+                        ),
+                        "comment": comment[:40],
+                        "time": ts,
+                        "time_str": dt_str,
+                        "hash": (tx.get("transaction_id", {}) or {}).get("hash", ""),
+                    }
+                )
                 total += value
 
         with self._lock:
-            self._balance        = balance
-            self._deposits       = deposits
+            self._balance = balance
+            self._deposits = deposits
             self._total_received = total
-            self._last_update    = int(time.time())
-            self._last_error     = None
+            self._last_update = int(time.time())
+            self._last_error = None
 
     def _loop(self):
         # Первый запрос — с небольшой задержкой чтобы не конкурировать со стартом
         if self._stop_event.wait(timeout=5):
-            return   # stop() вызван во время ожидания
+            return  # stop() вызван во время ожидания
         while self._running and not self._stop_event.is_set():
             if self.address:
                 if self._backoff > 0:
@@ -173,4 +185,4 @@ class TONTracker:
                     self._stop_event.wait(timeout=wait)
                 else:
                     self._do_refresh()
-            self._stop_event.wait(timeout=self.poll_interval)   # прерываемый сон
+            self._stop_event.wait(timeout=self.poll_interval)  # прерываемый сон

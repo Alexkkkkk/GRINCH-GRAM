@@ -11,7 +11,6 @@ import ast
 import re
 from pathlib import Path
 
-
 ROOT = Path(__file__).resolve().parents[1]
 IGNORED_PARTS = {".git", "__pycache__", "attached_assets", "data", "backups"}
 PRIVATE_KEY_MARKERS = (
@@ -51,11 +50,15 @@ def main() -> None:
             if path.is_file() and path.suffix in {".py", ".yml", ".yaml", ".sh"}:
                 source = path.read_text(encoding="utf-8", errors="ignore")
                 if AWS_KEY.search(source):
-                    failures.append(f"{path.relative_to(ROOT)} contains an AWS key marker")
+                    failures.append(
+                        f"{path.relative_to(ROOT)} contains an AWS key marker"
+                    )
 
     if failures:
         raise SystemExit("\n".join(failures))
-    print(f"Smoke checks passed: {len(python_files())} Python files parsed; no key markers found.")
+    print(
+        f"Smoke checks passed: {len(python_files())} Python files parsed; no key markers found."
+    )
 
 
 if __name__ == "__main__":

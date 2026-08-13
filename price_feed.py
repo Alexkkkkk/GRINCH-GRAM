@@ -11,6 +11,7 @@ def _tc_headers() -> dict:
     key = os.getenv("TONCENTER_API_KEY", "")
     return {"X-API-Key": key} if key else {}
 
+
 # Соответствие тикера → ID в CoinGecko (бесплатный API без ключа)
 COINGECKO_IDS = {
     "TON": "the-open-network",
@@ -31,7 +32,7 @@ class PriceFeed:
 
     def __init__(self, ttl=4):
         self.ttl = ttl
-        self._cache = {}   # base -> (price, ts)
+        self._cache = {}  # base -> (price, ts)
         self._lock = threading.Lock()
 
     def get(self, base, max_stale=None):
@@ -52,7 +53,7 @@ class PriceFeed:
                 return entry[0]
             # FIX#23: cache stampede — если уже идёт запрос для этого тикера,
             # возвращаем stale-значение вместо параллельных дублирующих запросов.
-            if not hasattr(self, '_fetching_keys'):
+            if not hasattr(self, "_fetching_keys"):
                 self._fetching_keys = set()
             if base in self._fetching_keys:
                 if entry:
@@ -181,8 +182,10 @@ class PriceFeed:
             # курс будет несопоставим — лучше вернуть None и отклонить своп, чем
             # считать min-out по чужому рынку.
             ton_pairs = [
-                p for p in pairs
-                if ((p.get("quoteToken", {}) or {}).get("symbol", "") or "").upper() == "TON"
+                p
+                for p in pairs
+                if ((p.get("quoteToken", {}) or {}).get("symbol", "") or "").upper()
+                == "TON"
                 and p.get("priceNative")
             ]
             if not ton_pairs:
@@ -212,7 +215,8 @@ class PriceFeed:
             r = _HTTP.post(
                 "https://toncenter.com/api/v2/runGetMethod",
                 json={"address": pool, "method": "get_pool_data", "stack": []},
-                headers={"Accept": "application/json", **_tc_headers()}, timeout=8,
+                headers={"Accept": "application/json", **_tc_headers()},
+                timeout=8,
             )
             d = r.json()
             res = d.get("result") or {}
@@ -221,7 +225,7 @@ class PriceFeed:
             stack = res.get("stack") or []
             if len(stack) < 11 or stack[9][0] != "num" or stack[10][0] != "num":
                 return None
-            ton_reserve    = int(stack[9][1], 16) / 1e9
+            ton_reserve = int(stack[9][1], 16) / 1e9
             grinch_reserve = int(stack[10][1], 16) / 1e9
             if ton_reserve > 0 and grinch_reserve > 0:
                 price = ton_reserve / grinch_reserve
@@ -245,8 +249,10 @@ def _start_price_prefetch():
     Оба запроса (DexScreener + TonCenter) идут параллельно через ThreadPool.
     """
     import concurrent.futures
-    _executor = concurrent.futures.ThreadPoolExecutor(max_workers=2,
-                                                      thread_name_prefix="price-pf")
+
+    _executor = concurrent.futures.ThreadPoolExecutor(
+        max_workers=2, thread_name_prefix="price-pf"
+    )
 
     def _warm():
         try:

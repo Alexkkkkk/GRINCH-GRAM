@@ -15,8 +15,10 @@ HTTPAdapter переиспользует уже открытые соедине�
 timeout=10с, если вызывающий код не указал явный timeout=....
 Это страховка от зависания при недоступных внешних API.
 """
+
 import requests
 from requests.adapters import HTTPAdapter
+
 try:
     from urllib3.util.retry import Retry
 except ImportError:  # pragma: no cover
@@ -35,6 +37,7 @@ class _TimeoutSession(requests.Session):
     _DEFAULT_TIMEOUT если вызывающий код забыл или намеренно не указал.
     Явный timeout= всегда имеет приоритет (kwargs.setdefault).
     """
+
     def request(self, method, url, **kwargs):
         kwargs.setdefault("timeout", _DEFAULT_TIMEOUT)
         return super().request(method, url, **kwargs)
@@ -76,7 +79,9 @@ if Retry is not None:
     try:
         _rate_limited_retry = Retry(**_rate_limited_retry_kwargs)
     except TypeError:
-        _rate_limited_retry_kwargs["method_whitelist"] = _rate_limited_retry_kwargs.pop("allowed_methods")
+        _rate_limited_retry_kwargs["method_whitelist"] = _rate_limited_retry_kwargs.pop(
+            "allowed_methods"
+        )
         _rate_limited_retry = Retry(**_rate_limited_retry_kwargs)
     _rate_limited_adapter = HTTPAdapter(
         pool_connections=10, pool_maxsize=20, max_retries=_rate_limited_retry

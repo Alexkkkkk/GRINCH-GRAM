@@ -15,6 +15,7 @@ All-in срабатывает если:
   score >= ALLIN_BOTTOM_CONF  AND  RSI <= ALLIN_RSI_MAX  AND  не в пампе
   AND  кулдаун (4 ч) прошёл  AND  spendable >= ALLIN_MIN_FREE_TON
 """
+
 import logging
 import time
 from typing import Dict, Any, Optional
@@ -38,15 +39,15 @@ class BottomDetector:
     def analyze(
         self,
         rsi: float,
-        stoch_rsi: float,        # 0..1  (нормированный RSI стохастик)
-        bb_pct: float,           # 0..100 (0 = нижняя BB, 100 = верхняя BB)
-        vol_ratio: float,        # текущий объём / MA20
-        macd_hist: float,        # текущая гистограмма MACD
-        macd_hist_prev: float,   # гистограмма MACD прошлого бара
-        willr: float,            # Williams %R: −100 (перепродан) .. 0 (перекуплен)
-        ai_signal: str,          # "BUY" / "HOLD" / "SELL"
-        ai_conf: float,          # 0..100
-        pump_score: float,       # 0..100 (от GRINCHPumpDetector)
+        stoch_rsi: float,  # 0..1  (нормированный RSI стохастик)
+        bb_pct: float,  # 0..100 (0 = нижняя BB, 100 = верхняя BB)
+        vol_ratio: float,  # текущий объём / MA20
+        macd_hist: float,  # текущая гистограмма MACD
+        macd_hist_prev: float,  # гистограмма MACD прошлого бара
+        willr: float,  # Williams %R: −100 (перепродан) .. 0 (перекуплен)
+        ai_signal: str,  # "BUY" / "HOLD" / "SELL"
+        ai_conf: float,  # 0..100
+        pump_score: float,  # 0..100 (от GRINCHPumpDetector)
     ) -> Dict[str, Any]:
         """
         Возвращает:
@@ -146,9 +147,9 @@ class BottomDetector:
         score = max(0.0, min(100.0, score))
 
         # ── Проверяем условия all-in ──────────────────────────────────────────
-        rsi_max  = float(getattr(Config, "ALLIN_RSI_MAX",      32.0) if Config else 32.0)
-        min_conf = float(getattr(Config, "ALLIN_BOTTOM_CONF",  65.0) if Config else 65.0)
-        enabled  = bool(getattr(Config, "ALLIN_ON_BOTTOM",     False) if Config else False)
+        rsi_max = float(getattr(Config, "ALLIN_RSI_MAX", 32.0) if Config else 32.0)
+        min_conf = float(getattr(Config, "ALLIN_BOTTOM_CONF", 65.0) if Config else 65.0)
+        enabled = bool(getattr(Config, "ALLIN_ON_BOTTOM", False) if Config else False)
         cooldown_ok = (time.time() - self._last_trigger_ts) >= _COOLDOWN_SEC
 
         all_in = (
@@ -159,33 +160,42 @@ class BottomDetector:
             and pump_score < 50  # никогда не all-in в памп
         )
 
-        self.last_score   = score
+        self.last_score = score
         self.last_signals = signals
-        self.last_all_in  = all_in
+        self.last_all_in = all_in
 
         if all_in:
             self._last_trigger_ts = time.time()
             logger.warning(
                 "🔥 ДНО ОБНАРУЖЕНО! score=%.0f/100 RSI=%.1f WillR=%.0f "
                 "bb_pct=%.1f vol=%.1fx | ALL-IN сигнал | сигналы: %s",
-                score, rsi, willr, bb_pct, vol_ratio, list(signals.keys()),
+                score,
+                rsi,
+                willr,
+                bb_pct,
+                vol_ratio,
+                list(signals.keys()),
             )
         elif score >= 40:
             logger.debug(
                 "📊 BottomScore=%.0f/100 (нужно %.0f) RSI=%.1f | %s",
-                score, min_conf, rsi, list(signals.keys()),
+                score,
+                min_conf,
+                rsi,
+                list(signals.keys()),
             )
 
         return {
-            "score":   round(score, 1),
-            "all_in":  all_in,
+            "score": round(score, 1),
+            "all_in": all_in,
             "signals": signals,
-            "rsi":     round(rsi, 2),
-            "reason":  self._build_reason(signals, score, all_in),
-            "cooldown_left_sec": max(
-                0.0,
-                _COOLDOWN_SEC - (time.time() - self._last_trigger_ts)
-            ) if not cooldown_ok else 0.0,
+            "rsi": round(rsi, 2),
+            "reason": self._build_reason(signals, score, all_in),
+            "cooldown_left_sec": (
+                max(0.0, _COOLDOWN_SEC - (time.time() - self._last_trigger_ts))
+                if not cooldown_ok
+                else 0.0
+            ),
         }
 
     def _build_reason(self, signals: Dict[str, str], score: float, all_in: bool) -> str:
@@ -197,21 +207,21 @@ class BottomDetector:
         """Быстрый снапшот для дашборда."""
         try:
             from config import Config
+
             enabled = Config.ALLIN_ON_BOTTOM
-            conf    = Config.ALLIN_BOTTOM_CONF
+            conf = Config.ALLIN_BOTTOM_CONF
             rsi_max = Config.ALLIN_RSI_MAX
         except Exception:
             enabled, conf, rsi_max = False, 65.0, 32.0
         return {
-            "enabled":         enabled,
-            "last_score":      round(self.last_score, 1),
-            "last_all_in":     self.last_all_in,
-            "last_signals":    self.last_signals,
-            "threshold":       conf,
-            "rsi_max":         rsi_max,
-            "cooldown_left":   max(
-                0.0,
-                _COOLDOWN_SEC - (time.time() - self._last_trigger_ts)
+            "enabled": enabled,
+            "last_score": round(self.last_score, 1),
+            "last_all_in": self.last_all_in,
+            "last_signals": self.last_signals,
+            "threshold": conf,
+            "rsi_max": rsi_max,
+            "cooldown_left": max(
+                0.0, _COOLDOWN_SEC - (time.time() - self._last_trigger_ts)
             ),
         }
 

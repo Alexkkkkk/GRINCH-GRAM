@@ -19,18 +19,31 @@ from contextlib import contextmanager
 from datetime import datetime
 
 import psycopg2
+
 try:
     import numpy as _np
+
     class _NpEncoder(json.JSONEncoder):
         def default(self, o):
-            if isinstance(o, _np.integer): return int(o)
-            if isinstance(o, _np.floating): return float(o)
-            if isinstance(o, _np.bool_): return bool(o)
-            if isinstance(o, _np.ndarray): return o.tolist()
+            if isinstance(o, _np.integer):
+                return int(o)
+            if isinstance(o, _np.floating):
+                return float(o)
+            if isinstance(o, _np.bool_):
+                return bool(o)
+            if isinstance(o, _np.ndarray):
+                return o.tolist()
             return super().default(o)
-    def _jdumps(obj, **kw): return json.dumps(obj, cls=_NpEncoder, **kw)
+
+    def _jdumps(obj, **kw):
+        return json.dumps(obj, cls=_NpEncoder, **kw)
+
 except ImportError:
-    def _jdumps(obj, **kw): return json.dumps(obj, **kw)
+
+    def _jdumps(obj, **kw):
+        return json.dumps(obj, **kw)
+
+
 import psycopg2.extras
 import psycopg2.pool
 
@@ -49,10 +62,10 @@ DATABASE_URL = os.environ.get("EXTERNAL_DATABASE_URL") or os.environ.get("DATABA
 
 _pool: psycopg2.pool.ThreadedConnectionPool | None = None
 _pool_lock = threading.Lock()
-_available = False           # True только если пул успешно создан
-_last_rebuild_attempt: float = 0.0   # UNIX-время последней попытки rebuild
-_rebuild_in_progress: bool = False   # гейт: только один rebuild-поток за раз
-_REBUILD_BACKOFF_S: int = 60         # минимальный интервал между rebuild-попытками
+_available = False  # True только если пул успешно создан
+_last_rebuild_attempt: float = 0.0  # UNIX-время последней попытки rebuild
+_rebuild_in_progress: bool = False  # гейт: только один rebuild-поток за раз
+_REBUILD_BACKOFF_S: int = 60  # минимальный интервал между rebuild-попытками
 
 # ── DDL ──────────────────────────────────────────────────────────────────────
 _DDL = """
@@ -214,14 +227,15 @@ def _make_pool(connect_timeout: int) -> psycopg2.pool.ThreadedConnectionPool:
     """Создаёт пул с полными настройками таймаутов и TCP keepalives."""
     _max_conn = 8 if os.environ.get("LOW_MEMORY_MODE") == "1" else 16
     return psycopg2.pool.ThreadedConnectionPool(
-        minconn=2, maxconn=_max_conn,
+        minconn=2,
+        maxconn=_max_conn,
         dsn=DATABASE_URL,
         connect_timeout=connect_timeout,
         # TCP keepalives — обнаруживают мёртвые соединения без ожидания ОС-таймаута
         keepalives=1,
-        keepalives_idle=30,       # начать keepalive через 30с простоя
-        keepalives_interval=10,   # повторять каждые 10с
-        keepalives_count=3,       # 3 неответа → соединение мёртвое
+        keepalives_idle=30,  # начать keepalive через 30с простоя
+        keepalives_interval=10,  # повторять каждые 10с
+        keepalives_count=3,  # 3 неответа → соединение мёртвое
         # statement_timeout — убивает зависший запрос на стороне сервера через 9с.
         # Это главная защита от блокировки торгового цикла при лагах pghost.ru.
         options="-c statement_timeout=7000",
@@ -253,9 +267,13 @@ def _init_pool():
             last_err = e
             if attempt < len(_timeouts):
                 wait = attempt * 5
-                print(f"[DB] ⚠️ Попытка {attempt}/{len(_timeouts)} не удалась ({e}) — повтор через {wait}с")
+                print(
+                    f"[DB] ⚠️ Попытка {attempt}/{len(_timeouts)} не удалась ({e}) — повтор через {wait}с"
+                )
                 time.sleep(wait)
-    print(f"[DB] ⚠️ Ошибка подключения к PostgreSQL: {last_err} — используем JSON-файлы")
+    print(
+        f"[DB] ⚠️ Ошибка подключения к PostgreSQL: {last_err} — используем JSON-файлы"
+    )
     _available = False
 
 
@@ -322,7 +340,9 @@ def _try_rebuild_pool(*, _from_conn: bool = False) -> bool:
             # НЕ меняем _available: если старый пул ещё жив — не ломаем его.
             # Если _pool is None (БД никогда не подключалась) — оставляем False.
         next_retry = _REBUILD_BACKOFF_S
-        print(f"[DB] ⚠️ Rebuild пула не удался: {e}. Следующая попытка через {next_retry}с")
+        print(
+            f"[DB] ⚠️ Rebuild пула не удался: {e}. Следующая попытка через {next_retry}с"
+        )
         return False
 
 
@@ -340,7 +360,7 @@ def _conn():
     """
     # Lazy reconnect: БД была недоступна, но backoff прошёл — пробуем снова.
     if not _available or _pool is None:
-        _try_rebuild_pool()   # синхронно; торговый цикл — фоновый поток, блок ок
+        _try_rebuild_pool()  # синхронно; торговый цикл — фоновый поток, блок ок
 
     # H3-fix: захватываем ссылку на пул под _pool_lock, чтобы исключить
     # состояние гонки между чтением _pool и его заменой в _try_rebuild_pool().
@@ -395,6 +415,7 @@ with _pool_lock:
 #  SETTINGS
 # ═══════════════════════════════════════════════════════════════════════════════
 
+
 def settings_get_section(section: str) -> dict:
     if not _check_available():
         return {}
@@ -402,8 +423,7 @@ def settings_get_section(section: str) -> dict:
         with _conn() as conn:
             with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
                 cur.execute(
-                    "SELECT key, value FROM bot_settings WHERE section = %s",
-                    (section,)
+                    "SELECT key, value FROM bot_settings WHERE section = %s", (section,)
                 )
                 return {row["key"]: _decode(row["value"]) for row in cur.fetchall()}
     except Exception as e:
@@ -416,16 +436,22 @@ def settings_update_section(section: str, updates: dict):
         return
     try:
         from psycopg2.extras import execute_values
+
         rows = [(section, k, _encode(v)) for k, v in updates.items()]
         with _conn() as conn:
             with conn.cursor() as cur:
                 # Один round-trip вместо N отдельных INSERT — в разы быстрее
-                execute_values(cur, """
+                execute_values(
+                    cur,
+                    """
                     INSERT INTO bot_settings (section, key, value, updated_at)
                     VALUES %s
                     ON CONFLICT (section, key) DO UPDATE
                       SET value = EXCLUDED.value, updated_at = NOW()
-                """, rows, template="(%s, %s, %s, NOW())")
+                """,
+                    rows,
+                    template="(%s, %s, %s, NOW())",
+                )
     except Exception as e:
         logger.warning(f"[DB] settings_update_section error: {e}")
 
@@ -439,7 +465,7 @@ def settings_get(section: str, key: str):
             with conn.cursor() as cur:
                 cur.execute(
                     "SELECT value FROM bot_settings WHERE section=%s AND key=%s",
-                    (section, key)
+                    (section, key),
                 )
                 row = cur.fetchone()
                 return row[0] if row else None
@@ -457,7 +483,7 @@ def settings_delete_key(section: str, key: str):
             with conn.cursor() as cur:
                 cur.execute(
                     "DELETE FROM bot_settings WHERE section=%s AND key=%s",
-                    (section, key)
+                    (section, key),
                 )
     except Exception as e:
         logger.warning(f"[DB] settings_delete_key error: {e}")
@@ -483,6 +509,7 @@ def settings_get_all() -> dict:
 # ═══════════════════════════════════════════════════════════════════════════════
 #  TRADES (закрытые сделки)
 # ═══════════════════════════════════════════════════════════════════════════════
+
 
 def _normalize_trade_fields(trade: dict) -> dict:
     """Добавляет алиасы полей для совместимости дашборда и запросов к БД.
@@ -511,7 +538,7 @@ def _normalize_trade_fields(trade: dict) -> dict:
         t["dca_entries_count"] = t.get("merged_count") or t.get("dca_index") or 1
     # profit_pct — если 0 но profit_ton есть — пересчитываем от stake_ton
     stake = float(t.get("stake_ton") or 0.0)
-    pnl   = t.get("profit_ton")
+    pnl = t.get("profit_ton")
     if stake > 0 and pnl is not None and not t.get("profit_pct"):
         t["profit_pct"] = round(float(pnl) / stake * 100, 4)
     return t
@@ -534,13 +561,17 @@ def backfill_trade_fields():
             if not isinstance(trade, dict):
                 continue
             # Только те записи, у которых нет хотя бы одного нормализованного поля
-            if all(k in trade and trade[k] is not None
-                   for k in ("profit_ton", "profit_pct", "close_price", "avg_price")):
+            if all(
+                k in trade and trade[k] is not None
+                for k in ("profit_ton", "profit_pct", "close_price", "avg_price")
+            ):
                 continue
-            trades_upsert(trade)   # _normalize_trade_fields вызывается внутри
+            trades_upsert(trade)  # _normalize_trade_fields вызывается внутри
             patched += 1
         if patched:
-            logger.info(f"[DB] backfill_trade_fields: нормализовано {patched} записей в bot_trades")
+            logger.info(
+                f"[DB] backfill_trade_fields: нормализовано {patched} записей в bot_trades"
+            )
     except Exception as e:
         logger.warning(f"[DB] backfill_trade_fields error: {e}")
 
@@ -560,26 +591,34 @@ def trades_upsert(trade: dict):
             pass
     # Нормализуем поля перед записью (добавляем алиасы для дашборда)
     trade = _normalize_trade_fields(trade)
-    TRADES_KEEP = 500   # храним не более 500 закрытых сделок (защита от бесконечного роста)
+    TRADES_KEEP = (
+        500  # храним не более 500 закрытых сделок (защита от бесконечного роста)
+    )
     try:
         with _conn() as conn:
             with conn.cursor() as cur:
-                cur.execute("""
+                cur.execute(
+                    """
                     INSERT INTO bot_trades (id, data, closed_at)
                     VALUES (%s, %s, %s)
                     ON CONFLICT (id) DO UPDATE
                       SET data = EXCLUDED.data, closed_at = EXCLUDED.closed_at
-                """, (trade_id, _jdumps(trade, ensure_ascii=False), closed_at))
+                """,
+                    (trade_id, _jdumps(trade, ensure_ascii=False), closed_at),
+                )
                 # Авто-очистка: оставляем только последние TRADES_KEEP сделок.
                 # Вторичная сортировка по id — стабильный тай-брейкер при одинаковом
                 # closed_at (batch-закрытие нескольких позиций за один тик).
-                cur.execute("""
+                cur.execute(
+                    """
                     DELETE FROM bot_trades WHERE id NOT IN (
                         SELECT id FROM bot_trades
                         ORDER BY closed_at DESC NULLS LAST, id DESC
                         LIMIT %s
                     )
-                """, (TRADES_KEEP,))
+                """,
+                    (TRADES_KEEP,),
+                )
     except Exception as e:
         logger.warning(f"[DB] trades_upsert error: {e}")
 
@@ -592,7 +631,7 @@ def trades_get_all(limit: int = 1000) -> list:
             with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
                 cur.execute(
                     "SELECT data FROM bot_trades ORDER BY closed_at ASC NULLS LAST LIMIT %s",
-                    (limit,)
+                    (limit,),
                 )
                 return [row["data"] for row in cur.fetchall()]
     except Exception as e:
@@ -624,7 +663,7 @@ def trades_get_recent(limit: int = 30) -> list:
             with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
                 cur.execute(
                     "SELECT data FROM bot_trades ORDER BY closed_at DESC NULLS LAST LIMIT %s",
-                    (limit,)
+                    (limit,),
                 )
                 return [row["data"] for row in cur.fetchall()]
     except Exception as e:
@@ -649,11 +688,14 @@ def trades_bulk_insert(trades: list):
                             closed_at = datetime.fromisoformat(str(closed_at_str))
                         except Exception:
                             pass
-                    cur.execute("""
+                    cur.execute(
+                        """
                         INSERT INTO bot_trades (id, data, closed_at)
                         VALUES (%s, %s, %s)
                         ON CONFLICT (id) DO NOTHING
-                    """, (tid, _jdumps(t, ensure_ascii=False), closed_at))
+                    """,
+                        (tid, _jdumps(t, ensure_ascii=False), closed_at),
+                    )
     except Exception as e:
         logger.warning(f"[DB] trades_bulk_insert error: {e}")
 
@@ -661,6 +703,7 @@ def trades_bulk_insert(trades: list):
 # ═══════════════════════════════════════════════════════════════════════════════
 #  EQUITY (кривая баланса)
 # ═══════════════════════════════════════════════════════════════════════════════
+
 
 def equity_insert(point: dict):
     if not _check_available():
@@ -670,16 +713,19 @@ def equity_insert(point: dict):
         ts = datetime.fromisoformat(ts_str) if ts_str else datetime.utcnow()
         with _conn() as conn:
             with conn.cursor() as cur:
-                cur.execute("""
+                cur.execute(
+                    """
                     INSERT INTO bot_equity (ts, ton, grinch, grinch_usd, equity_ton)
                     VALUES (%s, %s, %s, %s, %s)
-                """, (
-                    ts,
-                    point.get("ton"),
-                    point.get("grinch"),
-                    point.get("grinch_usd"),
-                    point.get("equity_ton"),
-                ))
+                """,
+                    (
+                        ts,
+                        point.get("ton"),
+                        point.get("grinch"),
+                        point.get("grinch_usd"),
+                        point.get("equity_ton"),
+                    ),
+                )
     except Exception as e:
         logger.warning(f"[DB] equity_insert error: {e}")
 
@@ -693,17 +739,19 @@ def equity_get_all(limit: int = 3000) -> list:
                 cur.execute(
                     "SELECT ts, ton, grinch, grinch_usd, equity_ton FROM bot_equity"
                     " ORDER BY ts DESC LIMIT %s",
-                    (limit,)
+                    (limit,),
                 )
                 result = []
                 for row in cur.fetchall():
-                    result.append({
-                        "t":          row["ts"].isoformat() if row["ts"] else None,
-                        "ton":        row["ton"],
-                        "grinch":     row["grinch"],
-                        "grinch_usd": row["grinch_usd"],
-                        "equity_ton": row["equity_ton"],
-                    })
+                    result.append(
+                        {
+                            "t": row["ts"].isoformat() if row["ts"] else None,
+                            "ton": row["ton"],
+                            "grinch": row["grinch"],
+                            "grinch_usd": row["grinch_usd"],
+                            "equity_ton": row["equity_ton"],
+                        }
+                    )
                 result.reverse()  # вернуть хронологический порядок (старые→новые)
                 return result
     except Exception as e:
@@ -735,14 +783,25 @@ def equity_bulk_insert(points: list):
                 ts = datetime.fromisoformat(ts_str) if ts_str else datetime.utcnow()
             except Exception:
                 ts = datetime.utcnow()
-            rows.append((ts, p.get("ton"), p.get("grinch"),
-                         p.get("grinch_usd"), p.get("equity_ton")))
+            rows.append(
+                (
+                    ts,
+                    p.get("ton"),
+                    p.get("grinch"),
+                    p.get("grinch_usd"),
+                    p.get("equity_ton"),
+                )
+            )
         with _conn() as conn:
             with conn.cursor() as cur:
-                psycopg2.extras.execute_values(cur, """
+                psycopg2.extras.execute_values(
+                    cur,
+                    """
                     INSERT INTO bot_equity (ts, ton, grinch, grinch_usd, equity_ton)
                     VALUES %s
-                """, rows)
+                """,
+                    rows,
+                )
     except Exception as e:
         logger.warning(f"[DB] equity_bulk_insert error: {e}")
 
@@ -751,24 +810,34 @@ def equity_bulk_insert(points: list):
 #  OPEN TRADES (открытые позиции)
 # ═══════════════════════════════════════════════════════════════════════════════
 
+
 def open_trades_save(trades: list):
     if not _check_available():
         return
     try:
         rows = [
-            (str(t.get("id") or ""), _jdumps(_normalize_trade_fields(t), ensure_ascii=False))
-            for t in trades if t.get("id")
+            (
+                str(t.get("id") or ""),
+                _jdumps(_normalize_trade_fields(t), ensure_ascii=False),
+            )
+            for t in trades
+            if t.get("id")
         ]
         with _conn() as conn:
             with conn.cursor() as cur:
                 cur.execute("DELETE FROM bot_open_trades")
                 if rows:
-                    psycopg2.extras.execute_values(cur, """
+                    psycopg2.extras.execute_values(
+                        cur,
+                        """
                         INSERT INTO bot_open_trades (trade_id, data, updated_at)
                         VALUES %s
                         ON CONFLICT (trade_id) DO UPDATE
                           SET data = EXCLUDED.data, updated_at = NOW()
-                    """, rows, template="(%s, %s, NOW())")
+                    """,
+                        rows,
+                        template="(%s, %s, NOW())",
+                    )
     except Exception as e:
         logger.warning(f"[DB] open_trades_save error: {e}")
 
@@ -790,18 +859,22 @@ def open_trades_get() -> list:
 #  AI STATE (контрольные параметры + опыт ИИ)
 # ═══════════════════════════════════════════════════════════════════════════════
 
+
 def ai_state_set(key: str, value):
     if not _check_available():
         return
     try:
         with _conn() as conn:
             with conn.cursor() as cur:
-                cur.execute("""
+                cur.execute(
+                    """
                     INSERT INTO bot_ai_state (key, value, updated_at)
                     VALUES (%s, %s, NOW())
                     ON CONFLICT (key) DO UPDATE
                       SET value = EXCLUDED.value, updated_at = NOW()
-                """, (key, _encode(value)))
+                """,
+                    (key, _encode(value)),
+                )
     except Exception as e:
         logger.warning(f"[DB] ai_state_set({key}) error: {e}")
 
@@ -837,6 +910,7 @@ def ai_state_get_all() -> dict:
 #  AI EXAMPLES (полная append-only история обучающих примеров, без лимита)
 # ═══════════════════════════════════════════════════════════════════════════════
 
+
 def ai_example_insert(features: list, label: int, weight: float):
     """Пишет один обучающий пример НАВСЕГДА (без ротации/лимита) — источник
     истины для глубокого переобучения раз в 2 дня. Best-effort: ошибка не
@@ -846,10 +920,13 @@ def ai_example_insert(features: list, label: int, weight: float):
     try:
         with _conn() as conn:
             with conn.cursor() as cur:
-                cur.execute("""
+                cur.execute(
+                    """
                     INSERT INTO bot_ai_examples (features, label, weight)
                     VALUES (%s, %s, %s)
-                """, (_jdumps(list(map(float, features))), int(label), float(weight)))
+                """,
+                    (_jdumps(list(map(float, features))), int(label), float(weight)),
+                )
     except Exception as e:
         logger.warning(f"[DB] ai_example_insert error: {e}")
 
@@ -862,13 +939,20 @@ def ai_examples_get_recent(limit: int = 2000) -> list:
     try:
         with _conn() as conn:
             with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
-                cur.execute("""
+                cur.execute(
+                    """
                     SELECT features, label, weight FROM bot_ai_examples
                     ORDER BY id DESC LIMIT %s
-                """, (limit,))
+                """,
+                    (limit,),
+                )
                 rows = cur.fetchall()
                 return [
-                    {"features": row["features"], "label": row["label"], "weight": row["weight"]}
+                    {
+                        "features": row["features"],
+                        "label": row["label"],
+                        "weight": row["weight"],
+                    }
                     for row in reversed(rows)
                 ]
     except Exception as e:
@@ -897,8 +981,9 @@ def ai_examples_export_all():
         return
     try:
         with _conn() as conn:
-            with conn.cursor(name="export_cur",
-                             cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            with conn.cursor(
+                name="export_cur", cursor_factory=psycopg2.extras.RealDictCursor
+            ) as cur:
                 cur.itersize = 1000
                 cur.execute("""
                     SELECT id, created_at, label, weight, features
@@ -906,11 +991,11 @@ def ai_examples_export_all():
                 """)
                 for row in cur:
                     yield {
-                        "id":         row["id"],
+                        "id": row["id"],
                         "created_at": row["created_at"],
-                        "label":      row["label"],
-                        "weight":     row["weight"],
-                        "features":   row["features"],  # уже list[float] из JSONB
+                        "label": row["label"],
+                        "weight": row["weight"],
+                        "features": row["features"],  # уже list[float] из JSONB
                     }
     except Exception as e:
         logger.warning(f"[DB] ai_examples_export_all error: {e}")
@@ -920,7 +1005,7 @@ def ai_examples_export_all():
 #  GRID AI EXPERIENCE (v5 — персистентный опыт сеточного трейдера)
 # ═══════════════════════════════════════════════════════════════════════════════
 
-GRID_EXP_KEEP = 5000   # максимум записей в таблице
+GRID_EXP_KEEP = 5000  # максимум записей в таблице
 
 
 def grid_experience_insert(entry: dict):
@@ -933,16 +1018,19 @@ def grid_experience_insert(entry: dict):
             with conn.cursor() as cur:
                 cur.execute(
                     "INSERT INTO bot_grid_experience (ts, data) VALUES (%s, %s)",
-                    (ts, _jdumps(entry))
+                    (ts, _jdumps(entry)),
                 )
                 # Самоочистка: удаляем записи старше GRID_EXP_KEEP
-                cur.execute("""
+                cur.execute(
+                    """
                     DELETE FROM bot_grid_experience
                     WHERE id NOT IN (
                         SELECT id FROM bot_grid_experience
                         ORDER BY id DESC LIMIT %s
                     )
-                """, (GRID_EXP_KEEP,))
+                """,
+                    (GRID_EXP_KEEP,),
+                )
     except Exception as e:
         logger.warning(f"[DB] grid_experience_insert error: {e}")
 
@@ -954,10 +1042,13 @@ def grid_experience_load(limit: int = GRID_EXP_KEEP) -> list:
     try:
         with _conn() as conn:
             with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
-                cur.execute("""
+                cur.execute(
+                    """
                     SELECT data FROM bot_grid_experience
                     ORDER BY id DESC LIMIT %s
-                """, (limit,))
+                """,
+                    (limit,),
+                )
                 rows = cur.fetchall()
                 # Возвращаем в хронологическом порядке (старые первыми)
                 return [row["data"] for row in reversed(rows)]
@@ -984,6 +1075,7 @@ def grid_experience_count() -> int:
 #  TICKS (скользящая история рынка для AI-советника, замена analytics_buffer)
 # ═══════════════════════════════════════════════════════════════════════════════
 
+
 def ticks_insert(data: dict):
     """Пишет один снимок тика в БД (переживает рестарт, в отличие от
     прежнего in-memory буфера). Best-effort: ошибка не должна ронять цикл.
@@ -992,18 +1084,22 @@ def ticks_insert(data: dict):
         return
     try:
         import random
+
         with _conn() as conn:
             with conn.cursor() as cur:
                 cur.execute(
                     "INSERT INTO bot_ticks (data) VALUES (%s)",
-                    (_jdumps(data, ensure_ascii=False),)
+                    (_jdumps(data, ensure_ascii=False),),
                 )
                 if random.random() < 0.02:
-                    cur.execute("""
+                    cur.execute(
+                        """
                         DELETE FROM bot_ticks WHERE id NOT IN (
                             SELECT id FROM bot_ticks ORDER BY id DESC LIMIT %s
                         )
-                    """, (TICKS_KEEP,))
+                    """,
+                        (TICKS_KEEP,),
+                    )
     except Exception as e:
         logger.warning(f"[DB] ticks_insert error: {e}")
 
@@ -1018,6 +1114,7 @@ def ticks_insert_batch(entries: list):
         return
     try:
         import random
+
         rows = [(_jdumps(entry, ensure_ascii=False),) for entry in entries]
         with _conn() as conn:
             with conn.cursor() as cur:
@@ -1029,11 +1126,14 @@ def ticks_insert_batch(entries: list):
                     page_size=100,
                 )
                 if random.random() < 0.02:
-                    cur.execute("""
+                    cur.execute(
+                        """
                         DELETE FROM bot_ticks WHERE id NOT IN (
                             SELECT id FROM bot_ticks ORDER BY id DESC LIMIT %s
                         )
-                    """, (TICKS_KEEP,))
+                    """,
+                        (TICKS_KEEP,),
+                    )
     except Exception as e:
         logger.warning(f"[DB] ticks_insert_batch error: {e}")
 
@@ -1047,8 +1147,7 @@ def ticks_get_recent(limit: int = 100) -> list:
         with _conn() as conn:
             with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
                 cur.execute(
-                    "SELECT data FROM bot_ticks ORDER BY id DESC LIMIT %s",
-                    (limit,)
+                    "SELECT data FROM bot_ticks ORDER BY id DESC LIMIT %s", (limit,)
                 )
                 rows = cur.fetchall()
                 return [row["data"] for row in reversed(rows)]
@@ -1074,6 +1173,7 @@ def ticks_count() -> int:
 #  WALLET SNAPSHOTS (полная история баланса TON + GRINCH с ценами и P&L)
 # ═══════════════════════════════════════════════════════════════════════════════
 
+
 def wallet_snapshot_insert(snap: dict):
     """Сохраняет снимок кошелька (TON + GRINCH + P&L) в БД. Best-effort.
     Самоочищается: раз в ~5% вставок удаляет старые записи сверх WALLET_SNAP_KEEP."""
@@ -1081,9 +1181,11 @@ def wallet_snapshot_insert(snap: dict):
         return
     try:
         import random
+
         with _conn() as conn:
             with conn.cursor() as cur:
-                cur.execute("""
+                cur.execute(
+                    """
                     INSERT INTO bot_wallet_snapshots
                         (ts, ton_balance, grinch_balance, grinch_price_ton, grinch_price_usd,
                          ton_price_usd, grinch_value_ton, grinch_value_usd,
@@ -1091,31 +1193,36 @@ def wallet_snapshot_insert(snap: dict):
                          entry_price_ton, entry_price_usd, pnl_ton, pnl_pct, pnl_usd,
                          tracked_amount, tracked_entries, tracked_stake)
                     VALUES (NOW(),%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
-                """, (
-                    snap.get("ton_balance"),
-                    snap.get("grinch_balance"),
-                    snap.get("grinch_price_ton"),
-                    snap.get("grinch_price_usd"),
-                    snap.get("ton_price_usd"),
-                    snap.get("grinch_value_ton"),
-                    snap.get("grinch_value_usd"),
-                    snap.get("total_equity_ton"),
-                    snap.get("total_equity_usd"),
-                    snap.get("entry_price_ton"),
-                    snap.get("entry_price_usd"),
-                    snap.get("pnl_ton"),
-                    snap.get("pnl_pct"),
-                    snap.get("pnl_usd"),
-                    snap.get("tracked_amount"),
-                    snap.get("tracked_entries"),
-                    snap.get("tracked_stake"),
-                ))
+                """,
+                    (
+                        snap.get("ton_balance"),
+                        snap.get("grinch_balance"),
+                        snap.get("grinch_price_ton"),
+                        snap.get("grinch_price_usd"),
+                        snap.get("ton_price_usd"),
+                        snap.get("grinch_value_ton"),
+                        snap.get("grinch_value_usd"),
+                        snap.get("total_equity_ton"),
+                        snap.get("total_equity_usd"),
+                        snap.get("entry_price_ton"),
+                        snap.get("entry_price_usd"),
+                        snap.get("pnl_ton"),
+                        snap.get("pnl_pct"),
+                        snap.get("pnl_usd"),
+                        snap.get("tracked_amount"),
+                        snap.get("tracked_entries"),
+                        snap.get("tracked_stake"),
+                    ),
+                )
                 if random.random() < 0.05:
-                    cur.execute("""
+                    cur.execute(
+                        """
                         DELETE FROM bot_wallet_snapshots WHERE id NOT IN (
                             SELECT id FROM bot_wallet_snapshots ORDER BY id DESC LIMIT %s
                         )
-                    """, (WALLET_SNAP_KEEP,))
+                    """,
+                        (WALLET_SNAP_KEEP,),
+                    )
     except Exception as e:
         logger.debug(f"[DB] wallet_snapshot_insert error: {e}")
 
@@ -1127,7 +1234,8 @@ def wallet_snapshots_get_recent(limit: int = 200) -> list:
     try:
         with _conn() as conn:
             with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
-                cur.execute("""
+                cur.execute(
+                    """
                     SELECT ts, ton_balance, grinch_balance, grinch_price_ton, grinch_price_usd,
                            ton_price_usd, grinch_value_ton, grinch_value_usd,
                            total_equity_ton, total_equity_usd,
@@ -1135,28 +1243,30 @@ def wallet_snapshots_get_recent(limit: int = 200) -> list:
                            tracked_amount, tracked_entries, tracked_stake
                     FROM bot_wallet_snapshots
                     ORDER BY id DESC LIMIT %s
-                """, (limit,))
+                """,
+                    (limit,),
+                )
                 rows = cur.fetchall()
                 return [
                     {
-                        "ts":               row["ts"].isoformat() if row["ts"] else None,
-                        "ton_balance":      row["ton_balance"],
-                        "grinch_balance":   row["grinch_balance"],
+                        "ts": row["ts"].isoformat() if row["ts"] else None,
+                        "ton_balance": row["ton_balance"],
+                        "grinch_balance": row["grinch_balance"],
                         "grinch_price_ton": row["grinch_price_ton"],
                         "grinch_price_usd": row["grinch_price_usd"],
-                        "ton_price_usd":    row["ton_price_usd"],
+                        "ton_price_usd": row["ton_price_usd"],
                         "grinch_value_ton": row["grinch_value_ton"],
                         "grinch_value_usd": row["grinch_value_usd"],
                         "total_equity_ton": row["total_equity_ton"],
                         "total_equity_usd": row["total_equity_usd"],
-                        "entry_price_ton":  row["entry_price_ton"],
-                        "entry_price_usd":  row["entry_price_usd"],
-                        "pnl_ton":          row["pnl_ton"],
-                        "pnl_pct":          row["pnl_pct"],
-                        "pnl_usd":          row["pnl_usd"],
-                        "tracked_amount":   row["tracked_amount"],
-                        "tracked_entries":  row["tracked_entries"],
-                        "tracked_stake":    row["tracked_stake"],
+                        "entry_price_ton": row["entry_price_ton"],
+                        "entry_price_usd": row["entry_price_usd"],
+                        "pnl_ton": row["pnl_ton"],
+                        "pnl_pct": row["pnl_pct"],
+                        "pnl_usd": row["pnl_usd"],
+                        "tracked_amount": row["tracked_amount"],
+                        "tracked_entries": row["tracked_entries"],
+                        "tracked_stake": row["tracked_stake"],
                     }
                     for row in reversed(rows)
                 ]
@@ -1184,24 +1294,24 @@ def wallet_snapshot_get_latest() -> dict:
                 if not row:
                     return {}
                 return {
-                    "ts":               row["ts"].isoformat() if row["ts"] else None,
-                    "ton_balance":      row["ton_balance"],
-                    "grinch_balance":   row["grinch_balance"],
+                    "ts": row["ts"].isoformat() if row["ts"] else None,
+                    "ton_balance": row["ton_balance"],
+                    "grinch_balance": row["grinch_balance"],
                     "grinch_price_ton": row["grinch_price_ton"],
                     "grinch_price_usd": row["grinch_price_usd"],
-                    "ton_price_usd":    row["ton_price_usd"],
+                    "ton_price_usd": row["ton_price_usd"],
                     "grinch_value_ton": row["grinch_value_ton"],
                     "grinch_value_usd": row["grinch_value_usd"],
                     "total_equity_ton": row["total_equity_ton"],
                     "total_equity_usd": row["total_equity_usd"],
-                    "entry_price_ton":  row["entry_price_ton"],
-                    "entry_price_usd":  row["entry_price_usd"],
-                    "pnl_ton":          row["pnl_ton"],
-                    "pnl_pct":          row["pnl_pct"],
-                    "pnl_usd":          row["pnl_usd"],
-                    "tracked_amount":   row["tracked_amount"],
-                    "tracked_entries":  row["tracked_entries"],
-                    "tracked_stake":    row["tracked_stake"],
+                    "entry_price_ton": row["entry_price_ton"],
+                    "entry_price_usd": row["entry_price_usd"],
+                    "pnl_ton": row["pnl_ton"],
+                    "pnl_pct": row["pnl_pct"],
+                    "pnl_usd": row["pnl_usd"],
+                    "tracked_amount": row["tracked_amount"],
+                    "tracked_entries": row["tracked_entries"],
+                    "tracked_stake": row["tracked_stake"],
                 }
     except Exception as e:
         logger.warning(f"[DB] wallet_snapshot_get_latest error: {e}")
@@ -1213,6 +1323,7 @@ def wallet_snapshot_get_latest() -> dict:
 #  платформы (UserTradingManager). Раньше хранилась только в памяти и терялась
 #  при рестарте процесса.
 # ═══════════════════════════════════════════════════════════════════════════════
+
 
 def user_trade_insert(token: str, trade: dict) -> bool:
     """Сохраняет одну виртуальную сделку пользователя. Возвращает True при
@@ -1256,6 +1367,7 @@ def user_trades_get_recent(token: str, limit: int = 50) -> list:
 #  сабпроцессе deep_retrain_worker.py, хранятся ТОЛЬКО в БД (см. bot_ai_deep_models)
 # ═══════════════════════════════════════════════════════════════════════════════
 
+
 def deep_model_save(model_name: str, blob: bytes, accuracy: float, n_examples: int):
     """Сохраняет обученный тяжёлый модель (pickle-блоб) в БД. Вызывается
     ТОЛЬКО из deep_retrain_worker.py (отдельный процесс), никогда из живого
@@ -1265,7 +1377,8 @@ def deep_model_save(model_name: str, blob: bytes, accuracy: float, n_examples: i
     try:
         with _conn() as conn:
             with conn.cursor() as cur:
-                cur.execute("""
+                cur.execute(
+                    """
                     INSERT INTO bot_ai_deep_models (model_name, blob, accuracy, n_examples, trained_at)
                     VALUES (%s, %s, %s, %s, NOW())
                     ON CONFLICT (model_name) DO UPDATE SET
@@ -1273,7 +1386,14 @@ def deep_model_save(model_name: str, blob: bytes, accuracy: float, n_examples: i
                         accuracy = EXCLUDED.accuracy,
                         n_examples = EXCLUDED.n_examples,
                         trained_at = NOW()
-                """, (model_name, psycopg2.Binary(blob), float(accuracy), int(n_examples)))
+                """,
+                    (
+                        model_name,
+                        psycopg2.Binary(blob),
+                        float(accuracy),
+                        int(n_examples),
+                    ),
+                )
     except Exception as e:
         logger.warning(f"[DB] deep_model_save({model_name}) error: {e}")
 
@@ -1288,7 +1408,9 @@ def deep_models_load_all() -> dict:
     try:
         with _conn() as conn:
             with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
-                cur.execute("SELECT model_name, blob, accuracy, n_examples, trained_at FROM bot_ai_deep_models")
+                cur.execute(
+                    "SELECT model_name, blob, accuracy, n_examples, trained_at FROM bot_ai_deep_models"
+                )
                 return {
                     row["model_name"]: {
                         "blob": bytes(row["blob"]),
@@ -1324,6 +1446,7 @@ def deep_models_meta() -> list:
 #  WALLETS (кошельки умных денег)
 # ═══════════════════════════════════════════════════════════════════════════════
 
+
 def wallets_save(wallets: dict, events: list, seen: list, last_poll: float):
     if not _check_available():
         return
@@ -1347,21 +1470,27 @@ def wallets_save(wallets: dict, events: list, seen: list, last_poll: float):
                         ON CONFLICT (address) DO UPDATE
                           SET data = EXCLUDED.data, updated_at = NOW()
                         """,
-                        [(addr, _jdumps(data, ensure_ascii=False)) for addr, data in sorted_items],
+                        [
+                            (addr, _jdumps(data, ensure_ascii=False))
+                            for addr, data in sorted_items
+                        ],
                         template="(%s, %s, NOW())",
                         page_size=100,
                     )
                 for key, val in [
-                    ("events",    _jdumps(events[-5000:], ensure_ascii=False)),
-                    ("seen",      _jdumps(list(seen)[-10000:], ensure_ascii=False)),
+                    ("events", _jdumps(events[-5000:], ensure_ascii=False)),
+                    ("seen", _jdumps(list(seen)[-10000:], ensure_ascii=False)),
                     ("last_poll", str(last_poll)),
                 ]:
-                    cur.execute("""
+                    cur.execute(
+                        """
                         INSERT INTO bot_wallet_meta (key, value, updated_at)
                         VALUES (%s, %s, NOW())
                         ON CONFLICT (key) DO UPDATE
                           SET value = EXCLUDED.value, updated_at = NOW()
-                    """, (key, val))
+                    """,
+                        (key, val),
+                    )
     except Exception as e:
         logger.warning(f"[DB] wallets_save error: {e}")
 
@@ -1378,9 +1507,9 @@ def wallets_load() -> tuple[dict, list, dict, float]:
                 cur.execute("SELECT key, value FROM bot_wallet_meta")
                 meta = {row["key"]: row["value"] for row in cur.fetchall()}
 
-        events    = json.loads(meta.get("events", "[]"))
+        events = json.loads(meta.get("events", "[]"))
         # Возвращаем dict вместо set — сохраняет порядок вставки для LRU-дедупликации
-        seen      = {k: 1 for k in json.loads(meta.get("seen", "[]"))}
+        seen = {k: 1 for k in json.loads(meta.get("seen", "[]"))}
         last_poll = float(meta.get("last_poll", "0") or 0)
         return wallets, events, seen, last_poll
     except Exception as e:
@@ -1404,6 +1533,7 @@ def wallets_count() -> int:
 # ═══════════════════════════════════════════════════════════════════════════════
 #  HELPERS
 # ═══════════════════════════════════════════════════════════════════════════════
+
 
 def _encode(val) -> str:
     if val is None:

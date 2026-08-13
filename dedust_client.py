@@ -2,6 +2,7 @@
 DeDust DEX клиент для реальной торговли GRINCH/TON в блокчейне TON.
 Все блокчейн-операции асинхронные — запускаются через _run().
 """
+
 import asyncio
 import logging
 import os
@@ -25,6 +26,7 @@ def _tc_headers() -> dict:
     key = os.getenv("TONCENTER_API_KEY", "")
     return {"X-API-Key": key} if key else {}
 
+
 log = logging.getLogger(__name__)
 
 # 1 TON = 1_000_000_000 нанотонов
@@ -37,14 +39,14 @@ _FACTORY_ADDR = "EQBfBWT7X2BHg9tXAxzhz2aKiNTU1tSvKBUIB6mmAR0096nr"
 # Предотвращает шторм 429 от TonCenter: трейдер, ликвидатор, deposit monitor
 # делают независимые запросы каждые 30–60 сек. Общий кеш сводит фактические
 # HTTP-вызовы к одному раз в 150 секунд, независимо от числа читателей.
-_BAL_CACHE: dict         = {}          # {"TON": float, "GRINCH": float}
-_BAL_CACHE_TS: float     = 0.0         # timestamp последнего успешного обновления
-_BAL_CACHE_TTL: float    = 150.0       # секунды
-_BAL_CACHE_LOCK          = threading.Lock()
-_BAL_BACKOFF_UNTIL: float = 0.0        # не стучать раньше этого timestamp при 429
+_BAL_CACHE: dict = {}  # {"TON": float, "GRINCH": float}
+_BAL_CACHE_TS: float = 0.0  # timestamp последнего успешного обновления
+_BAL_CACHE_TTL: float = 150.0  # секунды
+_BAL_CACHE_LOCK = threading.Lock()
+_BAL_BACKOFF_UNTIL: float = 0.0  # не стучать раньше этого timestamp при 429
 # C4-fix: сериализуем HTTP-запросы к API баланса — только один поток
 # одновременно делает fetch. Остальные ждут его результата (double-checked).
-_BAL_FETCH_LOCK          = threading.Lock()
+_BAL_FETCH_LOCK = threading.Lock()
 
 
 def get_shared_balance(force: bool = False) -> dict:
@@ -85,7 +87,7 @@ def _fetch_balance_and_update(force: bool, now: float) -> dict:
     """
     global _BAL_CACHE, _BAL_CACHE_TS, _BAL_BACKOFF_UNTIL
     wallet = Config.TON_WALLET
-    token  = Config.GRINCH_TOKEN_ADDRESS
+    token = Config.GRINCH_TOKEN_ADDRESS
 
     ton_val: Optional[float] = None
     grn_val: float = 0.0
@@ -95,7 +97,9 @@ def _fetch_balance_and_update(force: bool, now: float) -> dict:
     try:
         r = _HTTP.get(
             "https://toncenter.com/api/v2/getAddressBalance",
-            params={"address": wallet}, headers=_tc_headers(), timeout=8,
+            params={"address": wallet},
+            headers=_tc_headers(),
+            timeout=8,
         )
         if r.status_code == 429:
             hit_429 = True
@@ -110,7 +114,8 @@ def _fetch_balance_and_update(force: bool, now: float) -> dict:
         try:
             r = _HTTP.get(
                 f"https://tonapi.io/v2/accounts/{wallet}",
-                headers={"Accept": "application/json"}, timeout=8,
+                headers={"Accept": "application/json"},
+                timeout=8,
             )
             if r.status_code == 429:
                 hit_429 = True
@@ -127,7 +132,8 @@ def _fetch_balance_and_update(force: bool, now: float) -> dict:
             r = _HTTP.get(
                 "https://toncenter.com/api/v3/jetton/wallets",
                 params={"owner_address": wallet, "jetton_address": token, "limit": 1},
-                headers=_tc_headers(), timeout=8,
+                headers=_tc_headers(),
+                timeout=8,
             )
             if r.status_code == 429:
                 hit_429 = True
@@ -136,7 +142,7 @@ def _fetch_balance_and_update(force: bool, now: float) -> dict:
                 if wallets:
                     bal = wallets[0].get("balance")
                     if bal is not None:
-                        grn_val = float(bal) / (10 ** 9)
+                        grn_val = float(bal) / (10**9)
         except Exception:
             pass
 
@@ -144,14 +150,15 @@ def _fetch_balance_and_update(force: bool, now: float) -> dict:
         try:
             r = _HTTP.get(
                 f"https://tonapi.io/v2/accounts/{wallet}/jettons/{token}",
-                headers={"Accept": "application/json"}, timeout=8,
+                headers={"Accept": "application/json"},
+                timeout=8,
             )
             if r.status_code == 429:
                 hit_429 = True
             elif r.status_code == 200:
                 bal = r.json().get("balance")
                 if bal is not None:
-                    grn_val = float(bal) / (10 ** 9)
+                    grn_val = float(bal) / (10**9)
         except Exception:
             pass
 
@@ -175,11 +182,13 @@ def _fetch_balance_and_update(force: bool, now: float) -> dict:
     # Обновляем кеш только если получили хотя бы одно реальное значение
     if ton_val is not None or grn_val > 0:
         new_cache: dict = {
-            "TON":    round(ton_val, 6) if ton_val is not None else _BAL_CACHE.get("TON", 0.0),
+            "TON": (
+                round(ton_val, 6) if ton_val is not None else _BAL_CACHE.get("TON", 0.0)
+            ),
             "GRINCH": round(grn_val, 4),
         }
         with _BAL_CACHE_LOCK:
-            _BAL_CACHE    = new_cache
+            _BAL_CACHE = new_cache
             _BAL_CACHE_TS = now
         return dict(new_cache)
 
@@ -300,20 +309,25 @@ class DedustClient:
                         "перезапускаем провайдер"
                     )
                 else:
-                    log.warning(f"[DeDust] _make_provider попытка {attempt+1}/3 провалилась: {e}")
+                    log.warning(
+                        f"[DeDust] _make_provider попытка {attempt+1}/3 провалилась: {e}"
+                    )
                 if provider is not None:
                     try:
                         await provider.close_all()
                     except Exception:
                         pass
                 import asyncio as _aio
+
                 await _aio.sleep(1)
         raise last_exc
 
     async def _wallet_and_provider(self):
         provider = await self._make_provider()
         # WalletV5R1 (W5) — версия кошелька TonKeeper пользователя; mainnet global_id = -239
-        wallet = await WalletV5R1.from_mnemonic(provider=provider, mnemonics=self._mnemonic, network_global_id=-239)
+        wallet = await WalletV5R1.from_mnemonic(
+            provider=provider, mnemonics=self._mnemonic, network_global_id=-239
+        )
         return wallet, provider
 
     # ─────────────────────────── balance ───────────────────────────────────
@@ -326,7 +340,9 @@ class DedustClient:
         try:
             r = _HTTP.get(
                 "https://toncenter.com/api/v2/getAddressBalance",
-                params={"address": wallet}, headers=_tc_headers(), timeout=8,
+                params={"address": wallet},
+                headers=_tc_headers(),
+                timeout=8,
             )
             result = r.json().get("result")
             if result is not None:
@@ -336,7 +352,8 @@ class DedustClient:
         try:
             r = _HTTP.get(
                 f"https://tonapi.io/v2/accounts/{wallet}",
-                headers={"Accept": "application/json"}, timeout=8,
+                headers={"Accept": "application/json"},
+                timeout=8,
             )
             bal = r.json().get("balance")
             if bal is not None:
@@ -350,23 +367,26 @@ class DedustClient:
         Приоритет: TonCenter v3 → TonAPI прямой эндпоинт → TonAPI список (с нормализацией адреса).
         """
         wallet = Config.TON_WALLET
-        token  = Config.GRINCH_TOKEN_ADDRESS
+        token = Config.GRINCH_TOKEN_ADDRESS
 
         # 1. TonCenter v3 (jetton/wallets)
         try:
             r = _HTTP.get(
                 "https://toncenter.com/api/v3/jetton/wallets",
                 params={"owner_address": wallet, "jetton_address": token, "limit": 1},
-                headers=_tc_headers(), timeout=8,
+                headers=_tc_headers(),
+                timeout=8,
             )
             if r.status_code == 200:
                 wallets = r.json().get("jetton_wallets", [])
                 if wallets:
                     bal = wallets[0].get("balance")
                     if bal is not None:
-                        return float(bal) / (10 ** 9)
+                        return float(bal) / (10**9)
             else:
-                log.warning(f"[DeDust] GRINCH balance TonCenter v3: HTTP {r.status_code}")
+                log.warning(
+                    f"[DeDust] GRINCH balance TonCenter v3: HTTP {r.status_code}"
+                )
         except Exception as e:
             log.warning(f"[DeDust] GRINCH balance TonCenter v3: {e}")
 
@@ -374,15 +394,18 @@ class DedustClient:
         try:
             r = _HTTP.get(
                 f"https://tonapi.io/v2/accounts/{wallet}/jettons/{token}",
-                headers={"Accept": "application/json"}, timeout=8,
+                headers={"Accept": "application/json"},
+                timeout=8,
             )
             if r.status_code == 200:
                 data = r.json()
-                bal  = data.get("balance")
+                bal = data.get("balance")
                 if bal is not None:
-                    return float(bal) / (10 ** 9)
+                    return float(bal) / (10**9)
             else:
-                log.warning(f"[DeDust] GRINCH balance TonAPI direct: HTTP {r.status_code}")
+                log.warning(
+                    f"[DeDust] GRINCH balance TonAPI direct: HTTP {r.status_code}"
+                )
         except Exception as e:
             log.warning(f"[DeDust] GRINCH balance TonAPI direct: {e}")
 
@@ -390,20 +413,26 @@ class DedustClient:
         try:
             r = _HTTP.get(
                 f"https://tonapi.io/v2/accounts/{wallet}/jettons",
-                headers={"Accept": "application/json"}, timeout=8,
+                headers={"Accept": "application/json"},
+                timeout=8,
             )
             if r.status_code == 200:
+
                 def _norm(addr: str) -> str:
                     try:
                         from pytoniq_core import Address as _Addr
-                        return _Addr(addr.strip()).to_str(is_user_friendly=False).lower()
+
+                        return (
+                            _Addr(addr.strip()).to_str(is_user_friendly=False).lower()
+                        )
                     except Exception:
                         return (addr.split(":", 1)[-1] if ":" in addr else addr).lower()
+
                 token_raw = _norm(token)
                 for b in r.json().get("balances", []):
                     jaddr = (b.get("jetton", {}) or {}).get("address", "")
                     if _norm(jaddr) == token_raw:
-                        return float(b.get("balance", 0)) / (10 ** 9)
+                        return float(b.get("balance", 0)) / (10**9)
         except Exception as e:
             log.warning(f"[DeDust] GRINCH balance TonAPI list: {e}")
 
@@ -426,6 +455,7 @@ class DedustClient:
         """
         try:
             import pytoniq_core as _ptc
+
             if isinstance(addr, _ptc.Address):
                 return addr.to_str(is_user_friendly=True, is_bounceable=False)
         except Exception:
@@ -452,7 +482,8 @@ class DedustClient:
                     "jetton_address": Config.GRINCH_TOKEN_ADDRESS,
                     "limit": 1,
                 },
-                headers=_tc_headers(), timeout=8,
+                headers=_tc_headers(),
+                timeout=8,
             )
             wallets = r.json().get("jetton_wallets", [])
             if wallets:
@@ -466,7 +497,8 @@ class DedustClient:
         try:
             r = _HTTP.get(
                 f"https://tonapi.io/v2/accounts/{owner_addr_str}/jettons",
-                headers={"Accept": "application/json"}, timeout=8,
+                headers={"Accept": "application/json"},
+                timeout=8,
             )
             for b in r.json().get("balances", []):
                 jaddr = (b.get("jetton", {}) or {}).get("address", "")
@@ -495,7 +527,8 @@ class DedustClient:
                     "jetton_address": Config.GRINCH_TOKEN_ADDRESS,
                     "limit": 1,
                 },
-                headers=_tc_headers(), timeout=6,
+                headers=_tc_headers(),
+                timeout=6,
             )
             wallets = r.json().get("jetton_wallets", [])
             if wallets:
@@ -509,7 +542,8 @@ class DedustClient:
         try:
             r = _HTTP.get(
                 f"https://tonapi.io/v2/accounts/{addr_str}/jettons",
-                headers={"Accept": "application/json"}, timeout=5,
+                headers={"Accept": "application/json"},
+                timeout=5,
             )
             for b in r.json().get("balances", []):
                 jaddr = (b.get("jetton", {}) or {}).get("address", "")
@@ -581,9 +615,17 @@ class DedustClient:
             log.warning(f"[DeDust] _ensure_wallet_deployed ошибка: {e}")
             return False
 
-    async def _wait_for_settlement(self, provider, addr, *, direction: str,
-                                   baseline_nano: int, min_delta_nano: int,
-                                   timeout: int = 75, interval: int = 7):
+    async def _wait_for_settlement(
+        self,
+        provider,
+        addr,
+        *,
+        direction: str,
+        baseline_nano: int,
+        min_delta_nano: int,
+        timeout: int = 75,
+        interval: int = 7,
+    ):
         """Ждёт реального изменения GRINCH-баланса после отправки свопа.
 
         direction="increase" — покупка (GRINCH должен прийти).
@@ -605,7 +647,9 @@ class DedustClient:
             # Без этой проверки direction="decrease" давал True при любом API-отказе,
             # заставляя бот считать продажу исполненной когда она отскочила.
             if cur == 0 and baseline_nano > min_delta_nano:
-                log.debug("[DeDust] settlement: cur=0 при baseline>0 — API-сбой, пропускаем итерацию")
+                log.debug(
+                    "[DeDust] settlement: cur=0 при baseline>0 — API-сбой, пропускаем итерацию"
+                )
                 continue
             if direction == "increase" and (cur - baseline_nano) >= min_delta_nano:
                 return cur
@@ -629,7 +673,7 @@ class DedustClient:
         return Address(Config.GRINCH_TOKEN_ADDRESS)
 
     async def _get_pool(self, provider):
-        ton_asset    = Asset.native()
+        ton_asset = Asset.native()
         grinch_asset = Asset.jetton(self._grinch_address())
         # Реальный пул GRINCH/TON задан явным адресом (нестандартная комиссия 1%).
         # Factory.get_pool вернул бы канонический адрес дефолтной комиссии,
@@ -638,14 +682,18 @@ class DedustClient:
         if pool_addr:
             pool = Pool.create_from_address(CoreAddress(pool_addr))
         else:
-            pool = await Factory.get_pool(PoolType.VOLATILE, [ton_asset, grinch_asset], provider)
+            pool = await Factory.get_pool(
+                PoolType.VOLATILE, [ton_asset, grinch_asset], provider
+            )
         return pool, ton_asset, grinch_asset
 
     async def _estimate_async(self, sell_asset, amount_nano: int) -> dict:
         provider = await self._make_provider()
         try:
             pool, ton_asset, grinch_asset = await self._get_pool(provider)
-            result = await pool.get_estimated_swap_out(sell_asset, amount_nano, provider)
+            result = await pool.get_estimated_swap_out(
+                sell_asset, amount_nano, provider
+            )
             return result
         finally:
             await provider.close_all()
@@ -658,6 +706,7 @@ class DedustClient:
         if not self._ready:
             return None
         try:
+
             async def _reserves():
                 provider = await self._make_provider()
                 try:
@@ -670,7 +719,7 @@ class DedustClient:
             reserves = _run(_reserves())
             # reserves[0] = TON резерв (нано), reserves[1] = GRINCH резерв (нано)
             if reserves and reserves[0] > 0 and reserves[1] > 0:
-                price = (reserves[0] / TON) / (reserves[1] / (10 ** 9))
+                price = (reserves[0] / TON) / (reserves[1] / (10**9))
                 self._last_price = price
                 return price
         except Exception as e:
@@ -684,7 +733,7 @@ class DedustClient:
         try:
             nano = int(ton_amount * TON)
             result = _run(self._estimate_async(Asset.native(), nano))
-            return result["amount_out"] / (10 ** 9)
+            return result["amount_out"] / (10**9)
         except Exception as e:
             log.debug(f"[DeDust] estimate_buy ошибка: {e}")
             return None
@@ -694,7 +743,7 @@ class DedustClient:
         if not self._ready:
             return None
         try:
-            nano = int(grinch_amount * (10 ** 9))
+            nano = int(grinch_amount * (10**9))
             grinch_asset = Asset.jetton(self._grinch_address())
             result = _run(self._estimate_async(grinch_asset, nano))
             return result["amount_out"] / TON
@@ -732,14 +781,15 @@ class DedustClient:
     # Комиссия пула GRINCH/TON на DeDust нестандартная — 1% (CPMM v2).
     _POOL_FEE = 0.01
     _RESERVES_TIMEOUT = 8
-    _RESERVES_CACHE_TTL = 120.0   # увеличен с 45→120с чтобы реже долбить API
+    _RESERVES_CACHE_TTL = 120.0  # увеличен с 45→120с чтобы реже долбить API
 
     @staticmethod
     def _same_addr(a: str, b: str) -> bool:
         """Сравнивает TON-адреса независимо от формата (EQ/UQ/raw)."""
         try:
-            return (CoreAddress(a).to_str(is_user_friendly=False)
-                    == CoreAddress(b).to_str(is_user_friendly=False))
+            return CoreAddress(a).to_str(is_user_friendly=False) == CoreAddress(
+                b
+            ).to_str(is_user_friendly=False)
         except Exception:
             return (a or "").lower() == (b or "").lower()
 
@@ -781,22 +831,28 @@ class DedustClient:
                     # [9]  = TON reserve (nanoton)
                     # [10] = GRINCH reserve (nano, 9 decimals)
                     if len(stack) >= 11:
+
                         def _parse_stack_num(item):
                             # item: ["num","0x..."] или {"value":"0x..."}
-                            raw = item[1] if isinstance(item, list) else item.get("value", "0")
+                            raw = (
+                                item[1]
+                                if isinstance(item, list)
+                                else item.get("value", "0")
+                            )
                             s = str(raw)
                             if s.startswith("-0x"):
                                 return -int(s[3:], 16)
                             if s.startswith("0x"):
                                 return int(s, 16)
                             return int(s)
-                        r0 = _parse_stack_num(stack[9])   # TON nanoton
+
+                        r0 = _parse_stack_num(stack[9])  # TON nanoton
                         r1 = _parse_stack_num(stack[10])  # GRINCH nano
-                        ton_r    = r0 / TON
+                        ton_r = r0 / TON
                         grinch_r = r1 / TON
                         if ton_r > 0 and grinch_r > 0:
                             reserves = (ton_r, grinch_r)
-                            self._pool_reserves_cache    = reserves
+                            self._pool_reserves_cache = reserves
                             self._pool_reserves_cache_ts = now
                             self._pool_reserves_backoff_until = 0.0
                             return reserves
@@ -810,36 +866,49 @@ class DedustClient:
         try:
             r1 = _HTTP.get(
                 f"https://tonapi.io/v2/accounts/{pool}",
-                headers={"Accept": "application/json"}, timeout=self._RESERVES_TIMEOUT,
+                headers={"Accept": "application/json"},
+                timeout=self._RESERVES_TIMEOUT,
             )
             if r1.status_code == 429:
                 self._pool_reserves_backoff_until = now + 300.0  # пауза 5 минут
                 log.warning("dedust_client: 429 от TonAPI (pool/balance) — пауза 300с")
                 return cached
             r1.raise_for_status()
-            r1_data = r1.json() if r1.headers.get("content-type", "").startswith("application/json") else {}
+            r1_data = (
+                r1.json()
+                if r1.headers.get("content-type", "").startswith("application/json")
+                else {}
+            )
             ton_reserve = (r1_data.get("balance", 0) or 0) / TON
             r2 = _HTTP.get(
                 f"https://tonapi.io/v2/accounts/{pool}/jettons",
-                headers={"Accept": "application/json"}, timeout=self._RESERVES_TIMEOUT,
+                headers={"Accept": "application/json"},
+                timeout=self._RESERVES_TIMEOUT,
             )
             if r2.status_code == 429:
                 self._pool_reserves_backoff_until = now + 300.0
                 log.warning("dedust_client: 429 от TonAPI (pool/jettons) — пауза 300с")
                 return cached
             r2.raise_for_status()
-            r2_data = r2.json() if r2.headers.get("content-type", "").startswith("application/json") else {}
+            r2_data = (
+                r2.json()
+                if r2.headers.get("content-type", "").startswith("application/json")
+                else {}
+            )
             grinch_reserve = None
             for b in r2_data.get("balances", []):
-                jetton  = b.get("jetton", {}) or {}
-                jaddr   = jetton.get("address", "")
+                jetton = b.get("jetton", {}) or {}
+                jaddr = jetton.get("address", "")
                 jsymbol = (jetton.get("symbol", "") or "").upper()
-                if self._same_addr(jaddr, Config.GRINCH_TOKEN_ADDRESS) or jsymbol == "GRINCH":
+                if (
+                    self._same_addr(jaddr, Config.GRINCH_TOKEN_ADDRESS)
+                    or jsymbol == "GRINCH"
+                ):
                     grinch_reserve = float(b.get("balance", 0)) / TON
                     break
             if ton_reserve > 0 and grinch_reserve and grinch_reserve > 0:
                 reserves = (ton_reserve, grinch_reserve)
-                self._pool_reserves_cache    = reserves
+                self._pool_reserves_cache = reserves
                 self._pool_reserves_cache_ts = now
                 self._pool_reserves_backoff_until = 0.0
                 return reserves
@@ -848,7 +917,9 @@ class DedustClient:
 
         return cached
 
-    def _cpmm_out(self, amount_in: float, reserve_in: float, reserve_out: float) -> float:
+    def _cpmm_out(
+        self, amount_in: float, reserve_in: float, reserve_out: float
+    ) -> float:
         """Точный выход свопа по формуле постоянного произведения (с комиссией 1%)."""
         amt = amount_in * (1 - self._POOL_FEE)
         return reserve_out * amt / (reserve_in + amt)
@@ -878,7 +949,9 @@ class DedustClient:
                 )
             expected_grinch = self._cpmm_out(ton_amount, rt, rg)
         else:
-            ton_per_grinch = price_feed.get_grinch_ton_price(max_stale=self._PRICE_MAX_STALE)
+            ton_per_grinch = price_feed.get_grinch_ton_price(
+                max_stale=self._PRICE_MAX_STALE
+            )
             if ton_per_grinch and ton_per_grinch > 0:
                 expected_grinch = ton_amount / ton_per_grinch
             else:
@@ -887,7 +960,7 @@ class DedustClient:
                     return None, None
                 expected_grinch = (ton_amount * ton_usd) / grinch_usd
         min_grinch = expected_grinch * (1 - Config.SLIPPAGE_PCT / 100.0)
-        return int(min_grinch * (10 ** 9)), expected_grinch
+        return int(min_grinch * (10**9)), expected_grinch
 
     def _min_out_sell_ton(self, grinch_amount: float):
         """Минимум TON (нано), который должен прийти за grinch_amount GRINCH.
@@ -900,7 +973,9 @@ class DedustClient:
             rt, rg = reserves
             expected_ton = self._cpmm_out(grinch_amount, rg, rt)
         else:
-            ton_per_grinch = price_feed.get_grinch_ton_price(max_stale=self._PRICE_MAX_STALE)
+            ton_per_grinch = price_feed.get_grinch_ton_price(
+                max_stale=self._PRICE_MAX_STALE
+            )
             if ton_per_grinch and ton_per_grinch > 0:
                 expected_ton = grinch_amount * ton_per_grinch
             else:
@@ -920,23 +995,25 @@ class DedustClient:
     # (bounce). Формат тела выведён обратной разработкой реальных успешных
     # сделок и проверен ПОБАЙТОВО: реконструкция оригинальных тел из этих же
     # билдеров совпадает бит-в-бит. Константы ниже подтверждены тем же путём.
-    _SWAP_OP        = 0xa5a7cbf8   # своп (root для покупки / forward для продажи)
-    _LIMITS_PREFIX  = 0xc442500f   # ref0: префикс ячейки лимитов
-    _PARAMS_C2      = 0x400        # ref1: константа-разделитель перед hash получателя
-    _BUY_PARAMS_C1  = 0x800        # ref1: маркер направления — покупка
-    _SELL_PARAMS_C1 = 0x801        # ref1: маркер направления — продажа
-    _SELL_FP_PREFIX = 0xcbc33949   # forward-payload продажи: префикс
-    _JETTON_XFER_OP = 0x0f8a7ea5   # стандартный jetton transfer
+    _SWAP_OP = 0xA5A7CBF8  # своп (root для покупки / forward для продажи)
+    _LIMITS_PREFIX = 0xC442500F  # ref0: префикс ячейки лимитов
+    _PARAMS_C2 = 0x400  # ref1: константа-разделитель перед hash получателя
+    _BUY_PARAMS_C1 = 0x800  # ref1: маркер направления — покупка
+    _SELL_PARAMS_C1 = 0x801  # ref1: маркер направления — продажа
+    _SELL_FP_PREFIX = 0xCBC33949  # forward-payload продажи: префикс
+    _JETTON_XFER_OP = 0x0F8A7EA5  # стандартный jetton transfer
 
     def _build_limits_cell(self, min_out_nano: int, deadline: int):
         """ref0: префикс + min_out:Coins + 8 нулей + deadline:uint32 + 3 нуля."""
-        return (begin_cell()
-                .store_uint(self._LIMITS_PREFIX, 32)
-                .store_coins(min_out_nano)
-                .store_uint(0, 8)
-                .store_uint(deadline, 32)
-                .store_uint(0, 3)
-                .end_cell())
+        return (
+            begin_cell()
+            .store_uint(self._LIMITS_PREFIX, 32)
+            .store_coins(min_out_nano)
+            .store_uint(0, 8)
+            .store_uint(deadline, 32)
+            .store_uint(0, 3)
+            .end_cell()
+        )
 
     def _build_params_cell(self, recipient, c1: int):
         """ref1: адрес получателя + пустой реферал + c1 + salt + c2 + hash получателя.
@@ -947,45 +1024,62 @@ class DedustClient:
         падает с exit 9 (cell underflow) и возвращает TON без обмена.
         """
         recip_hash = int.from_bytes(recipient.hash_part, "big")
-        salt = (recip_hash * 2) % (2 ** 256)
-        return (begin_cell()
-                .store_address(recipient)
-                .store_address(None)
-                .store_uint(c1, 16)
-                .store_uint(salt, 256)
-                .store_uint(self._PARAMS_C2, 16)
-                .store_uint(recip_hash, 256)
-                .end_cell())
+        salt = (recip_hash * 2) % (2**256)
+        return (
+            begin_cell()
+            .store_address(recipient)
+            .store_address(None)
+            .store_uint(c1, 16)
+            .store_uint(salt, 256)
+            .store_uint(self._PARAMS_C2, 16)
+            .store_uint(recip_hash, 256)
+            .end_cell()
+        )
 
-    def _build_buy_body(self, recipient, amount_nano: int, min_out_nano: int, deadline: int):
+    def _build_buy_body(
+        self, recipient, amount_nano: int, min_out_nano: int, deadline: int
+    ):
         """Тело покупки: op 0xa5a7cbf8 — отправляется НАПРЯМУЮ в пул с нативным TON."""
-        return (begin_cell()
-                .store_uint(self._SWAP_OP, 32)
-                .store_uint(secrets.randbits(64), 64)
-                .store_coins(amount_nano)
-                .store_ref(self._build_limits_cell(min_out_nano, deadline))
-                .store_ref(self._build_params_cell(recipient, self._BUY_PARAMS_C1))
-                .end_cell())
+        return (
+            begin_cell()
+            .store_uint(self._SWAP_OP, 32)
+            .store_uint(secrets.randbits(64), 64)
+            .store_coins(amount_nano)
+            .store_ref(self._build_limits_cell(min_out_nano, deadline))
+            .store_ref(self._build_params_cell(recipient, self._BUY_PARAMS_C1))
+            .end_cell()
+        )
 
-    def _build_sell_transfer_body(self, recipient, pool_addr, grinch_nano: int,
-                                  min_out_nano: int, deadline: int, fwd_nano: int):
+    def _build_sell_transfer_body(
+        self,
+        recipient,
+        pool_addr,
+        grinch_nano: int,
+        min_out_nano: int,
+        deadline: int,
+        fwd_nano: int,
+    ):
         """Тело продажи: jetton-transfer GRINCH НАПРЯМУЮ в пул с forward-payload свопа."""
-        forward_payload = (begin_cell()
-                           .store_uint(self._SELL_FP_PREFIX, 32)
-                           .store_ref(self._build_limits_cell(min_out_nano, deadline))
-                           .store_ref(self._build_params_cell(recipient, self._SELL_PARAMS_C1))
-                           .end_cell())
-        return (begin_cell()
-                .store_uint(self._JETTON_XFER_OP, 32)
-                .store_uint(secrets.randbits(64), 64)
-                .store_coins(grinch_nano)
-                .store_address(pool_addr)        # destination = ПУЛ
-                .store_address(recipient)        # response_destination
-                .store_maybe_ref(None)           # custom_payload = нет
-                .store_coins(fwd_nano)           # forward_ton_amount
-                .store_bit(1)                    # forward_payload в ref
-                .store_ref(forward_payload)
-                .end_cell())
+        forward_payload = (
+            begin_cell()
+            .store_uint(self._SELL_FP_PREFIX, 32)
+            .store_ref(self._build_limits_cell(min_out_nano, deadline))
+            .store_ref(self._build_params_cell(recipient, self._SELL_PARAMS_C1))
+            .end_cell()
+        )
+        return (
+            begin_cell()
+            .store_uint(self._JETTON_XFER_OP, 32)
+            .store_uint(secrets.randbits(64), 64)
+            .store_coins(grinch_nano)
+            .store_address(pool_addr)  # destination = ПУЛ
+            .store_address(recipient)  # response_destination
+            .store_maybe_ref(None)  # custom_payload = нет
+            .store_coins(fwd_nano)  # forward_ton_amount
+            .store_bit(1)  # forward_payload в ref
+            .store_ref(forward_payload)
+            .end_cell()
+        )
 
     # ─────────────────────────── swap: buy ─────────────────────────────────
 
@@ -1013,7 +1107,7 @@ class DedustClient:
             # берёт газ на выдачу GRINCH (с деплоем jetton-кошелька покупателя
             # при необходимости) и возвращает излишек. Реальные сделки
             # укладываются в ~0.2 TON; берём 0.3 TON с запасом.
-            gas_nano    = int(0.3 * TON)
+            gas_nano = int(0.3 * TON)
 
             # ── Preflight: деплой кошелька если uninit ───────────────────────
             # WalletV5R1 может быть uninit если на адрес уже пришли TON,
@@ -1036,7 +1130,9 @@ class DedustClient:
             # сжечь газ на заведомо неисполнимой транзакции.
             state = await provider.get_account_state(wallet.address)
             ton_nano = getattr(state, "balance", 0) or 0
-            needed_nano = amount_nano + gas_nano + int(0.05 * TON)  # +запас на комиссии сети
+            needed_nano = (
+                amount_nano + gas_nano + int(0.05 * TON)
+            )  # +запас на комиссии сети
             if ton_nano < needed_nano:
                 return {
                     "ok": False,
@@ -1072,10 +1168,13 @@ class DedustClient:
             # wallet.transfer лишь ШИРОКОВЕЩАЕТ транзакцию; своп в пуле может
             # отскочить (bounce) уже после отправки. Поэтому ждём, пока GRINCH
             # реально поступит. Требуем хотя бы половину ожидаемого объёма.
-            min_delta = int(expected_grinch * 0.5 * (10 ** 9))
+            min_delta = int(expected_grinch * 0.5 * (10**9))
             confirmed = await self._wait_for_settlement(
-                provider, wallet.address, direction="increase",
-                baseline_nano=baseline_nano, min_delta_nano=min_delta,
+                provider,
+                wallet.address,
+                direction="increase",
+                baseline_nano=baseline_nano,
+                min_delta_nano=min_delta,
             )
             if confirmed is None:
                 return {
@@ -1095,9 +1194,9 @@ class DedustClient:
                 "side": "buy",
                 "ton_spent": ton_amount,
                 "pool": str(pool.address),
-                "min_grinch_out": round(min_out_nano / (10 ** 9), 6),
+                "min_grinch_out": round(min_out_nano / (10**9), 6),
                 "expected_grinch": round(expected_grinch, 6),
-                "grinch_received": round((confirmed - baseline_nano) / (10 ** 9), 6),
+                "grinch_received": round((confirmed - baseline_nano) / (10**9), 6),
                 "slippage_pct": Config.SLIPPAGE_PCT,
             }
         finally:
@@ -1128,7 +1227,9 @@ class DedustClient:
 
     # ─────────────────────────── swap: sell ────────────────────────────────
 
-    async def _sell_async(self, grinch_amount: float, min_net_ton: float = None) -> dict:
+    async def _sell_async(
+        self, grinch_amount: float, min_net_ton: float = None
+    ) -> dict:
         """GRINCH → TON: jetton-transfer GRINCH НАПРЯМУЮ в пул с forward-payload свопа.
 
         Газ: 0.35 TON прикладывается к сообщению; 0.25 TON форвардится в пул на
@@ -1176,9 +1277,9 @@ class DedustClient:
                         f"Дефицит: {shortfall:.3f} TON. "
                         f"Транзакция НЕ отправлена в сеть."
                     ),
-                    "expected_ton":  round(expected_ton, 4),
-                    "net_ton":       round(net_received, 4),
-                    "min_net_ton":   round(min_net_ton, 4),
+                    "expected_ton": round(expected_ton, 4),
+                    "net_ton": round(net_received, 4),
+                    "min_net_ton": round(min_net_ton, 4),
                     "shortfall_ton": round(shortfall, 4),
                 }
             else:
@@ -1237,13 +1338,16 @@ class DedustClient:
             jw_addr_str = self._grinch_jetton_wallet_addr_via_api(owner_addr_str)
             if jw_addr_str:
                 from pytoniq_core import Address as _CoreAddr
+
                 grinch_jw_address = _CoreAddr(jw_addr_str)
                 log.info(f"[DeDust] GRINCH jetton wallet: {jw_addr_str}")
             else:
                 # H1: Оба API не ответили → прерываем продажу (SDK fallback даёт неверный
                 # адрес для GRINCH и мог привести к безвозвратной потере токенов).
-                log.error("[DeDust] SELL ABORTED: не удалось получить адрес GRINCH jetton-кошелька "
-                          "ни через TonCenter, ни через TonAPI. Продажа отменена для защиты токенов.")
+                log.error(
+                    "[DeDust] SELL ABORTED: не удалось получить адрес GRINCH jetton-кошелька "
+                    "ни через TonCenter, ни через TonAPI. Продажа отменена для защиты токенов."
+                )
                 return {
                     "ok": False,
                     "side": "sell",
@@ -1261,16 +1365,18 @@ class DedustClient:
 
             # Сумма продажи: либо запрошенная сумма, либо весь баланс — берём MIN
             # чтобы избежать превышения баланса из-за float-округления.
-            amount_nano = min(int(grinch_amount * (10 ** 9)), baseline_nano)
+            amount_nano = min(int(grinch_amount * (10**9)), baseline_nano)
             if amount_nano <= 0:
                 return {
                     "ok": False,
                     "side": "sell",
                     "error": f"GRINCH-баланс на кошельке равен 0 (нечего продавать).",
                 }
-            log.info(f"[DeDust] SELL {amount_nano/1e9:.6f} GRINCH (requested={grinch_amount:.6f}, on-chain={baseline_nano/1e9:.6f})")
+            log.info(
+                f"[DeDust] SELL {amount_nano/1e9:.6f} GRINCH (requested={grinch_amount:.6f}, on-chain={baseline_nano/1e9:.6f})"
+            )
 
-            deadline = int(time.time()) + 600   # 10 мин
+            deadline = int(time.time()) + 600  # 10 мин
             transfer_body = self._build_sell_transfer_body(
                 recipient=wallet.address,
                 pool_addr=pool.address,
@@ -1294,8 +1400,11 @@ class DedustClient:
             # уменьшится. Ждём фактического списания (хотя бы половины объёма).
             min_delta = int(amount_nano * 0.5)
             confirmed = await self._wait_for_settlement(
-                provider, wallet.address, direction="decrease",
-                baseline_nano=baseline_nano, min_delta_nano=min_delta,
+                provider,
+                wallet.address,
+                direction="decrease",
+                baseline_nano=baseline_nano,
+                min_delta_nano=min_delta,
             )
             if confirmed is None:
                 return {
@@ -1317,7 +1426,7 @@ class DedustClient:
                 "pool": str(pool.address),
                 "min_ton_out": round(min_out_nano / TON, 6),
                 "expected_ton": round(expected_ton, 6),
-                "grinch_sold": round((baseline_nano - confirmed) / (10 ** 9), 6),
+                "grinch_sold": round((baseline_nano - confirmed) / (10**9), 6),
                 "slippage_pct": Config.SLIPPAGE_PCT,
             }
         finally:
@@ -1384,15 +1493,21 @@ class DedustClient:
         if not self._ready:
             return None
         try:
+
             async def _addr():
                 provider = await self._make_provider()
                 try:
                     wallet = await WalletV5R1.from_mnemonic(
-                        provider=provider, mnemonics=self._mnemonic, network_global_id=-239
+                        provider=provider,
+                        mnemonics=self._mnemonic,
+                        network_global_id=-239,
                     )
-                    return wallet.address.to_str(is_user_friendly=True, is_bounceable=True)
+                    return wallet.address.to_str(
+                        is_user_friendly=True, is_bounceable=True
+                    )
                 finally:
                     await provider.close_all()
+
             return _run(_addr())
         except Exception as e:
             log.debug(f"[DeDust] get_wallet_address ошибка: {e}")

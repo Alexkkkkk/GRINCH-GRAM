@@ -6,6 +6,7 @@
 
 При отсутствии DB или ошибке — прозрачный fallback на JSON.
 """
+
 import json
 import logging
 import os
@@ -13,11 +14,17 @@ import threading
 
 logger = logging.getLogger(__name__)
 
-_DATA_DIR = os.getenv("DATA_DIR", os.path.join(os.path.dirname(os.path.abspath(__file__)), "data"))
+_DATA_DIR = os.getenv(
+    "DATA_DIR", os.path.join(os.path.dirname(os.path.abspath(__file__)), "data")
+)
 try:
-    os.makedirs(_DATA_DIR, exist_ok=True)   # M4 fix: не кидаем исключение на старте если нет прав
+    os.makedirs(
+        _DATA_DIR, exist_ok=True
+    )  # M4 fix: не кидаем исключение на старте если нет прав
 except OSError as _e:
-    logging.getLogger(__name__).warning("[Settings] Cannot create DATA_DIR %s: %s", _DATA_DIR, _e)
+    logging.getLogger(__name__).warning(
+        "[Settings] Cannot create DATA_DIR %s: %s", _DATA_DIR, _e
+    )
 _SETTINGS_FILE = os.getenv("SETTINGS_FILE", os.path.join(_DATA_DIR, "settings.json"))
 _lock = threading.Lock()
 
@@ -25,6 +32,7 @@ _lock = threading.Lock()
 def _db():
     try:
         import db_store
+
         return db_store if db_store.is_available() else None
     except Exception:
         return None
@@ -33,6 +41,7 @@ def _db():
 # ═══════════════════════════════════════════════════════════════════════════════
 #  PUBLIC API — интерфейс не изменился (обратная совместимость)
 # ═══════════════════════════════════════════════════════════════════════════════
+
 
 def load_settings() -> dict:
     """Прочитать все настройки. Порядок: DB → JSON → пустой dict."""
@@ -99,7 +108,7 @@ def migrate_to_db():
     if _migration_done:
         return
     with _migration_lock:
-        if _migration_done:   # double-check под локом
+        if _migration_done:  # double-check под локом
             return
         db = _db()
         if not db:
@@ -138,7 +147,7 @@ def _write_atomic(data: dict):
         with open(tmp, "w", encoding="utf-8") as f:
             json.dump(data, f, indent=2, ensure_ascii=False)
             f.flush()
-            os.fsync(f.fileno())   # M3 fix: гарантируем запись на диск до rename
+            os.fsync(f.fileno())  # M3 fix: гарантируем запись на диск до rename
         os.replace(tmp, _SETTINGS_FILE)
     except Exception as e:
         logger.error("[Settings] atomic write failed: %s", e)
@@ -153,4 +162,6 @@ def _write_atomic(data: dict):
 try:
     migrate_to_db()
 except Exception as _mig_e:
-    logging.getLogger(__name__).warning("[Settings] migrate_to_db error at import: %s", _mig_e)  # L4 fix
+    logging.getLogger(__name__).warning(
+        "[Settings] migrate_to_db error at import: %s", _mig_e
+    )  # L4 fix

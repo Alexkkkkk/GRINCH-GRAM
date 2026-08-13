@@ -21,46 +21,81 @@ from collections import defaultdict, deque
 log = logging.getLogger("security")
 
 # ── Настройки ──────────────────────────────────────────────────────────────
-RATE_WINDOW_SEC       = 60       # длина скользящего окна (секунд)
-RATE_GENERAL_MAX      = 300      # запросов/окно для обычных путей
-RATE_API_MAX          = 300      # запросов/окно для /api/* (дашборд ~120-150 req/min)
-RATE_STATIC_MAX       = 600      # /static/ — клиент грузит много ресурсов
+RATE_WINDOW_SEC = 60  # длина скользящего окна (секунд)
+RATE_GENERAL_MAX = 300  # запросов/окно для обычных путей
+RATE_API_MAX = 300  # запросов/окно для /api/* (дашборд ~120-150 req/min)
+RATE_STATIC_MAX = 600  # /static/ — клиент грузит много ресурсов
 
-LOGIN_MAX_ATTEMPTS    = 10       # неудачных попыток входа
-LOGIN_LOCKOUT_SEC     = 900      # 15 мин блокировки после превышения
+LOGIN_MAX_ATTEMPTS = 10  # неудачных попыток входа
+LOGIN_LOCKOUT_SEC = 900  # 15 мин блокировки после превышения
 
-AUTO_BAN_THRESHOLD    = 500      # запросов/окно → временный бан
-BAN_DURATION_SEC      = 6 * 3600 # 6 часов
+AUTO_BAN_THRESHOLD = 500  # запросов/окно → временный бан
+BAN_DURATION_SEC = 6 * 3600  # 6 часов
 
-_DATA_DIR        = os.environ.get("DATA_DIR", "data")
-_BLACKLIST_FILE  = os.path.join(_DATA_DIR, "blocked_ips.json")
+_DATA_DIR = os.environ.get("DATA_DIR", "data")
+_BLACKLIST_FILE = os.path.join(_DATA_DIR, "blocked_ips.json")
 
 # ── Внутренние хранилища ───────────────────────────────────────────────────
-_lock         = threading.Lock()
-_ip_requests  = defaultdict(deque)   # ip → deque(timestamps)
-_login_fails  = defaultdict(list)    # ip → [fail_timestamp, ...]
-_auto_banned  = {}                    # ip → unban_timestamp
-_perm_banned  = set()                 # постоянные баны (из файла)
-_ratelimit_log_ts = {}               # ip → last_log_timestamp (throttle спама)
+_lock = threading.Lock()
+_ip_requests = defaultdict(deque)  # ip → deque(timestamps)
+_login_fails = defaultdict(list)  # ip → [fail_timestamp, ...]
+_auto_banned = {}  # ip → unban_timestamp
+_perm_banned = set()  # постоянные баны (из файла)
+_ratelimit_log_ts = {}  # ip → last_log_timestamp (throttle спама)
 
 # ── User-Agent фрагменты известных сканеров ────────────────────────────────
 _BAD_UA_FRAGMENTS = [
-    "masscan", "nmap", "nikto", "sqlmap", "zgrab", "zmap",
-    "dirbuster", "gobuster", "wfuzz", "nuclei", "hydra",
-    "metasploit", "burpsuite", "acunetix", "openvas",
-    "python-requests/2.2", "python-requests/2.3", "python-requests/2.4",
-    "python-requests/2.5", "python-requests/2.6",
-    "go-http-client/1.1", "curl/7.29", "libwww-perl", "scrapy",
-    "harvester", "subfinder", "amass", "shodan",
+    "masscan",
+    "nmap",
+    "nikto",
+    "sqlmap",
+    "zgrab",
+    "zmap",
+    "dirbuster",
+    "gobuster",
+    "wfuzz",
+    "nuclei",
+    "hydra",
+    "metasploit",
+    "burpsuite",
+    "acunetix",
+    "openvas",
+    "python-requests/2.2",
+    "python-requests/2.3",
+    "python-requests/2.4",
+    "python-requests/2.5",
+    "python-requests/2.6",
+    "go-http-client/1.1",
+    "curl/7.29",
+    "libwww-perl",
+    "scrapy",
+    "harvester",
+    "subfinder",
+    "amass",
+    "shodan",
 ]
 
 # ── Пути, которые точно НЕ нужны на боте (типичные цели сканеров) ─────────
 _SCANNER_PATHS = {
-    "/wp-login.php", "/wp-admin", "/xmlrpc.php", "/admin.php",
-    "/.env", "/.git", "/config.php", "/phpmyadmin", "/.aws/credentials",
-    "/actuator", "/api/v1/pod", "/.DS_Store", "/backup.zip",
-    "/server-status", "/server-info", "/.htaccess", "/web.config",
-    "/cgi-bin/", "/boaform/",
+    "/wp-login.php",
+    "/wp-admin",
+    "/xmlrpc.php",
+    "/admin.php",
+    "/.env",
+    "/.git",
+    "/config.php",
+    "/phpmyadmin",
+    "/.aws/credentials",
+    "/actuator",
+    "/api/v1/pod",
+    "/.DS_Store",
+    "/backup.zip",
+    "/server-status",
+    "/server-info",
+    "/.htaccess",
+    "/web.config",
+    "/cgi-bin/",
+    "/boaform/",
 }
 
 
@@ -76,7 +111,9 @@ def _load_blacklist():
                 data = json.load(f)
             _perm_banned = set(data.get("ips", []))
             if _perm_banned:
-                log.info("[Security] 🚫 Загружено %d заблокированных IP", len(_perm_banned))
+                log.info(
+                    "[Security] 🚫 Загружено %d заблокированных IP", len(_perm_banned)
+                )
     except Exception as e:
         log.warning("[Security] Не удалось загрузить чёрный список: %s", e)
 
@@ -116,11 +153,11 @@ def _is_trusted_proxy(addr: str) -> bool:
         try:
             a, b = int(parts[0]), int(parts[1])
             if a == 10:
-                return True                        # 10.0.0.0/8
+                return True  # 10.0.0.0/8
             if a == 172 and 16 <= b <= 31:
-                return True                        # 172.16.0.0/12
+                return True  # 172.16.0.0/12
             if a == 192 and b == 168:
-                return True                        # 192.168.0.0/16
+                return True  # 192.168.0.0/16
         except ValueError:
             pass
     return False
@@ -133,6 +170,7 @@ def get_client_ip() -> str:
     raw remote_addr — IP spoofing через заголовки невозможен.
     """
     from flask import request as _req
+
     ra = (_req.remote_addr or "").strip()
     if _is_trusted_proxy(ra):
         ip = (
@@ -158,7 +196,9 @@ def _is_banned(ip: str) -> bool:
 
 def _auto_ban(ip: str, reason: str):
     _auto_banned[ip] = time.time() + BAN_DURATION_SEC
-    log.warning("[Security] 🚫 Автобан %s на %dч — %s", ip, BAN_DURATION_SEC // 3600, reason)
+    log.warning(
+        "[Security] 🚫 Автобан %s на %dч — %s", ip, BAN_DURATION_SEC // 3600, reason
+    )
 
 
 # ══════════════════════════════════════════════════════════════════════════
@@ -172,10 +212,9 @@ def check_request():
     """
     from flask import request as _req, jsonify
 
-    ip   = get_client_ip()
+    ip = get_client_ip()
     path = _req.path or "/"
-    now  = time.time()
-
+    now = time.time()
 
     # Localhost / container-internal requests — no rate limiting
     if ip in ("127.0.0.1", "::1", "localhost"):
@@ -192,10 +231,12 @@ def check_request():
             if path.lower().startswith(sp):
                 _perm_banned.add(ip)
                 _need_save = True
-                log.warning("[Security] 🚫 Бан %s — попытка доступа к %s", _mask_ip(ip), path)  # M10 fix
+                log.warning(
+                    "[Security] 🚫 Бан %s — попытка доступа к %s", _mask_ip(ip), path
+                )  # M10 fix
                 break
         if _need_save:
-            _save_blacklist()   # M5 fix: I/O вне лока — не блокируем все запросы
+            _save_blacklist()  # M5 fix: I/O вне лока — не блокируем все запросы
             return jsonify({"error": "Not Found"}), 404
 
         # ── 3. User-Agent сканера ────────────────────────────────────────
@@ -205,10 +246,12 @@ def check_request():
             if frag in ua:
                 _perm_banned.add(ip)
                 _ua_banned = True
-                log.warning("[Security] 🚫 Бан %s — сканер UA: %.60s", _mask_ip(ip), ua)  # M10 fix
+                log.warning(
+                    "[Security] 🚫 Бан %s — сканер UA: %.60s", _mask_ip(ip), ua
+                )  # M10 fix
                 break
         if _ua_banned:
-            _save_blacklist()   # M5 fix: I/O вне лока
+            _save_blacklist()  # M5 fix: I/O вне лока
             return jsonify({"error": "Forbidden"}), 403
 
         # ── 4. Rate limiting (скользящее окно) ──────────────────────────
@@ -221,7 +264,9 @@ def check_request():
         # Автобан при флуде
         if count > AUTO_BAN_THRESHOLD:
             _auto_ban(ip, f"DDoS flood {count} req/{RATE_WINDOW_SEC}s")
-            log.warning("[Security] 🚫 AutoBan %s — flood %d req", _mask_ip(ip), count)  # M10 fix
+            log.warning(
+                "[Security] 🚫 AutoBan %s — flood %d req", _mask_ip(ip), count
+            )  # M10 fix
             return jsonify({"error": "Too Many Requests"}), 429
 
         # Лимит по типу пути
@@ -237,11 +282,19 @@ def check_request():
             # иначе один сканер генерирует 150-200 лог-записей в минуту.
             _last_log = _ratelimit_log_ts.get(ip, 0)
             if now - _last_log >= 60:
-                log.info("[Security] ⚠️  Rate limit %s — %d/%d req (следующая запись через 60с)", ip, count, limit)
+                log.info(
+                    "[Security] ⚠️  Rate limit %s — %d/%d req (следующая запись через 60с)",
+                    ip,
+                    count,
+                    limit,
+                )
                 _ratelimit_log_ts[ip] = now
             from flask import make_response
-            resp = make_response(jsonify({"error": "Too Many Requests",
-                                          "retry_after": RATE_WINDOW_SEC}), 429)
+
+            resp = make_response(
+                jsonify({"error": "Too Many Requests", "retry_after": RATE_WINDOW_SEC}),
+                429,
+            )
             resp.headers["Retry-After"] = str(RATE_WINDOW_SEC)
             return resp
 
@@ -269,7 +322,9 @@ def record_login_fail(ip: str):
         recent.append(now)
         _login_fails[ip] = recent
         count = len(recent)
-        log.info("[Security] 🔑 Неудачный вход %s (%d/%d)", ip, count, LOGIN_MAX_ATTEMPTS)
+        log.info(
+            "[Security] 🔑 Неудачный вход %s (%d/%d)", ip, count, LOGIN_MAX_ATTEMPTS
+        )
         if count >= LOGIN_MAX_ATTEMPTS:
             _auto_ban(ip, f"brute-force: {count} login fails")
 
@@ -285,11 +340,11 @@ def record_login_success(ip: str):
 # ══════════════════════════════════════════════════════════════════════════
 def add_security_headers(response):
     h = response.headers
-    h.setdefault("X-Content-Type-Options",  "nosniff")
-    h.setdefault("X-Frame-Options",         "SAMEORIGIN")
-    h.setdefault("X-XSS-Protection",        "1; mode=block")
-    h.setdefault("Referrer-Policy",         "strict-origin-when-cross-origin")
-    h.setdefault("Permissions-Policy",      "geolocation=(), microphone=(), camera=()")
+    h.setdefault("X-Content-Type-Options", "nosniff")
+    h.setdefault("X-Frame-Options", "SAMEORIGIN")
+    h.setdefault("X-XSS-Protection", "1; mode=block")
+    h.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
+    h.setdefault("Permissions-Policy", "geolocation=(), microphone=(), camera=()")
     # Убираем «рекламу» технологии
     h["Server"] = "nginx"
     return response
@@ -319,25 +374,26 @@ def get_stats() -> dict:
     with _lock:
         active_auto = {ip: ts for ip, ts in _auto_banned.items() if now < ts}
         top_ips = sorted(
-            ((ip, len(q)) for ip, q in _ip_requests.items() if q),
-            key=lambda x: -x[1]
+            ((ip, len(q)) for ip, q in _ip_requests.items() if q), key=lambda x: -x[1]
         )[:10]
         lockouts = [
-            ip for ip, fails in _login_fails.items()
-            if len([t for t in fails if now - t < LOGIN_LOCKOUT_SEC]) >= LOGIN_MAX_ATTEMPTS
+            ip
+            for ip, fails in _login_fails.items()
+            if len([t for t in fails if now - t < LOGIN_LOCKOUT_SEC])
+            >= LOGIN_MAX_ATTEMPTS
         ]
         return {
-            "perm_banned":    len(_perm_banned),
+            "perm_banned": len(_perm_banned),
             "perm_banned_ips": sorted(_perm_banned),
-            "auto_banned":    len(active_auto),
+            "auto_banned": len(active_auto),
             "auto_banned_ips": [
                 {"ip": ip, "unban_in": int(ts - now)}
                 for ip, ts in sorted(active_auto.items(), key=lambda x: x[1])
             ],
-            "tracked_ips":    len(_ip_requests),
+            "tracked_ips": len(_ip_requests),
             "login_lockouts": len(lockouts),
-            "locked_ips":     lockouts,
-            "top_ips":        [{"ip": ip, "req": n} for ip, n in top_ips],
+            "locked_ips": lockouts,
+            "top_ips": [{"ip": ip, "req": n} for ip, n in top_ips],
         }
 
 

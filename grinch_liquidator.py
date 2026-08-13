@@ -4,6 +4,7 @@
 Следит за реальным балансом GRINCH на платформенном кошельке (из Failed-транзакций).
 Как только цена поднимается на SELL_RISE_PCT% от опорной — продаёт всё автоматически.
 """
+
 import threading
 import time
 import logging
@@ -24,26 +25,30 @@ def _addresses_match(a: str, b: str) -> bool:
     Нормализуем оба к raw-hex через Address — base64 (EQ/UQ) нельзя сравнивать
     с raw побайтово напрямую, иначе совпадения никогда не будет.
     """
+
     def _norm(addr: str) -> str:
         addr = (addr or "").strip()
         try:
             from pytoniq_core import Address
+
             return Address(addr).to_str(is_user_friendly=False).lower()
         except Exception:
             # запасной вариант: hex-часть после ':'
             if ":" in addr:
                 return addr.split(":", 1)[1].lower()
             return addr.lower()
+
     try:
         return _norm(a) == _norm(b)
     except Exception:
         return a.strip().lower() == b.strip().lower()
 
-MIN_GRINCH_TO_SELL = 0.5    # меньше этого — не стоит тратить TON на газ
-BAL_CHECK_INTERVAL = 60     # секунд между on-chain запросами баланса
-PRICE_TICK_SECS    = 30     # секунд между проверками цены (из кэша price_feed)
-START_DELAY        = 20     # задержка запуска
-GAS_NEEDED_TON     = 0.40   # минимум TON на кошельке для свопа GRINCH→TON (attach 0.25+0.18=0.43, часть вернётся)
+
+MIN_GRINCH_TO_SELL = 0.5  # меньше этого — не стоит тратить TON на газ
+BAL_CHECK_INTERVAL = 60  # секунд между on-chain запросами баланса
+PRICE_TICK_SECS = 30  # секунд между проверками цены (из кэша price_feed)
+START_DELAY = 20  # задержка запуска
+GAS_NEEDED_TON = 0.40  # минимум TON на кошельке для свопа GRINCH→TON (attach 0.25+0.18=0.43, часть вернётся)
 
 
 class GrinchLiquidator:
@@ -58,18 +63,18 @@ class GrinchLiquidator:
     """
 
     def __init__(self):
-        self._lock           = threading.Lock()
-        self._running        = False
-        self._stop_event     = threading.Event()   # мгновенная остановка
-        self._thread         = None
-        self._grinch_bal     = 0.0
-        self._ton_bal        = None    # баланс TON кошелька (для проверки газа)
-        self._ref_price      = None    # цена в момент обнаружения GRINCH
-        self._ref_time       = None
+        self._lock = threading.Lock()
+        self._running = False
+        self._stop_event = threading.Event()  # мгновенная остановка
+        self._thread = None
+        self._grinch_bal = 0.0
+        self._ton_bal = None  # баланс TON кошелька (для проверки газа)
+        self._ref_price = None  # цена в момент обнаружения GRINCH
+        self._ref_time = None
         self._last_bal_check = 0.0
-        self._last_sell_at   = None
-        self._sell_count     = 0
-        self._logs           = []
+        self._last_sell_at = None
+        self._sell_count = 0
+        self._logs = []
         # Флаг in-flight: True пока _execute_sell выполняется.
         # Предотвращает дублирование продажи если два тика пройдут
         # проверку порога до того, как первая продажа завершится.
@@ -78,9 +83,10 @@ class GrinchLiquidator:
         # Загружаем сохранённое значение из settings.json (если есть), иначе
         # дефолт = нетто-цель + комиссия цикла (≈22% gross → ≥20% нетто).
         # Значение переживает перезапуски.
-        self.sell_rise_pct   = Config.required_gross_pct()
+        self.sell_rise_pct = Config.required_gross_pct()
         try:
             from settings_store import get_section
+
             saved = get_section("liquidator").get("sell_rise_pct")
             if saved is not None:
                 # Минимальный порог — никогда ниже точки безубыточности с учётом
@@ -93,7 +99,11 @@ class GrinchLiquidator:
     # ── Логирование ─────────────────────────────────────────────────────────
 
     def _log(self, msg: str, level: str = "INFO"):
-        entry = {"time": datetime.utcnow().strftime("%H:%M:%S"), "level": level, "msg": msg}
+        entry = {
+            "time": datetime.utcnow().strftime("%H:%M:%S"),
+            "level": level,
+            "msg": msg,
+        }
         self._logs.append(entry)
         if len(self._logs) > 150:
             self._logs = self._logs[-150:]
@@ -106,14 +116,15 @@ class GrinchLiquidator:
             return
         self._running = True
         self._stop_event.clear()
-        self._thread  = threading.Thread(target=self._loop, daemon=True,
-                                         name="grinch-liquidator")
+        self._thread = threading.Thread(
+            target=self._loop, daemon=True, name="grinch-liquidator"
+        )
         self._thread.start()
         self._log("🟢 Авто-ликвидатор GRINCH запущен")
 
     def stop(self):
         self._running = False
-        self._stop_event.set()   # мгновенно пробуждает спящий поток
+        self._stop_event.set()  # мгновенно пробуждает спящий поток
         self._log("🔴 Авто-ликвидатор остановлен", "WARN")
 
     # ── Публичный статус (для API / UI) ─────────────────────────────────────
@@ -123,27 +134,33 @@ class GrinchLiquidator:
             current = price_feed.get("GRINCH") or 0.0
             target_price, pct_to_go, pct_now = None, None, None
             if self._ref_price and self._ref_price > 0 and current > 0:
-                target_price = round(self._ref_price * (1 + self.sell_rise_pct / 100), 8)
-                pct_to_go    = round((target_price - current) / current * 100, 2)
-                pct_now      = round((current - self._ref_price) / self._ref_price * 100, 2)
+                target_price = round(
+                    self._ref_price * (1 + self.sell_rise_pct / 100), 8
+                )
+                pct_to_go = round((target_price - current) / current * 100, 2)
+                pct_now = round((current - self._ref_price) / self._ref_price * 100, 2)
             # Хватает ли TON на газ для свопа GRINCH→TON
-            gas_ok = None if self._ton_bal is None else (self._ton_bal >= GAS_NEEDED_TON)
+            gas_ok = (
+                None if self._ton_bal is None else (self._ton_bal >= GAS_NEEDED_TON)
+            )
             return {
-                "running":        self._running,
+                "running": self._running,
                 "grinch_balance": round(self._grinch_bal, 4),
-                "ton_balance":    None if self._ton_bal is None else round(self._ton_bal, 3),
-                "gas_needed":     GAS_NEEDED_TON,
-                "gas_ok":         gas_ok,
-                "ref_price":      self._ref_price,
-                "ref_time":       self._ref_time,
-                "current_price":  current,
-                "target_price":   target_price,
-                "pct_to_go":      pct_to_go,
-                "pct_now":        pct_now,
-                "sell_rise_pct":  self.sell_rise_pct,
-                "sell_count":     self._sell_count,
-                "last_sell_at":   self._last_sell_at,
-                "logs":           list(self._logs[-30:]),
+                "ton_balance": (
+                    None if self._ton_bal is None else round(self._ton_bal, 3)
+                ),
+                "gas_needed": GAS_NEEDED_TON,
+                "gas_ok": gas_ok,
+                "ref_price": self._ref_price,
+                "ref_time": self._ref_time,
+                "current_price": current,
+                "target_price": target_price,
+                "pct_to_go": pct_to_go,
+                "pct_now": pct_now,
+                "sell_rise_pct": self.sell_rise_pct,
+                "sell_count": self._sell_count,
+                "last_sell_at": self._last_sell_at,
+                "logs": list(self._logs[-30:]),
             }
 
     def set_threshold(self, pct: float):
@@ -152,6 +169,7 @@ class GrinchLiquidator:
         self.sell_rise_pct = pct
         try:
             from settings_store import update_section
+
             update_section("liquidator", {"sell_rise_pct": pct})
         except Exception as e:  # noqa: BLE001
             self._log(f"⚠️ Не удалось сохранить порог: {e}", "WARN")
@@ -162,8 +180,10 @@ class GrinchLiquidator:
     def _loop(self):
         # Стартуем позже всех чтобы не перегружать TonCenter
         if self._stop_event.wait(timeout=START_DELAY):
-            return   # stop() вызван во время ожидания
-        self._log(f"🔍 Начинаю мониторинг GRINCH (порог продажи: +{self.sell_rise_pct}%)")
+            return  # stop() вызван во время ожидания
+        self._log(
+            f"🔍 Начинаю мониторинг GRINCH (порог продажи: +{self.sell_rise_pct}%)"
+        )
 
         while self._running and not self._stop_event.is_set():
             try:
@@ -179,7 +199,7 @@ class GrinchLiquidator:
             except Exception as e:
                 self._log(f"Ошибка цикла: {e}", "ERROR")
 
-            self._stop_event.wait(timeout=PRICE_TICK_SECS)   # прерываемый сон
+            self._stop_event.wait(timeout=PRICE_TICK_SECS)  # прерываемый сон
 
     # ── Получение баланса ────────────────────────────────────────────────────
 
@@ -189,8 +209,9 @@ class GrinchLiquidator:
         → TonAPI v2 (запасной).
         """
         import urllib.request, json as _json
+
         wallet = Config.TON_WALLET
-        token  = Config.GRINCH_TOKEN_ADDRESS
+        token = Config.GRINCH_TOKEN_ADDRESS
 
         # Приоритет 1: TonCenter v3 (без rate-limit, прямой запрос)
         try:
@@ -204,7 +225,7 @@ class GrinchLiquidator:
                 d = _json.loads(r.read())
             wallets = d.get("jetton_wallets", [])
             if wallets:
-                return float(wallets[0].get("balance", 0)) / (10 ** 9)
+                return float(wallets[0].get("balance", 0)) / (10**9)
         except Exception as e:
             self._log(f"TonCenter v3 GRINCH balance ошибка: {e}", "WARN")
 
@@ -217,7 +238,7 @@ class GrinchLiquidator:
             for item in data.get("balances", []):
                 master = (item.get("jetton", {}) or {}).get("address", "")
                 if _addresses_match(master, token):
-                    return float(item.get("balance", "0")) / (10 ** 9)
+                    return float(item.get("balance", "0")) / (10**9)
         except Exception as e2:
             self._log(f"TonAPI jetton balance ошибка: {e2}", "WARN")
 
@@ -226,6 +247,7 @@ class GrinchLiquidator:
     def _fetch_ton_balance_http(self) -> Optional[float]:
         """Баланс TON кошелька. Приоритет: TonCenter v2 → TonAPI v2."""
         import urllib.request, json as _json
+
         wallet = Config.TON_WALLET
 
         # Приоритет 1: TonCenter v2 (стабильный, без rate-limit)
@@ -236,7 +258,7 @@ class GrinchLiquidator:
                 data = _json.loads(r.read())
             result = data.get("result")
             if result is not None:
-                return float(result) / (10 ** 9)
+                return float(result) / (10**9)
         except Exception as e:
             self._log(f"TonCenter v2 TON balance ошибка: {e}", "WARN")
 
@@ -248,7 +270,7 @@ class GrinchLiquidator:
                 data2 = _json.loads(r2.read())
             bal = data2.get("balance")
             if bal is not None:
-                return float(bal) / (10 ** 9)
+                return float(bal) / (10**9)
         except Exception as e2:
             self._log(f"TonAPI TON balance ошибка: {e2}", "WARN")
 
@@ -257,9 +279,10 @@ class GrinchLiquidator:
     def _refresh_balance(self):
         try:
             from dedust_client import get_shared_balance
-            bal   = get_shared_balance()
+
+            bal = get_shared_balance()
             grinch = bal.get("GRINCH", 0.0)
-            ton    = bal.get("TON")   # None если недоступно
+            ton = bal.get("TON")  # None если недоступно
 
             with self._lock:
                 old = self._grinch_bal
@@ -268,12 +291,16 @@ class GrinchLiquidator:
                     self._ton_bal = ton
 
                 # Предупреждаем, если есть GRINCH на продажу, но мало TON на газ
-                if grinch >= MIN_GRINCH_TO_SELL and ton is not None and ton < GAS_NEEDED_TON:
+                if (
+                    grinch >= MIN_GRINCH_TO_SELL
+                    and ton is not None
+                    and ton < GAS_NEEDED_TON
+                ):
                     self._log(
                         f"⛽ Мало TON для газа: {ton:.3f} TON на кошельке, "
                         f"нужно ≥ {GAS_NEEDED_TON} TON. Своп GRINCH отскочит (Bounce) — "
                         f"пополните кошелёк TON.",
-                        "WARN"
+                        "WARN",
                     )
 
                 if grinch >= MIN_GRINCH_TO_SELL:
@@ -284,18 +311,19 @@ class GrinchLiquidator:
                         # и мы НИКОГДА не продаём дешевле, чем купили.
                         try:
                             from experience_manager import experience_manager
+
                             cb = experience_manager.get_cost_basis()
                             if cb and cb > 0:
                                 ref = cb
                                 self._log(
                                     f"📌 Опорная взята из памяти (цена покупки): ${cb:.8f}",
-                                    "INFO"
+                                    "INFO",
                                 )
                         except Exception as e:  # noqa: BLE001
                             self._log(f"Не удалось прочитать цену покупки: {e}", "WARN")
                         if ref > 0:
                             self._ref_price = ref
-                            self._ref_time  = datetime.utcnow().isoformat()
+                            self._ref_time = datetime.utcnow().isoformat()
                             target = ref * (1 + self.sell_rise_pct / 100)
                             self._log(
                                 f"💰 Найдено {grinch:.4f} GRINCH | "
@@ -310,7 +338,7 @@ class GrinchLiquidator:
                 elif grinch < 0.01 and old >= MIN_GRINCH_TO_SELL:
                     self._log(f"✅ GRINCH продан ({old:.4f} → {grinch:.4f})")
                     self._ref_price = None
-                    self._ref_time  = None
+                    self._ref_time = None
                 else:
                     self._log(f"📊 GRINCH on-chain: {grinch:.4f}")
 
@@ -322,7 +350,7 @@ class GrinchLiquidator:
     def _check_and_maybe_sell(self):
         with self._lock:
             grinch = self._grinch_bal
-            ref    = self._ref_price
+            ref = self._ref_price
 
         if grinch < MIN_GRINCH_TO_SELL or ref is None or ref <= 0:
             return
@@ -332,7 +360,7 @@ class GrinchLiquidator:
             return
 
         rise_pct = (current - ref) / ref * 100
-        target   = ref * (1 + self.sell_rise_pct / 100)
+        target = ref * (1 + self.sell_rise_pct / 100)
 
         if current >= target:
             # Дополнительная защита: даже если порог выставлен вручную ниже
@@ -343,7 +371,7 @@ class GrinchLiquidator:
                     f"🔒 ONLY_PROFIT: цена ${current:.8f} < безубыток "
                     f"${min_break_even:.8f} (нужен рост ещё "
                     f"+{((min_break_even - current) / current * 100):.2f}%) — пропуск",
-                    "WARN"
+                    "WARN",
                 )
                 return
 
@@ -352,7 +380,9 @@ class GrinchLiquidator:
             # и одновременно запустить _execute_sell → двойная продажа.
             with self._lock:
                 if self._sell_in_flight:
-                    self._log("⏳ Продажа уже выполняется — пропуск дублирующего тика", "WARN")
+                    self._log(
+                        "⏳ Продажа уже выполняется — пропуск дублирующего тика", "WARN"
+                    )
                     return
                 self._sell_in_flight = True
 
@@ -360,7 +390,7 @@ class GrinchLiquidator:
                 f"🚀 Цена выросла на {rise_pct:+.2f}%! "
                 f"${ref:.8f} → ${current:.8f} (цель: ${target:.8f}) | "
                 f"Продаём {grinch:.4f} GRINCH...",
-                "INFO"
+                "INFO",
             )
             try:
                 self._execute_sell(grinch, current)
@@ -387,6 +417,7 @@ class GrinchLiquidator:
         """
         try:
             from dedust_client import dedust_client
+
             result = dedust_client.sell(grinch_amount)
 
             if result and result.get("ok"):
@@ -394,14 +425,14 @@ class GrinchLiquidator:
                 self._log(
                     f"✅ Продано {grinch_amount:.4f} GRINCH @ ${current_price:.8f} | "
                     f"Ожидаемо ≈{est_ton:.4f} TON",
-                    "INFO"
+                    "INFO",
                 )
                 with self._lock:
-                    self._sell_count   += 1
-                    self._last_sell_at  = datetime.utcnow().isoformat()
-                    self._grinch_bal    = 0.0
-                    self._ref_price     = None
-                    self._ref_time      = None
+                    self._sell_count += 1
+                    self._last_sell_at = datetime.utcnow().isoformat()
+                    self._grinch_bal = 0.0
+                    self._ref_price = None
+                    self._ref_time = None
                 # Обновим баланс через 60 сек
                 self._last_bal_check = time.time() - BAL_CHECK_INTERVAL + 60
                 # Закрываем ghost-позицию в трейдере (если GRINCH был в открытой позиции).
@@ -409,6 +440,7 @@ class GrinchLiquidator:
                 # чтобы избежать ошибки "cannot import name 'trader' from 'trader'".
                 try:
                     import sys as _sys
+
                     _app_mod = _sys.modules.get("app") or _sys.modules.get("__main__")
                     _tr = getattr(_app_mod, "trader", None)
                     if _tr is not None:
@@ -416,14 +448,24 @@ class GrinchLiquidator:
                     else:
                         # Fallback: напрямую очищаем открытые позиции в DB
                         import db_store as _ds
+
                         with _ds._conn() as _conn:
                             with _conn.cursor() as _cur:
                                 _cur.execute("DELETE FROM bot_open_trades")
                             _conn.commit()
-                        self._log("Позиция очищена через DB (app ещё не загружен)", "INFO")
+                        self._log(
+                            "Позиция очищена через DB (app ещё не загружен)", "INFO"
+                        )
                 except Exception as _te:
-                    self._log(f"⚠️ Не удалось оповестить трейдер о продаже ликвидатором: {_te}", "WARN")
-                return {"ok": True, "grinch_sold": grinch_amount, "price": current_price}
+                    self._log(
+                        f"⚠️ Не удалось оповестить трейдер о продаже ликвидатором: {_te}",
+                        "WARN",
+                    )
+                return {
+                    "ok": True,
+                    "grinch_sold": grinch_amount,
+                    "price": current_price,
+                }
             else:
                 err = (result.get("error") if result else None) or "нет ответа"
                 self._log(f"⚠️ Продажа не удалась: {err}", "WARN")
@@ -443,17 +485,20 @@ class GrinchLiquidator:
         """
         with self._lock:
             grinch = self._grinch_bal
-            ref    = self._ref_price
+            ref = self._ref_price
 
         if grinch < MIN_GRINCH_TO_SELL:
             # Попробуем получить актуальный баланс
             self._refresh_balance()
             with self._lock:
                 grinch = self._grinch_bal
-                ref    = self._ref_price
+                ref = self._ref_price
 
         if grinch < MIN_GRINCH_TO_SELL:
-            return {"ok": False, "error": f"GRINCH баланс {grinch:.4f} < мин. {MIN_GRINCH_TO_SELL}"}
+            return {
+                "ok": False,
+                "error": f"GRINCH баланс {grinch:.4f} < мин. {MIN_GRINCH_TO_SELL}",
+            }
 
         current = price_feed.get("GRINCH") or 0.0
         if current <= 0:
@@ -479,12 +524,12 @@ class GrinchLiquidator:
                 "⚠️ force_sell_now: опорная цена неизвестна — "
                 "устанавливаем текущую как ref, продажа в этот раз отклонена. "
                 "Повторите через тик когда ref будет зафиксирована.",
-                "WARN"
+                "WARN",
             )
             with self._lock:
                 if self._ref_price is None:
                     self._ref_price = current
-                    self._ref_time  = datetime.utcnow().isoformat()
+                    self._ref_time = datetime.utcnow().isoformat()
             return {
                 "ok": False,
                 "error": (
@@ -492,7 +537,7 @@ class GrinchLiquidator:
                     f"Установлена: ${current:.8f}. "
                     f"Продажа возможна при цене ≥ "
                     f"${current * (1 + Config.required_gross_pct() / 100):.8f}."
-                )
+                ),
             }
 
         # ── Anti-duplicate: не позволяем параллельным HTTP-запросам

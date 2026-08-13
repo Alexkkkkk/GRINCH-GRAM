@@ -25,79 +25,79 @@ class Organism:
     VERSION = "1.0"
 
     # ── Hunger ─────────────────────────────────────────────────────────────
-    HUNGER_SATURATION_SEC   = 7200   # 2 ч без сделок = полный голод (1.0)
-    HUNGER_CONF_BONUS_MAX   = 8.0    # макс. снижение порога от голода, пп
+    HUNGER_SATURATION_SEC = 7200  # 2 ч без сделок = полный голод (1.0)
+    HUNGER_CONF_BONUS_MAX = 8.0  # макс. снижение порога от голода, пп
 
     # ── Energy ─────────────────────────────────────────────────────────────
     ENERGY_SLEEP_CONF_PENALTY = 5.0  # повышение порога во время «сна», пп
-    ENERGY_AWAKE_CONF_BONUS   = 3.0  # снижение порога при высокой энергии, пп
+    ENERGY_AWAKE_CONF_BONUS = 3.0  # снижение порога при высокой энергии, пп
 
     # ── Instincts ──────────────────────────────────────────────────────────
-    FLASH_CRASH_DROP_PCT    = 8.0    # % падения за 60 с → флэш-крэш
-    EXCITEMENT_RISE_PCT     = 5.0    # % роста за 60 с → возбуждение
-    PANIC_DURATION_SEC      = 300    # паника длится 5 мин
-    DEFENSIVE_CONSEC_LOSSES = 3      # N убытков подряд → защитный режим
+    FLASH_CRASH_DROP_PCT = 8.0  # % падения за 60 с → флэш-крэш
+    EXCITEMENT_RISE_PCT = 5.0  # % роста за 60 с → возбуждение
+    PANIC_DURATION_SEC = 300  # паника длится 5 мин
+    DEFENSIVE_CONSEC_LOSSES = 3  # N убытков подряд → защитный режим
 
     # ── Evolution ──────────────────────────────────────────────────────────
-    EVOLVE_EVERY_N        = 10       # мутация каждые N сделок
-    EVOLVE_MUTATION_STEP  = 1.5      # макс. мутация порога уверенности, пп
+    EVOLVE_EVERY_N = 10  # мутация каждые N сделок
+    EVOLVE_MUTATION_STEP = 1.5  # макс. мутация порога уверенности, пп
 
     # ── Dreams ─────────────────────────────────────────────────────────────
-    DREAM_ENERGY_THRESHOLD = 0.35    # ниже этой энергии → бот «видит сны»
-    DREAM_SIM_COUNT        = 20      # симуляций за один цикл сна
+    DREAM_ENERGY_THRESHOLD = 0.35  # ниже этой энергии → бот «видит сны»
+    DREAM_SIM_COUNT = 20  # симуляций за один цикл сна
 
     def __init__(self):
         self._lock = threading.RLock()
 
         # ── 1. Mood / Emotions ─────────────────────────────────────────────
-        self.fear           = 0.20
-        self.greed          = 0.30
-        self.confidence     = 0.50
-        self.mood           = 0.10    # -1..+1
-        self.emotion_label  = "нейтральный"
+        self.fear = 0.20
+        self.greed = 0.30
+        self.confidence = 0.50
+        self.mood = 0.10  # -1..+1
+        self.emotion_label = "нейтральный"
 
         # ── 2. Hunger ──────────────────────────────────────────────────────
-        self.hunger         = 0.0
+        self.hunger = 0.0
         self._last_trade_ts = time.time()
 
         # ── 3. Energy / Sleep ──────────────────────────────────────────────
-        self.energy      = 0.70
-        self.sleep_phase = "awake"    # awake / drowsy / sleeping
+        self.energy = 0.70
+        self.sleep_phase = "awake"  # awake / drowsy / sleeping
         self._price_hist: List[Tuple[float, float]] = []  # (ts, price)
 
         # ── 4. Evolution ───────────────────────────────────────────────────
-        self.generation          = 0
-        self._trade_wins         = 0
-        self._trade_total        = 0
-        self._trades_since_evolve= 0
-        self._evolved_conf_delta = 0.0   # текущая накопленная мутация (пп)
-        self.evolution_fitness   = 0.50
-        self.evolution_active    = False
+        self.generation = 0
+        self._trade_wins = 0
+        self._trade_total = 0
+        self._trades_since_evolve = 0
+        self._evolved_conf_delta = 0.0  # текущая накопленная мутация (пп)
+        self.evolution_fitness = 0.50
+        self.evolution_active = False
 
         # ── 5. Instincts ───────────────────────────────────────────────────
-        self.panic_mode           = False
-        self._panic_until         = 0.0
-        self._consecutive_losses  = 0
-        self.instinct_signal      = None   # None / "SELL_PANIC" / "BUY_EXCITEMENT"
+        self.panic_mode = False
+        self._panic_until = 0.0
+        self._consecutive_losses = 0
+        self.instinct_signal = None  # None / "SELL_PANIC" / "BUY_EXCITEMENT"
         self.flash_crash_detected = False
-        self.defensive_mode       = False
+        self.defensive_mode = False
 
         # ── 6. Dreams ──────────────────────────────────────────────────────
-        self.dreaming      = False
+        self.dreaming = False
         self.dream_quality = 0.50
-        self.dreams_total  = 0
-        self.dream_wins    = 0
+        self.dreams_total = 0
+        self.dream_wins = 0
         self.dream_pnl_avg = 0.0
         self._dream_prices: List[float] = []
         self._dream_thread = None
-        self._dream_stop   = threading.Event()
+        self._dream_stop = threading.Event()
 
         # ── 7. Health ──────────────────────────────────────────────────────
-        self.health       = 0.75
+        self.health = 0.75
         self.health_label = "хорошее"
 
         # ── Meta ───────────────────────────────────────────────────────────
-        self.age         = 0
+        self.age = 0
         self.alive_since = time.time()
         self.last_update = time.time()
 
@@ -112,10 +112,10 @@ class Organism:
         """Восстанавливаем состояние из накопленной статистики трейдера."""
         with self._lock:
             try:
-                wins  = int(trader.stats.get("winning_trades", 0) or 0)
-                total = int(trader.stats.get("total_trades",   0) or 0)
-                self.age          = total
-                self._trade_wins  = wins
+                wins = int(trader.stats.get("winning_trades", 0) or 0)
+                total = int(trader.stats.get("total_trades", 0) or 0)
+                self.age = total
+                self._trade_wins = wins
                 self._trade_total = total
                 # M10-fix: порог восстановления выровнен с runtime-порогом (≥5).
                 # Раньше restore использовал total>=3, а runtime-обновление total>=5 —
@@ -123,8 +123,8 @@ class Organism:
                 if total >= 5:
                     wr = wins / total
                     self.confidence = round(wr, 3)
-                    self.fear       = round(max(0.0, 0.35 - wr * 0.35), 3)
-                    self.greed      = round(min(1.0, wr  * 0.80), 3)
+                    self.fear = round(max(0.0, 0.35 - wr * 0.35), 3)
+                    self.greed = round(min(1.0, wr * 0.80), 3)
                     self._update_mood()
                     self.evolution_fitness = round(wr, 3)
                 self._update_health()
@@ -146,9 +146,7 @@ class Organism:
 
             # Пополняем историю цен
             self._price_hist.append((now, price))
-            self._price_hist = [
-                (t, p) for (t, p) in self._price_hist if now - t <= 120
-            ]
+            self._price_hist = [(t, p) for (t, p) in self._price_hist if now - t <= 120]
             self._dream_prices.append(price)
             if len(self._dream_prices) > 200:
                 self._dream_prices = self._dream_prices[-200:]
@@ -212,7 +210,9 @@ class Organism:
             mult += 0.12 * self.hunger
 
             # Настроение
-            mult += 0.40 * self.mood   # L6-fix: жадность +0.4, страх −0.4 (более выраженная реакция на настроение)
+            mult += (
+                0.40 * self.mood
+            )  # L6-fix: жадность +0.4, страх −0.4 (более выраженная реакция на настроение)
 
             # Энергия: сонный бот торгует меньше
             if self.energy < 0.30:
@@ -255,10 +255,10 @@ class Organism:
                 self._consecutive_losses = 0
                 self.defensive_mode = False
                 self.greed = min(1.0, self.greed + 0.12)
-                self.fear  = max(0.0, self.fear  - 0.08)
+                self.fear = max(0.0, self.fear - 0.08)
             else:
                 self._consecutive_losses += 1
-                self.fear  = min(1.0, self.fear  + 0.18)
+                self.fear = min(1.0, self.fear + 0.18)
                 self.greed = max(0.0, self.greed - 0.10)
                 if self._consecutive_losses >= self.DEFENSIVE_CONSEC_LOSSES:
                     self.defensive_mode = True
@@ -279,42 +279,42 @@ class Organism:
         """Полный снапшот для /api/organism и дашборда."""
         with self._lock:
             return {
-                "version":            self.VERSION,
-                "age":                self.age,
-                "alive_sec":          int(time.time() - self.alive_since),
+                "version": self.VERSION,
+                "age": self.age,
+                "alive_sec": int(time.time() - self.alive_since),
                 # 1. Mood
-                "mood":               round(self.mood,       3),
-                "fear":               round(self.fear,       3),
-                "greed":              round(self.greed,      3),
-                "confidence":         round(self.confidence, 3),
-                "emotion_label":      self.emotion_label,
+                "mood": round(self.mood, 3),
+                "fear": round(self.fear, 3),
+                "greed": round(self.greed, 3),
+                "confidence": round(self.confidence, 3),
+                "emotion_label": self.emotion_label,
                 # 2. Hunger
-                "hunger":             round(self.hunger, 3),
+                "hunger": round(self.hunger, 3),
                 # 3. Energy
-                "energy":             round(self.energy, 3),
-                "sleep_phase":        self.sleep_phase,
+                "energy": round(self.energy, 3),
+                "sleep_phase": self.sleep_phase,
                 # 4. Evolution
-                "generation":         self.generation,
-                "evolution_fitness":  round(self.evolution_fitness, 3),
-                "evolution_active":   self.evolution_active,
+                "generation": self.generation,
+                "evolution_fitness": round(self.evolution_fitness, 3),
+                "evolution_active": self.evolution_active,
                 "evolved_conf_delta": round(self._evolved_conf_delta, 2),
                 # 5. Instincts
-                "panic_mode":         self.panic_mode,
-                "flash_crash":        self.flash_crash_detected,
-                "defensive_mode":     self.defensive_mode,
+                "panic_mode": self.panic_mode,
+                "flash_crash": self.flash_crash_detected,
+                "defensive_mode": self.defensive_mode,
                 "consecutive_losses": self._consecutive_losses,
-                "instinct_signal":    self.instinct_signal,
+                "instinct_signal": self.instinct_signal,
                 # 6. Dreams
-                "dreaming":           self.dreaming,
-                "dream_quality":      round(self.dream_quality, 3),
-                "dreams_total":       self.dreams_total,
-                "dream_pnl_avg":      round(self.dream_pnl_avg, 2),
+                "dreaming": self.dreaming,
+                "dream_quality": round(self.dream_quality, 3),
+                "dreams_total": self.dreams_total,
+                "dream_pnl_avg": round(self.dream_pnl_avg, 2),
                 # 7. Health
-                "health":             round(self.health, 3),
-                "health_label":       self.health_label,
+                "health": round(self.health, 3),
+                "health_label": self.health_label,
                 # Modifiers (для отладки)
-                "conf_modifier":      self.get_conf_modifier(),
-                "size_multiplier":    self.get_size_multiplier(),
+                "conf_modifier": self.get_conf_modifier(),
+                "size_multiplier": self.get_size_multiplier(),
             }
 
     # ════════════════════════════════════════════════════════════════════════
@@ -389,20 +389,20 @@ class Organism:
 
     # ── 1. Mood ──────────────────────────────────────────────────────────────
     def _update_mood_from_ai(self, ai: Dict) -> None:
-        conf   = float(ai.get("confidence", 50) or 50)
+        conf = float(ai.get("confidence", 50) or 50)
         signal = ai.get("ai_signal", "HOLD")
         conf_n = conf / 100.0
 
         if signal == "BUY":
             self.greed = min(1.0, self.greed * 0.96 + conf_n * 0.06)
         elif signal == "SELL":
-            self.fear  = min(1.0, self.fear  * 0.96 + conf_n * 0.06)
+            self.fear = min(1.0, self.fear * 0.96 + conf_n * 0.06)
 
         self._update_mood()
 
     def _decay_mood(self) -> None:
         """Медленное затухание без AI-данных (DCA тик)."""
-        self.fear  = max(0.0, self.fear  * 0.999)
+        self.fear = max(0.0, self.fear * 0.999)
         self.greed = max(0.1, self.greed * 0.999)
         self._update_mood()
 
@@ -422,26 +422,26 @@ class Organism:
             self.emotion_label = "страх"
 
         # Slow decay to neutral
-        self.fear  = max(0.0, self.fear  * 0.9985)
+        self.fear = max(0.0, self.fear * 0.9985)
         self.greed = max(0.1, self.greed * 0.9985)
 
         self.confidence = (
             round(self._trade_wins / self._trade_total, 3)
-            if self._trade_total >= 5 else 0.50
+            if self._trade_total >= 5
+            else 0.50
         )
 
     # ── 7. Health ────────────────────────────────────────────────────────────
     def _update_health(self) -> None:
-        wr       = (self._trade_wins / self._trade_total
-                    if self._trade_total >= 5 else 0.50)
-        mood_sc  = (self.mood + 1.0) / 2.0   # -1..+1 → 0..1
+        wr = self._trade_wins / self._trade_total if self._trade_total >= 5 else 0.50
+        mood_sc = (self.mood + 1.0) / 2.0  # -1..+1 → 0..1
 
         self.health = round(
-            0.35 * wr +
-            0.20 * self.energy +
-            0.15 * mood_sc +
-            0.15 * self.evolution_fitness +
-            0.15 * self.dream_quality,
+            0.35 * wr
+            + 0.20 * self.energy
+            + 0.15 * mood_sc
+            + 0.15 * self.evolution_fitness
+            + 0.15 * self.dream_quality,
             3,
         )
 
@@ -457,9 +457,7 @@ class Organism:
     # ── 4. Evolution ─────────────────────────────────────────────────────────
     def _evolution_feedback(self) -> None:
         if self._trade_total > 0:
-            self.evolution_fitness = round(
-                self._trade_wins / self._trade_total, 3
-            )
+            self.evolution_fitness = round(self._trade_wins / self._trade_total, 3)
 
     def _try_evolve(self) -> None:
         """Hill-climbing мутация порога уверенности."""
@@ -524,7 +522,7 @@ class Organism:
                 _exit_hi = min(entry_idx + 30, n - 1)
                 if _exit_hi < entry_idx + 3:
                     break
-                exit_idx  = random.randint(entry_idx + 3, _exit_hi)
+                exit_idx = random.randint(entry_idx + 3, _exit_hi)
                 ep = prices[entry_idx]
                 xp = prices[exit_idx]
                 if ep <= 0:
@@ -534,16 +532,16 @@ class Organism:
                     wins += 1
                 total_pnl += pnl_pct
 
-            dream_wr  = wins / self.DREAM_SIM_COUNT
+            dream_wr = wins / self.DREAM_SIM_COUNT
             dream_avg = total_pnl / self.DREAM_SIM_COUNT
 
             with self._lock:
-                self.dreams_total  += self.DREAM_SIM_COUNT
-                self.dream_wins    += wins
-                self.dream_quality  = round(
+                self.dreams_total += self.DREAM_SIM_COUNT
+                self.dream_wins += wins
+                self.dream_quality = round(
                     self.dream_quality * 0.70 + dream_wr * 0.30, 3
                 )
-                self.dream_pnl_avg  = round(
+                self.dream_pnl_avg = round(
                     self.dream_pnl_avg * 0.70 + dream_avg * 0.30, 2
                 )
                 self.dreaming = False

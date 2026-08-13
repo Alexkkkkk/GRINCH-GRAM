@@ -3,6 +3,7 @@
 Одноразовый фикс: убирает дублирующиеся ID в grid_state.json.
 Запустить на VPS: docker exec bot-bot-1 python3 /usr/src/app/fix_grid_ids.py
 """
+
 import json, collections, shutil, time, os
 
 STATE_FILE = "/app/data/grid_state.json"
@@ -31,7 +32,7 @@ print(f"Бэкап: {BACKUP}")
 seen = set()
 all_ids = {l["id"] for l in levels}
 max_idle = max((l["id"] for l in levels if l["id"] <= -2000), default=-2000)
-next_new = max_idle - 1   # уйти ещё глубже в idle-диапазон
+next_new = max_idle - 1  # уйти ещё глубже в idle-диапазон
 
 for lv in levels:
     if lv["id"] in dupes:
@@ -43,7 +44,9 @@ for lv in levels:
             old_id = lv["id"]
             while next_new in all_ids:
                 next_new -= 1
-            print(f"  Переименовываем дубль: id={old_id} → {next_new} side={lv['side']} status={lv['status']}")
+            print(
+                f"  Переименовываем дубль: id={old_id} → {next_new} side={lv['side']} status={lv['status']}"
+            )
             lv["id"] = next_new
             all_ids.add(next_new)
             next_new -= 1

@@ -8,6 +8,7 @@
 TONTracker стартует через 5s, DepositMonitor через 65s — чтобы не совпадать
 и не нарушать rate-limit TonCenter (~1 req/s бесплатно).
 """
+
 import os
 import threading
 import logging
@@ -20,9 +21,9 @@ log = logging.getLogger(__name__)
 
 
 class DepositMonitor:
-    TONCENTER    = "https://toncenter.com/api/v2"
-    BACKOFF_MAX  = 600
-    START_DELAY  = 65    # расфазировка с TONTracker (тот стартует через 5s)
+    TONCENTER = "https://toncenter.com/api/v2"
+    BACKOFF_MAX = 600
+    START_DELAY = 65  # расфазировка с TONTracker (тот стартует через 5s)
 
     @property
     def POLL_SEC(self):
@@ -30,18 +31,17 @@ class DepositMonitor:
         return 30 if os.getenv("TONCENTER_API_KEY") else 120
 
     def __init__(self, platform_address: str):
-        self.address    = platform_address
-        self._running   = False
-        self._backoff   = 0
-        self._stop_event = threading.Event()   # мгновенная остановка
+        self.address = platform_address
+        self._running = False
+        self._backoff = 0
+        self._stop_event = threading.Event()  # мгновенная остановка
 
     def start(self, app, user_mgr):
-        self._app      = app
+        self._app = app
         self._user_mgr = user_mgr
-        self._running  = True
+        self._running = True
         self._stop_event.clear()
-        t = threading.Thread(target=self._loop, daemon=True,
-                             name="deposit-monitor")
+        t = threading.Thread(target=self._loop, daemon=True, name="deposit-monitor")
         t.start()
         log.info(f"[DepositMonitor] Запущен. Наблюдение за {self.address[:20]}...")
 
@@ -52,7 +52,7 @@ class DepositMonitor:
 
     def _loop(self):
         if self._stop_event.wait(timeout=self.START_DELAY):
-            return   # stop() вызван во время расфазировки
+            return  # stop() вызван во время расфазировки
         while self._running and not self._stop_event.is_set():
             try:
                 self._check()
@@ -61,10 +61,10 @@ class DepositMonitor:
             wait_sec = self._backoff if self._backoff > 0 else self.POLL_SEC
             if self._backoff > 0:
                 self._backoff = 0
-            self._stop_event.wait(timeout=wait_sec)   # прерываемый сон
+            self._stop_event.wait(timeout=wait_sec)  # прерываемый сон
 
     def _get(self, path: str, params: dict):
-        qs  = urllib.parse.urlencode(params)
+        qs = urllib.parse.urlencode(params)
         url = f"{self.TONCENTER}/{path}?{qs}"
         req = urllib.request.Request(url)
         _key = os.getenv("TONCENTER_API_KEY", "")
@@ -107,10 +107,10 @@ class DepositMonitor:
                     log.debug(f"[DepositMonitor] tx ошибка: {e}")
 
     def _process_tx(self, tx):
-        lt      = int(tx.get("transaction_id", {}).get("lt", 0))
-        in_msg  = tx.get("in_msg", {})
-        source  = in_msg.get("source", "")
-        value   = int(in_msg.get("value", 0))
+        lt = int(tx.get("transaction_id", {}).get("lt", 0))
+        in_msg = tx.get("in_msg", {})
+        source = in_msg.get("source", "")
+        value = int(in_msg.get("value", 0))
         comment = (in_msg.get("message") or in_msg.get("comment") or "").strip()
 
         if not source or value <= 0 or not comment:
@@ -122,16 +122,18 @@ class DepositMonitor:
 
         from models import UserWallet
         from database import db
+
         # FIX#13: LIKE-поиск по префиксу совпадал с чужими токенами, если код короткий.
         # Мемо записывается как "GG-{token[:8]}", поэтому ищем точное совпадение первых 8 символов.
         # Сначала ищем точное совпадение токена по первым символам (длина кода = 8 hex-символов).
         uw = UserWallet.query.filter(
-            UserWallet.token.like(f"{code}%"),
-            UserWallet.active == True
+            UserWallet.token.like(f"{code}%"), UserWallet.active == True
         ).first()
         # Дополнительная проверка: код в memo должен совпадать с началом токена (защита от коллизии LIKE)
         if uw and not uw.token.lower().startswith(code):
-            log.warning(f"[DepositMonitor] LIKE-коллизия: memo-код {code!r} не совпадает с токеном {uw.token[:16]!r}")
+            log.warning(
+                f"[DepositMonitor] LIKE-коллизия: memo-код {code!r} не совпадает с токеном {uw.token[:16]!r}"
+            )
             uw = None
         if not uw:
             return
@@ -144,7 +146,9 @@ class DepositMonitor:
         if amount_ton < 0.01:
             return
 
-        log.info(f"[DepositMonitor] Депозит {amount_ton:.4f} TON от {source[:16]}… → {uw.name or uw.token[:8]}")
+        log.info(
+            f"[DepositMonitor] Депозит {amount_ton:.4f} TON от {source[:16]}… → {uw.name or uw.token[:8]}"
+        )
 
         # BUG-FIX: обновляем last_checked_lt ДО зачисления.
         # Если процесс падает ПОСЛЕ credit_deposit но ДО commit — депозит

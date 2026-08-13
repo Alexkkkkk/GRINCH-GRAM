@@ -8,6 +8,7 @@ wallet_manager.py — Полное отслеживание баланса ко�
 
 Не зависит от app.py и может запускаться в любой момент после init.
 """
+
 import threading
 import time
 import logging
@@ -15,21 +16,21 @@ from datetime import datetime
 
 log = logging.getLogger(__name__)
 
-POLL_SEC = 5    # опрос баланса каждые 5 секунд
+POLL_SEC = 5  # опрос баланса каждые 5 секунд
 
 
 class WalletManager:
     """Менеджер полного состояния кошелька (TON + GRINCH) с историей в БД."""
 
     def __init__(self):
-        self._lock      = threading.Lock()
-        self._poll_lock = threading.Lock()   # предотвращает конкурентный запуск _poll
-        self._snap      = {}           # последний снимок
-        self._history   = []           # кольцо в памяти (200 точек)
-        self._thread    = None
-        self._running   = False
-        self._stop_event = threading.Event()   # мгновенная остановка
-        self._trader    = None         # ссылка на Trader для чтения open_trades
+        self._lock = threading.Lock()
+        self._poll_lock = threading.Lock()  # предотвращает конкурентный запуск _poll
+        self._snap = {}  # последний снимок
+        self._history = []  # кольцо в памяти (200 точек)
+        self._thread = None
+        self._running = False
+        self._stop_event = threading.Event()  # мгновенная остановка
+        self._trader = None  # ссылка на Trader для чтения open_trades
         # Защита от аномального сброса tracked_stake: храним последнее
         # достоверное значение. Если новое чтение < 20% от предыдущего,
         # используем кеш и логируем предупреждение (диагностика Bug #2).
@@ -46,8 +47,8 @@ class WalletManager:
             return
         self._running = True
         self._stop_event.clear()
-        self._trader  = trader_ref
-        self._thread  = threading.Thread(
+        self._trader = trader_ref
+        self._thread = threading.Thread(
             target=self._loop, daemon=True, name="wallet-manager"
         )
         self._thread.start()
@@ -61,20 +62,20 @@ class WalletManager:
     # ─── главный цикл ──────────────────────────────────────────────────────────
 
     def _loop(self):
-        self._stop_event.wait(timeout=8)   # прерываемый прогрев после старта
+        self._stop_event.wait(timeout=8)  # прерываемый прогрев после старта
         while self._running and not self._stop_event.is_set():
             try:
                 self._poll()
             except Exception as exc:
                 log.warning("[WalletManager] ошибка опроса: %s", exc)
-            self._stop_event.wait(timeout=POLL_SEC)   # прерываемый сон
+            self._stop_event.wait(timeout=POLL_SEC)  # прерываемый сон
 
     # ─── один опрос ────────────────────────────────────────────────────────────
 
     def _poll(self):
         # Предотвращаем конкурентный запуск (фоновый тред + ручной /api/wallet/refresh)
         if not self._poll_lock.acquire(blocking=False):
-            return   # уже идёт опрос — пропускаем
+            return  # уже идёт опрос — пропускаем
         try:
             self._poll_body()
         finally:
@@ -82,7 +83,8 @@ class WalletManager:
 
     def _poll_body(self):
         import threading
-        _tid  = threading.current_thread().name
+
+        _tid = threading.current_thread().name
         _call = getattr(self, "_poll_call_count", 0) + 1
         self._poll_call_count = _call
         log.info("[WalletManager] _poll_body #%d thread=%s", _call, _tid)
@@ -94,11 +96,12 @@ class WalletManager:
         bal = {}
         try:
             from dedust_client import dedust_client
+
             bal = dedust_client.get_balance() or {}
         except Exception as exc:
             log.debug("[WalletManager] get_balance: %s", exc)
 
-        ton_bal    = float(bal.get("TON",    0) or 0)
+        ton_bal = float(bal.get("TON", 0) or 0)
         grinch_bal = float(bal.get("GRINCH", 0) or 0)
 
         # ── Защита от «битого» ответа API: TON=0 при ненулевом GRINCH ──────────
@@ -111,16 +114,17 @@ class WalletManager:
             log.warning(
                 "[WalletManager] ⚠️ TON=0 при GRINCH=%.0f (был %.4f TON) — "
                 "подозрение на глюк API, снапшот пропущен",
-                grinch_bal, self._last_good_ton,
+                grinch_bal,
+                self._last_good_ton,
             )
             return
         if ton_bal > 0:
             self._last_good_ton = ton_bal
 
         # 2. Цены
-        ton_usd    = float(price_feed.get("TON")              or 0)
-        grinch_usd = float(price_feed.get("GRINCH")           or 0)
-        grinch_ton = float(price_feed.get_grinch_ton_price()  or 0)
+        ton_usd = float(price_feed.get("TON") or 0)
+        grinch_usd = float(price_feed.get("GRINCH") or 0)
+        grinch_ton = float(price_feed.get_grinch_ton_price() or 0)
 
         # 3. Стоимость GRINCH
         grinch_value_ton = round(grinch_bal * grinch_ton, 8) if grinch_ton > 0 else 0.0
@@ -128,18 +132,24 @@ class WalletManager:
 
         # 4. Общий портфель
         total_equity_ton = round(ton_bal + grinch_value_ton, 8)
-        total_equity_usd = round(ton_bal * ton_usd + grinch_value_usd, 4) if ton_usd > 0 else 0.0
+        total_equity_usd = (
+            round(ton_bal * ton_usd + grinch_value_usd, 4) if ton_usd > 0 else 0.0
+        )
 
         # 5. Цена входа и P&L из открытых лонг-позиций
         entry_price_ton = None
         entry_price_usd = None
-        pnl_ton         = None
-        pnl_pct         = None
-        pnl_usd         = None
-        tracked_amount  = None   # сколько GRINCH реально относится к открытым trader-позициям
+        pnl_ton = None
+        pnl_pct = None
+        pnl_usd = None
+        tracked_amount = (
+            None  # сколько GRINCH реально относится к открытым trader-позициям
+        )
         tracked_entries = None
-        tracked_stake   = None   # полная стоимость входа (total_stake) — единая база для cost
-                                  # в _poll_body() и get_full_status(), независимо от tracked_amount
+        tracked_stake = (
+            None  # полная стоимость входа (total_stake) — единая база для cost
+        )
+        # в _poll_body() и get_full_status(), независимо от tracked_amount
 
         trader = self._trader
         if trader is not None:
@@ -153,13 +163,15 @@ class WalletManager:
                 _ot_lock = getattr(trader, "_ot_lock", None)
                 if _ot_lock is not None:
                     with _ot_lock:
-                        _raw_trades = [dict(t) for t in getattr(trader, "open_trades", [])]
+                        _raw_trades = [
+                            dict(t) for t in getattr(trader, "open_trades", [])
+                        ]
                 else:
                     _raw_trades = list(getattr(trader, "open_trades", []))
                 open_trades = [t for t in _raw_trades if t.get("side") == "buy"]
                 if open_trades and grinch_bal > 0:
-                    total_stake  = sum(t.get("stake_ton", 0) or 0 for t in open_trades)
-                    total_amount = sum(t.get("amount",    0) or 0 for t in open_trades)
+                    total_stake = sum(t.get("stake_ton", 0) or 0 for t in open_trades)
+                    total_amount = sum(t.get("amount", 0) or 0 for t in open_trades)
 
                     if total_amount > 0 and total_stake > 0:
                         # Cost basis всегда известен, даже когда price feed временно = 0.
@@ -168,9 +180,12 @@ class WalletManager:
                         # терял информацию о вложениях.
                         try:
                             from config import Config
-                            buy_gas   = getattr(Config, "BUY_GAS_TON", 0.103)  # 0.103 = реальный BUY gas on-chain
+
+                            buy_gas = getattr(
+                                Config, "BUY_GAS_TON", 0.103
+                            )  # 0.103 = реальный BUY gas on-chain
                             n_entries = len(open_trades)
-                            tracked_amount  = min(total_amount, grinch_bal)
+                            tracked_amount = min(total_amount, grinch_bal)
                             tracked_entries = n_entries
                             raw_stake = total_stake
                             # ── Защита от аномального сброса tracked_stake ──────
@@ -179,17 +194,21 @@ class WalletManager:
                             # Если они расходятся >5× — читаем raced/stale данные.
                             # Приоритет: dca_total_stake > _last_stable_stake > raw.
                             _dca_stake = getattr(trader, "dca_total_stake", None)
-                            _expected  = (_dca_stake
-                                          if (_dca_stake and _dca_stake > raw_stake * 2)
-                                          else self._last_stable_stake)
-                            if (_expected is not None
-                                    and raw_stake < _expected * 0.20):
+                            _expected = (
+                                _dca_stake
+                                if (_dca_stake and _dca_stake > raw_stake * 2)
+                                else self._last_stable_stake
+                            )
+                            if _expected is not None and raw_stake < _expected * 0.20:
                                 log.warning(
                                     "[WalletManager] ⚠️ tracked_stake аномально мал "
                                     "%.4f (ожидалось ≈%.4f dca_stake=%.4f), "
                                     "total_amount=%.2f n_trades=%d — используем эталон",
-                                    raw_stake, _expected,
-                                    _dca_stake or 0, total_amount, len(open_trades),
+                                    raw_stake,
+                                    _expected,
+                                    _dca_stake or 0,
+                                    total_amount,
+                                    len(open_trades),
                                 )
                                 tracked_stake = _expected
                             else:
@@ -217,40 +236,44 @@ class WalletManager:
                         # токенов и получается бессмысленно завышенным.
                         if grinch_ton > 0 and tracked_stake is not None:
                             try:
-                                fee      = Config.FEE_PCT / 100.0
+                                fee = Config.FEE_PCT / 100.0
                                 sell_gas = Config.SELL_GAS_TON
 
                                 tracked_value_ton = tracked_amount * grinch_ton
 
                                 proceeds = tracked_value_ton * (1.0 - fee) - sell_gas
-                                cost     = tracked_stake + buy_gas * n_entries
-                                pnl_ton  = round(proceeds - cost, 6)
-                                pnl_pct  = round(pnl_ton / cost * 100, 2) if cost > 0 else 0.0
-                                pnl_usd  = round(pnl_ton * ton_usd, 4) if ton_usd > 0 else None
+                                cost = tracked_stake + buy_gas * n_entries
+                                pnl_ton = round(proceeds - cost, 6)
+                                pnl_pct = (
+                                    round(pnl_ton / cost * 100, 2) if cost > 0 else 0.0
+                                )
+                                pnl_usd = (
+                                    round(pnl_ton * ton_usd, 4) if ton_usd > 0 else None
+                                )
                             except Exception as exc2:
                                 log.debug("[WalletManager] P&L config: %s", exc2)
             except Exception as exc:
                 log.debug("[WalletManager] P&L calc: %s", exc)
 
         snap = {
-            "ts":               datetime.utcnow().isoformat(),
-            "ton_balance":      round(ton_bal, 6),
-            "grinch_balance":   round(grinch_bal, 2),
+            "ts": datetime.utcnow().isoformat(),
+            "ton_balance": round(ton_bal, 6),
+            "grinch_balance": round(grinch_bal, 2),
             "grinch_price_ton": round(grinch_ton, 10) if grinch_ton > 0 else None,
-            "grinch_price_usd": grinch_usd            if grinch_usd > 0 else None,
-            "ton_price_usd":    ton_usd               if ton_usd    > 0 else None,
+            "grinch_price_usd": grinch_usd if grinch_usd > 0 else None,
+            "ton_price_usd": ton_usd if ton_usd > 0 else None,
             "grinch_value_ton": grinch_value_ton,
             "grinch_value_usd": grinch_value_usd,
             "total_equity_ton": total_equity_ton,
             "total_equity_usd": total_equity_usd,
-            "entry_price_ton":  round(entry_price_ton, 10) if entry_price_ton else None,
-            "entry_price_usd":  entry_price_usd,
-            "pnl_ton":          pnl_ton,
-            "pnl_pct":          pnl_pct,
-            "pnl_usd":          pnl_usd,
-            "tracked_amount":   round(tracked_amount, 6) if tracked_amount else None,
-            "tracked_entries":  tracked_entries,
-            "tracked_stake":    round(tracked_stake, 6) if tracked_stake else None,
+            "entry_price_ton": round(entry_price_ton, 10) if entry_price_ton else None,
+            "entry_price_usd": entry_price_usd,
+            "pnl_ton": pnl_ton,
+            "pnl_pct": pnl_pct,
+            "pnl_usd": pnl_usd,
+            "tracked_amount": round(tracked_amount, 6) if tracked_amount else None,
+            "tracked_entries": tracked_entries,
+            "tracked_stake": round(tracked_stake, 6) if tracked_stake else None,
         }
 
         # Рваные чтения open_trades предотвращены через _ot_lock (trader.py).
@@ -283,16 +306,17 @@ class WalletManager:
         """Убирает снапшоты с TON=0+GRINCH>0 — глюки API, не реальное состояние."""
         out = []
         for r in rows:
-            ton_b    = r.get("ton_balance", 0) or 0
+            ton_b = r.get("ton_balance", 0) or 0
             grinch_b = r.get("grinch_balance", 0) or 0
             if ton_b == 0.0 and grinch_b > 0:
-                continue   # битая точка — пропускаем
+                continue  # битая точка — пропускаем
             out.append(r)
         return out
 
     def get_history(self, limit: int = 200) -> list:
         """История снимков из БД (или памяти при недоступности БД)."""
         import db_store
+
         try:
             # Запрашиваем чуть больше лимита — часть точек может быть
             # отфильтрована как битые (TON=0+GRINCH>0), чтобы на выходе
@@ -307,93 +331,111 @@ class WalletManager:
 
     def get_full_status(self) -> dict:
         """Полный статус кошелька: снимок + позиция + потенциал + история (50 точек)."""
-        snap    = self.get_snapshot()
+        snap = self.get_snapshot()
         # Fallback: если in-memory snap пуст (первые секунды после старта),
         # берём последний снапшот из PostgreSQL чтобы дашборд не показывал —
         if not snap or not snap.get("ton_balance"):
             try:
                 import db_store as _ds
+
                 _db_snap = _ds.wallet_snapshots_get_recent(1)
                 if _db_snap:
                     snap = _db_snap[-1]
-                    log.debug("[WalletManager] get_full_status: snap from DB (cold start)")
+                    log.debug(
+                        "[WalletManager] get_full_status: snap from DB (cold start)"
+                    )
             except Exception as _e:
                 log.debug("[WalletManager] DB snap fallback: %s", _e)
         history = self.get_history(50)
 
-        grinch_bal  = snap.get("grinch_balance", 0) or 0
-        entry_ton   = snap.get("entry_price_ton")
-        cur_ton     = snap.get("grinch_price_ton")
-        cur_usd     = snap.get("grinch_price_usd")
-        ton_usd     = snap.get("ton_price_usd")
-        pnl_ton     = snap.get("pnl_ton")
-        pnl_pct     = snap.get("pnl_pct")
+        grinch_bal = snap.get("grinch_balance", 0) or 0
+        entry_ton = snap.get("entry_price_ton")
+        cur_ton = snap.get("grinch_price_ton")
+        cur_usd = snap.get("grinch_price_usd")
+        ton_usd = snap.get("ton_price_usd")
+        pnl_ton = snap.get("pnl_ton")
+        pnl_pct = snap.get("pnl_pct")
         in_position = grinch_bal > 0
         # Только реально отслеживаемое trader'ом количество (см. _poll_body) —
         # избегаем расчёта потенциала от всего баланса кошелька, если часть GRINCH
         # не относится к текущей открытой DCA-позиции. Никакого fallback на grinch_bal:
         # если снимок ещё не содержит tracked_amount (нет открытой позиции / старый снимок),
         # потенциал просто не считаем, а не считаем его от чужого объёма токенов.
-        tracked_amount  = snap.get("tracked_amount")
+        tracked_amount = snap.get("tracked_amount")
         tracked_entries = snap.get("tracked_entries") or 1
-        tracked_stake   = snap.get("tracked_stake")
+        tracked_stake = snap.get("tracked_stake")
 
         # Ценовой диапазон за историю
-        prices_ton = [h.get("grinch_price_ton") for h in history if h.get("grinch_price_ton")]
-        price_min  = min(prices_ton) if prices_ton else None
-        price_max  = max(prices_ton) if prices_ton else None
+        prices_ton = [
+            h.get("grinch_price_ton") for h in history if h.get("grinch_price_ton")
+        ]
+        price_min = min(prices_ton) if prices_ton else None
+        price_max = max(prices_ton) if prices_ton else None
 
         # Мин/макс портфель за историю
-        equities   = [h.get("total_equity_ton") for h in history if h.get("total_equity_ton")]
-        eq_min     = min(equities) if equities else None
-        eq_max     = max(equities) if equities else None
+        equities = [
+            h.get("total_equity_ton") for h in history if h.get("total_equity_ton")
+        ]
+        eq_min = min(equities) if equities else None
+        eq_max = max(equities) if equities else None
 
         # Потенциальная прибыль при разных ценах
         # Используем те же параметры стоимости, что и в _poll_body() для консистентности:
         # cost = total_stake + buy_gas * n_entries  (из снимка: grinch_bal*entry_ton ≈ total_stake)
-        potential  = {}
-        if entry_ton and tracked_amount and tracked_amount > 0 and tracked_stake and in_position:
+        potential = {}
+        if (
+            entry_ton
+            and tracked_amount
+            and tracked_amount > 0
+            and tracked_stake
+            and in_position
+        ):
             try:
                 from config import Config
-                fee      = Config.FEE_PCT / 100.0
+
+                fee = Config.FEE_PCT / 100.0
                 sell_gas = Config.SELL_GAS_TON
-                buy_gas  = getattr(Config, "BUY_GAS_TON", 0.25)
+                buy_gas = getattr(Config, "BUY_GAS_TON", 0.25)
                 # Единая база стоимости с _poll_body(): cost = tracked_stake + buy_gas * n_entries.
                 # tracked_stake — это полная сумма вложений trader'а (total_stake), а не
                 # пропорция от tracked_amount*entry_ton — иначе cost-модель разойдётся между
                 # live P&L (_poll_body) и проекцией потенциала здесь при tracked_amount < total_amount.
-                cost  = tracked_stake + buy_gas * tracked_entries
+                cost = tracked_stake + buy_gas * tracked_entries
                 for pct in (5, 10, 15, 20, 30):
                     tgt_ton = entry_ton * (1 + pct / 100)
                     proceeds = tracked_amount * tgt_ton * (1 - fee) - sell_gas
-                    p_pnl    = round(proceeds - cost, 6)
+                    p_pnl = round(proceeds - cost, 6)
                     potential[f"+{pct}%"] = {
                         "target_price_ton": round(tgt_ton, 10),
-                        "target_price_usd": round(tgt_ton / entry_ton * (cur_usd or 0), 8) if cur_usd else None,
-                        "pnl_ton":          p_pnl,
-                        "pnl_usd":          round(p_pnl * ton_usd, 4) if ton_usd else None,
+                        "target_price_usd": (
+                            round(tgt_ton / entry_ton * (cur_usd or 0), 8)
+                            if cur_usd
+                            else None
+                        ),
+                        "pnl_ton": p_pnl,
+                        "pnl_usd": round(p_pnl * ton_usd, 4) if ton_usd else None,
                     }
             except Exception:
                 pass
 
         # Процент от стартового капитала (если есть история)
-        start_equity  = equities[0]  if equities else None
-        current_eq    = snap.get("total_equity_ton")
+        start_equity = equities[0] if equities else None
+        current_eq = snap.get("total_equity_ton")
         equity_change = None
         if start_equity and current_eq and start_equity > 0:
             equity_change = round((current_eq - start_equity) / start_equity * 100, 2)
 
         return {
-            "snapshot":       snap,
-            "in_position":    in_position,
-            "grinch_count":   grinch_bal,
+            "snapshot": snap,
+            "in_position": in_position,
+            "grinch_count": grinch_bal,
             "entry_price_ton": entry_ton,
             "entry_price_usd": snap.get("entry_price_usd"),
             "current_price_ton": cur_ton,
             "current_price_usd": cur_usd,
-            "pnl_ton":        pnl_ton,
-            "pnl_pct":        pnl_pct,
-            "pnl_usd":        snap.get("pnl_usd"),
+            "pnl_ton": pnl_ton,
+            "pnl_pct": pnl_pct,
+            "pnl_usd": snap.get("pnl_usd"),
             "price_range": {
                 "min_ton": price_min,
                 "max_ton": price_max,
@@ -403,8 +445,8 @@ class WalletManager:
                 "max_ton": eq_max,
             },
             "equity_change_pct": equity_change,
-            "potential":      potential,
-            "history":        history,
+            "potential": potential,
+            "history": history,
         }
 
 

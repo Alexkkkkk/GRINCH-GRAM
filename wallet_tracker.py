@@ -18,6 +18,7 @@ wallet_tracker.py — Мониторинг ВСЕХ кошельков, торг
 полная картина строится ВПЕРЁД — со временем, по мере наблюдения. Чем дольше
 бот работает, тем богаче статистика по кошелькам.
 """
+
 import json
 import logging
 import os
@@ -36,11 +37,15 @@ logger = logging.getLogger(__name__)
 def _db():
     try:
         import db_store
+
         return db_store if db_store.is_available() else None
     except Exception:
         return None
 
-_DATA_DIR = os.getenv("DATA_DIR", os.path.join(os.path.dirname(os.path.abspath(__file__)), "data"))
+
+_DATA_DIR = os.getenv(
+    "DATA_DIR", os.path.join(os.path.dirname(os.path.abspath(__file__)), "data")
+)
 os.makedirs(_DATA_DIR, exist_ok=True)
 STORE_PATH = os.getenv("WALLETS_FILE", os.path.join(_DATA_DIR, "wallets.json"))
 
@@ -63,23 +68,23 @@ def _ts_to_epoch(iso):
 
 
 class WalletTracker:
-    POLL_SEC = 5            # как часто опрашиваем ленту пула
-    START_DELAY = 12        # расфазировка с остальными пуллерами
-    SIGNAL_WINDOW_SEC = 3600        # окно «прямо сейчас» для сигнала умных денег (1 ч)
-    MIN_FLOW_TON = 5.0      # минимальный оборот в окне, чтобы доверять сигналу
-    MAX_EVENTS = 2000       # сколько последних сделок храним на диске
-    MAX_SEEN = 12000        # C2-fix: увеличен с 6000 → 12000 чтобы снизить частоту
-                            # обрезки dict-LRU и тем самым уменьшить вероятность
-                            # повторной обработки «забытых» транзакций
-    SMART_MIN_TRADES = 2    # минимум сделок, чтобы считать кошелёк «умным»
+    POLL_SEC = 5  # как часто опрашиваем ленту пула
+    START_DELAY = 12  # расфазировка с остальными пуллерами
+    SIGNAL_WINDOW_SEC = 3600  # окно «прямо сейчас» для сигнала умных денег (1 ч)
+    MIN_FLOW_TON = 5.0  # минимальный оборот в окне, чтобы доверять сигналу
+    MAX_EVENTS = 2000  # сколько последних сделок храним на диске
+    MAX_SEEN = 12000  # C2-fix: увеличен с 6000 → 12000 чтобы снизить частоту
+    # обрезки dict-LRU и тем самым уменьшить вероятность
+    # повторной обработки «забытых» транзакций
+    SMART_MIN_TRADES = 2  # минимум сделок, чтобы считать кошелёк «умным»
 
     def __init__(self):
-        self._lock       = threading.RLock()
-        self._running    = False
-        self._stop_event = threading.Event()   # мгновенная остановка
-        self._backoff    = self.POLL_SEC
-        self.last_poll   = 0.0
-        self.last_error  = None
+        self._lock = threading.RLock()
+        self._running = False
+        self._stop_event = threading.Event()  # мгновенная остановка
+        self._backoff = self.POLL_SEC
+        self.last_poll = 0.0
+        self.last_error = None
         # адрес -> агрегат
         self.wallets = {}
         # дедупликация увиденных сделок (dict как LRU-set: порядок вставки сохранён,
@@ -107,7 +112,7 @@ class WalletTracker:
 
     def _loop(self):
         if self._stop_event.wait(timeout=self.START_DELAY):
-            return   # stop() вызван во время расфазировки
+            return  # stop() вызван во время расфазировки
         while self._running and not self._stop_event.is_set():
             try:
                 self._poll_once()
@@ -117,7 +122,7 @@ class WalletTracker:
                 self.last_error = None
                 self._backoff = self.POLL_SEC
                 self._stop_event.wait(timeout=self.POLL_SEC)
-            except Exception as e:           # noqa: BLE001
+            except Exception as e:  # noqa: BLE001
                 self.last_error = str(e)
                 self._backoff = min(self._backoff * 2, 300)
                 self._stop_event.wait(timeout=self._backoff)
@@ -178,18 +183,24 @@ class WalletTracker:
             self._seen[tx] = 1  # dict-LRU: insertion order preserved
             if len(self._seen) > self.MAX_SEEN:
                 # Удаляем MAX_SEEN//2 самых СТАРЫХ записей (в порядке вставки)
-                oldest = list(self._seen.keys())[:self.MAX_SEEN // 2]
+                oldest = list(self._seen.keys())[: self.MAX_SEEN // 2]
                 for k in oldest:
                     del self._seen[k]
 
             w = self.wallets.get(addr)
             if w is None:
                 w = {
-                    "buys": 0, "sells": 0,
-                    "ton_in": 0.0, "ton_out": 0.0,
-                    "usd_in": 0.0, "usd_out": 0.0,
-                    "grinch_bought": 0.0, "grinch_sold": 0.0,
-                    "first_ts": ts, "last_ts": ts, "last_kind": kind,
+                    "buys": 0,
+                    "sells": 0,
+                    "ton_in": 0.0,
+                    "ton_out": 0.0,
+                    "usd_in": 0.0,
+                    "usd_out": 0.0,
+                    "grinch_bought": 0.0,
+                    "grinch_sold": 0.0,
+                    "first_ts": ts,
+                    "last_ts": ts,
+                    "last_kind": kind,
                 }
                 self.wallets[addr] = w
             if kind == "buy":
@@ -206,14 +217,19 @@ class WalletTracker:
             w["first_ts"] = min(w["first_ts"], ts) if w["first_ts"] else ts
             w["last_kind"] = kind
 
-            self.events.append({
-                "addr": addr, "kind": kind, "ton": ton_amt,
-                "grinch": grinch_amt, "price": price,
-                "usd": round(usd_vol, 2),
-                "ts": ts,
-            })
+            self.events.append(
+                {
+                    "addr": addr,
+                    "kind": kind,
+                    "ton": ton_amt,
+                    "grinch": grinch_amt,
+                    "price": price,
+                    "usd": round(usd_vol, 2),
+                    "ts": ts,
+                }
+            )
             if len(self.events) > self.MAX_EVENTS:
-                self.events = self.events[-self.MAX_EVENTS:]
+                self.events = self.events[-self.MAX_EVENTS :]
 
     # ---------------------------------------------------------------- метрики
     @staticmethod
@@ -236,7 +252,9 @@ class WalletTracker:
     def _smart_set(self):
         out = set()
         for addr, w in self.wallets.items():
-            if (w["buys"] + w["sells"]) >= self.SMART_MIN_TRADES and self._realized_pnl(w) > 0:
+            if (w["buys"] + w["sells"]) >= self.SMART_MIN_TRADES and self._realized_pnl(
+                w
+            ) > 0:
                 out.add(addr)
         return out
 
@@ -260,7 +278,12 @@ class WalletTracker:
                 if not addr or addr == "—":
                     continue
                 try:
-                    url = "https://tonapi.io/v2/accounts/" + addr + "/jettons/" + jetton_addr
+                    url = (
+                        "https://tonapi.io/v2/accounts/"
+                        + addr
+                        + "/jettons/"
+                        + jetton_addr
+                    )
                     r = _HTTP.get(url, timeout=8)
                     if r.status_code in (404, 422):
                         new_bal[addr] = 0.0
@@ -277,9 +300,13 @@ class WalletTracker:
                     self._on_chain_balances = new_bal
                     self._last_balance_poll = time.time()
             else:
-                logger.debug("[WalletTracker] _poll_whale_balances: все запросы неудачны, оставляем старый кэш")
+                logger.debug(
+                    "[WalletTracker] _poll_whale_balances: все запросы неудачны, оставляем старый кэш"
+                )
             whales = sum(1 for v in new_bal.values() if v >= min_g)
-            logger.debug("[WalletTracker] on-chain: %d кошельков, %d китов", len(new_bal), whales)
+            logger.debug(
+                "[WalletTracker] on-chain: %d кошельков, %d китов", len(new_bal), whales
+            )
         except Exception as e:
             logger.debug("[WalletTracker] _poll_whale_balances: %s", e)
 
@@ -289,8 +316,12 @@ class WalletTracker:
             balances = dict(self._on_chain_balances)
             last_poll = self._last_balance_poll
         if not balances or time.time() - last_poll > 600:
-            return {"whale_hold_score": 0.0, "whale_count": 0,
-                    "whale_grinch_total": 0.0, "whale_data_age_sec": 9999}
+            return {
+                "whale_hold_score": 0.0,
+                "whale_count": 0,
+                "whale_grinch_total": 0.0,
+                "whale_data_age_sec": 9999,
+            }
         min_g = getattr(Config, "WHALE_MIN_GRINCH", 100000)
         whale_addrs = [a for a, v in balances.items() if v >= min_g]
         whale_g = sum(balances[a] for a in whale_addrs)
@@ -316,8 +347,12 @@ class WalletTracker:
             recent = [e for e in self.events if now - e["ts"] <= win]
             smart = self._smart_set()
 
-        smart_buy = sum(e["ton"] for e in recent if e["kind"] == "buy" and e["addr"] in smart)
-        smart_sell = sum(e["ton"] for e in recent if e["kind"] == "sell" and e["addr"] in smart)
+        smart_buy = sum(
+            e["ton"] for e in recent if e["kind"] == "buy" and e["addr"] in smart
+        )
+        smart_sell = sum(
+            e["ton"] for e in recent if e["kind"] == "sell" and e["addr"] in smart
+        )
         all_buy = sum(e["ton"] for e in recent if e["kind"] == "buy")
         all_sell = sum(e["ton"] for e in recent if e["kind"] == "sell")
 
@@ -348,17 +383,19 @@ class WalletTracker:
         ew = Config.SMART_EARLY_WINDOW_SEC
         cur = [e for e in recent if now - e["ts"] <= ew]
         prev = [e for e in recent if ew < now - e["ts"] <= 2 * ew]
-        cur_buy = sum(e["ton"] for e in cur if e["kind"] == "buy" and e["addr"] in smart)
-        cur_sell = sum(e["ton"] for e in cur if e["kind"] == "sell" and e["addr"] in smart)
+        cur_buy = sum(
+            e["ton"] for e in cur if e["kind"] == "buy" and e["addr"] in smart
+        )
+        cur_sell = sum(
+            e["ton"] for e in cur if e["kind"] == "sell" and e["addr"] in smart
+        )
         prev_net = sum(
             (e["ton"] if e["kind"] == "buy" else -e["ton"])
-            for e in prev if e["addr"] in smart
+            for e in prev
+            if e["addr"] in smart
         )
         cur_net = cur_buy - cur_sell
-        early_buy = (
-            cur_net >= Config.SMART_EARLY_MIN_TON
-            and prev_net <= 0
-        )
+        early_buy = cur_net >= Config.SMART_EARLY_MIN_TON and prev_net <= 0
         return {
             "score": round(score, 3),
             "basis": basis,
@@ -370,7 +407,7 @@ class WalletTracker:
             "early_buy_ton": round(cur_net, 2),
         }
 
-    WINDOW_24H = 86400      # окно для списка кошельков (последние сутки)
+    WINDOW_24H = 86400  # окно для списка кошельков (последние сутки)
 
     def get_large_sell_events(self, window_sec: float = 120.0, min_ton: float = 500.0):
         """
@@ -382,7 +419,8 @@ class WalletTracker:
         now = time.time()
         with self._lock:
             recent = [
-                e for e in self.events
+                e
+                for e in self.events
                 if e["kind"] == "sell"
                 and (now - e["ts"]) <= window_sec
                 and e["ton"] >= min_ton
@@ -394,7 +432,9 @@ class WalletTracker:
         with self._lock:
             wallets = {k: dict(v) for k, v in self.wallets.items()}
             now = time.time()
-            recent = [dict(e) for e in self.events if now - e["ts"] <= self.SIGNAL_WINDOW_SEC]
+            recent = [
+                dict(e) for e in self.events if now - e["ts"] <= self.SIGNAL_WINDOW_SEC
+            ]
             total_events = len(self.events)
             last_poll = self.last_poll
             err = self.last_error
@@ -404,51 +444,62 @@ class WalletTracker:
         for addr, w in wallets.items():
             pnl = self._realized_pnl(w)
             held = w["grinch_bought"] - w["grinch_sold"]
-            usd_in  = round(w.get("usd_in",  0.0), 2)
+            usd_in = round(w.get("usd_in", 0.0), 2)
             usd_out = round(w.get("usd_out", 0.0), 2)
-            rows.append({
-                "addr": addr,
-                "short": (addr[:6] + "…" + addr[-4:]) if len(addr) > 12 else addr,
-                "buys": w["buys"], "sells": w["sells"],
-                "ton_in":  round(w["ton_in"],  2),
-                "ton_out": round(w["ton_out"], 2),
-                "usd_in":  usd_in,
-                "usd_out": usd_out,
-                "usd_volume": round(usd_in + usd_out, 2),
-                "grinch_held": round(held, 2),
-                "grinch_bought": round(w["grinch_bought"], 2),
-                "grinch_sold":   round(w["grinch_sold"],   2),
-                "pnl_ton": round(pnl, 3),
-                "first_ts": w["first_ts"], "last_ts": w["last_ts"],
-                "last_kind": w["last_kind"],
-                "smart": (w["buys"] + w["sells"]) >= self.SMART_MIN_TRADES and pnl > 0,
-            })
+            rows.append(
+                {
+                    "addr": addr,
+                    "short": (addr[:6] + "…" + addr[-4:]) if len(addr) > 12 else addr,
+                    "buys": w["buys"],
+                    "sells": w["sells"],
+                    "ton_in": round(w["ton_in"], 2),
+                    "ton_out": round(w["ton_out"], 2),
+                    "usd_in": usd_in,
+                    "usd_out": usd_out,
+                    "usd_volume": round(usd_in + usd_out, 2),
+                    "grinch_held": round(held, 2),
+                    "grinch_bought": round(w["grinch_bought"], 2),
+                    "grinch_sold": round(w["grinch_sold"], 2),
+                    "pnl_ton": round(pnl, 3),
+                    "first_ts": w["first_ts"],
+                    "last_ts": w["last_ts"],
+                    "last_kind": w["last_kind"],
+                    "smart": (w["buys"] + w["sells"]) >= self.SMART_MIN_TRADES
+                    and pnl > 0,
+                }
+            )
 
         # Список — только кошельки, активные за последние 24 часа, по убыванию
         active = [r for r in rows if r["last_ts"] >= cutoff_24h]
         top_profit = sorted(active, key=lambda x: x["pnl_ton"], reverse=True)[:top]
         top_volume = sorted(active, key=lambda x: x["usd_volume"], reverse=True)[:top]
 
-        buy_ton  = sum(e["ton"] for e in recent if e["kind"] == "buy")
+        buy_ton = sum(e["ton"] for e in recent if e["kind"] == "buy")
         sell_ton = sum(e["ton"] for e in recent if e["kind"] == "sell")
-        buy_usd  = sum(e.get("usd", 0.0) for e in recent if e["kind"] == "buy")
+        buy_usd = sum(e.get("usd", 0.0) for e in recent if e["kind"] == "buy")
         sell_usd = sum(e.get("usd", 0.0) for e in recent if e["kind"] == "sell")
-        smart_n  = sum(1 for r in rows if r["smart"])
+        smart_n = sum(1 for r in rows if r["smart"])
 
         # Последние 30 событий — для блока «Последние сделки» в карточке кошельков
         smart_addrs_set = {r["addr"] for r in rows if r["smart"]}
         recent_events = []
         for e in reversed(self.events[-30:]):
-            recent_events.append({
-                "addr":   e["addr"],
-                "short":  (e["addr"][:6] + "…" + e["addr"][-4:]) if len(e["addr"]) > 12 else e["addr"],
-                "kind":   e["kind"],
-                "grinch": e["grinch"],
-                "ton":    e["ton"],
-                "usd":    e.get("usd", 0.0),
-                "ts":     e["ts"],
-                "smart":  e["addr"] in smart_addrs_set,
-            })
+            recent_events.append(
+                {
+                    "addr": e["addr"],
+                    "short": (
+                        (e["addr"][:6] + "…" + e["addr"][-4:])
+                        if len(e["addr"]) > 12
+                        else e["addr"]
+                    ),
+                    "kind": e["kind"],
+                    "grinch": e["grinch"],
+                    "ton": e["ton"],
+                    "usd": e.get("usd", 0.0),
+                    "ts": e["ts"],
+                    "smart": e["addr"] in smart_addrs_set,
+                }
+            )
 
         smart_addrs = [r["addr"] for r in rows if r["smart"]]
         return {
@@ -458,9 +509,9 @@ class WalletTracker:
             "smart_wallets": smart_n,
             "smart_addrs": smart_addrs,
             "total_trades_seen": total_events,
-            "recent_buy_ton":  round(buy_ton,  2),
+            "recent_buy_ton": round(buy_ton, 2),
             "recent_sell_ton": round(sell_ton, 2),
-            "recent_buy_usd":  round(buy_usd,  2),
+            "recent_buy_usd": round(buy_usd, 2),
             "recent_sell_usd": round(sell_usd, 2),
             "top_profit": top_profit,
             "top_volume": top_volume,
@@ -480,13 +531,17 @@ class WalletTracker:
             try:
                 wallets, events, seen, last_poll = db.wallets_load()
                 if wallets or events:
-                    self.wallets   = wallets
-                    self.events    = events
+                    self.wallets = wallets
+                    self.events = events
                     # seen из DB может быть set или dict — нормализуем в dict-LRU
-                    self._seen     = seen if isinstance(seen, dict) else {k: 1 for k in seen}
+                    self._seen = (
+                        seen if isinstance(seen, dict) else {k: 1 for k in seen}
+                    )
                     self.last_poll = last_poll
                     loaded_from_db = True
-                    logger.info(f"[WalletTracker] Загружено из DB: {len(wallets)} кошельков")
+                    logger.info(
+                        f"[WalletTracker] Загружено из DB: {len(wallets)} кошельков"
+                    )
             except Exception as e:
                 logger.warning(f"[WalletTracker] DB load error: {e}")
 
@@ -497,21 +552,25 @@ class WalletTracker:
             try:
                 with open(STORE_PATH, "r", encoding="utf-8") as fh:
                     data = json.load(fh)
-                self.wallets   = data.get("wallets", {}) or {}
-                self.events    = data.get("events", []) or []
-                self._seen     = {k: 1 for k in (data.get("seen", []) or [])}
+                self.wallets = data.get("wallets", {}) or {}
+                self.events = data.get("events", []) or []
+                self._seen = {k: 1 for k in (data.get("seen", []) or [])}
                 self.last_poll = data.get("last_poll", 0.0) or 0.0
-                logger.info(f"[WalletTracker] Загружено из JSON: {len(self.wallets)} кошельков")
+                logger.info(
+                    f"[WalletTracker] Загружено из JSON: {len(self.wallets)} кошельков"
+                )
                 # Миграция в DB
                 if db and self.wallets:
                     try:
                         db.wallets_save(
                             self.wallets,
-                            self.events[-self.MAX_EVENTS:],
-                            list(self._seen)[-self.MAX_SEEN:],
+                            self.events[-self.MAX_EVENTS :],
+                            list(self._seen)[-self.MAX_SEEN :],
                             self.last_poll,
                         )
-                        logger.info("[WalletTracker] ✅ Кошельки мигрированы JSON → PostgreSQL")
+                        logger.info(
+                            "[WalletTracker] ✅ Кошельки мигрированы JSON → PostgreSQL"
+                        )
                     except Exception as e:
                         logger.warning(f"[WalletTracker] migrate_to_db error: {e}")
             except Exception:
@@ -519,10 +578,10 @@ class WalletTracker:
 
     def _save(self):
         with self._lock:
-            wallets    = dict(self.wallets)
-            events     = self.events[-self.MAX_EVENTS:]
-            seen       = list(self._seen)[-self.MAX_SEEN:]
-            last_poll  = self.last_poll
+            wallets = dict(self.wallets)
+            events = self.events[-self.MAX_EVENTS :]
+            seen = list(self._seen)[-self.MAX_SEEN :]
+            last_poll = self.last_poll
 
         # DB — первичное хранилище, быстрый путь (не блокируем polling-поток)
         db = _db()
@@ -537,8 +596,8 @@ class WalletTracker:
         def _write_json():
             payload = {
                 "wallets": wallets,
-                "events":  events,
-                "seen":    seen,
+                "events": events,
+                "seen": seen,
                 "last_poll": last_poll,
                 "saved_at": datetime.now(timezone.utc).isoformat(),
             }
@@ -550,5 +609,5 @@ class WalletTracker:
             except Exception as _je:
                 # FIX#35: не подавляем молча — логируем, чтобы потеря бэкапа была заметна
                 logger.warning(f"[WalletTracker] JSON backup write error: {_je}")
-        threading.Thread(target=_write_json, daemon=True,
-                         name="wt-json-save").start()
+
+        threading.Thread(target=_write_json, daemon=True, name="wt-json-save").start()

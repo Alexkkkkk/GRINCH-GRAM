@@ -31,16 +31,27 @@ from datetime import datetime
 
 try:
     import numpy as _np
+
     class _NpEncoder(json.JSONEncoder):
         def default(self, o):
-            if isinstance(o, _np.integer): return int(o)
-            if isinstance(o, _np.floating): return float(o)
-            if isinstance(o, _np.bool_): return bool(o)
-            if isinstance(o, _np.ndarray): return o.tolist()
+            if isinstance(o, _np.integer):
+                return int(o)
+            if isinstance(o, _np.floating):
+                return float(o)
+            if isinstance(o, _np.bool_):
+                return bool(o)
+            if isinstance(o, _np.ndarray):
+                return o.tolist()
             return super().default(o)
-    def _jdump(obj, f, **kw): return json.dump(obj, f, cls=_NpEncoder, **kw)
+
+    def _jdump(obj, f, **kw):
+        return json.dump(obj, f, cls=_NpEncoder, **kw)
+
 except ImportError:
-    def _jdump(obj, f, **kw): return json.dump(obj, f, **kw)
+
+    def _jdump(obj, f, **kw):
+        return json.dump(obj, f, **kw)
+
 
 from config import Config
 
@@ -50,30 +61,42 @@ logger = logging.getLogger(__name__)
 def _db():
     try:
         import db_store
+
         return db_store if db_store.is_available() else None
     except Exception:
         return None
 
-_DATA_DIR = os.getenv("DATA_DIR", os.path.join(os.path.dirname(os.path.abspath(__file__)), "data"))
+
+_DATA_DIR = os.getenv(
+    "DATA_DIR", os.path.join(os.path.dirname(os.path.abspath(__file__)), "data")
+)
 os.makedirs(_DATA_DIR, exist_ok=True)
 FILE = os.getenv("EXPERIENCE_FILE", os.path.join(_DATA_DIR, "experience.json"))
 
 # ── Параметры адаптации (само-управление) ────────────────────────────────────
-MAX_TRADES_KEPT   = 1000     # сколько последних сделок хранить в журнале
-MAX_EQUITY_KEPT   = 3000     # сколько точек кривой капитала хранить
-EQUITY_MIN_GAP    = 30       # не чаще раза в N секунд писать точку капитала
-RECENT_WINDOW     = 5        # окно «недавних» сделок — быстрее реагирует (было 10)
-CONF_CAP          = 90.0     # потолок порога уверенности
-DD_SHRINK_1       = 8.0      # просадка 8% → уменьшаем ставку (было 10)
-DD_SHRINK_2       = 18.0     # просадка 18% → сильно уменьшаем ставку (было 20)
-DD_PAUSE          = 28.0     # просадка 28% → пауза новых покупок (было 30)
-DD_RESUME         = 12.0     # просадка 12% → снимаем паузу (было 15)
+MAX_TRADES_KEPT = 1000  # сколько последних сделок хранить в журнале
+MAX_EQUITY_KEPT = 3000  # сколько точек кривой капитала хранить
+EQUITY_MIN_GAP = 30  # не чаще раза в N секунд писать точку капитала
+RECENT_WINDOW = 5  # окно «недавних» сделок — быстрее реагирует (было 10)
+CONF_CAP = 90.0  # потолок порога уверенности
+DD_SHRINK_1 = 8.0  # просадка 8% → уменьшаем ставку (было 10)
+DD_SHRINK_2 = 18.0  # просадка 18% → сильно уменьшаем ставку (было 20)
+DD_PAUSE = 28.0  # просадка 28% → пауза новых покупок (было 30)
+DD_RESUME = 12.0  # просадка 12% → снимаем паузу (было 15)
 # — безопасный РОСТ ставки на доказанной прибыли (только в спокойном режиме) —
-WIN_GROW_1        = 3        # серия прибыльных сделок → ставка +25%
-WIN_GROW_2        = 5        # серия 5 побед → ставка до потолка (было 6)
-GROW_CAP          = 1.8      # потолок множителя ставки (×1.8 от базовой, было 1.5)
+WIN_GROW_1 = 3  # серия прибыльных сделок → ставка +25%
+WIN_GROW_2 = 5  # серия 5 побед → ставка до потолка (было 6)
+GROW_CAP = 1.8  # потолок множителя ставки (×1.8 от базовой, было 1.5)
 # Режимы рынка для per-regime трекинга
-REGIME_KEYS       = ("UPTREND", "DOWNTREND", "RANGING", "VOLATILE", "BREAKOUT", "SQUEEZE", "TRANSITION")
+REGIME_KEYS = (
+    "UPTREND",
+    "DOWNTREND",
+    "RANGING",
+    "VOLATILE",
+    "BREAKOUT",
+    "SQUEEZE",
+    "TRANSITION",
+)
 
 
 class ExperienceManager:
@@ -84,33 +107,33 @@ class ExperienceManager:
         self.data = {
             "version": 1,
             "created": datetime.utcnow().isoformat(),
-            "trades":      [],   # журнал закрытых сделок
-            "open_trades": [],   # ОТКРЫТЫЕ позиции: цена покупки + цель продажи
-            "equity":      [],   # снимки капитала
-            "stats":       {},   # последняя статистика трейдера
-            "ai":          {},   # экспорт опыта ИИ
-            "control":     self._default_control(),
+            "trades": [],  # журнал закрытых сделок
+            "open_trades": [],  # ОТКРЫТЫЕ позиции: цена покупки + цель продажи
+            "equity": [],  # снимки капитала
+            "stats": {},  # последняя статистика трейдера
+            "ai": {},  # экспорт опыта ИИ
+            "control": self._default_control(),
         }
         self._load()
 
     # ── По умолчанию ─────────────────────────────────────────────────────────
     def _default_control(self) -> dict:
         return {
-            "base_min_conf":     float(Config.MIN_AI_CONFIDENCE),
+            "base_min_conf": float(Config.MIN_AI_CONFIDENCE),
             "base_trade_amount": float(Config.TRADE_AMOUNT),
-            "min_conf":          float(Config.MIN_AI_CONFIDENCE),
-            "trade_amount":      float(Config.TRADE_AMOUNT),
-            "paused":            False,
-            "peak_equity":       0.0,
-            "drawdown_pct":      0.0,
-            "loss_streak":       0,
-            "last_note":         "init",
-            "updated":           None,
+            "min_conf": float(Config.MIN_AI_CONFIDENCE),
+            "trade_amount": float(Config.TRADE_AMOUNT),
+            "paused": False,
+            "peak_equity": 0.0,
+            "drawdown_pct": 0.0,
+            "loss_streak": 0,
+            "last_note": "init",
+            "updated": None,
             # Авто-TP: ИИ сам подбирает оптимальный тейк-профит по истории
-            "take_profit_pct":        float(Config.TAKE_PROFIT_PCT),
-            "ai_tp_adapted":          False,    # True когда ИИ уже адаптировал TP
-            "ai_tp_trades_used":      0,        # сколько сделок учтено в последней адаптации
-            "ai_avg_win_pct":         0.0,      # средний % прибыли в выигрышных сделках
+            "take_profit_pct": float(Config.TAKE_PROFIT_PCT),
+            "ai_tp_adapted": False,  # True когда ИИ уже адаптировал TP
+            "ai_tp_trades_used": 0,  # сколько сделок учтено в последней адаптации
+            "ai_avg_win_pct": 0.0,  # средний % прибыли в выигрышных сделках
         }
 
     @staticmethod
@@ -124,9 +147,12 @@ class ExperienceManager:
         """
         stats = dict(existing or {})
         closed = [
-            t for t in (trades or [])
+            t
+            for t in (trades or [])
             if isinstance(t, dict)
-            and (t.get("status") == "closed" or t.get("closed_at") or t.get("exit_time"))
+            and (
+                t.get("status") == "closed" or t.get("closed_at") or t.get("exit_time")
+            )
         ]
         if not closed:
             return stats
@@ -148,15 +174,17 @@ class ExperienceManager:
             else:
                 current_streak = 0
 
-        stats.update({
-            "total_trades": len(closed),
-            "winning_trades": wins,
-            "total_pnl": round(sum(pnls), 6),
-            "best_trade_ton": round(max(pnls), 6),
-            "worst_trade_ton": round(min(pnls), 6),
-            "win_streak": current_streak,
-            "max_win_streak": max_streak,
-        })
+        stats.update(
+            {
+                "total_trades": len(closed),
+                "winning_trades": wins,
+                "total_pnl": round(sum(pnls), 6),
+                "best_trade_ton": round(max(pnls), 6),
+                "worst_trade_ton": round(min(pnls), 6),
+                "win_streak": current_streak,
+                "max_win_streak": max_streak,
+            }
+        )
         return stats
 
     # ── Чтение / запись ──────────────────────────────────────────────────────
@@ -167,23 +195,38 @@ class ExperienceManager:
         # ── Попытка загрузить из PostgreSQL ──────────────────────────────────
         if db:
             try:
-                trades     = db.trades_get_all()
-                equity     = db.equity_get_all()
+                trades = db.trades_get_all()
+                equity = db.equity_get_all()
                 open_trades = db.open_trades_get()
-                ai_state   = db.ai_state_get_all()
+                ai_state = db.ai_state_get_all()
                 control_raw = ai_state.get("control")
-                stats_raw   = ai_state.get("stats")
-                ai_raw      = ai_state.get("ai_export")
+                stats_raw = ai_state.get("stats")
+                ai_raw = ai_state.get("ai_export")
 
                 if trades or equity or control_raw:
-                    if trades:      self.data["trades"]      = trades
-                    if equity:      self.data["equity"]      = equity
-                    if open_trades: self.data["open_trades"] = open_trades
-                    if control_raw: self.data["control"]     = control_raw if isinstance(control_raw, dict) else json.loads(control_raw)
+                    if trades:
+                        self.data["trades"] = trades
+                    if equity:
+                        self.data["equity"] = equity
+                    if open_trades:
+                        self.data["open_trades"] = open_trades
+                    if control_raw:
+                        self.data["control"] = (
+                            control_raw
+                            if isinstance(control_raw, dict)
+                            else json.loads(control_raw)
+                        )
                     if stats_raw:
-                        _s = stats_raw if isinstance(stats_raw, dict) else json.loads(stats_raw)
+                        _s = (
+                            stats_raw
+                            if isinstance(stats_raw, dict)
+                            else json.loads(stats_raw)
+                        )
                         self.data["stats"] = _s
-                    if ai_raw:      self.data["ai"]          = ai_raw if isinstance(ai_raw, dict) else json.loads(ai_raw)
+                    if ai_raw:
+                        self.data["ai"] = (
+                            ai_raw if isinstance(ai_raw, dict) else json.loads(ai_raw)
+                        )
                     ctrl = self._default_control()
                     ctrl.update(self.data.get("control") or {})
                     self.data["control"] = ctrl
@@ -197,8 +240,10 @@ class ExperienceManager:
                             "[Experience] 🔧 Агрегаты статистики пересчитаны по журналу: "
                             f"{reconciled.get('total_trades', 0)} сделок"
                         )
-                    print(f"[Experience] загружено из DB: {len(self.data['trades'])} сделок, "
-                          f"{len(self.data['equity'])} точек капитала")
+                    print(
+                        f"[Experience] загружено из DB: {len(self.data['trades'])} сделок, "
+                        f"{len(self.data['equity'])} точек капитала"
+                    )
                     loaded_from_db = True
             except Exception as e:
                 logger.warning(f"[Experience] DB load error: {e}")
@@ -210,16 +255,24 @@ class ExperienceManager:
                     return
                 with open(self.path, "r", encoding="utf-8") as f:
                     disk = json.load(f)
-                for k in ("trades", "open_trades", "equity", "stats", "ai", "control", "created"):
+                for k in (
+                    "trades",
+                    "open_trades",
+                    "equity",
+                    "stats",
+                    "ai",
+                    "control",
+                    "created",
+                ):
                     if k in disk and disk[k] is not None:
                         self.data[k] = disk[k]
                 # Санитайз stats из JSON — поля могут быть null если файл был записан
                 # в момент сбоя или устаревшей версией без защиты
                 if isinstance(self.data.get("stats"), dict):
                     _sj = self.data["stats"]
-                    _sj["total_trades"]   = int(_sj.get("total_trades")   or 0)
+                    _sj["total_trades"] = int(_sj.get("total_trades") or 0)
                     _sj["winning_trades"] = int(_sj.get("winning_trades") or 0)
-                    _sj["total_pnl"]      = float(_sj.get("total_pnl")    or 0.0)
+                    _sj["total_pnl"] = float(_sj.get("total_pnl") or 0.0)
                     if _sj["winning_trades"] > _sj["total_trades"]:
                         _sj["winning_trades"] = _sj["total_trades"]
                 ctrl = self._default_control()
@@ -228,8 +281,10 @@ class ExperienceManager:
                 self.data["stats"] = self._reconcile_stats_from_trades(
                     self.data.get("trades") or [], self.data.get("stats") or {}
                 )
-                print(f"[Experience] загружено из JSON: {len(self.data['trades'])} сделок, "
-                      f"{len(self.data['equity'])} точек капитала")
+                print(
+                    f"[Experience] загружено из JSON: {len(self.data['trades'])} сделок, "
+                    f"{len(self.data['equity'])} точек капитала"
+                )
                 # Миграция JSON → DB (однократно)
                 if db:
                     self._migrate_to_db(db)
@@ -239,14 +294,16 @@ class ExperienceManager:
     def _migrate_to_db(self, db):
         """Однократный перенос данных из JSON в PostgreSQL."""
         try:
-            trades  = self.data.get("trades") or []
-            equity  = self.data.get("equity") or []
+            trades = self.data.get("trades") or []
+            equity = self.data.get("equity") or []
             open_ts = self.data.get("open_trades") or []
-            ctrl    = self.data.get("control") or {}
-            stats   = self.data.get("stats") or {}
-            ai      = self.data.get("ai") or {}
-            if trades:  db.trades_bulk_insert(trades)
-            if equity:  db.equity_bulk_insert(equity)
+            ctrl = self.data.get("control") or {}
+            stats = self.data.get("stats") or {}
+            ai = self.data.get("ai") or {}
+            if trades:
+                db.trades_bulk_insert(trades)
+            if equity:
+                db.equity_bulk_insert(equity)
             # ЗАЩИТА: не перезаписывать open_trades в БД данными из JSON,
             # если в БД уже есть позиции. Это предотвращает ситуацию, когда
             # кратковременный сбой соединения на старте приводит к тому, что
@@ -256,16 +313,23 @@ class ExperienceManager:
                 existing_db_ots = db.open_trades_get()
                 if not existing_db_ots:
                     db.open_trades_save(open_ts)
-                    logger.info(f"[Experience] Мигрировано open_trades из JSON: {len(open_ts)} позиций")
+                    logger.info(
+                        f"[Experience] Мигрировано open_trades из JSON: {len(open_ts)} позиций"
+                    )
                 else:
                     logger.info(
                         f"[Experience] open_trades пропущены при миграции — "
                         f"в БД уже {len(existing_db_ots)} позиций (JSON не перезаписывает БД)"
                     )
-            if ctrl:    db.ai_state_set("control", ctrl)
-            if stats:   db.ai_state_set("stats", stats)
-            if ai:      db.ai_state_set("ai_export", ai)
-            logger.info(f"[Experience] ✅ Мигрировано в DB: {len(trades)} сделок, {len(equity)} точек")
+            if ctrl:
+                db.ai_state_set("control", ctrl)
+            if stats:
+                db.ai_state_set("stats", stats)
+            if ai:
+                db.ai_state_set("ai_export", ai)
+            logger.info(
+                f"[Experience] ✅ Мигрировано в DB: {len(trades)} сделок, {len(equity)} точек"
+            )
         except Exception as e:
             logger.warning(f"[Experience] migrate_to_db error: {e}")
 
@@ -282,7 +346,9 @@ class ExperienceManager:
             with open(tmp, "w", encoding="utf-8") as f:
                 _jdump(self.data, f, ensure_ascii=False)
                 f.flush()
-                os.fsync(f.fileno())   # L3-fix: гарантируем запись на диск перед атомарной заменой
+                os.fsync(
+                    f.fileno()
+                )  # L3-fix: гарантируем запись на диск перед атомарной заменой
             os.replace(tmp, self.path)
         except Exception as e:
             print(f"[Experience] ошибка записи {self.path}: {e}")
@@ -290,9 +356,11 @@ class ExperienceManager:
         db = _db()
         if db:
             try:
-                ctrl  = self.data.get("control") or {}
-                if ctrl:  db.ai_state_set("control", ctrl)
-                if stats: db.ai_state_set("stats", stats)
+                ctrl = self.data.get("control") or {}
+                if ctrl:
+                    db.ai_state_set("control", ctrl)
+                if stats:
+                    db.ai_state_set("stats", stats)
             except Exception as e:
                 logger.warning(f"[Experience] DB _save_locked error: {e}")
 
@@ -316,9 +384,11 @@ class ExperienceManager:
                         trader.stats[_k] = saved_stats[_k]
             # Гарантируем что trader.stats не содержит None — защита от
             # устаревших БД-записей где поля были сохранены как null
-            trader.stats["total_trades"]   = int(trader.stats.get("total_trades")   or 0)
-            trader.stats["winning_trades"] = int(trader.stats.get("winning_trades") or 0)
-            trader.stats["total_pnl"]      = float(trader.stats.get("total_pnl")    or 0.0)
+            trader.stats["total_trades"] = int(trader.stats.get("total_trades") or 0)
+            trader.stats["winning_trades"] = int(
+                trader.stats.get("winning_trades") or 0
+            )
+            trader.stats["total_pnl"] = float(trader.stats.get("total_pnl") or 0.0)
             if trader.stats["winning_trades"] > trader.stats["total_trades"]:
                 trader.stats["winning_trades"] = trader.stats["total_trades"]
             # ВОССТАНАВЛИВАЕМ открытые позиции: цена покупки + цель продажи —
@@ -327,7 +397,7 @@ class ExperienceManager:
             # LONG и SHORT хранятся вместе в одной таблице (bot_open_trades) —
             # разделяем их обратно по trade_type, иначе SHORT-позиции терялись
             # при каждом рестарте бота.
-            open_trades       = [t for t in all_open if t.get("trade_type") != "short"]
+            open_trades = [t for t in all_open if t.get("trade_type") != "short"]
             open_short_trades = [t for t in all_open if t.get("trade_type") == "short"]
             # ── Само-исцеление: исправляем сохранённый TP если он > 10× цены входа ──
             # Это происходит когда позиция была открыта с очень маленькой ставкой
@@ -336,6 +406,7 @@ class ExperienceManager:
             # но неверное значение путает лог и dashboard.
             try:
                 from config import Config as _Cfg
+
                 _healed = 0
                 for _t in open_trades + open_short_trades:
                     _ep = float(_t.get("entry_price") or 0)
@@ -347,7 +418,9 @@ class ExperienceManager:
                         _t["take_profit"] = round(_ep * (1 + _tp_pct / 100), 8)
                         _healed += 1
                 if _healed:
-                    logger.info(f"[Experience] 🔧 Исправлено {_healed} некорректных TP при загрузке")
+                    logger.info(
+                        f"[Experience] 🔧 Исправлено {_healed} некорректных TP при загрузке"
+                    )
                     self._save_locked()
             except Exception:
                 pass
@@ -372,8 +445,11 @@ class ExperienceManager:
         # дашборде, хотя счётчики (Сделок/Win Rate/P&L) их учитывали.
         try:
             with self._lock:
-                journal_closed = [dict(t) for t in (self.data.get("trades") or [])
-                                   if t.get("status") == "closed" or t.get("closed_at")]
+                journal_closed = [
+                    dict(t)
+                    for t in (self.data.get("trades") or [])
+                    if t.get("status") == "closed" or t.get("closed_at")
+                ]
             existing_ids2 = {t.get("id") for t in trader.trades}
             restored_closed = 0
             for t in journal_closed[-50:]:
@@ -382,7 +458,10 @@ class ExperienceManager:
                     existing_ids2.add(t.get("id"))
                     restored_closed += 1
             if restored_closed:
-                trader.log(f"🗂️ История сделок восстановлена: {restored_closed} закрытых сделок", "INFO")
+                trader.log(
+                    f"🗂️ История сделок восстановлена: {restored_closed} закрытых сделок",
+                    "INFO",
+                )
         except Exception as _hist_err:
             logger.warning(f"[Experience] restore closed trades error: {_hist_err}")
         try:
@@ -390,16 +469,28 @@ class ExperienceManager:
             # в DCA — стейк на вход из конфига, в AI-режиме — адаптивная ставка.
             try:
                 from config import Config as _Cfg
+
                 _dca = _Cfg.DCA_MODE
-                _stake_label = (f"ставка DCA={_Cfg.DCA_STAKE_TON:.0f} TON/вход"
-                                if _dca else f"ставка AI={ctrl['trade_amount']:.3f} TON")
+                _stake_label = (
+                    f"ставка DCA={_Cfg.DCA_STAKE_TON:.0f} TON/вход"
+                    if _dca
+                    else f"ставка AI={ctrl['trade_amount']:.3f} TON"
+                )
             except Exception:
                 _dca = False
                 _stake_label = f"ставка={ctrl['trade_amount']:.3f}"
             note = (
                 f"🧠 Память загружена: {len(self.data['trades'])} сделок"
-                + (f" | ⏳ {len(open_trades)} LONG восстановлено" if open_trades else "")
-                + (f" | 📉 {len(open_short_trades)} SHORT восстановлено" if open_short_trades else "")
+                + (
+                    f" | ⏳ {len(open_trades)} LONG восстановлено"
+                    if open_trades
+                    else ""
+                )
+                + (
+                    f" | 📉 {len(open_short_trades)} SHORT восстановлено"
+                    if open_short_trades
+                    else ""
+                )
                 + f" | порог={ctrl['min_conf']:.0f}% {_stake_label}"
                 # «AI-пауза» — авто-пауза по статистике, не то же что ручной выключатель торговли.
                 # Ручной статус («торговля вкл/выкл») логируется отдельно при старте агента.
@@ -440,7 +531,7 @@ class ExperienceManager:
         Ликвидатор использует её как ОПОРНУЮ, чтобы не продать дешевле покупки."""
         with self._lock:
             ots = self.data.get("open_trades") or []
-        total_amt  = sum(float(t.get("amount", 0) or 0) for t in ots)
+        total_amt = sum(float(t.get("amount", 0) or 0) for t in ots)
         if total_amt <= 0:
             return None
         total_cost = sum(
@@ -472,9 +563,9 @@ class ExperienceManager:
         accs = [sum(h) / len(h) for h in slot_acc.values() if h]
         avg = round(sum(accs) / len(accs) * 100, 1) if accs else None
         return {
-            "trades":       trades,
-            "confirmed":    confirmed,
-            "feature_dim":  ai.get("feature_dim"),
+            "trades": trades,
+            "confirmed": confirmed,
+            "feature_dim": ai.get("feature_dim"),
             "avg_accuracy": avg,
         }
 
@@ -482,7 +573,7 @@ class ExperienceManager:
         ctrl = self.data["control"]
         try:
             Config.MIN_AI_CONFIDENCE = float(ctrl["min_conf"])
-            Config.TRADE_AMOUNT      = float(ctrl["trade_amount"])
+            Config.TRADE_AMOUNT = float(ctrl["trade_amount"])
             # Применяем авто-TP только если ИИ уже адаптировал его по реальной истории
             if ctrl.get("ai_tp_adapted") and ctrl.get("take_profit_pct"):
                 new_tp = float(ctrl["take_profit_pct"])
@@ -501,10 +592,10 @@ class ExperienceManager:
             ctrl = self.data["control"]
             if min_conf is not None:
                 ctrl["base_min_conf"] = float(min_conf)
-                ctrl["min_conf"]      = float(min_conf)
+                ctrl["min_conf"] = float(min_conf)
             if trade_amount is not None:
                 ctrl["base_trade_amount"] = float(trade_amount)
-                ctrl["trade_amount"]      = float(trade_amount)
+                ctrl["trade_amount"] = float(trade_amount)
             self._save_locked()
 
     # ── Публичное состояние ──────────────────────────────────────────────────
@@ -516,18 +607,18 @@ class ExperienceManager:
         with self._lock:
             trades = self.data["trades"]
             wins = sum(1 for t in trades if (t.get("pnl") or 0) > 0)
-            net  = round(sum((t.get("pnl") or 0) for t in trades), 6)
+            net = round(sum((t.get("pnl") or 0) for t in trades), 6)
             ctrl = dict(self.data["control"])
             equity = self.data["equity"]
             return {
-                "trades_count":  len(trades),
-                "wins":          wins,
-                "losses":        len(trades) - wins,
-                "win_rate":      round(wins / len(trades) * 100, 1) if trades else 0.0,
-                "net_pnl_ton":   net,
-                "control":       ctrl,
+                "trades_count": len(trades),
+                "wins": wins,
+                "losses": len(trades) - wins,
+                "win_rate": round(wins / len(trades) * 100, 1) if trades else 0.0,
+                "net_pnl_ton": net,
+                "control": ctrl,
                 "equity_points": len(equity),
-                "last_equity":   equity[-1] if equity else None,
+                "last_equity": equity[-1] if equity else None,
                 "recent_trades": trades[-10:],
             }
 
@@ -538,16 +629,18 @@ class ExperienceManager:
             # (stake_ton, ai_confidence, SL/TP, regime, RSI при закрытии и т.д.)
             trade_rec = dict(trade)
             # Гарантируем ключи, которые читает experience_manager.analyze_and_adapt
-            trade_rec.setdefault("id",          trade.get("id"))
+            trade_rec.setdefault("id", trade.get("id"))
             trade_rec.setdefault("entry_price", trade.get("entry_price"))
-            trade_rec.setdefault("exit_price",  trade.get("exit_price"))
-            trade_rec.setdefault("amount",      trade.get("amount"))
-            trade_rec.setdefault("pnl",         trade.get("pnl", 0))
-            trade_rec.setdefault("fee",         trade.get("fee"))
-            trade_rec.setdefault("reason",      trade.get("close_reason"))
-            trade_rec.setdefault("opened_at",   trade.get("opened_at"))
-            trade_rec.setdefault("closed_at",   trade.get("closed_at"))
-            trade_rec.setdefault("trade_type",  trade.get("trade_type", "long"))   # C3-fix: short-позиции восстанавливаются правильно после рестарта
+            trade_rec.setdefault("exit_price", trade.get("exit_price"))
+            trade_rec.setdefault("amount", trade.get("amount"))
+            trade_rec.setdefault("pnl", trade.get("pnl", 0))
+            trade_rec.setdefault("fee", trade.get("fee"))
+            trade_rec.setdefault("reason", trade.get("close_reason"))
+            trade_rec.setdefault("opened_at", trade.get("opened_at"))
+            trade_rec.setdefault("closed_at", trade.get("closed_at"))
+            trade_rec.setdefault(
+                "trade_type", trade.get("trade_type", "long")
+            )  # C3-fix: short-позиции восстанавливаются правильно после рестарта
             self.data["trades"].append(trade_rec)
             if len(self.data["trades"]) > MAX_TRADES_KEPT:
                 self.data["trades"] = self.data["trades"][-MAX_TRADES_KEPT:]
@@ -576,19 +669,22 @@ class ExperienceManager:
                     logger.warning(f"[Experience] DB AI export error: {e}")
 
     # ── Запись капитала (кривая баланса) ─────────────────────────────────────
-    def record_balance(self, balance: dict, grinch_price_usd: float, force: bool = False):
+    def record_balance(
+        self, balance: dict, grinch_price_usd: float, force: bool = False
+    ):
         now = time.time()
         if not force and (now - self._last_equity_ts) < EQUITY_MIN_GAP:
             return
         self._last_equity_ts = now
         try:
             from price_feed import price_feed
+
             ton_usd = price_feed.get("TON") or 0.0
         except Exception:  # noqa: BLE001
             ton_usd = 0.0
-        ton    = float(balance.get("TON", 0) or 0)
+        ton = float(balance.get("TON", 0) or 0)
         grinch = float(balance.get("GRINCH", 0) or 0)
-        gp     = float(grinch_price_usd or 0)
+        gp = float(grinch_price_usd or 0)
         # Если котировка TON недоступна, а GRINCH на балансе есть — НЕ пишем
         # точку: иначе капитал «схлопнется» до TON-only и даст ложную просадку
         # → ошибочную паузу торговли.
@@ -603,9 +699,9 @@ class ExperienceManager:
             return
         equity_ton = ton + (grinch * gp / ton_usd if ton_usd else 0.0)
         point = {
-            "t":          datetime.utcnow().isoformat(),
-            "ton":        round(ton, 6),
-            "grinch":     round(grinch, 4),
+            "t": datetime.utcnow().isoformat(),
+            "ton": round(ton, 6),
+            "grinch": round(grinch, 4),
             "grinch_usd": gp,
             "equity_ton": round(equity_ton, 6),
         }
@@ -629,15 +725,19 @@ class ExperienceManager:
     def analyze_and_adapt(self, trader=None, ai=None) -> dict:
         with self._lock:
             trades = self.data["trades"]
-            ctrl   = self.data["control"]
+            ctrl = self.data["control"]
             equity = self.data["equity"]
 
             base_conf = float(ctrl["base_min_conf"])
-            base_amt  = float(ctrl["base_trade_amount"])
+            base_amt = float(ctrl["base_trade_amount"])
 
             # FIX#26: считаем только закрытые сделки с реальным pnl (не None/0),
             # незакрытые (pnl=None) и ошибочные (pnl=0) не влияют на серию.
-            _closed = [t for t in trades if t.get("pnl") is not None and t.get("status") != "open"]
+            _closed = [
+                t
+                for t in trades
+                if t.get("pnl") is not None and t.get("status") != "open"
+            ]
             # — серия убытков подряд (с конца журнала) —
             streak = 0
             for t in reversed(_closed):
@@ -692,13 +792,18 @@ class ExperienceManager:
             if len(equity) >= 10:
                 try:
                     eq_vals = [e["equity_ton"] for e in equity[-100:]]
-                    returns = [(eq_vals[i] - eq_vals[i-1]) / (eq_vals[i-1] + 1e-10)
-                               for i in range(1, len(eq_vals))]
+                    returns = [
+                        (eq_vals[i] - eq_vals[i - 1]) / (eq_vals[i - 1] + 1e-10)
+                        for i in range(1, len(eq_vals))
+                    ]
                     if returns:
                         import statistics
-                        mu_r  = sum(returns) / len(returns)
+
+                        mu_r = sum(returns) / len(returns)
                         std_r = statistics.stdev(returns) if len(returns) > 1 else 1e-10
-                        sharpe = round(mu_r / (std_r + 1e-10) * (len(returns) ** 0.5), 2)
+                        sharpe = round(
+                            mu_r / (std_r + 1e-10) * (len(returns) ** 0.5), 2
+                        )
                 except Exception:
                     sharpe = 0.0
 
@@ -721,7 +826,9 @@ class ExperienceManager:
             if drawdown < DD_SHRINK_1 and recent_net > 0:
                 if win_streak >= WIN_GROW_2:
                     # Sharpe > 1 = мы в выгодной полосе, можно чуть агрессивнее
-                    cap_mult = min(GROW_CAP * (1.0 + max(0, sharpe) * 0.1), GROW_CAP * 1.2)
+                    cap_mult = min(
+                        GROW_CAP * (1.0 + max(0, sharpe) * 0.1), GROW_CAP * 1.2
+                    )
                     amt = base_amt * cap_mult
                 elif win_streak >= WIN_GROW_1:
                     amt = base_amt * 1.25
@@ -744,12 +851,12 @@ class ExperienceManager:
             # ── Авто-адаптация тейк-профита по реальной истории ──────────────
             # Пол: MIN_PROFIT_TON задаётся как ПРОЦЕНТ от ставки (5 = 5% всегда).
             # 100 TON × 5% = 5 TON минимум; 200 TON × 5% = 10 TON минимум и т.д.
-            min_profit_floor_pct = float(Config.MIN_PROFIT_TON)   # трактуем как %
+            min_profit_floor_pct = float(Config.MIN_PROFIT_TON)  # трактуем как %
             # Добавляем комиссию: чтобы НЕТТО был ≥ порогу, gross = нетто + fee_round_trip
             min_tp_gross = min_profit_floor_pct + Config.FEE_ROUND_TRIP
 
             new_tp = float(ctrl.get("take_profit_pct") or Config.TAKE_PROFIT_PCT)
-            prev_tp = new_tp   # запоминаем ДО адаптации — TP может только расти
+            prev_tp = new_tp  # запоминаем ДО адаптации — TP может только расти
             ai_tp_adapted = bool(ctrl.get("ai_tp_adapted"))
             avg_win_pct = float(ctrl.get("ai_avg_win_pct") or 0.0)
 
@@ -763,7 +870,7 @@ class ExperienceManager:
                     returns = []
                     for t in win_trades:
                         stake = t.get("stake_ton") or t.get("amount") or amt
-                        pnl   = float(t.get("pnl") or 0)
+                        pnl = float(t.get("pnl") or 0)
                         if stake and stake > 0:
                             returns.append(pnl / stake * 100.0)
                     if returns:
@@ -784,7 +891,9 @@ class ExperienceManager:
                             optimal_tp = avg_win_pct * 0.55
 
                         # Ограничиваем диапазон: не ниже пола + комиссия, не выше потолка
-                        optimal_tp = max(min_tp_gross, min(optimal_tp, Config.AI_TP_CAP_PCT))
+                        optimal_tp = max(
+                            min_tp_gross, min(optimal_tp, Config.AI_TP_CAP_PCT)
+                        )
 
                         # Плавная адаптация: не прыгаем резко, смешиваем с текущим TP
                         # При первой адаптации — берём вычисленное значение сразу
@@ -850,20 +959,20 @@ class ExperienceManager:
                 or tp_changed
             )
 
-            ctrl["min_conf"]           = round(conf, 2)
-            ctrl["trade_amount"]       = round(amt, 4)
-            ctrl["paused"]             = paused
-            ctrl["drawdown_pct"]       = round(drawdown, 2)
-            ctrl["loss_streak"]        = streak
-            ctrl["win_streak"]         = win_streak
-            ctrl["take_profit_pct"]    = new_tp
-            ctrl["ai_tp_adapted"]      = ai_tp_adapted
-            ctrl["ai_tp_trades_used"]  = len(trades)
-            ctrl["ai_avg_win_pct"]     = avg_win_pct
+            ctrl["min_conf"] = round(conf, 2)
+            ctrl["trade_amount"] = round(amt, 4)
+            ctrl["paused"] = paused
+            ctrl["drawdown_pct"] = round(drawdown, 2)
+            ctrl["loss_streak"] = streak
+            ctrl["win_streak"] = win_streak
+            ctrl["take_profit_pct"] = new_tp
+            ctrl["ai_tp_adapted"] = ai_tp_adapted
+            ctrl["ai_tp_trades_used"] = len(trades)
+            ctrl["ai_avg_win_pct"] = avg_win_pct
             ctrl["min_profit_floor_pct"] = min_profit_floor_pct
-            ctrl["sharpe"]             = sharpe
-            ctrl["regime_stats"]       = regime_stats
-            ctrl["last_note"]          = (
+            ctrl["sharpe"] = sharpe
+            ctrl["regime_stats"] = regime_stats
+            ctrl["last_note"] = (
                 f"DD={drawdown:.1f}% loss={streak} win={win_streak} "
                 f"Sharpe={sharpe:+.2f} recent_net={recent_net:+.4f} "
                 f"TP={new_tp:.1f}% (пол={min_profit_floor_pct:.1f}%)"
@@ -876,7 +985,11 @@ class ExperienceManager:
             try:
                 tp_note = f"TP={report['take_profit_pct']:.1f}% (пол {report.get('min_profit_floor_pct',0):.1f}%)"
                 adapted_note = " 🎯 авто-TP" if report.get("ai_tp_adapted") else ""
-                sharpe_note = f" Sharpe={report.get('sharpe', 0):+.2f}" if report.get('sharpe') is not None else ""
+                sharpe_note = (
+                    f" Sharpe={report.get('sharpe', 0):+.2f}"
+                    if report.get("sharpe") is not None
+                    else ""
+                )
                 trader.log(
                     f"🤖 ИИ-управление: порог={report['min_conf']:.0f}% "
                     f"ставка={report['trade_amount']:.3f} TON "

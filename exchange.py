@@ -11,7 +11,7 @@ from price_feed import price_feed
 # Базовые ориентировочные цены экосистемы TON для демо-режима (USDT).
 BASE_PRICES = {
     "GRINCH": 0.00027,
-    "TON":    1.55,
+    "TON": 1.55,
 }
 DEFAULT_BASE_PRICE = 1.0
 
@@ -19,19 +19,22 @@ DEFAULT_BASE_PRICE = 1.0
 class ExchangeClient:
     def __init__(self):
         self.demo_mode = Config.DEMO_MODE
-        self._exchange    = None
-        self._live_price  = None
+        self._exchange = None
+        self._live_price = None
         self._live_symbol = None
-        self._dedust      = None
+        self._dedust = None
 
         # ── Режим DeDust (реальный DEX на TON) ──────────────────────────
         if Config.TRADE_MODE == "dedust":
             from dedust_client import dedust_client
-            self._dedust   = dedust_client
+
+            self._dedust = dedust_client
             self.demo_mode = False
             if not dedust_client.ready:
-                print(f"[Exchange] DeDust недоступен: {dedust_client.error}. Переходим в демо-режим.")
-                self._dedust   = None
+                print(
+                    f"[Exchange] DeDust недоступен: {dedust_client.error}. Переходим в демо-режим."
+                )
+                self._dedust = None
                 self.demo_mode = True
             else:
                 print("[Exchange] DeDust-режим активен ✓")
@@ -41,12 +44,15 @@ class ExchangeClient:
         if not self.demo_mode and Config.API_KEY:
             try:
                 import ccxt
+
                 exchange_class = getattr(ccxt, Config.EXCHANGE)
-                self._exchange = exchange_class({
-                    "apiKey":         Config.API_KEY,
-                    "secret":         Config.API_SECRET,
-                    "enableRateLimit": True,
-                })
+                self._exchange = exchange_class(
+                    {
+                        "apiKey": Config.API_KEY,
+                        "secret": Config.API_SECRET,
+                        "enableRateLimit": True,
+                    }
+                )
             except Exception as e:
                 print(f"[Exchange] Ошибка подключения: {e}. Переходим в демо-режим.")
                 self.demo_mode = True
@@ -78,10 +84,14 @@ class ExchangeClient:
 
     def _round(self, p):
         bp = self._base_price()
-        if   bp >= 100:  digits = 2
-        elif bp >= 1:    digits = 4
-        elif bp >= 0.01: digits = 6
-        else:            digits = 8
+        if bp >= 100:
+            digits = 2
+        elif bp >= 1:
+            digits = 4
+        elif bp >= 0.01:
+            digits = 6
+        else:
+            digits = 8
         return round(p, digits)
 
     # ──────────────────────────── public API ────────────────────────────
@@ -104,7 +114,7 @@ class ExchangeClient:
         # Демо: плавный random-walk вокруг реальной цены
         bp = self._base_price()
         if self._live_price is None or self._live_symbol != self.symbol:
-            self._live_price  = bp
+            self._live_price = bp
             self._live_symbol = self.symbol
         step = self._live_price * random.uniform(-0.0035, 0.0035)
         pull = (bp - self._live_price) * 0.02
@@ -116,16 +126,21 @@ class ExchangeClient:
             p = self.get_live_price()
             sp = p * 0.0002
             return {
-                "price":  p,
-                "bid":    self._round(p - sp),
-                "ask":    self._round(p + sp),
+                "price": p,
+                "bid": self._round(p - sp),
+                "ask": self._round(p + sp),
                 "volume": 0.0,
             }
         if self.demo_mode:
             return self._fake_ticker()
         try:
             t = self._exchange.fetch_ticker(self.symbol)
-            return {"price": t["last"], "bid": t["bid"], "ask": t["ask"], "volume": t["baseVolume"]}
+            return {
+                "price": t["last"],
+                "bid": t["bid"],
+                "ask": t["ask"],
+                "volume": t["baseVolume"],
+            }
         except Exception as e:
             print(f"[Exchange] get_ticker error: {e}")
             return self._fake_ticker()
@@ -133,12 +148,14 @@ class ExchangeClient:
     # Кэш реальных свечей GeckoTerminal: ключ (currency, token, tf, aggregate) ->
     #   {"ts": время успеха, "bars": свечи, "fail_ts": время последней ошибки}
     _ohlcv_cache = {}
-    _ohlcv_lock     = threading.Lock()
-    _OHLCV_TTL      = 45   # сек — GeckoTerminal даёт 429 при TTL<30с
-    _OHLCV_BACKOFF  = 8    # сек — обычная ошибка внешнего API
+    _ohlcv_lock = threading.Lock()
+    _OHLCV_TTL = 45  # сек — GeckoTerminal даёт 429 при TTL<30с
+    _OHLCV_BACKOFF = 8  # сек — обычная ошибка внешнего API
     _OHLCV_429_BACKOFF = 60  # сек — после 429 не штурмуем бесплатный лимит
 
-    def get_real_ohlcv(self, limit=100, currency="usd", token="base", tf="hour", aggregate=1):
+    def get_real_ohlcv(
+        self, limit=100, currency="usd", token="base", tf="hour", aggregate=1
+    ):
         """Реальные свечи пула GRINCH/GRAM (Toncoin) с GeckoTerminal.
         currency="usd" — цена в USD; currency="token", token="base" — цена GRINCH в GRAM (TON).
         tf="minute"+aggregate=15 — 15-минутные свечи (как на DeDust); tf="hour"+aggregate=1 — часовые.
@@ -152,12 +169,16 @@ class ExchangeClient:
 
         # Быстрый путь без блокировки: свежий кэш в памяти
         entry = ExchangeClient._ohlcv_cache.get(key)
-        if entry and entry.get("bars") and (time.time() - entry.get("ts", 0)) < self._OHLCV_TTL:
+        if (
+            entry
+            and entry.get("bars")
+            and (time.time() - entry.get("ts", 0)) < self._OHLCV_TTL
+        ):
             return entry["bars"][-limit:]
 
         # Медленный путь: одна загрузка за раз (singleflight) под блокировкой
         with ExchangeClient._ohlcv_lock:
-            now   = time.time()
+            now = time.time()
             entry = ExchangeClient._ohlcv_cache.get(key, {})
             # После перезапуска память пуста — пробуем дисковый кэш
             if not entry.get("bars"):
@@ -187,10 +208,14 @@ class ExchangeClient:
                 # нет повторного TCP/TLS handshake, каждый вызов на ~100–300 ms быстрее.
                 # Для GeckoTerminal отключаем автоматические повторы 429:
                 # бесплатный API считает каждый повтор новым запросом.
-                r = _HTTP_RATE_LIMITED.get(url, timeout=8, headers={
-                    "Accept": "application/json",
-                    "User-Agent": "Mozilla/5.0 (compatible; GrinchGram/1.0)",
-                })
+                r = _HTTP_RATE_LIMITED.get(
+                    url,
+                    timeout=8,
+                    headers={
+                        "Accept": "application/json",
+                        "User-Agent": "Mozilla/5.0 (compatible; GrinchGram/1.0)",
+                    },
+                )
                 if r.status_code == 429:
                     entry["fail_ts"] = now
                     entry["retry_at"] = now + self._OHLCV_429_BACKOFF
@@ -202,7 +227,9 @@ class ExchangeClient:
                     return bars[-limit:] if bars else None
                 r.raise_for_status()
                 data = r.json()
-                raw = data["data"]["attributes"]["ohlcv_list"]  # newest-first, ts в секундах
+                raw = data["data"]["attributes"][
+                    "ohlcv_list"
+                ]  # newest-first, ts в секундах
                 fresh = [
                     [int(ts) * 1000, float(o), float(h), float(l), float(c), float(v)]
                     for ts, o, h, l, c, v in reversed(raw)
@@ -240,10 +267,10 @@ class ExchangeClient:
     def _save_disk_ohlcv(self, key, entry):
         try:
             path = self._disk_ohlcv_path(key)
-            tmp  = f"{path}.{os.getpid()}.tmp"
+            tmp = f"{path}.{os.getpid()}.tmp"
             with open(tmp, "w") as f:
                 json.dump({"ts": entry["ts"], "bars": entry["bars"]}, f)
-            os.replace(tmp, path)   # атомарная замена — без частичных записей
+            os.replace(tmp, path)  # атомарная замена — без частичных записей
         except Exception:
             pass
 
@@ -256,7 +283,7 @@ class ExchangeClient:
         if self.demo_mode:
             return self._fake_ohlcv(limit)
         try:
-            tf   = timeframe or Config.TIMEFRAME
+            tf = timeframe or Config.TIMEFRAME
             bars = self._exchange.fetch_ohlcv(self.symbol, tf, limit=limit)
             return bars
         except Exception as e:
@@ -271,7 +298,7 @@ class ExchangeClient:
                 print(f"[Exchange] dedust balance error: {e}")
                 return {"TON": 0.0, "GRINCH": 0.0}
         if self.demo_mode:
-            base    = self.base_currency
+            base = self.base_currency
             holding = round(500.0 / self._base_price(), 6)
             return {"USDT": 10000.0, base: holding}
         try:
@@ -292,12 +319,16 @@ class ExchangeClient:
                      транзакция блокируется ДО отправки в сеть (amm_blocked=True в ответе).
         """
         if self._dedust:
-            return self._dedust_order(side, amount, price, ton_stake=ton_stake, min_net_ton=min_net_ton)
+            return self._dedust_order(
+                side, amount, price, ton_stake=ton_stake, min_net_ton=min_net_ton
+            )
         if self.demo_mode:
             return self._fake_order(side, amount, price)
         try:
             if price:
-                order = self._exchange.create_limit_order(self.symbol, side, amount, price)
+                order = self._exchange.create_limit_order(
+                    self.symbol, side, amount, price
+                )
             else:
                 order = self._exchange.create_market_order(self.symbol, side, amount)
             return order
@@ -325,31 +356,31 @@ class ExchangeClient:
                     # Для SELL — возвращаем структурированный dict, чтобы вызывающий
                     # код мог проверить amm_blocked=True и не делать бессмысленный retry.
                     return {
-                        "error":         err_msg,
-                        "amm_blocked":   result.get("amm_blocked", False),
-                        "expected_ton":  result.get("expected_ton"),
-                        "net_ton":       result.get("net_ton"),
-                        "min_net_ton":   result.get("min_net_ton"),
+                        "error": err_msg,
+                        "amm_blocked": result.get("amm_blocked", False),
+                        "expected_ton": result.get("expected_ton"),
+                        "net_ton": result.get("net_ton"),
+                        "min_net_ton": result.get("min_net_ton"),
                         "shortfall_ton": result.get("shortfall_ton"),
                     }
                 # BUY: возвращаем dict с реальной ошибкой (ранее было None —
                 # это скрывало причину сбоя, показывая только "нет ответа").
                 # Caller-ы проверяют `if not order or order.get("error")` — совместимо.
                 return {
-                    "error":      err_msg,
-                    "broadcast":  result.get("broadcast", False),
-                    "need_ton":   result.get("need_ton"),
-                    "have_ton":   result.get("have_ton"),
+                    "error": err_msg,
+                    "broadcast": result.get("broadcast", False),
+                    "need_ton": result.get("need_ton"),
+                    "have_ton": result.get("have_ton"),
                 }
 
             return {
-                "id":       f"dedust_{int(time.time())}",
-                "side":     side,
-                "amount":   amount,
-                "price":    fill_price,
-                "status":   "closed",
+                "id": f"dedust_{int(time.time())}",
+                "side": side,
+                "amount": amount,
+                "price": fill_price,
+                "status": "closed",
                 "datetime": datetime.utcnow().isoformat(),
-                "info":     result,
+                "info": result,
             }
         except Exception as e:
             print(f"[Exchange] _dedust_order error: {e}")
@@ -358,42 +389,51 @@ class ExchangeClient:
     # ──────────────────────────── demo helpers ──────────────────────────
 
     def _fake_ticker(self):
-        bp     = self._base_price()
-        base   = bp + random.uniform(-bp * 0.008, bp * 0.008)
+        bp = self._base_price()
+        base = bp + random.uniform(-bp * 0.008, bp * 0.008)
         spread = bp * 0.0002
         return {
-            "price":  self._round(base),
-            "bid":    self._round(base - spread),
-            "ask":    self._round(base + spread),
+            "price": self._round(base),
+            "bid": self._round(base - spread),
+            "ask": self._round(base + spread),
             "volume": round(random.uniform(1000, 5000), 2),
         }
 
     def _fake_ohlcv(self, limit=100):
-        bars     = []
-        now      = int(time.time() * 1000)
+        bars = []
+        now = int(time.time() * 1000)
         interval = 3600 * 1000
-        bp       = self._base_price()
-        price    = bp
-        vol      = bp * 0.005
+        bp = self._base_price()
+        price = bp
+        vol = bp * 0.005
         for i in range(limit):
             ts = now - (limit - i) * interval
-            o  = price
-            h  = o + random.uniform(0, vol)
-            l  = o - random.uniform(0, vol)
-            c  = l + random.uniform(0, h - l)
-            v  = random.uniform(100, 500)
-            bars.append([ts, self._round(o), self._round(h), self._round(l), self._round(c), round(v, 2)])
+            o = price
+            h = o + random.uniform(0, vol)
+            l = o - random.uniform(0, vol)
+            c = l + random.uniform(0, h - l)
+            v = random.uniform(100, 500)
+            bars.append(
+                [
+                    ts,
+                    self._round(o),
+                    self._round(h),
+                    self._round(l),
+                    self._round(c),
+                    round(v, 2),
+                ]
+            )
             price = c
         return bars
 
     def _fake_order(self, side, amount, price=None):
-        ticker     = self._fake_ticker()
+        ticker = self._fake_ticker()
         fill_price = price or ticker["price"]
         return {
-            "id":       f"demo_{int(time.time())}",
-            "side":     side,
-            "amount":   amount,
-            "price":    fill_price,
-            "status":   "closed",
+            "id": f"demo_{int(time.time())}",
+            "side": side,
+            "amount": amount,
+            "price": fill_price,
+            "status": "closed",
             "datetime": datetime.utcnow().isoformat(),
         }

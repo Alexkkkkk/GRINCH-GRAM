@@ -7,6 +7,7 @@ liquidity_guard.py — постоянный мониторинг ликвидн�
 ликвидность не восстановится. Продажи НИКОГДА не блокируются (fail-safe:
 деньги пользователей не должны застревать).
 """
+
 import logging
 import threading
 import time
@@ -17,21 +18,21 @@ from coin_info import coin_info
 
 logger = logging.getLogger(__name__)
 
-POLL_SEC          = 15     # частота опроса
-HISTORY_MAXLEN    = 240    # ~1 час истории при 15с шаге
-DROP_PAUSE_PCT    = 30.0   # просадка от пика → пауза на BUY
-DROP_RESUME_PCT   = 15.0   # гистерезис восстановления → снятие паузы
-MIN_SAFE_LIQ_USD  = 5000.0 # абсолютный пол ликвидности — ниже него BUY тоже на паузе
+POLL_SEC = 15  # частота опроса
+HISTORY_MAXLEN = 240  # ~1 час истории при 15с шаге
+DROP_PAUSE_PCT = 30.0  # просадка от пика → пауза на BUY
+DROP_RESUME_PCT = 15.0  # гистерезис восстановления → снятие паузы
+MIN_SAFE_LIQ_USD = 5000.0  # абсолютный пол ликвидности — ниже него BUY тоже на паузе
 
 _lock = threading.Lock()
-_history: deque = deque(maxlen=HISTORY_MAXLEN)   # [{ts, liq}, ...]
+_history: deque = deque(maxlen=HISTORY_MAXLEN)  # [{ts, liq}, ...]
 _peak_liq: float = 0.0
 _current_liq: float = 0.0
 _buys_paused: bool = False
 _pause_reason: str = ""
 _last_update_ts: float = 0.0
 _started = False
-_stop_event = threading.Event()   # мгновенная остановка потока
+_stop_event = threading.Event()  # мгновенная остановка потока
 
 # BUG-FIX: защита от API-глитча.
 # Если DexScreener вернул разово заниженное (но ненулевое) значение,
@@ -48,7 +49,7 @@ def _evaluate(liq: float):
         return
     if liq > _peak_liq:
         _peak_liq = liq
-        _consecutive_low_count = 0   # новый пик — сброс счётчика
+        _consecutive_low_count = 0  # новый пик — сброс счётчика
 
     drop_pct = 0.0
     if _peak_liq > 0:
@@ -64,22 +65,28 @@ def _evaluate(liq: float):
                     _pause_reason = f"ликвидность ${liq:,.0f} ниже безопасного порога ${MIN_SAFE_LIQ_USD:,.0f}"
                 else:
                     _pause_reason = f"просадка ликвидности {drop_pct:.1f}% от пика ${_peak_liq:,.0f} → ${liq:,.0f}"
-                logger.warning(f"[LiquidityGuard] ⛔ BUY приостановлены: {_pause_reason}")
+                logger.warning(
+                    f"[LiquidityGuard] ⛔ BUY приостановлены: {_pause_reason}"
+                )
             else:
                 logger.warning(
                     f"[LiquidityGuard] ⚠️ Низкая ликвидность ${liq:,.0f} "
                     f"(просадка {drop_pct:.1f}%) — подтверждение {_consecutive_low_count}/{CONSECUTIVE_LOW_REQUIRED}"
                 )
         else:
-            _consecutive_low_count = 0   # чтение нормальное — сброс
+            _consecutive_low_count = 0  # чтение нормальное — сброс
     else:
         recovered = liq >= MIN_SAFE_LIQ_USD and drop_pct <= DROP_RESUME_PCT
         if recovered:
-            logger.info(f"[LiquidityGuard] ✅ Ликвидность восстановилась (${liq:,.0f}, просадка {drop_pct:.1f}%) — BUY разрешены")
+            logger.info(
+                f"[LiquidityGuard] ✅ Ликвидность восстановилась (${liq:,.0f}, просадка {drop_pct:.1f}%) — BUY разрешены"
+            )
             _buys_paused = False
             _pause_reason = ""
             _consecutive_low_count = 0
-            _peak_liq = max(_peak_liq, liq)  # M9-fix: не снижаем пик при частичном восстановлении
+            _peak_liq = max(
+                _peak_liq, liq
+            )  # M9-fix: не снижаем пик при частичном восстановлении
 
 
 def _poll_loop():
@@ -97,7 +104,7 @@ def _poll_loop():
                     _evaluate(_current_liq)
         except Exception as e:
             logger.error(f"[LiquidityGuard] ошибка опроса: {e}")
-        _stop_event.wait(timeout=POLL_SEC)   # прерываемый сон
+        _stop_event.wait(timeout=POLL_SEC)  # прерываемый сон
 
 
 def start():
@@ -127,14 +134,14 @@ def get_status() -> dict:
     with _lock:
         drop_pct = (1 - _current_liq / _peak_liq) * 100.0 if _peak_liq > 0 else 0.0
         return {
-            "current_liq":   round(_current_liq, 2),
-            "peak_liq":      round(_peak_liq, 2),
-            "drop_pct":      round(max(0.0, drop_pct), 2),
-            "buys_paused":   _buys_paused,
-            "pause_reason":  _pause_reason,
-            "min_safe_liq":  MIN_SAFE_LIQ_USD,
+            "current_liq": round(_current_liq, 2),
+            "peak_liq": round(_peak_liq, 2),
+            "drop_pct": round(max(0.0, drop_pct), 2),
+            "buys_paused": _buys_paused,
+            "pause_reason": _pause_reason,
+            "min_safe_liq": MIN_SAFE_LIQ_USD,
             "pause_threshold_pct": DROP_PAUSE_PCT,
-            "history":       list(_history)[-60:],
+            "history": list(_history)[-60:],
             "last_update_ts": _last_update_ts,
         }
 

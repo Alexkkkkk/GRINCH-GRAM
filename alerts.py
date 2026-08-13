@@ -13,6 +13,7 @@ alerts.py — оповещения о состоянии торгового бо
   и обратно на healthy), чтобы не заспамить чат одним и тем же сообщением
   каждые 20 секунд.
 """
+
 import html as _html
 import logging
 import os
@@ -28,9 +29,11 @@ _STALL_THRESHOLD_SEC = 90  # синхронизировано с порогом 
 _POLL_INTERVAL_SEC = 20
 
 _lock = threading.Lock()
-_last_state = "unknown"   # "ok" | "degraded" | "unhealthy" | "unknown"
+_last_state = "unknown"  # "ok" | "degraded" | "unhealthy" | "unknown"
 _last_sent_ts = 0.0
-_MIN_RESEND_GAP = 300      # не слать повторно то же нездоровое состояние чаще, чем раз в 5 мин
+_MIN_RESEND_GAP = (
+    300  # не слать повторно то же нездоровое состояние чаще, чем раз в 5 мин
+)
 
 
 def _get_creds():
@@ -38,8 +41,12 @@ def _get_creds():
     # Fallback to environment variables if settings_store has no value.
     # This covers the common case where TELEGRAM_BOT_TOKEN is set in .env
     # but has not yet been synced into the DB / settings.json via the dashboard.
-    token   = (sec.get("telegram_bot_token") or os.getenv("TELEGRAM_BOT_TOKEN") or "").strip()
-    chat_id = (sec.get("telegram_chat_id")   or os.getenv("TELEGRAM_CHAT_ID")   or "").strip()
+    token = (
+        sec.get("telegram_bot_token") or os.getenv("TELEGRAM_BOT_TOKEN") or ""
+    ).strip()
+    chat_id = (
+        sec.get("telegram_chat_id") or os.getenv("TELEGRAM_CHAT_ID") or ""
+    ).strip()
     enabled = bool(sec.get("enabled", True)) and bool(token) and bool(chat_id)
     return token, chat_id, enabled
 
@@ -76,23 +83,25 @@ def send_alert(text: str, retries: int = 2) -> dict:
                 wait = int(resp.headers.get("Retry-After", 5))
                 time.sleep(min(wait, 30))
             elif resp.status_code >= 500:
-                time.sleep(2 ** attempt)
+                time.sleep(2**attempt)
             else:
-                break   # клиентская ошибка — не повторяем
+                break  # клиентская ошибка — не повторяем
         except Exception as e:
             last_err = str(e)
             logger.warning(f"[Alerts] Telegram send error (attempt {attempt+1}): {e}")
             if attempt < retries:
-                time.sleep(2 ** attempt)
+                time.sleep(2**attempt)
     return {"ok": False, "error": last_err}
 
 
 _pretrain_start_ts: float = 0.0  # когда впервые увидели running=True + last_tick_ts==0
 
+
 def _compute_state():
     """Определить текущее состояние торгового цикла (та же логика, что в /health)."""
     global _pretrain_start_ts
     from app import trader
+
     if not trader.running:
         _pretrain_start_ts = 0.0
         return "ok"
@@ -116,7 +125,7 @@ def _compute_state():
 
 def _monitor_loop():
     global _last_state, _last_sent_ts
-    _monitor_stop.wait(timeout=30)   # прерываемая начальная пауза
+    _monitor_stop.wait(timeout=30)  # прерываемая начальная пауза
     while not _monitor_stop.is_set():
         try:
             token, chat_id, enabled = _get_creds()
@@ -126,9 +135,13 @@ def _monitor_loop():
                 changed = state != prev
                 now = time.time()
                 should_send = enabled and (
-                    (changed and state != "ok") or
-                    (changed and prev != "ok" and state == "ok") or
-                    (not changed and state != "ok" and (now - _last_sent_ts) >= _MIN_RESEND_GAP)
+                    (changed and state != "ok")
+                    or (changed and prev != "ok" and state == "ok")
+                    or (
+                        not changed
+                        and state != "ok"
+                        and (now - _last_sent_ts) >= _MIN_RESEND_GAP
+                    )
                 )
                 _last_state = state
             if should_send:
@@ -144,12 +157,12 @@ def _monitor_loop():
                         _last_sent_ts = time.time()
         except Exception as e:
             logger.warning(f"[Alerts] monitor loop error: {e}")
-        _monitor_stop.wait(timeout=_POLL_INTERVAL_SEC)   # прерываемый сон
+        _monitor_stop.wait(timeout=_POLL_INTERVAL_SEC)  # прерываемый сон
 
 
 _monitor_started = False
-_monitor_lock    = threading.Lock()
-_monitor_stop    = threading.Event()   # мгновенная остановка монитора
+_monitor_lock = threading.Lock()
+_monitor_stop = threading.Event()  # мгновенная остановка монитора
 
 
 def start_monitor():
@@ -159,8 +172,7 @@ def start_monitor():
             return
         _monitor_started = True
     _monitor_stop.clear()
-    threading.Thread(target=_monitor_loop, daemon=True,
-                     name="alerts-monitor").start()
+    threading.Thread(target=_monitor_loop, daemon=True, name="alerts-monitor").start()
 
 
 def stop_monitor():
@@ -175,8 +187,8 @@ def stop_monitor():
 #  HOURLY REPORT — раз в час пишет полный снимок состояния бота в лог и файл
 # ══════════════════════════════════════════════════════════════════════════════
 
-_REPORT_INTERVAL_SEC = 3600   # раз в час
-_REPORT_FILE = None           # устанавливается в start_hourly_report()
+_REPORT_INTERVAL_SEC = 3600  # раз в час
+_REPORT_FILE = None  # устанавливается в start_hourly_report()
 _hourly_stop = threading.Event()
 _hourly_started = False
 _hourly_lock = threading.Lock()
@@ -195,26 +207,28 @@ def _build_report() -> str:
         lines.append("═" * 50)
 
         # ── Статистика ─────────────────────────────────────────────────
-        ai  = ai_state_get_all() or {}
+        ai = ai_state_get_all() or {}
         stats = ai.get("stats") or {}
-        total   = int(stats.get("total_trades") or 0)
+        total = int(stats.get("total_trades") or 0)
         winning = int(stats.get("winning_trades") or 0)
-        pnl     = float(stats.get("total_pnl") or 0)
+        pnl = float(stats.get("total_pnl") or 0)
         winrate = round(winning / total * 100, 1) if total else 0
-        lines.append(f"📈 Сделок: {total}  |  Побед: {winning} ({winrate}%)  |  PnL: {pnl:+.4f} TON")
+        lines.append(
+            f"📈 Сделок: {total}  |  Побед: {winning} ({winrate}%)  |  PnL: {pnl:+.4f} TON"
+        )
 
         # ── Открытые позиции ────────────────────────────────────────────
         ots = open_trades_get() or []
         if ots:
             for t in ots:
-                spot     = price_feed.get("GRINCH") or 0
-                gton     = price_feed.get_grinch_ton_price() or 0
-                amount   = float(t.get("amount") or 0)
-                entry    = float(t.get("entry_price") or 0)
-                stake    = float(t.get("stake_ton") or 0)
-                val_ton  = amount * gton
-                net      = float(t.get("net_pct_now") or 0)
-                peak     = float(t.get("high_water") or entry)
+                spot = price_feed.get("GRINCH") or 0
+                gton = price_feed.get_grinch_ton_price() or 0
+                amount = float(t.get("amount") or 0)
+                entry = float(t.get("entry_price") or 0)
+                stake = float(t.get("stake_ton") or 0)
+                val_ton = amount * gton
+                net = float(t.get("net_pct_now") or 0)
+                peak = float(t.get("high_water") or entry)
                 move_pct = (spot / entry - 1) * 100 if entry else 0
                 lines.append(
                     f"📌 ЛОНГ {amount:,.0f} GRINCH @ ${entry:.8f}"
@@ -224,13 +238,16 @@ def _build_report() -> str:
                     f"   Ставка {stake:.2f} TON  |  Стоит {val_ton:.4f} TON"
                     f"  |  Нетто {net:+.2f}%"
                 )
-                lines.append(f"   Пик: ${peak:.8f}  |  dca_entry:{t.get('dca_entry')} idx:{t.get('dca_index')}")
+                lines.append(
+                    f"   Пик: ${peak:.8f}  |  dca_entry:{t.get('dca_entry')} idx:{t.get('dca_index')}"
+                )
         else:
             lines.append("📌 Открытых позиций нет")
 
         # ── DCA состояние ───────────────────────────────────────────────
         try:
             from app import trader
+
             lines.append(
                 f"🔄 DCA: entries={trader.dca_entries_count}"
                 f"  stake={trader.dca_total_stake:.2f} TON"
@@ -238,17 +255,22 @@ def _build_report() -> str:
                 f"  peak=${trader.dca_peak_price:.8f}"
             )
             age = time.time() - trader.last_tick_ts if trader.last_tick_ts else 0
-            lines.append(f"⏱  Последний тик: {age:.1f} сек назад  |  ok={trader.last_tick_ok}")
+            lines.append(
+                f"⏱  Последний тик: {age:.1f} сек назад  |  ok={trader.last_tick_ok}"
+            )
         except Exception as _e:
             lines.append(f"⚠️  DCA/tick: {_e}")
 
         # ── TON gas balance ─────────────────────────────────────────────
         try:
             from wallet_manager import wallet_manager as _wm
+
             _wsnap = _wm.get_snapshot() if _wm else {}
             _ton = float(_wsnap.get("ton_balance") or 0)
             if _ton < 0.5:
-                lines.append(f"🔴 TON БАЛАНС: {_ton:.4f} TON — КРИТИЧЕСКИ МАЛО! Продажа невозможна без газа!")
+                lines.append(
+                    f"🔴 TON БАЛАНС: {_ton:.4f} TON — КРИТИЧЕСКИ МАЛО! Продажа невозможна без газа!"
+                )
                 token, chat_id, _ = _get_creds()
                 if token and chat_id:
                     # внеплановый срочный алерт
@@ -259,7 +281,9 @@ def _build_report() -> str:
                         f"Пополните кошелёк немедленно!"
                     )
             elif _ton < 2.0:
-                lines.append(f"⚠️  TON баланс: {_ton:.4f} TON — мало газа (нужно ≥2 TON для безопасной торговли)")
+                lines.append(
+                    f"⚠️  TON баланс: {_ton:.4f} TON — мало газа (нужно ≥2 TON для безопасной торговли)"
+                )
             else:
                 lines.append(f"💰 TON баланс: {_ton:.4f} TON")
         except Exception as _we:
@@ -279,6 +303,7 @@ def _build_report() -> str:
         # Состояние берём из того же объекта trader, который использует /health.
         try:
             from app import trader
+
             age = time.time() - trader.last_tick_ts if trader.last_tick_ts else 0
             if not trader.running:
                 health_status = "ok"
@@ -288,9 +313,7 @@ def _build_report() -> str:
                 health_status = "degraded"
             else:
                 health_status = "ok"
-            lines.append(
-                f"🏥 Health: {health_status}  |  tick_age={age:.1f}s"
-            )
+            lines.append(f"🏥 Health: {health_status}  |  tick_age={age:.1f}s")
         except Exception as _e:
             lines.append(f"🏥 Health: недоступен ({_e})")
 
@@ -337,7 +360,11 @@ def _hourly_loop():
             token, chat_id, enabled = _get_creds()
             if enabled:
                 _MAX_TG = 4096
-                _report_tg = report if len(report) <= _MAX_TG else report[:_MAX_TG - 20] + "\n…(обрезано)"
+                _report_tg = (
+                    report
+                    if len(report) <= _MAX_TG
+                    else report[: _MAX_TG - 20] + "\n…(обрезано)"
+                )
                 send_alert(_report_tg)
 
         except Exception as _e:
@@ -354,6 +381,7 @@ def start_hourly_report(data_dir: str = "/app/data"):
             return
         _hourly_started = True
     import os
+
     # В некоторых старых compose-конфигурациях DATA_DIR ошибочно был равен
     # "/app", а корень контейнера read-only. Всегда пишем runtime-отчёт в
     # персистентный volume /app/data, не в кодовую директорию.
@@ -372,6 +400,5 @@ def start_hourly_report(data_dir: str = "/app/data"):
         os.makedirs(data_dir, exist_ok=True)
     _REPORT_FILE = os.path.join(data_dir, "hourly_report.log")
     _hourly_stop.clear()
-    threading.Thread(target=_hourly_loop, daemon=True,
-                     name="hourly-report").start()
+    threading.Thread(target=_hourly_loop, daemon=True, name="hourly-report").start()
     logger.info(f"[HourlyReport] ✅ Запущен (каждые 60 мин → {_REPORT_FILE})")
