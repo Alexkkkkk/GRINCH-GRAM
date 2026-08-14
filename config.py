@@ -526,9 +526,12 @@ class Config:
     EV_THRESHOLD = float(os.getenv("EV_THRESHOLD", "-1.0"))
 
     DEMO_MODE = os.getenv("DEMO_MODE", "false").lower() == "true"
-    SECRET_KEY = os.getenv("SECRET_KEY", "")
-    # H1 fix: никогда не используем хардкоднутый дефолт — генерируем случайный.
-    # app.py использует _resolve_secret_key() (постоянный файл), это поле — запасное.
+    # Keep the encryption key aligned with the session key documented for
+    # Replit. Previously SESSION_SECRET was ignored here, so user wallet
+    # mnemonics could be encrypted with a new random key after every restart.
+    SECRET_KEY = os.getenv("SECRET_KEY") or os.getenv("SESSION_SECRET", "")
+    # Never use a hardcoded default. When no secret is configured, generate a
+    # temporary fallback; production deployments should always set a secret.
     if not SECRET_KEY or SECRET_KEY == "grinch-gram-secret-2024":
         import secrets as _s
 

@@ -12,7 +12,21 @@ import re
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-IGNORED_PARTS = {".git", "__pycache__", "attached_assets", "data", "backups"}
+IGNORED_PARTS = {
+    ".git",
+    ".local",
+    ".pythonlibs",
+    ".venv",
+    "__pycache__",
+    "artifacts",
+    "attached_assets",
+    "backups",
+    "data",
+    "env",
+    "lib",
+    "node_modules",
+    "venv",
+}
 PRIVATE_KEY_MARKERS = (
     "-----BEGIN " + "PRIVATE KEY-----",
     "-----BEGIN " + "RSA PRIVATE KEY-----",

@@ -68,8 +68,9 @@ except Exception as exc:
 from app import app, socketio
 
 if __name__ == "__main__":
-    # Синхронизируем порт с Dockerfile (3000), fallback 5000 для dev
-    port = int(os.environ.get("PORT", 3000))
+    # Replit workflows and the production VM use port 5000 by default.
+    # Docker still passes PORT=3000 explicitly, so both environments stay aligned.
+    port = int(os.environ.get("PORT", 5000))
     logger.info("🚀 Starting GRINCH-GRAM on port %d", port)
 
     # allow_unsafe_werkzeug нужен только для dev/Replit.
