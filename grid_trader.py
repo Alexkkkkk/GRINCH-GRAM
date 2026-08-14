@@ -469,26 +469,32 @@ class GridAIManager:
                     if res.get("ok") or res.get("sell_levels_total", 0) > 0:
                         t.activate()
                         self._last_rebuild_ts = now
-                        self._last_rebuild.update({
-                            "status": "built",
-                            "result_sell_levels": res.get("sell_levels_total", 0),
-                            "result_buy_levels": res.get("buy_levels_total", 0),
-                        })
+                        self._last_rebuild.update(
+                            {
+                                "status": "built",
+                                "result_sell_levels": res.get("sell_levels_total", 0),
+                                "result_buy_levels": res.get("buy_levels_total", 0),
+                            }
+                        )
                         decisions.append(
                             f"🔨 перестройка ({rebuild_reason}) "
                             f"→ {res.get('sell_levels_total', 0)} ур."
                         )
                     else:
-                        self._last_rebuild.update({
-                            "status": "no_levels",
-                            "result_sell_levels": res.get("sell_levels_total", 0),
-                            "result_buy_levels": res.get("buy_levels_total", 0),
-                        })
+                        self._last_rebuild.update(
+                            {
+                                "status": "no_levels",
+                                "result_sell_levels": res.get("sell_levels_total", 0),
+                                "result_buy_levels": res.get("buy_levels_total", 0),
+                            }
+                        )
                 except Exception as exc:
-                    self._last_rebuild.update({
-                        "status": "error",
-                        "error": str(exc)[:300],
-                    })
+                    self._last_rebuild.update(
+                        {
+                            "status": "error",
+                            "error": str(exc)[:300],
+                        }
+                    )
                     log.warning("[GridAI-Mgr] ошибка перестройки: %s", exc)
 
         # ── Логируем решение ──────────────────────────────────────────────
@@ -569,9 +575,7 @@ class GridAIManager:
             "tolerance": round(reserve_tolerance, 4),
         }
         if reserve_delta > reserve_tolerance:
-            self._last_reconcile["reason"] = (
-                f"нужен rebuild: {reconcile_reason}"
-            )
+            self._last_reconcile["reason"] = f"нужен rebuild: {reconcile_reason}"
             return (
                 f"сверка резерва Grid: сохранено {grid_reserved:.0f}, "
                 f"доступно после DCA {available_for_grid:.0f}"
@@ -648,8 +652,7 @@ class GridAIManager:
             "ai_buy": 0.0,
             "ai_sell": 0.0,
             "decisions": [
-                f"🔄 BUY-уровни привязаны к центру {anchor_price:.6f} "
-                f"({count} ур.)"
+                f"🔄 BUY-уровни привязаны к центру {anchor_price:.6f} " f"({count} ур.)"
             ],
             "desc": "автоматическая синхронизация BUY",
         }
@@ -3274,13 +3277,10 @@ class GridTrader:
                 regular = [
                     level
                     for level in self._state.buy_levels
-                    if -100 < level.id < 0
-                    and level.status in ("waiting", "no_funds")
+                    if -100 < level.id < 0 and level.status in ("waiting", "no_funds")
                 ]
                 anchor = float(self._state.center_price_ton or 0.0)
-                step_pct = float(
-                    self._state.step_pct or GridConfig.DEFAULT_STEP_PCT
-                )
+                step_pct = float(self._state.step_pct or GridConfig.DEFAULT_STEP_PCT)
                 if not regular or anchor <= 0 or step_pct <= 0:
                     return 0
 
@@ -3310,9 +3310,7 @@ class GridTrader:
                 can_fund_all = ton_per_level >= min_order
                 changed = 0
                 for level in regular:
-                    target = round(
-                        anchor / (1 + step_pct / 100) ** abs(level.id), 8
-                    )
+                    target = round(anchor / (1 + step_pct / 100) ** abs(level.id), 8)
                     note = (
                         f"-{(1 - target / anchor) * 100:.1f}% от центра"
                         " | auto-reanchor"
@@ -3821,9 +3819,7 @@ class GridTrader:
         raw_total = primary_dca + grid_dca
         try:
             wallet_grinch, _ = self._get_balances()
-            grid_reserved = max(
-                0.0, float(self._state.grid_reserved_grinch or 0.0)
-            )
+            grid_reserved = max(0.0, float(self._state.grid_reserved_grinch or 0.0))
             if wallet_grinch > 0:
                 return min(raw_total, max(0.0, wallet_grinch - grid_reserved))
         except Exception:
