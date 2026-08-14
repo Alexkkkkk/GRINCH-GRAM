@@ -1,4 +1,4 @@
-name: AI Supreme Agent v2.3 — Auto-Fix Everything
+name: AI Supreme Agent v2.4 — Kimi + GROQ Auto-Fix Everything
 
 on:
   pull_request:
@@ -240,7 +240,7 @@ jobs:
             ai-context-
 
   # ================================================================
-  # PHASE 2: PARALLEL AI ANALYSIS
+  # PHASE 2: PARALLEL AI ANALYSIS (Matrix Strategy)
   # ================================================================
   ai-analysis:
     name: Phase 2 — ${{ matrix.agent }} Analysis
@@ -405,22 +405,6 @@ jobs:
 
           prompt = PROMPTS.get(AGENT, PROMPTS["code-reviewer"]) + f"\n\nCode:\n{code}"
 
-          payload = {
-            "model": os.environ.get("AI_MODEL", "llama-3.3-70b-versatile"),
-            "messages": [{"role": "user", "content": prompt}],
-            "temperature": 0.1,
-            "max_tokens": 4000,
-          }
-
-          req = urllib.request.Request(
-            "https://api.groq.com/openai/v1/chat/completions",
-            data=json.dumps(payload).encode(),
-            headers={
-              "Authorization": f"Bearer {os.environ['GROQ_API_KEY']}",
-              "Content-Type": "application/json",
-            },
-          )
-
           report_file = f"ai_report_{AGENT}.md"
           status = "failed"
           try:
@@ -515,7 +499,6 @@ jobs:
 
           echo "=== FIX 1: requirements.txt deduplication ==="
           if [ -f "requirements.txt" ]; then
-            # Remove duplicate blocks (lines 47-75 are exact copy of 1-46 in original)
             python3 - <<'PY'
           import os
           with open("requirements.txt", encoding="utf-8") as f:
@@ -527,7 +510,6 @@ jobs:
               if not stripped or stripped.startswith('#'):
                   unique.append(line)
                   continue
-              # Normalize for comparison
               norm = stripped.lower().replace(' ', '').replace('==', '').replace('>=', '').replace('<=', '').replace('~=', '')
               if norm not in seen:
                   seen.add(norm)
@@ -547,10 +529,6 @@ jobs:
 
           echo "=== FIX 2: Close SSH backdoor in deploy.sh ==="
           if [ -f "deploy.sh" ]; then
-            # Replace PasswordAuthentication yes -> no, PermitRootLogin yes -> no
-            sed -i 's/PasswordAuthentication yes/PasswordAuthentication no/g' deploy.sh
-            sed -i 's/PermitRootLogin yes/PermitRootLogin no/g' deploy.sh
-            # Also fix the drop-in config creation
             sed -i 's/PasswordAuthentication yes/PasswordAuthentication no/g' deploy.sh
             sed -i 's/PermitRootLogin yes/PermitRootLogin no/g' deploy.sh
             if git diff --quiet deploy.sh 2>/dev/null; then
@@ -729,21 +707,41 @@ jobs:
           PY
 
       # ── 3. AUTO-COMMIT ALL FIXES ──────────────────────────────────────
-      - name: Auto Commit All Fixes
-        uses: stefanzweifel/git-auto-commit-action@v5
-        with:
-          commit_message: |
-            bot(auto-fix): automated security & code fixes [skip ci]
+      - name: Configure Git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
 
-            - Deduplicate requirements.txt
-            - Close SSH backdoor (PasswordAuthentication no)
-            - Remove .env.bak_* from .gitignore
-            - Update actions/cache to v5
-            - Remove replit_key.pub
-            - Apply AI-generated critical fixes
-          commit_options: '--no-verify'
-          file_pattern: '*.py *.sh *.yml *.yaml *.txt *.md *.json'
-          status_options: '--untracked-files=no'
+      - name: Auto Commit All Fixes
+        id: auto-commit
+        run: |
+          set -euo pipefail
+          
+          # Stage everything: modifications, new files, deletions
+          git add -A
+          
+          # Check if there is anything to commit
+          if git diff --cached --quiet; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            echo "No changes detected — nothing to commit."
+            exit 0
+          fi
+          
+          # Show what will be committed (visible in workflow logs)
+          echo "=== Files staged for commit ==="
+          git diff --cached --stat
+          
+          # Commit with [skip ci] to prevent infinite workflow loops
+          git commit -m "bot(auto-fix): automated security & code fixes [skip ci]"
+          
+          echo "changed=true" >> "$GITHUB_OUTPUT"
+          echo "Commit created successfully."
+
+      - name: Push to main
+        if: steps.auto-commit.outputs.changed == 'true'
+        run: |
+          git push origin HEAD:main
+          echo "Pushed to main successfully."
 
       - name: Summary
         if: always()
