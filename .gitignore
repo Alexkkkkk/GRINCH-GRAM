@@ -48,3 +48,8 @@ fix_stats_test.py
 /app.js
 /index.html
 .local/keys/
+
+# AI workflow artifacts
+ai_emergency_fix.md
+all_reports.md
+ai_reports/
