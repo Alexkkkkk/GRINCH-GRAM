@@ -1,4 +1,4 @@
-name: 🤖 SUPREME AI AGENT v2.0 — Autonomous DevTeam
+name: AI Supreme Agent v2.1 — Autonomous DevTeam
 
 on:
   pull_request:
@@ -7,7 +7,7 @@ on:
   push:
     branches: [main, master]
   schedule:
-    - cron: "0 3 * * *"   # Ночной deep audit
+    - cron: "0 3 * * *"
   workflow_dispatch:
     inputs:
       mode:
@@ -33,11 +33,11 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  # ═══════════════════════════════════════════════════════════════
+  # ================================================================
   # PHASE 1: CONTEXT INTELLIGENCE GATHERING
-  # ═══════════════════════════════════════════════════════════════
+  # ================================================================
   context-gathering:
-    name: 🧠 Phase 1 — Context Intelligence
+    name: Phase 1 — Context Intelligence
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -54,66 +54,86 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-          token: ${{ secrets.GITHUB_TOKEN }}
 
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
 
-      - name: 🔑 Check GROQ API Key
+      - name: Check GROQ API Key
         id: check-key
         run: |
+          set -euo pipefail
           if [ -n "${{ secrets.GROQ_API_KEY }}" ]; then
-            echo "has_key=true" >> $GITHUB_OUTPUT
+            echo "has_key=true" >> "$GITHUB_OUTPUT"
           else
-            echo "has_key=false" >> $GITHUB_OUTPUT
+            echo "has_key=false" >> "$GITHUB_OUTPUT"
             echo "::warning::GROQ_API_KEY not set. AI agents will be skipped."
           fi
 
-      - name: 📊 Gather Code Metrics
+      - name: Gather Code Metrics
         id: metrics
         run: |
+          set -euo pipefail
           pip install radon 2>/dev/null || true
           COMPLEXITY=$(radon cc . -s -a 2>/dev/null | tail -1 || echo "N/A")
-          echo "complexity=$COMPLEXITY" >> $GITHUB_OUTPUT
+          echo "complexity=$COMPLEXITY" >> "$GITHUB_OUTPUT"
 
-      - name: 🔍 Secret Scan (Pre-flight)
+      - name: Secret Scan (Pre-flight)
         id: secrets
         run: |
+          set -euo pipefail
           pip install detect-secrets 2>/dev/null || true
           FOUND="false"
           if command -v detect-secrets &> /dev/null; then
             detect-secrets scan --all-files --force-use-all-plugins > .secrets.baseline 2>/dev/null || true
-            if detect-secrets audit .secrets.baseline 2>/dev/null | grep -q "True"; then
+            # Parse JSON baseline instead of interactive audit
+            if python3 -c "
+          import json, sys
+          try:
+              with open('.secrets.baseline') as f:
+                  data = json.load(f)
+              sys.exit(1 if data.get('results') else 0)
+          except Exception:
+              sys.exit(0)
+          " 2>/dev/null; then
+              FOUND="false"
+            else
               FOUND="true"
             fi
           else
-            # Fallback: naive grep только если detect-secrets недоступен
+            # Fallback: naive grep only if detect-secrets unavailable
             if grep -rn -E "(password|secret|token|api_key)\s*=\s*['\"][^'\"]{8,}['\"]" --include="*.py" . 2>/dev/null | grep -v "os.environ\|getenv\|environ\." | head -1; then
               FOUND="true"
             fi
           fi
-          echo "found=$FOUND" >> $GITHUB_OUTPUT
+          echo "found=$FOUND" >> "$GITHUB_OUTPUT"
 
-      - name: 📋 Analyze Context
+      - name: Analyze Context
         id: context
         run: |
+          set -euo pipefail
           if [ "${{ github.event_name }}" == "pull_request" ]; then
-            echo "trigger=pr" >> $GITHUB_OUTPUT
-            git diff --name-only origin/${{ github.base_ref }}...HEAD > changed_files.txt || git diff --name-only ${{ github.base_ref }}...HEAD > changed_files.txt
+            echo "trigger=pr" >> "$GITHUB_OUTPUT"
+            # Ensure base ref is available
+            git fetch origin "${{ github.base_ref }}" --depth=1 2>/dev/null || true
+            git diff --name-only "origin/${{ github.base_ref }}...HEAD" > changed_files.txt 2>/dev/null || \
+            git diff --name-only "${{ github.base_ref }}...HEAD" > changed_files.txt 2>/dev/null || \
+            git diff --name-only HEAD~1 HEAD > changed_files.txt 2>/dev/null || \
+            echo "" > changed_files.txt
           else
-            echo "trigger=push" >> $GITHUB_OUTPUT
-            git diff --name-only HEAD~1 HEAD > changed_files.txt || echo "" > changed_files.txt
+            echo "trigger=push" >> "$GITHUB_OUTPUT"
+            git diff --name-only HEAD~1 HEAD > changed_files.txt 2>/dev/null || echo "" > changed_files.txt
           fi
-          echo "files=$(cat changed_files.txt | tr '\n' ' ')" >> $GITHUB_OUTPUT
-          echo "py_files=$(grep '\.py$' changed_files.txt | tr '\n' ' ' || echo '')" >> $GITHUB_OUTPUT
+          echo "files=$(cat changed_files.txt | tr '\n' ' ')" >> "$GITHUB_OUTPUT"
+          echo "py_files=$(grep '\.py$' changed_files.txt | tr '\n' ' ' || echo '')" >> "$GITHUB_OUTPUT"
 
-      - name: 🎯 AI Risk Assessment & Planning
+      - name: AI Risk Assessment & Planning
         id: planner
         if: steps.check-key.outputs.has_key == 'true'
         env:
           GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
         run: |
+          set -euo pipefail
           python3 - <<'PY'
           import os, json, urllib.request, re
 
@@ -165,9 +185,10 @@ jobs:
             f.write(f"plan={plan_result}\n")
           PY
 
-      - name: 🎯 Risk Level Assessment
+      - name: Risk Level Assessment
         id: risk
         run: |
+          set -euo pipefail
           RISK="low"
           if [ "${{ steps.secrets.outputs.found }}" == "true" ]; then
             RISK="critical"
@@ -179,9 +200,9 @@ jobs:
               RISK="medium"
             fi
           fi
-          echo "level=$RISK" >> $GITHUB_OUTPUT
+          echo "level=$RISK" >> "$GITHUB_OUTPUT"
 
-      - name: 💾 Cache Intelligence
+      - name: Cache Intelligence
         uses: actions/cache@v4
         with:
           path: ${{ env.CACHE_DIR }}
@@ -189,11 +210,11 @@ jobs:
           restore-keys: |
             ai-context-
 
-  # ═══════════════════════════════════════════════════════════════
+  # ================================================================
   # PHASE 2: PARALLEL AI ANALYSIS (Matrix Strategy)
-  # ═══════════════════════════════════════════════════════════════
+  # ================================================================
   ai-analysis:
-    name: 🔬 Phase 2 — ${{ matrix.agent }} Analysis
+    name: Phase 2 — ${{ matrix.agent }} Analysis
     needs: context-gathering
     if: needs.context-gathering.outputs.has_groq_key == 'true'
     runs-on: ubuntu-latest
@@ -220,8 +241,9 @@ jobs:
         with:
           python-version: '3.11'
 
-      - name: 📦 Install Agent Tools
+      - name: Install Agent Tools
         run: |
+          set -euo pipefail
           pip install ruff bandit radon vulture 2>/dev/null || true
           if [ "${{ matrix.agent }}" == "test-generator" ]; then
             pip install pytest pytest-asyncio pytest-cov 2>/dev/null || true
@@ -230,13 +252,14 @@ jobs:
             pip install line_profiler memory_profiler 2>/dev/null || true
           fi
 
-      - name: 🧠 Run AI Agent — ${{ matrix.agent }}
+      - name: Run AI Agent — ${{ matrix.agent }}
         id: ai-agent
         env:
           GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
           AGENT_TYPE: ${{ matrix.agent }}
           CHANGED_FILES: ${{ needs.context-gathering.outputs.changed_py }}
         run: |
+          set -euo pipefail
           python3 - <<'PY'
           import os, json, urllib.request, urllib.error, sys
 
@@ -343,23 +366,23 @@ jobs:
               result = json.loads(resp.read())
               content = result["choices"][0]["message"]["content"]
             with open(report_file, "w", encoding="utf-8") as f:
-              f.write(f"# 🤖 AI Agent: {AGENT.upper()}\n\n")
+              f.write(f"# AI Agent: {AGENT.upper()}\n\n")
               f.write(content)
             status = "success"
             print(f"Report saved: {report_file}")
           except urllib.error.HTTPError as e:
             with open(report_file, "w", encoding="utf-8") as f:
-              f.write(f"# 🤖 AI Agent: {AGENT.upper()}\n\nAPI Error: HTTP {e.code}\n")
+              f.write(f"# AI Agent: {AGENT.upper()}\n\nAPI Error: HTTP {e.code}\n")
             status = f"api-error-{e.code}"
           except Exception as e:
             with open(report_file, "w", encoding="utf-8") as f:
-              f.write(f"# 🤖 AI Agent: {AGENT.upper()}\n\nError: {e}\n")
+              f.write(f"# AI Agent: {AGENT.upper()}\n\nError: {e}\n")
 
           with open(os.environ.get("GITHUB_OUTPUT", "/dev/null"), "a") as f:
             f.write(f"status={status}\n")
           PY
 
-      - name: 📝 Post Agent Report to PR
+      - name: Post Agent Report to PR
         if: github.event_name == 'pull_request' && steps.ai-agent.outputs.status == 'success'
         uses: actions/github-script@v7
         with:
@@ -390,7 +413,7 @@ jobs:
               console.log("Could not post report:", e.message);
             }
 
-      - name: 📤 Upload Report Artifact
+      - name: Upload Report Artifact
         if: always()
         uses: actions/upload-artifact@v4
         with:
@@ -398,11 +421,11 @@ jobs:
           path: ai_report_${{ matrix.agent }}.md
           retention-days: 30
 
-  # ═══════════════════════════════════════════════════════════════
+  # ================================================================
   # PHASE 3: AI SELF-HEALING (Emergency Fix Generation)
-  # ═══════════════════════════════════════════════════════════════
+  # ================================================================
   ai-healing:
-    name: 🏥 Phase 3 — AI Self-Healing
+    name: Phase 3 — AI Self-Healing
     needs: [context-gathering, ai-analysis]
     if: |
       always() && 
@@ -419,17 +442,18 @@ jobs:
           fetch-depth: 0
           token: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: 📥 Download Agent Reports
+      - name: Download Agent Reports
         uses: actions/download-artifact@v4
         with:
           path: ai_reports
           pattern: ai-report-*
           merge-multiple: true
 
-      - name: 🧠 Generate Emergency Fix
+      - name: Generate Emergency Fix
         env:
           GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
         run: |
+          set -euo pipefail
           cat ai_reports/ai_report_*.md > all_reports.md 2>/dev/null || echo "No reports" > all_reports.md
 
           python3 - <<'PY'
@@ -476,36 +500,53 @@ jobs:
               f.write(f"Fix generation failed: {e}")
           PY
 
-      - name: 🔧 Apply Fixes (Safe Patch Mode)
+      - name: Apply Fixes (Safe Patch Mode)
         run: |
+          set -euo pipefail
           python3 - <<'PY'
-          import re, os
+          import re, os, tempfile, py_compile, sys
 
           try:
             with open("ai_emergency_fix.md", encoding="utf-8") as f:
               content = f.read()
           except Exception:
-            exit(0)
+            sys.exit(0)
 
-          pattern = r'FILE:\s*(\S+)\s*```python\s*\n(.*?)\n```'
-          matches = re.findall(pattern, content, re.DOTALL)
+          # Robust regex: handles code blocks with backticks inside strings
+          # Matches FILE: path followed by ```python ... ``` (non-greedy, multiline)
+          pattern = r'^FILE:\s*([^\n]+?)\s*```python\s*\n(.*?)\n```'
+          matches = re.findall(pattern, content, re.MULTILINE | re.DOTALL)
 
           repo_root = os.getcwd()
+          applied = 0
+          skipped = 0
+
           for filename, code in matches:
             code = code.strip()
             if not code:
               continue
-            
+
             # Strict path traversal protection
             target_path = os.path.abspath(os.path.join(repo_root, filename))
             if not target_path.startswith(repo_root + os.sep):
               print(f"SKIPPED (path traversal): {filename}")
+              skipped += 1
               continue
             if not target_path.endswith(".py"):
               print(f"SKIPPED (not .py): {filename}")
+              skipped += 1
               continue
             if not os.path.exists(target_path):
               print(f"SKIPPED (file not found): {filename}")
+              skipped += 1
+              continue
+
+            # Validate Python syntax before applying
+            try:
+              compile(code, target_path, 'exec')
+            except SyntaxError as e:
+              print(f"SKIPPED (syntax error in AI fix): {filename} — {e}")
+              skipped += 1
               continue
 
             # Create backup
@@ -519,28 +560,33 @@ jobs:
             with open(target_path, "w", encoding="utf-8") as f:
               f.write(code + "\n")
             print(f"Applied emergency fix: {filename} (backup: {backup})")
+            applied += 1
+
+          print(f"\nSummary: {applied} applied, {skipped} skipped")
+          if applied == 0 and skipped > 0:
+              print("WARNING: No fixes were applied. Review ai_emergency_fix.md manually.")
           PY
 
-      - name: 🚀 Create Emergency Fix PR
+      - name: Create Emergency Fix PR
         uses: peter-evans/create-pull-request@v7
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
           branch: ai/emergency-fix-${{ github.run_id }}
           delete-branch: true
-          title: "🚨 AI Emergency Fix — Critical Issues Detected"
+          title: "AI Emergency Fix — Critical Issues Detected"
           commit-message: "ai(heal): emergency fix for critical issues [skip ci]"
           body: |
-            ## 🚨 AI-Generated Emergency Fix
+            ## AI-Generated Emergency Fix
 
             **Triggered by:** CI failure or high-risk code detection
 
-            ### ⚠️ CRITICAL: Review before merge!
+            ### CRITICAL: Review before merge!
             - [ ] I understand what this fix changes
             - [ ] The fix addresses the actual problem
             - [ ] No new bugs introduced
             - [ ] CI passes after this fix
 
-            ### 🧠 AI Reasoning
+            ### AI Reasoning
             See `ai_emergency_fix.md` in this branch.
           labels: |
             ai-generated
@@ -548,11 +594,11 @@ jobs:
             needs-review
             critical
 
-  # ═══════════════════════════════════════════════════════════════
+  # ================================================================
   # PHASE 4: LEARNING & EVOLUTION
-  # ═══════════════════════════════════════════════════════════════
+  # ================================================================
   ai-learning:
-    name: 🧬 Phase 4 — Learning & Evolution
+    name: Phase 4 — Learning & Evolution
     needs: [context-gathering, ai-analysis]
     if: always() && needs.context-gathering.outputs.has_groq_key == 'true'
     runs-on: ubuntu-latest
@@ -564,7 +610,7 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: 📥 Download Learning History
+      - name: Download Learning History
         uses: actions/cache@v4
         with:
           path: .ai-learning
@@ -572,25 +618,28 @@ jobs:
           restore-keys: |
             ai-learning-history-
 
-      - name: 📚 Update Learning Database
+      - name: Update Learning Database
         run: |
+          set -euo pipefail
           mkdir -p .ai-learning
           
-          cat <<EOF >> .ai-learning/run_${{ github.run_id }}.log
+          # Safely quote values to avoid heredoc corruption
+          cat <<EOF >> ".ai-learning/run_${{ github.run_id }}.log"
           run_id=${{ github.run_id }}
           trigger=${{ github.event_name }}
           status=${{ needs.ai-analysis.result }}
           timestamp=$(date -Iseconds)
-          changed_files=${{ needs.context-gathering.outputs.changed_files }}
+          changed_files="${{ needs.context-gathering.outputs.changed_files }}"
           EOF
 
-          # Keep only last 50 runs
-          ls -t .ai-learning/run_*.log 2>/dev/null | tail -n +51 | xargs rm -f 2>/dev/null || true
+          # Keep only last 50 runs (xargs -r prevents error on empty input)
+          ls -t .ai-learning/run_*.log 2>/dev/null | tail -n +51 | xargs -r rm -f 2>/dev/null || true
 
-      - name: 🧠 Generate Insights from History
+      - name: Generate Insights from History
         env:
           GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
         run: |
+          set -euo pipefail
           cat .ai-learning/run_*.log 2>/dev/null | tail -100 > history_context.txt || true
           if [ ! -s history_context.txt ]; then
             echo "No history data available." > history_context.txt
@@ -637,15 +686,15 @@ jobs:
               result = json.loads(resp.read())
               insights = result["choices"][0]["message"]["content"]
             with open("ai_insights.md", "w", encoding="utf-8") as f:
-              f.write(f"# 🧬 AI Learning Insights\n\n{insights}")
+              f.write(f"# AI Learning Insights\n\n{insights}")
             print("Insights generated successfully.")
           except Exception as e:
             with open("ai_insights.md", "w", encoding="utf-8") as f:
-              f.write(f"# 🧬 AI Learning Insights\n\nError generating insights: {e}")
+              f.write(f"# AI Learning Insights\n\nError generating insights: {e}")
             print(f"Insight generation failed: {e}")
           PY
 
-      - name: 📤 Upload Insights Artifact
+      - name: Upload Insights Artifact
         if: always()
         uses: actions/upload-artifact@v4
         with:
@@ -653,10 +702,10 @@ jobs:
           path: ai_insights.md
           retention-days: 90
 
-      - name: 💾 Persist Learning Database
+      - name: Persist Learning Database
         uses: actions/cache@v4
         with:
           path: .ai-learning
-          key: ai-learning-history-${{ github.repository }}-${{ github.run_id }}
+          key: ai-learning-history-${{ github.repository }}
           restore-keys: |
             ai-learning-history-${{ github.repository }}
