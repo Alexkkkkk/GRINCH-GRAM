@@ -1,18 +1,15 @@
-name: AI Supreme Agent v2.5 — Real-Time VPS Auto-Healer
+name: AI Supreme Agent v2.5 — Real-Time VPS Auto-Healer + Auto-Deploy
 
 on:
-  # --- Триггеры от VPS (реальное время) ---
   repository_dispatch:
     types: [vps-error, vps-warning, vps-anomaly]
-  
-  # --- Обычные триггеры ---
   pull_request:
     types: [opened, synchronize, reopened]
     branches: [main, master]
   push:
     branches: [main, master]
   schedule:
-    - cron: "0 */3 * * *"  # Каждые 3 часа профилактика
+    - cron: "0 */3 * * *"
   workflow_dispatch:
     inputs:
       mode:
@@ -35,6 +32,9 @@ env:
   AI_MAX_TOKENS: "4000"
   AI_TIMEOUT: "120"
   CACHE_DIR: ".ai-cache"
+  VPS_HOST: "2.27.25.126"
+  VPS_USER: "root"
+  VPS_DEPLOY_DIR: "/opt/bot"
 
 concurrency:
   group: supreme-ai-${{ github.ref }}
@@ -42,7 +42,7 @@ concurrency:
 
 jobs:
   # ================================================================
-  # PHASE 0: VPS ERROR INTAKE (только при repository_dispatch)
+  # PHASE 0: VPS ERROR INTAKE
   # ================================================================
   vps-error-intake:
     name: Phase 0 — VPS Error Intake
@@ -71,7 +71,6 @@ jobs:
           echo "Error log preview:"
           echo "$ERROR_LOG" | head -20
           
-          # Save for downstream jobs
           echo "error_log<<EOF" >> "$GITHUB_OUTPUT"
           echo "$ERROR_LOG" >> "$GITHUB_OUTPUT"
           echo "EOF" >> "$GITHUB_OUTPUT"
@@ -79,11 +78,6 @@ jobs:
           echo "service=$SERVICE" >> "$GITHUB_OUTPUT"
           echo "vps_ip=$VPS_IP" >> "$GITHUB_OUTPUT"
           echo "trigger_type=vps-realtime" >> "$GITHUB_OUTPUT"
-          
-          # Create issue if critical
-          if [ "$SEVERITY" == "critical" ]; then
-            echo "::error::CRITICAL VPS ERROR — initiating emergency fix"
-          fi
 
   # ================================================================
   # PHASE 1: CONTEXT INTELLIGENCE
@@ -377,7 +371,6 @@ jobs:
                 return json.loads(resp.read())["choices"][0]["message"]["content"]
             raise RuntimeError("No AI provider available")
 
-          # Collect code context
           code_blocks = []
           if CHANGED.strip():
             for f in CHANGED.strip().split():
@@ -398,7 +391,6 @@ jobs:
 
           code = "\n\n".join(code_blocks) if code_blocks else "No code available."
 
-          # VPS-specific prompt injection
           vps_context = ""
           if VPS_ERROR:
             vps_context = f"\n\nCRITICAL: This analysis is triggered by a VPS runtime error:\n```\n{VPS_ERROR[:4000]}\n```\nFocus your analysis on finding the root cause of this error in the code above."
@@ -470,6 +462,8 @@ jobs:
     permissions:
       contents: write
       pull-requests: write
+    outputs:
+      changed: ${{ steps.auto-commit.outputs.changed }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -720,6 +714,45 @@ jobs:
         run: |
           git push origin HEAD:main
           echo "Pushed successfully."
+
+  # ================================================================
+  # PHASE 5: AUTO-DEPLOY TO VPS
+  # ================================================================
+  deploy-to-vps:
+    name: Phase 5 — Auto-Deploy to VPS
+    needs: [auto-fix-everything]
+    if: needs.auto-fix-everything.outputs.changed == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Setup SSH Key
+        run: |
+          set -euo pipefail
+          mkdir -p ~/.ssh
+          echo "${{ secrets.VPS_SSH_KEY }}" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          ssh-keyscan -H "${{ env.VPS_HOST }}" >> ~/.ssh/known_hosts 2>/dev/null || true
+
+      - name: Deploy to VPS
+        run: |
+          set -euo pipefail
+          echo "=== Deploying to VPS ${{ env.VPS_HOST }} ==="
+          
+          ssh -o StrictHostKeyChecking=yes -o ConnectTimeout=30 \
+            -i ~/.ssh/id_ed25519 \
+            "${{ env.VPS_USER }}@${{ env.VPS_HOST }}" \
+            "set -e; \
+             echo '--- Pulling latest code ---'; \
+             cd ${{ env.VPS_DEPLOY_DIR }} && git pull origin main; \
+             echo '--- Rebuilding containers ---'; \
+             docker-compose down && docker-compose up -d --build; \
+             echo '--- Health check ---'; \
+             sleep 5; \
+             docker ps | grep grinch-bot && echo 'DEPLOY SUCCESS' || echo 'DEPLOY WARNING'"
+
+      - name: Cleanup SSH Key
+        if: always()
+        run: rm -f ~/.ssh/id_ed25519
 
   # ================================================================
   # PHASE 4: LEARNING & EVOLUTION
