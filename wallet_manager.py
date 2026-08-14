@@ -264,11 +264,15 @@ class WalletManager:
                                     pnl_ton = round(pnl_usd / ton_usd, 6)
                                     pnl_usd = round(pnl_usd, 4)
                                 else:
-                                    proceeds = tracked_value_ton * (1.0 - fee) - sell_gas
+                                    proceeds = (
+                                        tracked_value_ton * (1.0 - fee) - sell_gas
+                                    )
                                     cost = tracked_stake + buy_gas * n_entries
                                     pnl_ton = round(proceeds - cost, 6)
                                     pnl_pct = (
-                                        round(pnl_ton / cost * 100, 2) if cost > 0 else 0.0
+                                        round(pnl_ton / cost * 100, 2)
+                                        if cost > 0
+                                        else 0.0
                                     )
                                     pnl_usd = (
                                         round(pnl_ton * ton_usd, 4)

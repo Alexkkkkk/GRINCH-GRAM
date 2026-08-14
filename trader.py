@@ -410,16 +410,15 @@ class Trader:
                 grid_reserve_matches = False
                 try:
                     from grid_trader import STATE_FILE as _grid_state_file
+
                     with open(_grid_state_file, encoding="utf-8") as _gf:
                         _grid_reserve = float(
                             json.load(_gf).get("grid_reserved_grinch", 0) or 0
                         )
                     _wallet_remainder = max(0.0, real_grinch - book_grinch)
-                    grid_reserve_matches = (
-                        _grid_reserve > 0
-                        and abs(_wallet_remainder - _grid_reserve)
-                        <= max(100.0, _grid_reserve * 0.01)
-                    )
+                    grid_reserve_matches = _grid_reserve > 0 and abs(
+                        _wallet_remainder - _grid_reserve
+                    ) <= max(100.0, _grid_reserve * 0.01)
                 except Exception:
                     pass
                 if grid_reserve_matches:
@@ -5415,6 +5414,7 @@ class Trader:
         cur_ton = float(grinch_ton or 0)
         try:
             from price_feed import price_feed as _pf
+
             cur_usd = float(_pf.get("GRINCH") or 0)
             ton_usd = float(_pf.get("TON") or 0)
         except Exception:
@@ -5440,9 +5440,7 @@ class Trader:
                     proceeds_usd = current_value_usd * (1 - fee) - sell_gas * ton_usd
                     net_usd = proceeds_usd - total_cost_usd
                     net_pct = (
-                        net_usd / total_cost_usd * 100
-                        if total_cost_usd > 0
-                        else 0.0
+                        net_usd / total_cost_usd * 100 if total_cost_usd > 0 else 0.0
                     )
                     net_ton = net_usd / ton_usd
                     be_usd = (total_cost_usd + sell_gas * ton_usd) / (
@@ -5456,15 +5454,11 @@ class Trader:
                     proceeds = value_now * (1 - fee) - sell_gas
                     total_cost = stake_ton + buy_gas
                     net_ton = proceeds - total_cost
-                    net_pct = (
-                        net_ton / total_cost * 100 if total_cost > 0 else 0.0
-                    )
+                    net_pct = net_ton / total_cost * 100 if total_cost > 0 else 0.0
                     if entry_usd > 0:
                         entry_ton = stake_ton / amount
                         if entry_ton > 0:
-                            be_ton = (total_cost + sell_gas) / (
-                                amount * (1 - fee)
-                            )
+                            be_ton = (total_cost + sell_gas) / (amount * (1 - fee))
                             c["breakeven_price"] = round(
                                 entry_usd * be_ton / entry_ton, 8
                             )
