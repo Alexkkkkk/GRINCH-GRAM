@@ -393,30 +393,14 @@ jobs:
 
           vps_context = ""
           if VPS_ERROR:
-            vps_context = f"\n\nCRITICAL: This analysis is triggered by a VPS runtime error:\n```\n{VPS_ERROR[:4000]}\n```\nFocus your analysis on finding the root cause of this error in the code above."
+            vps_context = f"\n\nCRITICAL: VPS runtime error:\n```\n{VPS_ERROR[:4000]}\n```\nFocus on root cause."
 
           PROMPTS = {
-            "code-reviewer": (
-              "You are a senior Python architect. Review the code for design issues."
-              + vps_context
-            ),
-            "bug-hunter": (
-              "You are an elite bug hunter. Find bugs that could cause the VPS error above."
-              "For each bug: severity, file:line, explanation, fix."
-              + vps_context
-            ),
-            "security-auditor": (
-              "You are a cybersecurity expert. Check for security issues."
-              + vps_context
-            ),
-            "test-generator": (
-              "Generate pytest tests. Include regression tests for the VPS error."
-              + vps_context
-            ),
-            "performance-profiler": (
-              "Analyze performance. Could the VPS error be caused by resource exhaustion?"
-              + vps_context
-            ),
+            "code-reviewer": "You are a senior Python architect." + vps_context,
+            "bug-hunter": "You are an elite bug hunter. Find bugs causing VPS error. severity, file:line, explanation, fix." + vps_context,
+            "security-auditor": "You are a cybersecurity expert." + vps_context,
+            "test-generator": "Generate pytest tests with regression tests for VPS error." + vps_context,
+            "performance-profiler": "Analyze performance. Could VPS error be resource exhaustion?" + vps_context,
           }
 
           prompt = PROMPTS.get(AGENT, PROMPTS["code-reviewer"]) + f"\n\nCode:\n{code}"
@@ -613,13 +597,11 @@ jobs:
           vps_error = os.environ.get("VPS_ERROR", "")
           vps_context = ""
           if vps_error:
-            vps_context = f"\n\nThis fix MUST address the following VPS runtime error:\n```\n{vps_error[:4000]}\n```\n"
+            vps_context = f"\n\nThis fix MUST address VPS error:\n```\n{vps_error[:4000]}\n```\n"
 
           prompt = (
-            "You are an emergency fix engineer. Generate MINIMAL, SAFE fixes."
-            "Only fix CRITICAL and HIGH severity issues."
-            "Return in format:\n\n"
-            "FILE: filename.py\n```python\n# FIX: description\nfixed_code\n```\n\n"
+            "You are an emergency fix engineer. MINIMAL, SAFE fixes. CRITICAL/HIGH only.\n"
+            "Format: FILE: filename.py\n```python\n# FIX: description\nfixed_code\n```\n\n"
             f"Reports:\n{reports}{vps_context}"
           )
 
@@ -716,7 +698,7 @@ jobs:
           echo "Pushed successfully."
 
   # ================================================================
-  # PHASE 5: AUTO-DEPLOY TO VPS
+  # PHASE 5: AUTO-DEPLOY TO VPS (SSH + docker compose v2)
   # ================================================================
   deploy-to-vps:
     name: Phase 5 — Auto-Deploy to VPS
@@ -745,7 +727,7 @@ jobs:
              echo '--- Pulling latest code ---'; \
              cd ${{ env.VPS_DEPLOY_DIR }} && git pull origin main; \
              echo '--- Rebuilding containers ---'; \
-             docker-compose down && docker-compose up -d --build; \
+             docker compose down && docker compose up -d --build; \
              echo '--- Health check ---'; \
              sleep 5; \
              docker ps | grep grinch-bot && echo 'DEPLOY SUCCESS' || echo 'DEPLOY WARNING'"
