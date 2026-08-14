@@ -274,12 +274,26 @@ def _scan_once(sm_score: float = 0.0):
         log.debug(f"[Scanner] get_candles error: {e}")
         return
 
+    def _candle_field(candle, names, index):
+        # ExchangeClient.get_real_ohlcv returns OHLCV arrays:
+        # [timestamp, open, high, low, close, volume]. Some fallback
+        # providers return dictionaries, so keep both formats supported.
+        if isinstance(candle, dict):
+            for name in names:
+                value = candle.get(name)
+                if value is not None:
+                    return value
+            return 0
+        if isinstance(candle, (list, tuple)) and len(candle) > index:
+            return candle[index]
+        return 0
+
     try:
-        opens = [float(c.get("open", c.get("o", 0)) or 0) for c in candles]
-        highs = [float(c.get("high", c.get("h", 0)) or 0) for c in candles]
-        lows = [float(c.get("low", c.get("l", 0)) or 0) for c in candles]
-        closes = [float(c.get("close", c.get("c", 0)) or 0) for c in candles]
-        volumes = [float(c.get("volume", c.get("v", 0)) or 0) for c in candles]
+        opens = [float(_candle_field(c, ("open", "o"), 1) or 0) for c in candles]
+        highs = [float(_candle_field(c, ("high", "h"), 2) or 0) for c in candles]
+        lows = [float(_candle_field(c, ("low", "l"), 3) or 0) for c in candles]
+        closes = [float(_candle_field(c, ("close", "c"), 4) or 0) for c in candles]
+        volumes = [float(_candle_field(c, ("volume", "v"), 5) or 0) for c in candles]
     except Exception as e:
         log.debug(f"[Scanner] candle parse error: {e}")
         return

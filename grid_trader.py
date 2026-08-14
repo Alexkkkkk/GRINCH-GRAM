@@ -308,6 +308,18 @@ class GridAIManager:
         self._paused_by_ai: bool = False
         self._decision_log: list = []  # последние 20 решений
         self._MAX_LOG: int = 20
+        # Health-check подтверждает жизнь процесса, но не результат сверки
+        # физического баланса с логическими резервами Grid.
+        self._last_reconcile: dict = {
+            "ts": 0.0,
+            "status": "not_checked",
+            "reason": "ещё не выполнялась",
+        }
+        self._last_rebuild: dict = {
+            "ts": 0.0,
+            "status": "not_attempted",
+            "reason": "",
+        }
         # [УЛУЧШ] Regime confirmation: применять политику только после N тиков с одним режимом
         self._pending_regime: str = "UNKNOWN"
         self._regime_confirm_count: int = 0
@@ -424,8 +436,22 @@ class GridAIManager:
                     rebuild_reason = ""
 
             if rebuild_reason:
-                target_levels = policy["levels"]
+                # Явная настройка GRID_SELL_LEVELS имеет приоритет над
+                # количеством уровней, которое предлагает AI-режим.
+                _manual_sell_levels = os.getenv("GRID_SELL_LEVELS")
+                target_levels = (
+                    GridConfig.SELL_LEVELS_COUNT
+                    if _manual_sell_levels is not None
+                    else policy["levels"]
+                )
                 target_step = t._state.step_pct
+                self._last_rebuild = {
+                    "ts": now,
+                    "status": "attempted",
+                    "reason": rebuild_reason,
+                    "target_levels": target_levels,
+                    "step_pct": round(float(target_step or 0.0), 4),
+                }
                 log.info(
                     "[GridAI-Mgr] 🔨 Перестройка: %s | %d ур. шаг=%.1f%%",
                     rebuild_reason,
@@ -443,11 +469,32 @@ class GridAIManager:
                     if res.get("ok") or res.get("sell_levels_total", 0) > 0:
                         t.activate()
                         self._last_rebuild_ts = now
+                        self._last_rebuild.update(
+                            {
+                                "status": "built",
+                                "result_sell_levels": res.get("sell_levels_total", 0),
+                                "result_buy_levels": res.get("buy_levels_total", 0),
+                            }
+                        )
                         decisions.append(
                             f"🔨 перестройка ({rebuild_reason}) "
                             f"→ {res.get('sell_levels_total', 0)} ур."
                         )
+                    else:
+                        self._last_rebuild.update(
+                            {
+                                "status": "no_levels",
+                                "result_sell_levels": res.get("sell_levels_total", 0),
+                                "result_buy_levels": res.get("buy_levels_total", 0),
+                            }
+                        )
                 except Exception as exc:
+                    self._last_rebuild.update(
+                        {
+                            "status": "error",
+                            "error": str(exc)[:300],
+                        }
+                    )
                     log.warning("[GridAI-Mgr] ошибка перестройки: %s", exc)
 
         # ── Логируем решение ──────────────────────────────────────────────
@@ -501,7 +548,34 @@ class GridAIManager:
         available_for_grid = max(0.0, float(grinch_balance or 0.0) - dca_reserved)
         reserve_delta = abs(grid_reserved - available_for_grid)
         reserve_tolerance = max(100.0, max(grid_reserved, available_for_grid) * 0.01)
+        sell_allocated = sum(
+            float(level.amount_grinch or 0.0)
+            for level in sell_levels
+            if level.owner == "grid" and level.status != "filled"
+        )
+        reconcile_reason = (
+            f"в пределах допуска ±{reserve_tolerance:.0f} GRINCH"
+            if reserve_delta <= reserve_tolerance
+            else (
+                f"расхождение {reserve_delta:.2f} GRINCH превышает "
+                f"допуск ±{reserve_tolerance:.0f}"
+            )
+        )
+        self._last_reconcile = {
+            "ts": time.time(),
+            "status": "ok" if reserve_delta <= reserve_tolerance else "mismatch",
+            "reason": reconcile_reason,
+            "wallet_grinch": round(float(grinch_balance or 0.0), 4),
+            "ton_balance": round(float(ton_balance or 0.0), 6),
+            "dca_reserved_grinch": round(dca_reserved, 4),
+            "grid_reserved_grinch": round(grid_reserved, 4),
+            "available_for_grid": round(available_for_grid, 4),
+            "sell_allocated_grinch": round(sell_allocated, 4),
+            "reserve_delta": round(reserve_delta, 4),
+            "tolerance": round(reserve_tolerance, 4),
+        }
         if reserve_delta > reserve_tolerance:
+            self._last_reconcile["reason"] = f"нужен rebuild: {reconcile_reason}"
             return (
                 f"сверка резерва Grid: сохранено {grid_reserved:.0f}, "
                 f"доступно после DCA {available_for_grid:.0f}"
@@ -569,6 +643,22 @@ class GridAIManager:
 
     # ── Статус для API ────────────────────────────────────────────────────────
 
+    def note_automatic_buy_reanchor(self, count: int, anchor_price: float):
+        """Показать в журнале GridAI автоматическую привязку BUY к центру."""
+        entry = {
+            "ts": time.time(),
+            "regime": self._last_regime,
+            "atr_pct": 0.0,
+            "ai_buy": 0.0,
+            "ai_sell": 0.0,
+            "decisions": [
+                f"🔄 BUY-уровни привязаны к центру {anchor_price:.6f} " f"({count} ур.)"
+            ],
+            "desc": "автоматическая синхронизация BUY",
+        }
+        self._decision_log.insert(0, entry)
+        self._decision_log = self._decision_log[: self._MAX_LOG]
+
     def get_status(self) -> dict:
         policy = self.REGIME_POLICY.get(
             self._last_regime, self.REGIME_POLICY["UNKNOWN"]
@@ -582,6 +672,8 @@ class GridAIManager:
             "rebuild_cooldown_left": max(
                 0, int(self.REBUILD_COOLDOWN - (time.time() - self._last_rebuild_ts))
             ),
+            "last_reconcile": dict(self._last_reconcile),
+            "last_rebuild": dict(self._last_rebuild),
         }
 
 
@@ -956,10 +1048,10 @@ class GridTrader:
             # decremented only after a confirmed DCA SELL and is the source
             # of truth for the next rebuild.
             old_dca_reserved = max(0.0, float(self._state.dca_reserved_grinch or 0))
-            old_total_dca_reserved = max(
-                0.0,
-                self._get_dca_reserved_grinch() + old_dca_reserved,
-            )
+            # Используем тот же дедуплицированный расчёт, что и runtime-guard:
+            # основная DCA-позиция и сохранённый резерв не должны складываться
+            # поверх физического остатка после Grid.
+            old_total_dca_reserved = self._get_total_dca_reserved_grinch()
             # Самосверка резерва: физический кошелёк после DCA — верхняя
             # граница того, чем действительно может владеть Grid. Раньше
             # здесь безусловно сохранялся старый reserve из JSON, поэтому
@@ -1589,8 +1681,19 @@ class GridTrader:
         # ── Авто-перецентровка ────────────────────────────────────────────
         try:
             self._maybe_recenter(price_ton, atr_pct, regime)
+            _buy_reanchored = self._reanchor_regular_buy_levels(ton_bal)
+            if _buy_reanchored:
+                self._ai_manager.note_automatic_buy_reanchor(
+                    _buy_reanchored,
+                    self._state.center_price_ton,
+                )
+                log.info(
+                    "[Grid] 🔄 BUY reanchor: изменено %d полей вокруг центра %.8f",
+                    _buy_reanchored,
+                    self._state.center_price_ton,
+                )
         except Exception as e:
-            log.warning("[Grid] Recenter error: %s", e)
+            log.warning("[Grid] Recenter/BUY reanchor error: %s", e)
 
         with self._lock:
             self._state.last_tick_ts = time.time()
@@ -2873,10 +2976,20 @@ class GridTrader:
         # Аварийный режим: если BUY-уровней нет совсем, снижаем порог до 65%
         # от нормального чтобы не оставлять сетку без возможности закупки.
         _no_buy_levels = not any(l.status == "waiting" for l in self._state.buy_levels)
+        _min_safe_buy = GridConfig.min_profitable_order_ton(
+            self._state.step_pct or GridConfig.DEFAULT_STEP_PCT
+        )
+        # BUY ниже центра является пассивным защитным уровнем и не исполняется
+        # сразу. Не оставляем сетку без BUY, если доступен хотя бы один
+        # прибыльный по газу ордер; старое правило требовало TON на все слоты.
         _eff_min_conf = (
-            GridConfig.AI_MIN_BUY_CONF * 0.65
-            if _no_buy_levels
-            else GridConfig.AI_MIN_BUY_CONF
+            0.0
+            if _no_buy_levels and free_ton >= _min_safe_buy
+            else (
+                GridConfig.AI_MIN_BUY_CONF * 0.65
+                if _no_buy_levels
+                else GridConfig.AI_MIN_BUY_CONF
+            )
         )
         if ai_buy_conf < _eff_min_conf and regime not in ("SIDEWAYS", "UNKNOWN"):
             if _no_buy_levels:
@@ -3149,6 +3262,78 @@ class GridTrader:
             split_grinch,
             source.id,
         )
+
+    def _reanchor_regular_buy_levels(self, ton_balance: float) -> int:
+        """Перепривязать неисполненные обычные BUY к актуальному центру.
+
+        Уровни -1..-99 являются базовыми слотами сетки. Их цены должны
+        следовать за center_price_ton, но исполненные compound/reinvest BUY
+        (id <= -100) менять нельзя. Метод не совершает покупок сам: он лишь
+        меняет триггеры и активирует no_funds-слоты, когда можно безопасно
+        профинансировать все базовые слоты.
+        """
+        try:
+            with self._lock:
+                regular = [
+                    level
+                    for level in self._state.buy_levels
+                    if -100 < level.id < 0 and level.status in ("waiting", "no_funds")
+                ]
+                anchor = float(self._state.center_price_ton or 0.0)
+                step_pct = float(self._state.step_pct or GridConfig.DEFAULT_STEP_PCT)
+                if not regular or anchor <= 0 or step_pct <= 0:
+                    return 0
+
+                stale_limit = max(0.5, step_pct * 0.25)
+                stale = any(
+                    level.price_ton <= 0
+                    or abs(
+                        level.price_ton
+                        / (anchor / (1 + step_pct / 100) ** abs(level.id))
+                        - 1
+                    )
+                    * 100
+                    > stale_limit
+                    for level in regular
+                )
+                if not stale:
+                    return 0
+
+                min_order = GridConfig.min_profitable_order_ton(step_pct)
+                usable_ton = max(
+                    0.0,
+                    float(ton_balance or 0.0) - GridConfig.GAS_RESERVE_TON,
+                )
+                ton_per_level = (
+                    usable_ton / len(regular) if regular and usable_ton > 0 else 0.0
+                )
+                can_fund_all = ton_per_level >= min_order
+                changed = 0
+                for level in regular:
+                    target = round(anchor / (1 + step_pct / 100) ** abs(level.id), 8)
+                    note = (
+                        f"-{(1 - target / anchor) * 100:.1f}% от центра"
+                        " | auto-reanchor"
+                    )
+                    if level.price_ton != target or level.note != note:
+                        level.price_ton = target
+                        level.note = note
+                        changed += 1
+                    if level.status == "no_funds" and can_fund_all:
+                        level.amount_ton = round(ton_per_level, 4)
+                        level.status = "waiting"
+                        changed += 1
+
+                if changed:
+                    self._state.last_action = (
+                        f"🔄 BUY-сетка привязана к центру {anchor:.6f} "
+                        f"({len(regular)} уровней)"
+                    )
+                    self._save_state()
+                return changed
+        except Exception as exc:
+            log.warning("[Grid] BUY reanchor error: %s", exc)
+            return 0
 
     def _maybe_recenter(self, price_ton: float, atr_pct: float, regime: str):
         """Авто-перецентровка: если цена ушла слишком далеко от центра.
@@ -3622,12 +3807,24 @@ class GridTrader:
             return 0.0
 
     def _get_total_dca_reserved_grinch(self) -> float:
-        """Основной Trader-DCA плюс DCA-позиции, открытые Grid."""
-        return max(
-            0.0,
-            self._get_dca_reserved_grinch()
-            + float(self._state.dca_reserved_grinch or 0.0),
-        )
+        """Возвращает DCA-резерв без двойного учёта общей позиции.
+
+        В базе хранится основная DCA-позиция, а JSON может дополнительно
+        хранить резерв DCA-уровней Grid. Эти значения иногда отражают одну и
+        ту же позицию (например, после ручной синхронизации), поэтому сумма
+        не должна превышать физический кошелёк за вычетом Grid-резерва.
+        """
+        primary_dca = max(0.0, self._get_dca_reserved_grinch())
+        grid_dca = max(0.0, float(self._state.dca_reserved_grinch or 0.0))
+        raw_total = primary_dca + grid_dca
+        try:
+            wallet_grinch, _ = self._get_balances()
+            grid_reserved = max(0.0, float(self._state.grid_reserved_grinch or 0.0))
+            if wallet_grinch > 0:
+                return min(raw_total, max(0.0, wallet_grinch - grid_reserved))
+        except Exception:
+            pass
+        return raw_total
 
     def _available_grinch_for_level(self, level: GridLevel) -> float:
         """Возвращает доступный физический баланс именно владельца уровня.
