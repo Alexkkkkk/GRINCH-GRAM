@@ -1,13 +1,18 @@
-name: AI Supreme Agent v2.4 — Kimi + GROQ Auto-Fix Everything
+name: AI Supreme Agent v2.5 — Real-Time VPS Auto-Healer
 
 on:
+  # --- Триггеры от VPS (реальное время) ---
+  repository_dispatch:
+    types: [vps-error, vps-warning, vps-anomaly]
+  
+  # --- Обычные триггеры ---
   pull_request:
     types: [opened, synchronize, reopened]
     branches: [main, master]
   push:
     branches: [main, master]
   schedule:
-    - cron: "0 3 * * *"
+    - cron: "0 */3 * * *"  # Каждые 3 часа профилактика
   workflow_dispatch:
     inputs:
       mode:
@@ -37,11 +42,57 @@ concurrency:
 
 jobs:
   # ================================================================
-  # PHASE 1: CONTEXT INTELLIGENCE GATHERING
+  # PHASE 0: VPS ERROR INTAKE (только при repository_dispatch)
+  # ================================================================
+  vps-error-intake:
+    name: Phase 0 — VPS Error Intake
+    runs-on: ubuntu-latest
+    if: github.event_name == 'repository_dispatch'
+    outputs:
+      error_log: ${{ steps.intake.outputs.error_log }}
+      severity: ${{ steps.intake.outputs.severity }}
+      service: ${{ steps.intake.outputs.service }}
+      vps_ip: ${{ steps.intake.outputs.vps_ip }}
+      trigger_type: ${{ steps.intake.outputs.trigger_type }}
+    steps:
+      - name: Receive VPS Error
+        id: intake
+        run: |
+          set -euo pipefail
+          ERROR_LOG='${{ github.event.client_payload.error_log }}'
+          SEVERITY='${{ github.event.client_payload.severity }}'
+          SERVICE='${{ github.event.client_payload.service }}'
+          VPS_IP='${{ github.event.client_payload.vps_ip }}'
+          
+          echo "=== VPS ERROR RECEIVED ==="
+          echo "Severity: $SEVERITY"
+          echo "Service: $SERVICE"
+          echo "VPS IP: $VPS_IP"
+          echo "Error log preview:"
+          echo "$ERROR_LOG" | head -20
+          
+          # Save for downstream jobs
+          echo "error_log<<EOF" >> "$GITHUB_OUTPUT"
+          echo "$ERROR_LOG" >> "$GITHUB_OUTPUT"
+          echo "EOF" >> "$GITHUB_OUTPUT"
+          echo "severity=$SEVERITY" >> "$GITHUB_OUTPUT"
+          echo "service=$SERVICE" >> "$GITHUB_OUTPUT"
+          echo "vps_ip=$VPS_IP" >> "$GITHUB_OUTPUT"
+          echo "trigger_type=vps-realtime" >> "$GITHUB_OUTPUT"
+          
+          # Create issue if critical
+          if [ "$SEVERITY" == "critical" ]; then
+            echo "::error::CRITICAL VPS ERROR — initiating emergency fix"
+          fi
+
+  # ================================================================
+  # PHASE 1: CONTEXT INTELLIGENCE
   # ================================================================
   context-gathering:
     name: Phase 1 — Context Intelligence
     runs-on: ubuntu-latest
+    needs: [vps-error-intake]
+    if: always() && (github.event_name != 'repository_dispatch' || needs.vps-error-intake.result == 'success')
     permissions:
       contents: read
     outputs:
@@ -54,6 +105,8 @@ jobs:
       ai_plan: ${{ steps.planner.outputs.plan }}
       has_ai_key: ${{ steps.check-key.outputs.has_ai_key }}
       ai_provider: ${{ steps.check-key.outputs.ai_provider }}
+      vps_error: ${{ steps.vps-info.outputs.vps_error }}
+      vps_severity: ${{ steps.vps-info.outputs.vps_severity }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -63,7 +116,16 @@ jobs:
         with:
           python-version: '3.11'
 
-      - name: Check AI API Keys (Kimi primary, GROQ fallback)
+      - name: VPS Error Info
+        id: vps-info
+        if: github.event_name == 'repository_dispatch'
+        run: |
+          echo "vps_error<<EOF" >> "$GITHUB_OUTPUT"
+          echo '${{ github.event.client_payload.error_log }}' >> "$GITHUB_OUTPUT"
+          echo "EOF" >> "$GITHUB_OUTPUT"
+          echo "vps_severity=${{ github.event.client_payload.severity }}" >> "$GITHUB_OUTPUT"
+
+      - name: Check AI API Keys
         id: check-key
         run: |
           set -euo pipefail
@@ -72,13 +134,13 @@ jobs:
           if [ -n "${{ secrets.KIMI_API_KEY }}" ]; then
             HAS_AI="true"
             PROVIDER="kimi"
-            echo "::notice::Using Kimi (Moonshot AI) as primary provider."
+            echo "::notice::Using Kimi (Moonshot AI)"
           elif [ -n "${{ secrets.GROQ_API_KEY }}" ]; then
             HAS_AI="true"
             PROVIDER="groq"
-            echo "::warning::KIMI_API_KEY not set. Falling back to GROQ."
+            echo "::warning::Falling back to GROQ"
           else
-            echo "::error::No AI API key found. Set KIMI_API_KEY or GROQ_API_KEY."
+            echo "::error::No AI API key"
           fi
           echo "has_ai_key=$HAS_AI" >> "$GITHUB_OUTPUT"
           echo "ai_provider=$PROVIDER" >> "$GITHUB_OUTPUT"
@@ -91,7 +153,7 @@ jobs:
           COMPLEXITY=$(radon cc . -s -a 2>/dev/null | tail -1 || echo "N/A")
           echo "complexity=$COMPLEXITY" >> "$GITHUB_OUTPUT"
 
-      - name: Secret Scan (Pre-flight)
+      - name: Secret Scan
         id: secrets
         run: |
           set -euo pipefail
@@ -112,10 +174,6 @@ jobs:
             else
               FOUND="true"
             fi
-          else
-            if grep -rn -E "(password|secret|token|api_key)\s*=\s*['\"][^'\"]{8,}['\"]" --include="*.py" . 2>/dev/null | grep -v "os.environ\|getenv\|environ\." | head -1; then
-              FOUND="true"
-            fi
           fi
           echo "found=$FOUND" >> "$GITHUB_OUTPUT"
 
@@ -127,8 +185,9 @@ jobs:
             echo "trigger=pr" >> "$GITHUB_OUTPUT"
             git fetch origin "${{ github.base_ref }}" --depth=1 2>/dev/null || true
             git diff --name-only "origin/${{ github.base_ref }}...HEAD" > changed_files.txt 2>/dev/null || \
-            git diff --name-only "${{ github.base_ref }}...HEAD" > changed_files.txt 2>/dev/null || \
-            git diff --name-only HEAD~1 HEAD > changed_files.txt 2>/dev/null || \
+            git diff --name-only HEAD~1 HEAD > changed_files.txt 2>/dev/null || echo "" > changed_files.txt
+          elif [ "${{ github.event_name }}" == "repository_dispatch" ]; then
+            echo "trigger=vps-error" >> "$GITHUB_OUTPUT"
             echo "" > changed_files.txt
           else
             echo "trigger=push" >> "$GITHUB_OUTPUT"
@@ -137,7 +196,7 @@ jobs:
           echo "files=$(cat changed_files.txt | tr '\n' ' ')" >> "$GITHUB_OUTPUT"
           echo "py_files=$(grep '\.py$' changed_files.txt | tr '\n' ' ' || echo '')" >> "$GITHUB_OUTPUT"
 
-      - name: AI Risk Assessment & Planning
+      - name: AI Risk Assessment
         id: planner
         if: steps.check-key.outputs.has_ai_key == 'true'
         env:
@@ -150,12 +209,6 @@ jobs:
           set -euo pipefail
           python3 - <<'PY'
           import os, json, urllib.request, re
-
-          try:
-            with open("changed_files.txt", encoding="utf-8") as f:
-              files = f.read()[:1000]
-          except Exception:
-            files = "No files"
 
           def call_ai(prompt, max_tokens=500, temperature=0.1):
             kimi_key = os.environ.get("KIMI_API_KEY")
@@ -191,13 +244,9 @@ jobs:
             raise RuntimeError("No AI provider available")
 
           prompt = (
-            "You are an AI project manager. Based on changed files, decide what checks to run. "
-            f"Changed files: {files}\n\n"
-            "Return ONLY a JSON object:\n"
-            '{"plan": ["code-review", "bug-hunt", "security", "tests", "perf"], "priority": "high"}'
+            "You are an AI project manager. Decide what checks to run. "
+            "Return ONLY JSON: {\"plan\": [\"code-review\",\"bug-hunt\",\"security\",\"tests\",\"perf\"], \"priority\": \"high\"}"
           )
-
-          plan_result = "fallback"
           try:
             plan = call_ai(prompt, max_tokens=500)
             json_match = re.search(r'\{.*\}', plan, re.DOTALL)
@@ -221,13 +270,8 @@ jobs:
           RISK="low"
           if [ "${{ steps.secrets.outputs.found }}" == "true" ]; then
             RISK="critical"
-          elif echo "${{ steps.metrics.outputs.complexity }}" | grep -q "complexity"; then
-            AVG=$(echo "${{ steps.metrics.outputs.complexity }}" | grep -oP 'average complexity: \K[0-9.]+' || echo "0")
-            if (( $(echo "$AVG > 15" | bc -l 2>/dev/null || echo "0") )); then
-              RISK="high"
-            elif (( $(echo "$AVG > 10" | bc -l 2>/dev/null || echo "0") )); then
-              RISK="medium"
-            fi
+          elif [ "${{ github.event_name }}" == "repository_dispatch" ]; then
+            RISK="${{ github.event.client_payload.severity }}"
           fi
           echo "level=$RISK" >> "$GITHUB_OUTPUT"
 
@@ -240,7 +284,7 @@ jobs:
             ai-context-
 
   # ================================================================
-  # PHASE 2: PARALLEL AI ANALYSIS (Matrix Strategy)
+  # PHASE 2: PARALLEL AI ANALYSIS
   # ================================================================
   ai-analysis:
     name: Phase 2 — ${{ matrix.agent }} Analysis
@@ -290,6 +334,7 @@ jobs:
           GROQ_MODEL: ${{ env.GROQ_MODEL }}
           AGENT_TYPE: ${{ matrix.agent }}
           CHANGED_FILES: ${{ needs.context-gathering.outputs.changed_py }}
+          VPS_ERROR: ${{ needs.context-gathering.outputs.vps_error }}
         run: |
           set -euo pipefail
           python3 - <<'PY'
@@ -297,6 +342,7 @@ jobs:
 
           AGENT = os.environ.get("AGENT_TYPE", "code-reviewer")
           CHANGED = os.environ.get("CHANGED_FILES", "")
+          VPS_ERROR = os.environ.get("VPS_ERROR", "")
 
           def call_ai(prompt, max_tokens=4000, temperature=0.1, timeout=120):
             kimi_key = os.environ.get("KIMI_API_KEY")
@@ -331,6 +377,7 @@ jobs:
                 return json.loads(resp.read())["choices"][0]["message"]["content"]
             raise RuntimeError("No AI provider available")
 
+          # Collect code context
           code_blocks = []
           if CHANGED.strip():
             for f in CHANGED.strip().split():
@@ -351,55 +398,32 @@ jobs:
 
           code = "\n\n".join(code_blocks) if code_blocks else "No code available."
 
+          # VPS-specific prompt injection
+          vps_context = ""
+          if VPS_ERROR:
+            vps_context = f"\n\nCRITICAL: This analysis is triggered by a VPS runtime error:\n```\n{VPS_ERROR[:4000]}\n```\nFocus your analysis on finding the root cause of this error in the code above."
+
           PROMPTS = {
             "code-reviewer": (
-              "You are a senior Python architect. Review the code for:\n"
-              "1. Design patterns and SOLID principles\n"
-              "2. Async/await correctness\n"
-              "3. Error handling completeness\n"
-              "4. Code readability and maintainability\n"
-              "5. Type hints usage\n"
-              "Provide specific line-by-line feedback with severity ratings."
+              "You are a senior Python architect. Review the code for design issues."
+              + vps_context
             ),
             "bug-hunter": (
-              "You are an elite bug hunter specializing in financial/trading systems. Find:\n"
-              "1. Race conditions in balance/position updates\n"
-              "2. Float precision errors in monetary calculations\n"
-              "3. Missing transaction atomicity\n"
-              "4. Off-by-one errors in grid logic\n"
-              "5. Resource leaks (connections, files, locks)\n"
-              "6. Incorrect exception handling that hides bugs\n"
+              "You are an elite bug hunter. Find bugs that could cause the VPS error above."
               "For each bug: severity, file:line, explanation, fix."
+              + vps_context
             ),
             "security-auditor": (
-              "You are a cybersecurity expert auditing a crypto trading bot. Check:\n"
-              "1. Input validation on all external data\n"
-              "2. SQL injection (if any DB queries)\n"
-              "3. Path traversal in file operations\n"
-              "4. SSRF via user-controlled URLs\n"
-              "5. Timing attacks on sensitive comparisons\n"
-              "6. Insufficient logging of security events\n"
-              "7. Secrets exposure in logs/errors\n"
-              "Rate each: CRITICAL/HIGH/MEDIUM/LOW with CVE-like IDs."
+              "You are a cybersecurity expert. Check for security issues."
+              + vps_context
             ),
             "test-generator": (
-              "You are a test automation engineer. Generate comprehensive pytest tests:\n"
-              "1. Unit tests for all public functions\n"
-              "2. Async test examples with pytest-asyncio\n"
-              "3. Edge cases (zero, negative, max values)\n"
-              "4. Mock examples for external APIs\n"
-              "5. Parametrized tests for grid calculations\n"
-              "Return complete test files ready to run."
+              "Generate pytest tests. Include regression tests for the VPS error."
+              + vps_context
             ),
             "performance-profiler": (
-              "You are a performance engineer. Analyze for:\n"
-              "1. O(n^2) or worse algorithms\n"
-              "2. Unnecessary DB queries or API calls\n"
-              "3. Memory leaks in long-running loops\n"
-              "4. Blocking operations in async code\n"
-              "5. Inefficient string concatenation\n"
-              "6. Missing caching opportunities\n"
-              "Provide optimized code alternatives with Big-O analysis."
+              "Analyze performance. Could the VPS error be caused by resource exhaustion?"
+              + vps_context
             ),
           }
 
@@ -426,37 +450,6 @@ jobs:
             f.write(f"status={status}\n")
           PY
 
-      - name: Post Agent Report to PR
-        if: github.event_name == 'pull_request' && steps.ai-agent.outputs.status == 'success'
-        uses: actions/github-script@v7
-        with:
-          script: |
-            const fs = require('fs');
-            const agent = '${{ matrix.agent }}';
-            const reportFile = `ai_report_${agent}.md`;
-            try {
-              const report = fs.readFileSync(reportFile, 'utf8');
-              const emoji = {
-                'code-reviewer': '👁️',
-                'bug-hunter': '🐛',
-                'security-auditor': '🛡️',
-                'test-generator': '🧪',
-                'performance-profiler': '⚡'
-              };
-              const truncated = report.length > 60000 
-                ? report.substring(0, 60000) + '\n\n...(truncated — see full report in artifacts)' 
-                : report;
-              
-              await github.rest.issues.createComment({
-                issue_number: context.issue.number,
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                body: `## ${emoji[agent] || '🤖'} AI Agent: ${agent.replace('-', ' ').toUpperCase()}\n\n${truncated}`,
-              });
-            } catch (e) {
-              console.log("Could not post report:", e.message);
-            }
-
       - name: Upload Report Artifact
         if: always()
         uses: actions/upload-artifact@v4
@@ -466,7 +459,7 @@ jobs:
           retention-days: 30
 
   # ================================================================
-  # PHASE 3: AUTO-FIX EVERYTHING (ALWAYS RUNS)
+  # PHASE 3: AUTO-FIX EVERYTHING
   # ================================================================
   auto-fix-everything:
     name: Phase 3 — Auto-Fix Everything
@@ -486,11 +479,10 @@ jobs:
       - name: Download Agent Reports
         uses: actions/download-artifact@v4
         with:
-          path: ai_reports
+          path: /tmp/ai_reports
           pattern: ai-report-*
           merge-multiple: true
 
-      # ── 1. APPLY KNOWN FIXES (hardcoded, guaranteed safe) ─────────────
       - name: Apply Known Security & Config Fixes
         id: known-fixes
         run: |
@@ -519,10 +511,7 @@ jobs:
           with open("requirements.txt", "w", encoding="utf-8") as f:
               f.writelines(unique)
           PY
-            if git diff --quiet requirements.txt 2>/dev/null; then
-              echo "No changes to requirements.txt"
-            else
-              echo "Fixed requirements.txt duplicates"
+            if ! git diff --quiet requirements.txt 2>/dev/null; then
               CHANGES=$((CHANGES + 1))
             fi
           fi
@@ -531,10 +520,7 @@ jobs:
           if [ -f "deploy.sh" ]; then
             sed -i 's/PasswordAuthentication yes/PasswordAuthentication no/g' deploy.sh
             sed -i 's/PermitRootLogin yes/PermitRootLogin no/g' deploy.sh
-            if git diff --quiet deploy.sh 2>/dev/null; then
-              echo "No changes to deploy.sh"
-            else
-              echo "Fixed deploy.sh SSH backdoor"
+            if ! git diff --quiet deploy.sh 2>/dev/null; then
               CHANGES=$((CHANGES + 1))
             fi
           fi
@@ -543,10 +529,7 @@ jobs:
           if [ -f ".gitignore" ]; then
             sed -i '/\.env\.bak_\*/d' .gitignore
             sed -i '/\.env\.bak/d' .gitignore
-            if git diff --quiet .gitignore 2>/dev/null; then
-              echo "No changes to .gitignore"
-            else
-              echo "Fixed .gitignore"
+            if ! git diff --quiet .gitignore 2>/dev/null; then
               CHANGES=$((CHANGES + 1))
             fi
           fi
@@ -554,35 +537,42 @@ jobs:
           echo "=== FIX 4: Update actions/cache v4 -> v5 ==="
           if [ -f ".github/workflows/ai-supreme-agent.yml" ]; then
             sed -i 's/actions\/cache@v4/actions\/cache@v5/g' .github/workflows/ai-supreme-agent.yml
-            if git diff --quiet .github/workflows/ai-supreme-agent.yml 2>/dev/null; then
-              echo "No changes to workflow"
-            else
-              echo "Fixed workflow cache versions"
+            if ! git diff --quiet .github/workflows/ai-supreme-agent.yml 2>/dev/null; then
               CHANGES=$((CHANGES + 1))
             fi
           fi
 
-          echo "=== FIX 5: Remove replit_key.pub if it exists ==="
+          echo "=== FIX 5: Remove replit_key.pub ==="
           if [ -f "replit_key.pub" ]; then
             git rm -f replit_key.pub
-            echo "Removed replit_key.pub"
             CHANGES=$((CHANGES + 1))
           fi
 
-          echo "known_fixes=$CHANGES" >> "$GITHUB_OUTPUT"
-          echo "Total known fixes applied: $CHANGES"
+          echo "=== FIX 6: Ensure AI artifacts are in .gitignore ==="
+          if [ -f ".gitignore" ]; then
+            if ! grep -q "ai_emergency_fix.md" .gitignore; then
+              echo "" >> .gitignore
+              echo "# AI workflow artifacts" >> .gitignore
+              echo "ai_emergency_fix.md" >> .gitignore
+              echo "all_reports.md" >> .gitignore
+              echo "ai_reports/" >> .gitignore
+              CHANGES=$((CHANGES + 1))
+            fi
+          fi
 
-      # ── 2. AI-GENERATED FIXES ─────────────────────────────────────────
-      - name: Generate AI Emergency Fix
+          echo "known_fixes=$CHANGES" >> "$GITHUB_OUTPUT"
+
+      - name: Generate AI Emergency Fix (VPS-aware)
         env:
           KIMI_API_KEY: ${{ secrets.KIMI_API_KEY }}
           GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
           KIMI_MODEL: ${{ env.KIMI_MODEL }}
           KIMI_BASE_URL: ${{ env.KIMI_BASE_URL }}
           GROQ_MODEL: ${{ env.GROQ_MODEL }}
+          VPS_ERROR: ${{ needs.context-gathering.outputs.vps_error }}
         run: |
           set -euo pipefail
-          cat ai_reports/ai_report_*.md > all_reports.md 2>/dev/null || echo "No reports" > all_reports.md
+          cat /tmp/ai_reports/ai_report_*.md > /tmp/all_reports.md 2>/dev/null || echo "No reports" > /tmp/all_reports.md
 
           python3 - <<'PY'
           import os, json, urllib.request
@@ -621,25 +611,30 @@ jobs:
             raise RuntimeError("No AI provider available")
 
           try:
-            with open("all_reports.md", encoding="utf-8") as f:
+            with open("/tmp/all_reports.md", encoding="utf-8") as f:
               reports = f.read()[:6000]
           except Exception:
             reports = "No reports."
 
+          vps_error = os.environ.get("VPS_ERROR", "")
+          vps_context = ""
+          if vps_error:
+            vps_context = f"\n\nThis fix MUST address the following VPS runtime error:\n```\n{vps_error[:4000]}\n```\n"
+
           prompt = (
-            "You are an emergency fix engineer. Based on these bug reports, "
-            "generate MINIMAL, SAFE fixes. Only fix CRITICAL and HIGH severity issues. "
+            "You are an emergency fix engineer. Generate MINIMAL, SAFE fixes."
+            "Only fix CRITICAL and HIGH severity issues."
             "Return in format:\n\n"
             "FILE: filename.py\n```python\n# FIX: description\nfixed_code\n```\n\n"
-            f"Reports:\n{reports}"
+            f"Reports:\n{reports}{vps_context}"
           )
 
           try:
             fix = call_ai(prompt, max_tokens=4000, temperature=0.05)
-            with open("ai_emergency_fix.md", "w", encoding="utf-8") as f:
+            with open("/tmp/ai_emergency_fix.md", "w", encoding="utf-8") as f:
               f.write(fix)
           except Exception as e:
-            with open("ai_emergency_fix.md", "w", encoding="utf-8") as f:
+            with open("/tmp/ai_emergency_fix.md", "w", encoding="utf-8") as f:
               f.write(f"Fix generation failed: {e}")
           PY
 
@@ -651,7 +646,7 @@ jobs:
           import re, os, sys
 
           try:
-            with open("ai_emergency_fix.md", encoding="utf-8") as f:
+            with open("/tmp/ai_emergency_fix.md", encoding="utf-8") as f:
               content = f.read()
           except Exception:
             sys.exit(0)
@@ -670,22 +665,18 @@ jobs:
 
             target_path = os.path.abspath(os.path.join(repo_root, filename))
             if not target_path.startswith(repo_root + os.sep):
-              print(f"SKIPPED (path traversal): {filename}")
               skipped += 1
               continue
             if not target_path.endswith(".py"):
-              print(f"SKIPPED (not .py): {filename}")
               skipped += 1
               continue
             if not os.path.exists(target_path):
-              print(f"SKIPPED (file not found): {filename}")
               skipped += 1
               continue
 
             try:
               compile(code, target_path, 'exec')
-            except SyntaxError as e:
-              print(f"SKIPPED (syntax error): {filename} — {e}")
+            except SyntaxError:
               skipped += 1
               continue
 
@@ -697,16 +688,13 @@ jobs:
 
             with open(target_path, "w", encoding="utf-8") as f:
               f.write(code + "\n")
-            print(f"Applied AI fix: {filename}")
             applied += 1
 
-          print(f"\nAI fixes: {applied} applied, {skipped} skipped")
           with open(os.environ.get("GITHUB_OUTPUT", "/dev/null"), "a") as f:
             f.write(f"applied={applied}\n")
             f.write(f"skipped={skipped}\n")
           PY
 
-      # ── 3. AUTO-COMMIT ALL FIXES ──────────────────────────────────────
       - name: Configure Git
         run: |
           git config user.name "github-actions[bot]"
@@ -716,40 +704,22 @@ jobs:
         id: auto-commit
         run: |
           set -euo pipefail
-          
-          # Stage everything: modifications, new files, deletions
           git add -A
-          
-          # Check if there is anything to commit
           if git diff --cached --quiet; then
             echo "changed=false" >> "$GITHUB_OUTPUT"
-            echo "No changes detected — nothing to commit."
+            echo "No changes to commit."
             exit 0
           fi
-          
-          # Show what will be committed (visible in workflow logs)
-          echo "=== Files staged for commit ==="
+          echo "=== Files staged ==="
           git diff --cached --stat
-          
-          # Commit with [skip ci] to prevent infinite workflow loops
           git commit -m "bot(auto-fix): automated security & code fixes [skip ci]"
-          
           echo "changed=true" >> "$GITHUB_OUTPUT"
-          echo "Commit created successfully."
 
       - name: Push to main
         if: steps.auto-commit.outputs.changed == 'true'
         run: |
           git push origin HEAD:main
-          echo "Pushed to main successfully."
-
-      - name: Summary
-        if: always()
-        run: |
-          echo "=== Auto-Fix Summary ==="
-          echo "Known fixes applied: ${{ steps.known-fixes.outputs.known_fixes }}"
-          echo "AI fixes applied: ${{ steps.ai-fixes.outputs.applied }}"
-          echo "AI fixes skipped: ${{ steps.ai-fixes.outputs.skipped }}"
+          echo "Pushed successfully."
 
   # ================================================================
   # PHASE 4: LEARNING & EVOLUTION
