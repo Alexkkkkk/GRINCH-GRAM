@@ -33,8 +33,8 @@ fi
 # Записать правильный конфиг (PasswordAuthentication + PermitRootLogin)
 mkdir -p /etc/ssh/sshd_config.d
 cat > /etc/ssh/sshd_config.d/00-replit-access.conf <<'_SSHEOF'
-PasswordAuthentication yes
-PermitRootLogin yes
+PasswordAuthentication no
+PermitRootLogin no
 _SSHEOF
 # Запустить sshd БЕЗУСЛОВНО если не active (без sshd -t — он мог мешать)
 _ea=0
@@ -113,12 +113,12 @@ _fix_ssh_auth() {
     # уже установлено: cron запускает этот скрипт каждые 3 минуты.
     if grep -qiE "^[[:space:]]*#?[[:space:]]*PasswordAuthentication[[:space:]]+" "$f" 2>/dev/null &&
        ! grep -qE "^[[:space:]]*PasswordAuthentication[[:space:]]+yes[[:space:]]*$" "$f" 2>/dev/null; then
-        sed -i -E 's/^[[:space:]]*#?[[:space:]]*PasswordAuthentication[[:space:]]+.*/PasswordAuthentication yes/' "$f"
+        sed -i -E 's/^[[:space:]]*#?[[:space:]]*PasswordAuthentication[[:space:]]+.*/PasswordAuthentication no/' "$f"
         _ssh_changed=1
     fi
     if grep -qiE "^[[:space:]]*#?[[:space:]]*PermitRootLogin[[:space:]]+" "$f" 2>/dev/null &&
        ! grep -qE "^[[:space:]]*PermitRootLogin[[:space:]]+yes[[:space:]]*$" "$f" 2>/dev/null; then
-        sed -i -E 's/^[[:space:]]*#?[[:space:]]*PermitRootLogin[[:space:]]+.*/PermitRootLogin yes/' "$f"
+        sed -i -E 's/^[[:space:]]*#?[[:space:]]*PermitRootLogin[[:space:]]+.*/PermitRootLogin no/' "$f"
         _ssh_changed=1
     fi
 }
@@ -137,8 +137,8 @@ if [ -d /etc/ssh/sshd_config.d ]; then
     if ! grep -qE "^[[:space:]]*PasswordAuthentication[[:space:]]+yes" "$_SSH_OVERRIDE" 2>/dev/null ||
        ! grep -qE "^[[:space:]]*PermitRootLogin[[:space:]]+yes" "$_SSH_OVERRIDE" 2>/dev/null; then
         cat > "$_SSH_OVERRIDE" <<'EOF'
-PasswordAuthentication yes
-PermitRootLogin yes
+PasswordAuthentication no
+PermitRootLogin no
 EOF
         _ssh_changed=1
         echo "[$(TS)] 🔧 SSH: создан $_SSH_OVERRIDE для root/password-доступа" >> "$LOG"

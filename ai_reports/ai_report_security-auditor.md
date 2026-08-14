@@ -1,0 +1,3 @@
+# AI Agent: SECURITY-AUDITOR
+
+API Error: HTTP 403

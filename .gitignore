@@ -40,7 +40,6 @@ backups/
 
 deploy_secrets_local/
 ai_advisor.py.bak
-.env.bak_*
 fix_stats_test.py
 .deploy.lock
 .last_docker_prune
