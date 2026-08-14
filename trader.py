@@ -1,3 +1,4 @@
+import json
 import os
 import threading
 import time
@@ -404,7 +405,29 @@ class Trader:
                     pass
             elif real_grinch > 0 and book_grinch > 0:
                 diff_pct = abs(real_grinch - book_grinch) / real_grinch * 100
-                if diff_pct > 1.0:
+                # A wallet remainder can be intentionally allocated to Grid.
+                # Read the same DATA_DIR-aware file that grid_trader writes.
+                grid_reserve_matches = False
+                try:
+                    from grid_trader import STATE_FILE as _grid_state_file
+
+                    with open(_grid_state_file, encoding="utf-8") as _gf:
+                        _grid_reserve = float(
+                            json.load(_gf).get("grid_reserved_grinch", 0) or 0
+                        )
+                    _wallet_remainder = max(0.0, real_grinch - book_grinch)
+                    grid_reserve_matches = _grid_reserve > 0 and abs(
+                        _wallet_remainder - _grid_reserve
+                    ) <= max(100.0, _grid_reserve * 0.01)
+                except Exception:
+                    pass
+                if grid_reserve_matches:
+                    self.log(
+                        f"✅ Сверка баланса: {book_grinch:.2f} GRINCH DCA + "
+                        f"{_grid_reserve:.2f} GRINCH Grid — разница распределена намеренно",
+                        "INFO",
+                    )
+                elif diff_pct > 1.0:
                     scale = real_grinch / book_grinch
                     # Лочим на время правки amount+stake_ton — иначе wallet_manager
                     # (фоновый поток) может прочитать позицию МЕЖДУ этими двумя
@@ -5388,37 +5411,61 @@ class Trader:
         fee = Config.FEE_PCT / 100.0
         sell_gas = Config.SELL_GAS_TON
         buy_gas = Config.BUY_GAS_TON
-        cur_ton = grinch_ton or 0
+        cur_ton = float(grinch_ton or 0)
+        try:
+            from price_feed import price_feed as _pf
+
+            cur_usd = float(_pf.get("GRINCH") or 0)
+            ton_usd = float(_pf.get("TON") or 0)
+        except Exception:
+            cur_usd = 0.0
+            ton_usd = 0.0
         for t in self.open_trades:
             c = dict(t)
-            amount = t.get("amount", 0) or 0
-            stake_ton = t.get("stake_ton", 0) or 0
-            entry_usd = t.get("entry_price", 0) or 0
+            amount = float(t.get("amount", 0) or 0)
+            stake_ton = float(t.get("stake_ton", 0) or 0)
+            entry_usd = float(t.get("entry_price", 0) or 0)
             # Минимальный gross % для выхода в реальный плюс с учётом газа
             min_gross_pct = Config.required_gross_pct_with_gas(
                 stake_ton if stake_ton > 0 else None
             )
             c["min_gross_pct"] = round(min_gross_pct, 1)
             if cur_ton > 0 and amount > 0 and stake_ton > 0:
-                value_now = amount * cur_ton  # текущая стоимость в TON
-                proceeds = (
-                    value_now * (1 - fee) - sell_gas
-                )  # выручка после комиссии продажи и газа
-                total_cost = (
-                    stake_ton + buy_gas
-                )  # реальные затраты: ставка + газ покупки
-                net_ton = proceeds - total_cost  # чистый результат (+ = прибыль)
+                value_now = amount * cur_ton
+                use_usd_basis = entry_usd > 0 and cur_usd > 0 and ton_usd > 0
+                if use_usd_basis:
+                    entry_cost_usd = amount * entry_usd
+                    total_cost_usd = entry_cost_usd + buy_gas * ton_usd
+                    current_value_usd = amount * cur_usd
+                    proceeds_usd = current_value_usd * (1 - fee) - sell_gas * ton_usd
+                    net_usd = proceeds_usd - total_cost_usd
+                    net_pct = (
+                        net_usd / total_cost_usd * 100 if total_cost_usd > 0 else 0.0
+                    )
+                    net_ton = net_usd / ton_usd
+                    be_usd = (total_cost_usd + sell_gas * ton_usd) / (
+                        amount * (1 - fee)
+                    )
+                    c["pnl_basis"] = "usd"
+                    c["entry_cost_usd"] = round(entry_cost_usd, 6)
+                    c["value_usd_now"] = round(current_value_usd, 6)
+                    c["breakeven_price"] = round(be_usd, 8)
+                else:
+                    proceeds = value_now * (1 - fee) - sell_gas
+                    total_cost = stake_ton + buy_gas
+                    net_ton = proceeds - total_cost
+                    net_pct = net_ton / total_cost * 100 if total_cost > 0 else 0.0
+                    if entry_usd > 0:
+                        entry_ton = stake_ton / amount
+                        if entry_ton > 0:
+                            be_ton = (total_cost + sell_gas) / (amount * (1 - fee))
+                            c["breakeven_price"] = round(
+                                entry_usd * be_ton / entry_ton, 8
+                            )
                 c["value_ton_now"] = round(value_now, 6)
                 c["net_ton_now"] = round(net_ton, 6)
-                c["net_pct_now"] = round(net_ton / total_cost * 100, 2)
+                c["net_pct_now"] = round(net_pct, 2)
                 c["in_profit"] = bool(net_ton > 0)
-                # Безубыточная цена за GRINCH (где net=0), в USD для карточки.
-                # amount * be_ton * (1 - fee) - sell_gas = total_cost
-                # be_ton = (total_cost + sell_gas) / (amount * (1 - fee))
-                entry_ton = stake_ton / amount
-                if entry_ton > 0 and entry_usd > 0:
-                    be_ton = (total_cost + sell_gas) / (amount * (1 - fee))
-                    c["breakeven_price"] = round(entry_usd * be_ton / entry_ton, 8)
             out.append(c)
         return out
 

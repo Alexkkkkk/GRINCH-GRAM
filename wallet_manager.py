@@ -240,15 +240,45 @@ class WalletManager:
 
                                 tracked_value_ton = tracked_amount * grinch_ton
 
-                                proceeds = tracked_value_ton * (1.0 - fee) - sell_gas
-                                cost = tracked_stake + buy_gas * n_entries
-                                pnl_ton = round(proceeds - cost, 6)
-                                pnl_pct = (
-                                    round(pnl_ton / cost * 100, 2) if cost > 0 else 0.0
-                                )
-                                pnl_usd = (
-                                    round(pnl_ton * ton_usd, 4) if ton_usd > 0 else None
-                                )
+                                if (
+                                    entry_price_usd
+                                    and entry_price_usd > 0
+                                    and grinch_usd > 0
+                                    and ton_usd > 0
+                                ):
+                                    entry_cost_usd = tracked_amount * entry_price_usd
+                                    total_cost_usd = (
+                                        entry_cost_usd + buy_gas * n_entries * ton_usd
+                                    )
+                                    current_value_usd = tracked_amount * grinch_usd
+                                    proceeds_usd = (
+                                        current_value_usd * (1.0 - fee)
+                                        - sell_gas * ton_usd
+                                    )
+                                    pnl_usd = proceeds_usd - total_cost_usd
+                                    pnl_pct = (
+                                        round(pnl_usd / total_cost_usd * 100, 2)
+                                        if total_cost_usd > 0
+                                        else 0.0
+                                    )
+                                    pnl_ton = round(pnl_usd / ton_usd, 6)
+                                    pnl_usd = round(pnl_usd, 4)
+                                else:
+                                    proceeds = (
+                                        tracked_value_ton * (1.0 - fee) - sell_gas
+                                    )
+                                    cost = tracked_stake + buy_gas * n_entries
+                                    pnl_ton = round(proceeds - cost, 6)
+                                    pnl_pct = (
+                                        round(pnl_ton / cost * 100, 2)
+                                        if cost > 0
+                                        else 0.0
+                                    )
+                                    pnl_usd = (
+                                        round(pnl_ton * ton_usd, 4)
+                                        if ton_usd > 0
+                                        else None
+                                    )
                             except Exception as exc2:
                                 log.debug("[WalletManager] P&L config: %s", exc2)
             except Exception as exc:
