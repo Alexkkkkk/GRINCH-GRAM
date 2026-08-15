@@ -89,7 +89,7 @@ def _jdefault(o):
 
 def _dump_table(cur, table: str) -> list:
     """Читает всю таблицу и возвращает список dict'ов.
-    
+
     Таблица валидируется по whitelist — только известные таблицы бота.
     """
     if table not in TABLES and table != DEEP_MODELS_TABLE:

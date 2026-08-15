@@ -573,11 +573,18 @@ if _DATABASE_URL:
                 "last_deposit_at",
                 "last_checked_lt",
             }
-            _ALLOWED_TYPES = {"FLOAT", "FLOAT DEFAULT 0", "TIMESTAMP", "BIGINT DEFAULT 0"}
+            _ALLOWED_TYPES = {
+                "FLOAT",
+                "FLOAT DEFAULT 0",
+                "TIMESTAMP",
+                "BIGINT DEFAULT 0",
+            }
 
             for _col, _ctype in _new_cols:
                 if _col not in _ALLOWED_COLS or _ctype not in _ALLOWED_TYPES:
-                    _startup_log.warning("[DB] Пропущена недопустимая миграция: %s %s", _col, _ctype)
+                    _startup_log.warning(
+                        "[DB] Пропущена недопустимая миграция: %s %s", _col, _ctype
+                    )
                     continue
                 try:
                     db.session.execute(
