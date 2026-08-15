@@ -88,7 +88,12 @@ def _jdefault(o):
 
 
 def _dump_table(cur, table: str) -> list:
-    """Читает всю таблицу и возвращает список dict'ов."""
+    """Читает всю таблицу и возвращает список dict'ов.
+    
+    Таблица валидируется по whitelist — только известные таблицы бота.
+    """
+    if table not in TABLES and table != DEEP_MODELS_TABLE:
+        raise ValueError(f"Неизвестная таблица: {table}")
     cur.execute(f"SELECT * FROM {table}")
     cols = [desc[0] for desc in cur.description]
     return [dict(zip(cols, row)) for row in cur.fetchall()]
