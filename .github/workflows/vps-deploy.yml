@@ -1,0 +1,77 @@
+name: Phase 5 — Deploy to VPS
+
+on:
+  workflow_dispatch:
+    inputs:
+      reason:
+        description: "Reason for the manual deployment"
+        required: false
+        default: "manual"
+        type: string
+  repository_dispatch:
+    types:
+      - vps-error
+
+permissions:
+  contents: read
+
+concurrency:
+  group: vps-deploy
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Phase 5 (Deploy to VPS)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Validate deployment secret
+        env:
+          VPS_SSH_PRIVATE_KEY: ${{ secrets.GITHUB_ACTIONS_DEPLOY_KEY }}
+        run: |
+          if [ -z "$VPS_SSH_PRIVATE_KEY" ]; then
+            echo "::error::GITHUB_ACTIONS_DEPLOY_KEY is not configured"
+            exit 1
+          fi
+
+      - name: Load VPS SSH key
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.GITHUB_ACTIONS_DEPLOY_KEY }}
+
+      - name: Trust VPS host key
+        env:
+          VPS_HOST: 2.27.25.126
+        run: |
+          mkdir -p "$HOME/.ssh"
+          chmod 700 "$HOME/.ssh"
+          ssh-keyscan -H "$VPS_HOST" >> "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/known_hosts"
+
+      - name: Deploy main to VPS
+        env:
+          VPS_HOST: 2.27.25.126
+          VPS_USER: root
+        run: |
+          ssh \
+            -o BatchMode=yes \
+            -o StrictHostKeyChecking=yes \
+            "$VPS_USER@$VPS_HOST" \
+            'set -e
+             cd /opt/bot
+             export GIT_TERMINAL_PROMPT=0
+             git pull origin main
+             docker compose up -d --build'
+
+      - name: Record dispatch context
+        if: github.event_name == 'repository_dispatch'
+        env:
+          EVENT_SEVERITY: ${{ github.event.client_payload.severity }}
+          EVENT_SERVICE: ${{ github.event.client_payload.service }}
+          EVENT_VPS_IP: ${{ github.event.client_payload.vps_ip }}
+        run: |
+          echo "Deployment triggered by repository_dispatch"
+          echo "severity=$EVENT_SEVERITY"
+          echo "service=$EVENT_SERVICE"
+          echo "vps_ip=$EVENT_VPS_IP"
