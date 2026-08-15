@@ -1,4 +1,4 @@
-name: AI Supreme Agent v3.0 — Real-Time VPS Auto-Healer + Auto-Deploy
+name: AI Supreme Agent v3
 
 on:
   repository_dispatch:
