@@ -33,6 +33,12 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=10s --retries=3 \
     CMD curl -f http://localhost:${PORT}/health || exit 1
 
 # JSON-формат CMD (exec) — корректно обрабатывает сигналы ОС
+# NOTE: flask-socketio требует eventlet/gevent worker для WebSocket.
+# Если SocketIO не используется (HTTP polling only) — gthread ок.
+# Для полноценного WebSocket замените --worker-class на eventlet:
+#   --worker-class eventlet --workers 1
+# Но eventlet может конфликтовать с pytoniq/dedust (чистый asyncio).
+# Рекомендуется: отдельный сервер для WebSocket или HTTP polling.
 CMD ["sh", "-c", "exec gunicorn main:app \
     --worker-class gthread \
     --threads 4 \
