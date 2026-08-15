@@ -1,4 +1,4 @@
-name: AI Supreme Agent v2.5 — Real-Time VPS Auto-Healer + Auto-Deploy
+name: AI Supreme Agent v3.0 — Real-Time VPS Auto-Healer + Auto-Deploy
 
 on:
   repository_dispatch:
@@ -37,8 +37,9 @@ env:
   VPS_DEPLOY_DIR: "/opt/bot"
 
 concurrency:
-  group: supreme-ai-${{ github.ref }}
-  cancel-in-progress: false
+  group: supreme-ai-${{ github.ref }}-${{ github.event_name }}
+  cancel-in-progress: ${{ github.event_name != 'repository_dispatch' }}
+  # НЕ отменяем VPS emergency runs — они критичны
 
 jobs:
   # ================================================================
@@ -59,10 +60,12 @@ jobs:
         id: intake
         run: |
           set -euo pipefail
-          ERROR_LOG='${{ github.event.client_payload.error_log }}'
-          SEVERITY='${{ github.event.client_payload.severity }}'
-          SERVICE='${{ github.event.client_payload.service }}'
-          VPS_IP='${{ github.event.client_payload.vps_ip }}'
+          
+          # Безопасное извлечение payload с fallback'ами
+          ERROR_LOG='${{ github.event.client_payload.error_log || "" }}'
+          SEVERITY='${{ github.event.client_payload.severity || "warning" }}'
+          SERVICE='${{ github.event.client_payload.service || "unknown" }}'
+          VPS_IP='${{ github.event.client_payload.vps_ip || env.VPS_HOST }}'
           
           echo "=== VPS ERROR RECEIVED ==="
           echo "Severity: $SEVERITY"
@@ -71,13 +74,16 @@ jobs:
           echo "Error log preview:"
           echo "$ERROR_LOG" | head -20
           
-          echo "error_log<<EOF" >> "$GITHUB_OUTPUT"
-          echo "$ERROR_LOG" >> "$GITHUB_OUTPUT"
-          echo "EOF" >> "$GITHUB_OUTPUT"
-          echo "severity=$SEVERITY" >> "$GITHUB_OUTPUT"
-          echo "service=$SERVICE" >> "$GITHUB_OUTPUT"
-          echo "vps_ip=$VPS_IP" >> "$GITHUB_OUTPUT"
-          echo "trigger_type=vps-realtime" >> "$GITHUB_OUTPUT"
+          # Экранируем многострочный output для GitHub Actions
+          {
+            echo "error_log<<GITHUB_ACTIONS_EOF"
+            echo "$ERROR_LOG"
+            echo "GITHUB_ACTIONS_EOF"
+            echo "severity=$SEVERITY"
+            echo "service=$SERVICE"
+            echo "vps_ip=$VPS_IP"
+            echo "trigger_type=vps-realtime"
+          } >> "$GITHUB_OUTPUT"
 
   # ================================================================
   # PHASE 1: CONTEXT INTELLIGENCE
@@ -86,7 +92,10 @@ jobs:
     name: Phase 1 — Context Intelligence
     runs-on: ubuntu-latest
     needs: [vps-error-intake]
-    if: always() && (github.event_name != 'repository_dispatch' || needs.vps-error-intake.result == 'success')
+    # Запускаем всегда, КРОМЕ случая когда vps-error-intake упал
+    if: |
+      always() && 
+      (github.event_name != 'repository_dispatch' || needs.vps-error-intake.result == 'success')
     permissions:
       contents: read
     outputs:
@@ -114,10 +123,12 @@ jobs:
         id: vps-info
         if: github.event_name == 'repository_dispatch'
         run: |
-          echo "vps_error<<EOF" >> "$GITHUB_OUTPUT"
-          echo '${{ github.event.client_payload.error_log }}' >> "$GITHUB_OUTPUT"
-          echo "EOF" >> "$GITHUB_OUTPUT"
-          echo "vps_severity=${{ github.event.client_payload.severity }}" >> "$GITHUB_OUTPUT"
+          {
+            echo "vps_error<<GITHUB_ACTIONS_EOF"
+            echo '${{ github.event.client_payload.error_log || "" }}'
+            echo "GITHUB_ACTIONS_EOF"
+            echo "vps_severity=${{ github.event.client_payload.severity || 'warning' }}"
+          } >> "$GITHUB_OUTPUT"
 
       - name: Check AI API Keys
         id: check-key
@@ -134,7 +145,7 @@ jobs:
             PROVIDER="groq"
             echo "::warning::Falling back to GROQ"
           else
-            echo "::error::No AI API key"
+            echo "::error::No AI API key configured. Set KIMI_API_KEY or GROQ_API_KEY secret."
           fi
           echo "has_ai_key=$HAS_AI" >> "$GITHUB_OUTPUT"
           echo "ai_provider=$PROVIDER" >> "$GITHUB_OUTPUT"
@@ -167,6 +178,7 @@ jobs:
               FOUND="false"
             else
               FOUND="true"
+              echo "::warning::Potential secrets detected! Review .secrets.baseline"
             fi
           fi
           echo "found=$FOUND" >> "$GITHUB_OUTPUT"
@@ -202,9 +214,10 @@ jobs:
         run: |
           set -euo pipefail
           python3 - <<'PY'
-          import os, json, urllib.request, re
+          import os, json, urllib.request, re, time
 
-          def call_ai(prompt, max_tokens=500, temperature=0.1):
+          def call_ai(prompt, max_tokens=500, temperature=0.1, retries=3):
+            """Call AI with retry logic and fallback provider."""
             kimi_key = os.environ.get("KIMI_API_KEY")
             groq_key = os.environ.get("GROQ_API_KEY")
             payload_base = {
@@ -212,30 +225,44 @@ jobs:
               "temperature": temperature,
               "max_tokens": max_tokens,
             }
-            if kimi_key:
-              payload = {**payload_base, "model": os.environ.get("KIMI_MODEL", "moonshot-v1-auto")}
-              req = urllib.request.Request(
-                f"{os.environ.get('KIMI_BASE_URL', 'https://api.moonshot.cn/v1')}/chat/completions",
-                data=json.dumps(payload).encode(),
-                headers={"Authorization": f"Bearer {kimi_key}", "Content-Type": "application/json"},
-              )
-              try:
-                with urllib.request.urlopen(req, timeout=30) as resp:
-                  return json.loads(resp.read())["choices"][0]["message"]["content"]
-              except Exception as e:
-                print(f"Kimi failed: {e}")
-                if not groq_key:
-                  raise
-            if groq_key:
-              payload = {**payload_base, "model": os.environ.get("GROQ_MODEL", "llama-3.3-70b-versatile")}
-              req = urllib.request.Request(
-                "https://api.groq.com/openai/v1/chat/completions",
-                data=json.dumps(payload).encode(),
-                headers={"Authorization": f"Bearer {groq_key}", "Content-Type": "application/json"},
-              )
-              with urllib.request.urlopen(req, timeout=30) as resp:
-                return json.loads(resp.read())["choices"][0]["message"]["content"]
-            raise RuntimeError("No AI provider available")
+            
+            last_error = None
+            for attempt in range(retries):
+              if kimi_key:
+                payload = {**payload_base, "model": os.environ.get("KIMI_MODEL", "moonshot-v1-auto")}
+                req = urllib.request.Request(
+                  f"{os.environ.get('KIMI_BASE_URL', 'https://api.moonshot.cn/v1')}/chat/completions",
+                  data=json.dumps(payload).encode(),
+                  headers={"Authorization": f"Bearer {kimi_key}", "Content-Type": "application/json"},
+                )
+                try:
+                  with urllib.request.urlopen(req, timeout=30) as resp:
+                    return json.loads(resp.read())["choices"][0]["message"]["content"]
+                except Exception as e:
+                  last_error = e
+                  print(f"Kimi attempt {attempt+1}/{retries} failed: {e}")
+                  if attempt < retries - 1:
+                    time.sleep(2 ** attempt)
+                  if not groq_key:
+                    continue
+              
+              if groq_key:
+                payload = {**payload_base, "model": os.environ.get("GROQ_MODEL", "llama-3.3-70b-versatile")}
+                req = urllib.request.Request(
+                  "https://api.groq.com/openai/v1/chat/completions",
+                  data=json.dumps(payload).encode(),
+                  headers={"Authorization": f"Bearer {groq_key}", "Content-Type": "application/json"},
+                )
+                try:
+                  with urllib.request.urlopen(req, timeout=30) as resp:
+                    return json.loads(resp.read())["choices"][0]["message"]["content"]
+                except Exception as e:
+                  last_error = e
+                  print(f"GROQ attempt {attempt+1}/{retries} failed: {e}")
+                  if attempt < retries - 1:
+                    time.sleep(2 ** attempt)
+            
+            raise RuntimeError(f"All AI providers failed after {retries} attempts. Last error: {last_error}")
 
           prompt = (
             "You are an AI project manager. Decide what checks to run. "
@@ -250,7 +277,8 @@ jobs:
               plan_result = "ai-generated"
             else:
               plan_result = "default"
-          except Exception:
+          except Exception as e:
+            print(f"AI planning failed: {e}")
             plan_result = "fallback"
 
           with open(os.environ.get("GITHUB_OUTPUT", "/dev/null"), "a") as f:
@@ -264,8 +292,9 @@ jobs:
           RISK="low"
           if [ "${{ steps.secrets.outputs.found }}" == "true" ]; then
             RISK="critical"
+            echo "::error::SECRETS DETECTED — immediate attention required!"
           elif [ "${{ github.event_name }}" == "repository_dispatch" ]; then
-            RISK="${{ github.event.client_payload.severity }}"
+            RISK="${{ github.event.client_payload.severity || 'warning' }}"
           fi
           echo "level=$RISK" >> "$GITHUB_OUTPUT"
 
@@ -293,8 +322,9 @@ jobs:
           - code-reviewer
           - bug-hunter
           - security-auditor
-          - test-generator
-          - performance-profiler
+          # Опциональные агенты — раскомментируйте при необходимости:
+          # - test-generator
+          # - performance-profiler
     permissions:
       pull-requests: write
       contents: read
@@ -332,13 +362,14 @@ jobs:
         run: |
           set -euo pipefail
           python3 - <<'PY'
-          import os, json, urllib.request, urllib.error, sys
+          import os, json, urllib.request, urllib.error, sys, time
 
           AGENT = os.environ.get("AGENT_TYPE", "code-reviewer")
           CHANGED = os.environ.get("CHANGED_FILES", "")
           VPS_ERROR = os.environ.get("VPS_ERROR", "")
 
-          def call_ai(prompt, max_tokens=4000, temperature=0.1, timeout=120):
+          def call_ai(prompt, max_tokens=4000, temperature=0.1, timeout=120, retries=3):
+            """Call AI with retry logic and fallback provider."""
             kimi_key = os.environ.get("KIMI_API_KEY")
             groq_key = os.environ.get("GROQ_API_KEY")
             payload_base = {
@@ -346,30 +377,44 @@ jobs:
               "temperature": temperature,
               "max_tokens": max_tokens,
             }
-            if kimi_key:
-              payload = {**payload_base, "model": os.environ.get("KIMI_MODEL", "moonshot-v1-auto")}
-              req = urllib.request.Request(
-                f"{os.environ.get('KIMI_BASE_URL', 'https://api.moonshot.cn/v1')}/chat/completions",
-                data=json.dumps(payload).encode(),
-                headers={"Authorization": f"Bearer {kimi_key}", "Content-Type": "application/json"},
-              )
-              try:
-                with urllib.request.urlopen(req, timeout=timeout) as resp:
-                  return json.loads(resp.read())["choices"][0]["message"]["content"]
-              except Exception as e:
-                print(f"Kimi API failed: {e}", file=sys.stderr)
-                if not groq_key:
-                  raise
-            if groq_key:
-              payload = {**payload_base, "model": os.environ.get("GROQ_MODEL", "llama-3.3-70b-versatile")}
-              req = urllib.request.Request(
-                "https://api.groq.com/openai/v1/chat/completions",
-                data=json.dumps(payload).encode(),
-                headers={"Authorization": f"Bearer {groq_key}", "Content-Type": "application/json"},
-              )
-              with urllib.request.urlopen(req, timeout=timeout) as resp:
-                return json.loads(resp.read())["choices"][0]["message"]["content"]
-            raise RuntimeError("No AI provider available")
+            
+            last_error = None
+            for attempt in range(retries):
+              if kimi_key:
+                payload = {**payload_base, "model": os.environ.get("KIMI_MODEL", "moonshot-v1-auto")}
+                req = urllib.request.Request(
+                  f"{os.environ.get('KIMI_BASE_URL', 'https://api.moonshot.cn/v1')}/chat/completions",
+                  data=json.dumps(payload).encode(),
+                  headers={"Authorization": f"Bearer {kimi_key}", "Content-Type": "application/json"},
+                )
+                try:
+                  with urllib.request.urlopen(req, timeout=timeout) as resp:
+                    return json.loads(resp.read())["choices"][0]["message"]["content"]
+                except Exception as e:
+                  last_error = e
+                  print(f"Kimi attempt {attempt+1}/{retries} failed: {e}", file=sys.stderr)
+                  if attempt < retries - 1:
+                    time.sleep(2 ** attempt)
+                  if not groq_key:
+                    continue
+              
+              if groq_key:
+                payload = {**payload_base, "model": os.environ.get("GROQ_MODEL", "llama-3.3-70b-versatile")}
+                req = urllib.request.Request(
+                  "https://api.groq.com/openai/v1/chat/completions",
+                  data=json.dumps(payload).encode(),
+                  headers={"Authorization": f"Bearer {groq_key}", "Content-Type": "application/json"},
+                )
+                try:
+                  with urllib.request.urlopen(req, timeout=timeout) as resp:
+                    return json.loads(resp.read())["choices"][0]["message"]["content"]
+                except Exception as e:
+                  last_error = e
+                  print(f"GROQ attempt {attempt+1}/{retries} failed: {e}", file=sys.stderr)
+                  if attempt < retries - 1:
+                    time.sleep(2 ** attempt)
+            
+            raise RuntimeError(f"All AI providers failed after {retries} attempts. Last error: {last_error}")
 
           code_blocks = []
           if CHANGED.strip():
@@ -396,9 +441,9 @@ jobs:
             vps_context = f"\n\nCRITICAL: VPS runtime error:\n```\n{VPS_ERROR[:4000]}\n```\nFocus on root cause."
 
           PROMPTS = {
-            "code-reviewer": "You are a senior Python architect." + vps_context,
-            "bug-hunter": "You are an elite bug hunter. Find bugs causing VPS error. severity, file:line, explanation, fix." + vps_context,
-            "security-auditor": "You are a cybersecurity expert." + vps_context,
+            "code-reviewer": "You are a senior Python architect. Review code for quality, maintainability, and best practices." + vps_context,
+            "bug-hunter": "You are an elite bug hunter. Find bugs causing VPS error. Format: severity, file:line, explanation, fix." + vps_context,
+            "security-auditor": "You are a cybersecurity expert. Scan for vulnerabilities, insecure patterns, and data exposure." + vps_context,
             "test-generator": "Generate pytest tests with regression tests for VPS error." + vps_context,
             "performance-profiler": "Analyze performance. Could VPS error be resource exhaustion?" + vps_context,
           }
@@ -435,7 +480,7 @@ jobs:
           retention-days: 30
 
   # ================================================================
-  # PHASE 3: AUTO-FIX EVERYTHING
+  # PHASE 3: AUTO-FIX (Safe Mode via PR)
   # ================================================================
   auto-fix-everything:
     name: Phase 3 — Auto-Fix Everything
@@ -448,6 +493,7 @@ jobs:
       pull-requests: write
     outputs:
       changed: ${{ steps.auto-commit.outputs.changed }}
+      pr_url: ${{ steps.create-pr.outputs.pr_url }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -480,9 +526,10 @@ jobs:
               if not stripped or stripped.startswith('#'):
                   unique.append(line)
                   continue
-              norm = stripped.lower().replace(' ', '').replace('==', '').replace('>=', '').replace('<=', '').replace('~=', '')
-              if norm not in seen:
-                  seen.add(norm)
+              # Нормализация: убираем версии для проверки дубликатов
+              pkg = stripped.split('==')[0].split('>=')[0].split('<=')[0].split('~=')[0].strip().lower()
+              if pkg not in seen:
+                  seen.add(pkg)
                   unique.append(line)
               else:
                   print(f"Removed duplicate: {stripped}")
@@ -553,9 +600,10 @@ jobs:
           cat /tmp/ai_reports/ai_report_*.md > /tmp/all_reports.md 2>/dev/null || echo "No reports" > /tmp/all_reports.md
 
           python3 - <<'PY'
-          import os, json, urllib.request
+          import os, json, urllib.request, time
 
-          def call_ai(prompt, max_tokens=4000, temperature=0.05, timeout=120):
+          def call_ai(prompt, max_tokens=4000, temperature=0.05, timeout=120, retries=3):
+            """Call AI with retry logic and fallback provider."""
             kimi_key = os.environ.get("KIMI_API_KEY")
             groq_key = os.environ.get("GROQ_API_KEY")
             payload_base = {
@@ -563,30 +611,44 @@ jobs:
               "temperature": temperature,
               "max_tokens": max_tokens,
             }
-            if kimi_key:
-              payload = {**payload_base, "model": os.environ.get("KIMI_MODEL", "moonshot-v1-auto")}
-              req = urllib.request.Request(
-                f"{os.environ.get('KIMI_BASE_URL', 'https://api.moonshot.cn/v1')}/chat/completions",
-                data=json.dumps(payload).encode(),
-                headers={"Authorization": f"Bearer {kimi_key}", "Content-Type": "application/json"},
-              )
-              try:
-                with urllib.request.urlopen(req, timeout=timeout) as resp:
-                  return json.loads(resp.read())["choices"][0]["message"]["content"]
-              except Exception as e:
-                print(f"Kimi failed: {e}")
-                if not groq_key:
-                  raise
-            if groq_key:
-              payload = {**payload_base, "model": os.environ.get("GROQ_MODEL", "llama-3.3-70b-versatile")}
-              req = urllib.request.Request(
-                "https://api.groq.com/openai/v1/chat/completions",
-                data=json.dumps(payload).encode(),
-                headers={"Authorization": f"Bearer {groq_key}", "Content-Type": "application/json"},
-              )
-              with urllib.request.urlopen(req, timeout=timeout) as resp:
-                return json.loads(resp.read())["choices"][0]["message"]["content"]
-            raise RuntimeError("No AI provider available")
+            
+            last_error = None
+            for attempt in range(retries):
+              if kimi_key:
+                payload = {**payload_base, "model": os.environ.get("KIMI_MODEL", "moonshot-v1-auto")}
+                req = urllib.request.Request(
+                  f"{os.environ.get('KIMI_BASE_URL', 'https://api.moonshot.cn/v1')}/chat/completions",
+                  data=json.dumps(payload).encode(),
+                  headers={"Authorization": f"Bearer {kimi_key}", "Content-Type": "application/json"},
+                )
+                try:
+                  with urllib.request.urlopen(req, timeout=timeout) as resp:
+                    return json.loads(resp.read())["choices"][0]["message"]["content"]
+                except Exception as e:
+                  last_error = e
+                  print(f"Kimi attempt {attempt+1}/{retries} failed: {e}")
+                  if attempt < retries - 1:
+                    time.sleep(2 ** attempt)
+                  if not groq_key:
+                    continue
+              
+              if groq_key:
+                payload = {**payload_base, "model": os.environ.get("GROQ_MODEL", "llama-3.3-70b-versatile")}
+                req = urllib.request.Request(
+                  "https://api.groq.com/openai/v1/chat/completions",
+                  data=json.dumps(payload).encode(),
+                  headers={"Authorization": f"Bearer {groq_key}", "Content-Type": "application/json"},
+                )
+                try:
+                  with urllib.request.urlopen(req, timeout=timeout) as resp:
+                    return json.loads(resp.read())["choices"][0]["message"]["content"]
+                except Exception as e:
+                  last_error = e
+                  print(f"GROQ attempt {attempt+1}/{retries} failed: {e}")
+                  if attempt < retries - 1:
+                    time.sleep(2 ** attempt)
+            
+            raise RuntimeError(f"All AI providers failed after {retries} attempts. Last error: {last_error}")
 
           try:
             with open("/tmp/all_reports.md", encoding="utf-8") as f:
@@ -676,7 +738,7 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
-      - name: Auto Commit All Fixes
+      - name: Create Fix Branch & Commit
         id: auto-commit
         run: |
           set -euo pipefail
@@ -688,53 +750,54 @@ jobs:
           fi
           echo "=== Files staged ==="
           git diff --cached --stat
-          git commit -m "bot(auto-fix): automated security & code fixes [skip ci]"
-          echo "changed=true" >> "$GITHUB_OUTPUT"
-
-      - name: Push to main
-        if: steps.auto-commit.outputs.changed == 'true'
-        run: |
-          git push origin HEAD:main
-          echo "Pushed successfully."
-
-  # ================================================================
-  # PHASE 5: AUTO-DEPLOY TO VPS (SSH + docker compose v2)
-  # ================================================================
-  deploy-to-vps:
-    name: Phase 5 — Auto-Deploy to VPS
-    needs: [auto-fix-everything]
-    if: needs.auto-fix-everything.outputs.changed == 'true'
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    steps:
-      - name: Setup SSH Key
-        run: |
-          set -euo pipefail
-          mkdir -p ~/.ssh
-          echo "${{ secrets.VPS_SSH_KEY }}" > ~/.ssh/id_ed25519
-          chmod 600 ~/.ssh/id_ed25519
-          ssh-keyscan -H "${{ env.VPS_HOST }}" >> ~/.ssh/known_hosts 2>/dev/null || true
-
-      - name: Deploy to VPS
-        run: |
-          set -euo pipefail
-          echo "=== Deploying to VPS ${{ env.VPS_HOST }} ==="
           
-          ssh -o StrictHostKeyChecking=yes -o ConnectTimeout=30 \
-            -i ~/.ssh/id_ed25519 \
-            "${{ env.VPS_USER }}@${{ env.VPS_HOST }}" \
-            "set -e; \
-             echo '--- Pulling latest code ---'; \
-             cd ${{ env.VPS_DEPLOY_DIR }} && git pull origin main; \
-             echo '--- Rebuilding containers ---'; \
-             docker compose down && docker compose up -d --build; \
-             echo '--- Health check ---'; \
-             sleep 5; \
-             docker ps | grep grinch-bot && echo 'DEPLOY SUCCESS' || echo 'DEPLOY WARNING'"
+          BRANCH_NAME="ai/auto-fix-$(date +%Y%m%d-%H%M%S)-${{ github.run_id }}"
+          git checkout -b "$BRANCH_NAME"
+          git commit -m "bot(auto-fix): automated security & code fixes [skip ci]"
+          git push origin "$BRANCH_NAME"
+          
+          echo "changed=true" >> "$GITHUB_OUTPUT"
+          echo "branch=$BRANCH_NAME" >> "$GITHUB_OUTPUT"
 
-      - name: Cleanup SSH Key
-        if: always()
-        run: rm -f ~/.ssh/id_ed25519
+      - name: Create Pull Request
+        id: create-pr
+        if: steps.auto-commit.outputs.changed == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          BRANCH="${{ steps.auto-commit.outputs.branch }}"
+          
+          # Создаём PR через GitHub CLI
+          PR_URL=$(gh pr create \
+            --base main \
+            --head "$BRANCH" \
+            --title "🤖 AI Auto-Fix: Automated security & code fixes" \
+            --body "$(cat <<'EOF'
+          ## Автоматические исправления от AI Supreme Agent
+          
+          ### Что сделано:
+          - Анализ кода на уязвимости и ошибки
+          - Применение известных security-фиксов
+          - AI-generated emergency fixes (если применимы)
+          
+          ### Проверьте перед мержем:
+          - [ ] Изменения не ломают логику торговли
+          - [ ] Нет случайных изменений конфигурации
+          - [ ] Тесты проходят (если есть)
+          
+          > ⚠️ Этот PR создан автоматически. Обязательно проведите ревью!
+          EOF
+          )" \
+            --label "auto-fix,ai-generated" 2>/dev/null || true)
+          
+          if [ -n "$PR_URL" ]; then
+            echo "pr_url=$PR_URL" >> "$GITHUB_OUTPUT"
+            echo "::notice::PR created: $PR_URL"
+          else
+            echo "pr_url=" >> "$GITHUB_OUTPUT"
+            echo "::warning::Failed to create PR"
+          fi
 
   # ================================================================
   # PHASE 4: LEARNING & EVOLUTION
@@ -765,14 +828,15 @@ jobs:
           set -euo pipefail
           mkdir -p .ai-learning
           
-          cat <<EOF >> ".ai-learning/run_${{ github.run_id }}.log"
-          run_id=${{ github.run_id }}
-          trigger=${{ github.event_name }}
-          status=${{ needs.ai-analysis.result }}
-          timestamp=$(date -Iseconds)
-          changed_files="${{ needs.context-gathering.outputs.changed_files }}"
-          EOF
+          {
+            echo "run_id=${{ github.run_id }}"
+            echo "trigger=${{ github.event_name }}"
+            echo "status=${{ needs.ai-analysis.result }}"
+            echo "timestamp=$(date -Iseconds)"
+            echo "changed_files=\"${{ needs.context-gathering.outputs.changed_files }}\""
+          } >> ".ai-learning/run_${{ github.run_id }}.log"
 
+          # Храним только последние 50 запусков
           ls -t .ai-learning/run_*.log 2>/dev/null | tail -n +51 | xargs -r rm -f 2>/dev/null || true
 
       - name: Generate Insights from History
@@ -790,9 +854,10 @@ jobs:
           fi
 
           python3 - <<'PY'
-          import os, json, urllib.request
+          import os, json, urllib.request, time
 
-          def call_ai(prompt, max_tokens=2000, temperature=0.3, timeout=60):
+          def call_ai(prompt, max_tokens=2000, temperature=0.3, timeout=60, retries=3):
+            """Call AI with retry logic and fallback provider."""
             kimi_key = os.environ.get("KIMI_API_KEY")
             groq_key = os.environ.get("GROQ_API_KEY")
             payload_base = {
@@ -800,30 +865,44 @@ jobs:
               "temperature": temperature,
               "max_tokens": max_tokens,
             }
-            if kimi_key:
-              payload = {**payload_base, "model": os.environ.get("KIMI_MODEL", "moonshot-v1-auto")}
-              req = urllib.request.Request(
-                f"{os.environ.get('KIMI_BASE_URL', 'https://api.moonshot.cn/v1')}/chat/completions",
-                data=json.dumps(payload).encode(),
-                headers={"Authorization": f"Bearer {kimi_key}", "Content-Type": "application/json"},
-              )
-              try:
-                with urllib.request.urlopen(req, timeout=timeout) as resp:
-                  return json.loads(resp.read())["choices"][0]["message"]["content"]
-              except Exception as e:
-                print(f"Kimi failed: {e}")
-                if not groq_key:
-                  raise
-            if groq_key:
-              payload = {**payload_base, "model": os.environ.get("GROQ_MODEL", "llama-3.3-70b-versatile")}
-              req = urllib.request.Request(
-                "https://api.groq.com/openai/v1/chat/completions",
-                data=json.dumps(payload).encode(),
-                headers={"Authorization": f"Bearer {groq_key}", "Content-Type": "application/json"},
-              )
-              with urllib.request.urlopen(req, timeout=timeout) as resp:
-                return json.loads(resp.read())["choices"][0]["message"]["content"]
-            raise RuntimeError("No AI provider available")
+            
+            last_error = None
+            for attempt in range(retries):
+              if kimi_key:
+                payload = {**payload_base, "model": os.environ.get("KIMI_MODEL", "moonshot-v1-auto")}
+                req = urllib.request.Request(
+                  f"{os.environ.get('KIMI_BASE_URL', 'https://api.moonshot.cn/v1')}/chat/completions",
+                  data=json.dumps(payload).encode(),
+                  headers={"Authorization": f"Bearer {kimi_key}", "Content-Type": "application/json"},
+                )
+                try:
+                  with urllib.request.urlopen(req, timeout=timeout) as resp:
+                    return json.loads(resp.read())["choices"][0]["message"]["content"]
+                except Exception as e:
+                  last_error = e
+                  print(f"Kimi attempt {attempt+1}/{retries} failed: {e}")
+                  if attempt < retries - 1:
+                    time.sleep(2 ** attempt)
+                  if not groq_key:
+                    continue
+              
+              if groq_key:
+                payload = {**payload_base, "model": os.environ.get("GROQ_MODEL", "llama-3.3-70b-versatile")}
+                req = urllib.request.Request(
+                  "https://api.groq.com/openai/v1/chat/completions",
+                  data=json.dumps(payload).encode(),
+                  headers={"Authorization": f"Bearer {groq_key}", "Content-Type": "application/json"},
+                )
+                try:
+                  with urllib.request.urlopen(req, timeout=timeout) as resp:
+                    return json.loads(resp.read())["choices"][0]["message"]["content"]
+                except Exception as e:
+                  last_error = e
+                  print(f"GROQ attempt {attempt+1}/{retries} failed: {e}")
+                  if attempt < retries - 1:
+                    time.sleep(2 ** attempt)
+            
+            raise RuntimeError(f"All AI providers failed after {retries} attempts. Last error: {last_error}")
 
           try:
             with open("history_context.txt", encoding="utf-8") as f:
@@ -868,3 +947,67 @@ jobs:
           key: ai-learning-history-${{ github.repository }}
           restore-keys: |
             ai-learning-history-${{ github.repository }}
+
+  # ================================================================
+  # PHASE 5: AUTO-DEPLOY TO VPS (Zero-Downtime)
+  # ================================================================
+  deploy-to-vps:
+    name: Phase 5 — Auto-Deploy to VPS
+    needs: [context-gathering]
+    # Deploy при любом push в main ИЛИ при repository_dispatch (VPS error)
+    if: |
+      always() && 
+      (github.event_name == 'push' || github.event_name == 'repository_dispatch') &&
+      needs.context-gathering.result == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Setup SSH Key
+        run: |
+          set -euo pipefail
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          echo "${{ secrets.VPS_SSH_KEY }}" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          ssh-keyscan -H "${{ env.VPS_HOST }}" >> ~/.ssh/known_hosts 2>/dev/null || true
+
+      - name: Deploy to VPS (Zero-Downtime)
+        run: |
+          set -euo pipefail
+          echo "=== Deploying to VPS ${{ env.VPS_HOST }} ==="
+          
+          ssh -o StrictHostKeyChecking=yes -o ConnectTimeout=30 \
+            -i ~/.ssh/id_ed25519 \
+            "${{ env.VPS_USER }}@${{ env.VPS_HOST }}" \
+            "set -e; \
+             echo '--- Pulling latest code ---'; \
+             cd ${{ env.VPS_DEPLOY_DIR }} && git pull origin main; \
+             echo '--- Rebuilding containers (zero-downtime) ---'; \
+             docker compose up -d --build; \
+             echo '--- Waiting for healthcheck ---'; \
+             sleep 10; \
+             echo '--- Checking container health ---'; \
+             docker compose ps | grep -E 'healthy|running' && echo 'DEPLOY SUCCESS' || echo 'DEPLOY WARNING'; \
+             echo '--- Cleaning up old images ---'; \
+             docker image prune -f || true"
+
+      - name: Health Check
+        run: |
+          set -euo pipefail
+          echo "=== Health Check ==="
+          for i in 1 2 3; do
+            if curl -sf --max-time 10 "http://${{ env.VPS_HOST }}:3000/health" > /dev/null 2>&1; then
+              echo "✅ Health check PASSED (attempt $i)"
+              exit 0
+            fi
+            echo "⏳ Health check failed, retrying... ($i/3)"
+            sleep 5
+          done
+          echo "::warning::Health check failed after 3 attempts"
+          exit 1
+
+      - name: Cleanup SSH Key
+        if: always()
+        run: |
+          rm -f ~/.ssh/id_ed25519
+          ssh-add -D 2>/dev/null || true
