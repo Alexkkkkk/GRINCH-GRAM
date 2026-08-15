@@ -268,11 +268,11 @@ ai_market_scanner.py
     F 115:0 _detect_accumulation - B (10)
     F 158:0 _detect_squeeze_breakout - B (9)
     F 220:0 _detect_bull_engulfing - B (9)
-    F 333:0 _worker - A (5)
-    F 369:0 get_last_signal - A (3)
-    F 383:0 get_status - A (3)
-    F 352:0 start - A (2)
-    F 364:0 stop - A (1)
+    F 347:0 _worker - A (5)
+    F 383:0 get_last_signal - A (3)
+    F 397:0 get_status - A (3)
+    F 366:0 start - A (2)
+    F 378:0 stop - A (1)
 experience_manager.py
     M 725:4 ExperienceManager.analyze_and_adapt - F (86)
     M 373:4 ExperienceManager.restore_trader - F (48)
@@ -420,58 +420,60 @@ db_backup.py
 models.py
     C 7:0 UserWallet - A (1)
 grid_trader.py
-    M 1402:4 GridTrader._tick - F (119)
-    M 2766:4 GridTrader._maybe_deploy_idle_balance - F (61)
-    M 3318:4 GridTrader._inject_market_context_to_grid_ai - F (48)
-    M 906:4 GridTrader.build_grid - F (47)
-    M 1211:4 GridTrader.get_status - E (40)
-    M 652:4 GridState.from_dict - E (38)
-    M 2466:4 GridTrader._reduce_dca_loss - E (34)
-    M 2003:4 GridTrader._execute_sell - D (26)
-    M 476:4 GridAIManager._need_rebuild - D (25)
-    M 3153:4 GridTrader._maybe_recenter - D (24)
-    C 611:0 GridState - D (23)
-    M 3068:4 GridTrader._ensure_near_price_sell - D (22)
-    M 3480:4 GridTrader._get_ai_signal - D (21)
-    M 342:4 GridAIManager._manage - C (20)
-    M 2668:4 GridTrader._maybe_add_dca_level - C (18)
-    C 745:0 GridTrader - C (16)
-    M 1161:4 GridTrader.reset_error_levels - C (13)
+    M 1494:4 GridTrader._tick - F (120)
+    M 2869:4 GridTrader._maybe_deploy_idle_balance - F (64)
+    M 3503:4 GridTrader._inject_market_context_to_grid_ai - F (48)
+    M 998:4 GridTrader.build_grid - F (47)
+    M 1303:4 GridTrader.get_status - E (40)
+    M 744:4 GridState.from_dict - E (38)
+    M 2569:4 GridTrader._reduce_dca_loss - E (34)
+    M 523:4 GridAIManager._need_rebuild - E (33)
+    M 2106:4 GridTrader._execute_sell - D (26)
+    M 3338:4 GridTrader._maybe_recenter - D (24)
+    C 703:0 GridState - D (23)
+    M 354:4 GridAIManager._manage - D (22)
+    M 3181:4 GridTrader._ensure_near_price_sell - D (22)
+    M 3266:4 GridTrader._reanchor_regular_buy_levels - D (22)
+    M 3665:4 GridTrader._get_ai_signal - D (21)
+    M 2771:4 GridTrader._maybe_add_dca_level - C (18)
+    C 837:0 GridTrader - C (17)
+    M 1253:4 GridTrader.reset_error_levels - C (13)
     C 189:0 GridAIManager - C (11)
-    M 799:4 GridTrader._cleanup_stale_idle_levels - B (10)
-    M 840:4 GridTrader._cleanup_dead_dca_levels - B (10)
-    M 3646:4 GridTrader._heuristic_step - B (10)
-    M 2617:4 GridTrader._add_cycle_sell - B (9)
-    M 2220:4 GridTrader._execute_buy - B (7)
-    M 2280:4 GridTrader._execute_dca - B (7)
-    M 3559:4 GridTrader._calc_atr - B (7)
-    M 2355:4 GridTrader._add_reinvestment_buy - B (6)
-    M 3566:4 GridTrader._calc_price_momentum - B (6)
-    M 643:4 GridState.to_dict - A (5)
-    M 872:4 GridTrader.inject - A (5)
-    M 3465:4 GridTrader._get_regime - A (5)
-    M 3601:4 GridTrader._get_dca_reserved_grinch - A (5)
-    M 3666:4 GridTrader._save_state - A (5)
+    M 891:4 GridTrader._cleanup_stale_idle_levels - B (10)
+    M 932:4 GridTrader._cleanup_dead_dca_levels - B (10)
+    M 3843:4 GridTrader._heuristic_step - B (10)
+    M 2720:4 GridTrader._add_cycle_sell - B (9)
+    M 2323:4 GridTrader._execute_buy - B (7)
+    M 2383:4 GridTrader._execute_dca - B (7)
+    M 3744:4 GridTrader._calc_atr - B (7)
+    M 2458:4 GridTrader._add_reinvestment_buy - B (6)
+    M 3751:4 GridTrader._calc_price_momentum - B (6)
+    M 735:4 GridState.to_dict - A (5)
+    M 964:4 GridTrader.inject - A (5)
+    M 3650:4 GridTrader._get_regime - A (5)
+    M 3786:4 GridTrader._get_dca_reserved_grinch - A (5)
+    M 3809:4 GridTrader._get_total_dca_reserved_grinch - A (5)
+    M 3863:4 GridTrader._save_state - A (5)
     C 37:0 GridConfig - A (4)
-    M 3547:4 GridTrader._get_atr_pct - A (4)
-    F 3727:0 get_grid_trader - A (3)
+    M 3732:4 GridTrader._get_atr_pct - A (4)
+    F 3924:0 get_grid_trader - A (3)
     M 56:4 GridConfig.min_profitable_order_ton - A (3)
-    M 892:4 GridTrader.start_poller - A (3)
-    M 1140:4 GridTrader.activate - A (3)
-    M 1368:4 GridTrader.adjust_step_by_atr - A (3)
-    M 1392:4 GridTrader._loop - A (3)
-    M 3281:4 GridTrader._is_profitable_sell - A (3)
-    M 3305:4 GridTrader._is_profitable_buy_cycle - A (3)
-    M 3632:4 GridTrader._available_grinch_for_level - A (3)
-    M 3704:4 GridTrader._load_state - A (3)
-    M 319:4 GridAIManager.tick - A (2)
-    M 3589:4 GridTrader._get_balances - A (2)
-    M 3624:4 GridTrader._get_total_dca_reserved_grinch - A (2)
+    M 984:4 GridTrader.start_poller - A (3)
+    M 1232:4 GridTrader.activate - A (3)
+    M 1460:4 GridTrader.adjust_step_by_atr - A (3)
+    M 1484:4 GridTrader._loop - A (3)
+    M 3466:4 GridTrader._is_profitable_sell - A (3)
+    M 3490:4 GridTrader._is_profitable_buy_cycle - A (3)
+    M 3829:4 GridTrader._available_grinch_for_level - A (3)
+    M 3901:4 GridTrader._load_state - A (3)
+    M 331:4 GridAIManager.tick - A (2)
+    M 3774:4 GridTrader._get_balances - A (2)
     M 304:4 GridAIManager.__init__ - A (1)
-    M 572:4 GridAIManager.get_status - A (1)
-    C 592:0 GridLevel - A (1)
-    M 748:4 GridTrader.__init__ - A (1)
-    M 1153:4 GridTrader.deactivate - A (1)
+    M 646:4 GridAIManager.note_automatic_buy_reanchor - A (1)
+    M 662:4 GridAIManager.get_status - A (1)
+    C 684:0 GridLevel - A (1)
+    M 840:4 GridTrader.__init__ - A (1)
+    M 1245:4 GridTrader.deactivate - A (1)
 config.py
     C 8:0 Config - A (5)
     M 68:4 Config.required_gross_pct_with_gas - A (4)
@@ -923,8 +925,8 @@ scripts/ci_smoke.py
     F 32:0 main - C (14)
     F 24:0 python_files - A (4)
 
-884 blocks (classes, functions, methods) analyzed.
-Average complexity: B (8.085972850678733)
+886 blocks (classes, functions, methods) analyzed.
+Average complexity: B (8.113995485327314)
 
 ## Vulture (Dead Code)
 ai_advisor.py:54: unused function '_write_key_file' (60% confidence)
@@ -1072,10 +1074,10 @@ grid_ai.py:687: unused attribute '_nas_best_ensemble' (60% confidence)
 grid_ai.py:2364: unused variable 'mname' (60% confidence)
 grid_trader.py:87: unused variable 'AI_FREEZE_BUY_SELL' (60% confidence)
 grid_trader.py:300: unused variable 'STEP_CHANGE_MIN_DIFF' (60% confidence)
-grid_trader.py:315: unused attribute '_last_target_step' (60% confidence)
-grid_trader.py:630: unused variable 'created_at' (60% confidence)
-grid_trader.py:1001: unused attribute 'created_at' (60% confidence)
-grid_trader.py:3559: unused method '_calc_atr' (60% confidence)
+grid_trader.py:327: unused attribute '_last_target_step' (60% confidence)
+grid_trader.py:722: unused variable 'created_at' (60% confidence)
+grid_trader.py:1093: unused attribute 'created_at' (60% confidence)
+grid_trader.py:3744: unused method '_calc_atr' (60% confidence)
 grinch_liquidator.py:205: unused method '_fetch_grinch_balance_http' (60% confidence)
 grinch_liquidator.py:247: unused method '_fetch_ton_balance_http' (60% confidence)
 models.py:16: unused variable 'encrypted_mnemonic' (60% confidence)
@@ -1096,7 +1098,7 @@ user_trader.py:473: unused attribute 'last_signal_at' (60% confidence)
 wallet_tracker.py:311: unused method 'get_whale_hold_score' (60% confidence)
 
 ## Bandit Security
-Run started:2026-08-14 04:14:37.350314+00:00
+Run started:2026-08-15 02:57:36.087364+00:00
 
 Test results:
 >> Issue: [B301:blacklist] Pickle and modules that wrap it can be unsafe when used to deserialize untrusted data, possible security issue.
@@ -1201,19 +1203,19 @@ Test results:
 --------------------------------------------------
 
 Code scanned:
-	Total lines of code: 29816
+	Total lines of code: 30006
 	Total lines skipped (#nosec): 0
 	Total potential issues skipped due to specifically being disabled (e.g., #nosec BXXX): 0
 
 Run metrics:
 	Total issues (by severity):
 		Undefined: 0
-		Low: 223
+		Low: 224
 		Medium: 15
 		High: 0
 	Total issues (by confidence):
 		Undefined: 0
 		Low: 0
 		Medium: 17
-		High: 221
+		High: 222
 Files skipped (0):
