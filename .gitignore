@@ -26,7 +26,6 @@ data/
 experience.json
 settings.json
 wallets.json
-uv.lock
 
 # Артефакты Replit (не нужны на Bothost — содержат package.json который сбивает автодетект)
 artifacts/
@@ -34,7 +33,6 @@ artifacts/
 .local/
 .upm/
 .pythonlibs/
-pyproject.toml
 attached_assets/
 backups/
 
