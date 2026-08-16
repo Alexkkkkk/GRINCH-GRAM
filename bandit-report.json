@@ -1,6 +1,6 @@
 {
   "errors": [],
-  "generated_at": "2026-08-16T16:15:53Z",
+  "generated_at": "2026-08-16T18:41:22Z",
   "metrics": {
     "./ai_advisor.py": {
       "CONFIDENCE.HIGH": 9,
@@ -102,7 +102,7 @@
       "SEVERITY.LOW": 32,
       "SEVERITY.MEDIUM": 5,
       "SEVERITY.UNDEFINED": 0,
-      "loc": 3302,
+      "loc": 3304,
       "nosec": 0,
       "skipped_tests": 0
     },
@@ -531,7 +531,7 @@
       "SEVERITY.LOW": 231,
       "SEVERITY.MEDIUM": 16,
       "SEVERITY.UNDEFINED": 0,
-      "loc": 30082,
+      "loc": 30084,
       "nosec": 0,
       "skipped_tests": 0
     }
@@ -598,7 +598,7 @@
       "test_name": "blacklist"
     },
     {
-      "code": "2949         url = \"https://api.dexscreener.com/latest/dex/pairs/ton/EQCM3B12QK1e4yZSf8GtBRT0aLMNyEsBc_9Qsof7gbCmkjvi\"\n2950         with urllib.request.urlopen(url, timeout=5) as r:\n2951             d = _json.loads(r.read())\n",
+      "code": "2951         url = \"https://api.dexscreener.com/latest/dex/pairs/ton/EQCM3B12QK1e4yZSf8GtBRT0aLMNyEsBc_9Qsof7gbCmkjvi\"\n2952         with urllib.request.urlopen(url, timeout=5) as r:\n2953             d = _json.loads(r.read())\n",
       "col_offset": 13,
       "end_col_offset": 51,
       "filename": "./app.py",
@@ -609,16 +609,16 @@
       },
       "issue_severity": "MEDIUM",
       "issue_text": "Audit url open for permitted schemes. Allowing use of file:/ or custom schemes is often unexpected.",
-      "line_number": 2950,
+      "line_number": 2952,
       "line_range": [
-        2950
+        2952
       ],
       "more_info": "https://bandit.readthedocs.io/en/1.9.4/blacklists/blacklist_calls.html#b310-urllib-urlopen",
       "test_id": "B310",
       "test_name": "blacklist"
     },
     {
-      "code": "2959         url2 = \"https://tonapi.io/v2/rates?tokens=ton&currencies=usd\"\n2960         with urllib.request.urlopen(url2, timeout=5) as r2:\n2961             d2 = _json.loads(r2.read())\n",
+      "code": "2961         url2 = \"https://tonapi.io/v2/rates?tokens=ton&currencies=usd\"\n2962         with urllib.request.urlopen(url2, timeout=5) as r2:\n2963             d2 = _json.loads(r2.read())\n",
       "col_offset": 13,
       "end_col_offset": 52,
       "filename": "./app.py",
@@ -629,9 +629,9 @@
       },
       "issue_severity": "MEDIUM",
       "issue_text": "Audit url open for permitted schemes. Allowing use of file:/ or custom schemes is often unexpected.",
-      "line_number": 2960,
+      "line_number": 2962,
       "line_range": [
-        2960
+        2962
       ],
       "more_info": "https://bandit.readthedocs.io/en/1.9.4/blacklists/blacklist_calls.html#b310-urllib-urlopen",
       "test_id": "B310",
