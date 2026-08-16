@@ -12,7 +12,7 @@ jobs:
   stale:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/stale@v9
+      - uses: actions/stale@v11
         with:
           repo-token: ${{ secrets.GITHUB_TOKEN }}
           stale-issue-message: "🤖 Этот issue неактивен 30 дней. Отметьте его свежим комментарием, чтобы предотвратить автозакрытие."
