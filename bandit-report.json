@@ -1,6 +1,6 @@
 {
   "errors": [],
-  "generated_at": "2026-08-16T18:41:22Z",
+  "generated_at": "2026-08-16T18:43:30Z",
   "metrics": {
     "./ai_advisor.py": {
       "CONFIDENCE.HIGH": 9,
