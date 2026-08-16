@@ -1,189 +1,104 @@
-name: 🤖 AI Bug Hunter — Predictive Self-Healing
+name: 🐛 AI Predictive Bug Hunter
 
 on:
   workflow_call:
   workflow_dispatch:
+  pull_request:
+    branches: [main, master]
 
-permissions: read-all
+permissions:
+  contents: read
+  pull-requests: write
 
 jobs:
-  hunt:
-    name: 🧠 Predictive Analysis
+  bug-hunt:
+    name: 🔍 Static Bug Detection
     runs-on: ubuntu-latest
-    timeout-minutes: 20
-    permissions:
-      contents: write
-      pull-requests: write
+    timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
+      - name: 📥 Checkout
+        uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
-      - uses: actions/setup-python@v5
+      - name: 🐍 Python 3.11
+        uses: actions/setup-python@v5
         with:
-          python-version: '3.11'
+          python-version: "3.11"
+
+      - name: ⚡ Cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-bug-${{ hashFiles('requirements.txt') }}
 
       - name: 📦 Install Tools
+        run: pip install ruff pylint mypy vulture radon
+
+      - name: 🔬 Ruff Deep Scan
         run: |
-          pip install ruff bandit radon
+          ruff check . --output-format=json > ruff-bugs.json || true
+          ruff check . --output-format=github || true
 
-      - name: 🔍 Collect Code Intelligence
-        id: collect
+      - name: 🦅 Pylint Analysis
+        run: pylint $(git ls-files '*.py') --output-format=json > pylint-report.json || true
+
+      - name: 📝 MyPy Type Check
+        run: mypy . --ignore-missing-imports --show-error-codes --json-file mypy-report.json || true
+
+      - name: 🧟 Vulture Dead Code Scan
+        run: vulture . --min-confidence 80 > vulture-report.txt || true
+
+      - name: 📊 Complexity Hotspots
         run: |
-          # Собираем метрики
-          echo "### RADON METRICS" > intelligence.md
-          radon cc . -s -a >> intelligence.md 2>/dev/null || true
-          echo "" >> intelligence.md
-          echo "### BANDIT ISSUES" >> intelligence.md
-          bandit -r . -ll -iii -f txt >> intelligence.md 2>/dev/null || true
-          echo "" >> intelligence.md
-          echo "### RUFF ISSUES" >> intelligence.md
-          ruff check . --output-format=text >> intelligence.md 2>/dev/null || true
+          echo "## 🔥 Cyclomatic Complexity Hotspots" > complexity-report.md
+          radon cc . -s -a --min=C >> complexity-report.md || true
 
-          # Собираем Python файлы с высокой сложностью
-          radon cc . -s -a --min=C > complex_files.txt 2>/dev/null || true
-          cat complex_files.txt >> intelligence.md
+      - name: 📤 Upload Reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: bug-hunter-reports
+          path: |
+            ruff-bugs.json
+            pylint-report.json
+            mypy-report.json
+            vulture-report.txt
+            complexity-report.md
+          retention-days: 30
 
-          # Собираем все .py файлы (до 5 самых больших)
-          find . -name "*.py" -not -path "./.git/*" -not -path "./__pycache__/*" -exec wc -l {} + | sort -rn | head -5 > target_files.txt
-          echo "TARGET_FILES<<EOF" >> $GITHUB_ENV
-          cat target_files.txt >> $GITHUB_ENV
-          echo "EOF" >> $GITHUB_ENV
-
-      - name: 🧠 AI Deep Analysis
-        id: ai
-        env:
-          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
-        run: |
-          if [ -z "$GROQ_API_KEY" ]; then
-            echo "GROQ_API_KEY missing. Skipping AI analysis."
-            echo "ai_status=skipped" >> $GITHUB_ENV
-            exit 0
-          fi
-
-          python3 - <<'PY'
-          import os, json, urllib.request, urllib.error, glob
-
-          # Fallback: если Groq недоступен, используем локальный анализ
-          def local_analysis():
-            issues = []
-            try:
-              with open("intelligence.md", encoding="utf-8") as f:
-                content = f.read()
-              if "HIGH" in content or "Severity: HIGH" in content:
-                issues.append("High severity security issues detected")
-              if "Cyclomatic complexity" in content:
-                issues.append("Complex functions need refactoring")
-            except Exception:
-              pass
-            return issues
-
-          # Собираем код
-          code_blocks = []
-          try:
-            with open("target_files.txt", encoding="utf-8") as f:
-              for line in f:
-                parts = line.strip().split()
-                if len(parts) >= 2:
-                  filepath = parts[1]
-                  try:
-                    with open(filepath, encoding="utf-8") as cf:
-                      content = cf.read()
-                    code_blocks.append(f"=== {filepath} ({len(content)} chars) ===\n{content[:4000]}")
-                  except Exception:
-                    pass
-          except Exception:
-            pass
-
-          code_context = "\n\n".join(code_blocks) if code_blocks else "No files available."
-
-          try:
-            with open("intelligence.md", encoding="utf-8") as f:
-              intel = f.read()[:3000]
-          except Exception:
-            intel = "No static analysis data."
-
-          prompt = (
-            "You are an elite Python bug hunter specializing in asyncio, trading bots, and financial systems. "
-            "Analyze the following code and static analysis data. Identify:\n"
-            "1. Race conditions and deadlocks\n"
-            "2. Off-by-one errors in grid calculations\n"
-            "3. Resource leaks (files, connections, locks)\n"
-            "4. Incorrect float arithmetic for financial calculations\n"
-            "5. Missing error handling\n"
-            "6. Async/await anti-patterns\n\n"
-            f"Static Analysis:\n{intel}\n\n"
-            f"Source Code:\n{code_context}\n\n"
-            "For each bug found, provide:\n"
-            "- Severity: CRITICAL / HIGH / MEDIUM / LOW\n"
-            "- File and line number\n"
- "- Explanation\n"
-            "- Fixed code snippet\n\n"
-            "If no bugs found, state 'No bugs detected.'"
-          )
-
-          payload = {
-            "model": "llama-3.1-70b-versatile",
-            "messages": [{"role": "user", "content": prompt}],
-            "temperature": 0.1,
-            "max_tokens": 4000,
-          }
-
-          req = urllib.request.Request(
-            "https://api.groq.com/openai/v1/chat/completions",
-            data=json.dumps(payload).encode(),
-            headers={
-              "Authorization": f"Bearer {os.environ['GROQ_API_KEY']}",
-              "Content-Type": "application/json",
-            },
-          )
-
-          try:
-            with urllib.request.urlopen(req, timeout=120) as resp:
-              result = json.loads(resp.read())
-              ai_response = result["choices"][0]["message"]["content"]
-            with open("ai_bug_report.md", "w", encoding="utf-8") as f:
-              f.write("# 🤖 AI Bug Hunter Report\n\n")
-              f.write(ai_response)
-            print("ai_status=success" >> open(os.environ.get("GITHUB_ENV", "/dev/null"), "a"))
-          except urllib.error.HTTPError as e:
-            print(f"Groq API error: HTTP {e.code}")
-            local_issues = local_analysis()
-            with open("ai_bug_report.md", "w", encoding="utf-8") as f:
-              f.write("# 🤖 AI Bug Hunter Report (Fallback Mode)\n\n")
-              f.write(f"Groq API unavailable (HTTP {e.code}). Local analysis:\n\n")
-              for issue in local_issues:
-                f.write(f"- {issue}\n")
-            print("ai_status=fallback" >> open(os.environ.get("GITHUB_ENV", "/dev/null"), "a"))
-          except Exception as e:
-            print(f"AI failed: {e}")
-            print("ai_status=failed" >> open(os.environ.get("GITHUB_ENV", "/dev/null"), "a"))
-          PY
-
-      - name: 📝 Post Bug Report
-        if: github.event_name == 'pull_request'
+      - name: 💬 PR Comment Summary
+        if: github.event_name == 'pull_request' && always()
         uses: actions/github-script@v7
         with:
           script: |
-            try {
-              const fs = require('fs');
-              const report = fs.readFileSync('ai_bug_report.md', 'utf8');
-              const truncated = report.length > 60000 ? report.substring(0, 60000) + '\n\n...(truncated)' : report;
-
-              await github.rest.issues.createComment({
-                issue_number: context.issue.number,
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                body: truncated,
-              });
-            } catch (e) {
-              console.log("Could not post bug report:", e.message);
+            const fs = require('fs');
+            let summary = '🐛 **AI Bug Hunter** — статический анализ завершён.\n\n';
+            const files = [
+              {name: 'Ruff', file: 'ruff-bugs.json'},
+              {name: 'Pylint', file: 'pylint-report.json'},
+              {name: 'MyPy', file: 'mypy-report.json'},
+            ];
+            for (const item of files) {
+              try {
+                const data = JSON.parse(fs.readFileSync(item.file, 'utf8'));
+                const count = Array.isArray(data) ? data.length : 0;
+                summary += '- ' + item.name + ': ' + count + ' issues\n';
+              } catch {
+                summary += '- ' + item.name + ': N/A\n';
+              }
             }
-
-      - name: 📊 Summary
-        if: always()
-        run: |
-          echo "# 🤖 AI Bug Hunter" >> $GITHUB_STEP_SUMMARY
-          echo "Status: ${AI_STATUS:-unknown}" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "See ai_bug_report.md for details." >> $GITHUB_STEP_SUMMARY
+            try {
+              const vulture = fs.readFileSync('vulture-report.txt', 'utf8');
+              const lines = vulture.split('\n').filter(l => l.trim());
+              summary += '- Vulture: ' + lines.length + ' dead code findings\n';
+            } catch {
+              summary += '- Vulture: N/A\n';
+            }
+            summary += '\n📎 Подробные отчёты доступны в артефакте **bug-hunter-reports**.';
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: summary
+            });

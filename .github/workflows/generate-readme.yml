@@ -1,76 +1,112 @@
-name: AI README proposal
+name: 📝 Generate README
 
 on:
+  push:
+    branches: [main, master]
+    paths:
+      - "*.py"
+      - "requirements.txt"
+      - "Dockerfile"
+      - ".github/workflows/generate-readme.yml"
   workflow_dispatch:
-  schedule:
-    - cron: "17 3 1 * *"
 
-permissions: read-all
-
-concurrency:
-  group: ai-readme
-  cancel-in-progress: true
+permissions:
+  contents: write
 
 jobs:
-  generate-readme:
-    name: Generate reviewable README proposal
+  generate:
+    name: Auto-generate README
     runs-on: ubuntu-latest
-    timeout-minutes: 15
-    permissions:
-      contents: write
-      pull-requests: write
-
     steps:
-      - name: Check out default branch
+      - name: 📥 Checkout
         uses: actions/checkout@v4
         with:
-          ref: main
           fetch-depth: 0
 
-      - name: Set up Python
+      - name: 🐍 Python 3.11
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
 
-      - name: Generate README with AI when configured
+      - name: 📊 Collect project stats
+        run: |
+          python3 - <<'PY'
+          import os, json, subprocess
+
+          stats = {
+              "python_files": len([f for f in os.listdir(".") if f.endswith(".py")]),
+              "total_lines": 0,
+              "modules": [],
+          }
+
+          for f in sorted(os.listdir(".")):
+              if f.endswith(".py") and os.path.isfile(f):
+                  with open(f, encoding="utf-8", errors="ignore") as file:
+                      lines = len(file.readlines())
+                      stats["total_lines"] += lines
+                      stats["modules"].append(f"- `{f}` ({lines} lines)")
+
+          with open("project-stats.json", "w") as f:
+              json.dump(stats, f, indent=2)
+
+          print(f"Python files: {stats['python_files']}")
+          print(f"Total lines: {stats['total_lines']}")
+          PY
+
+      - name: 🧠 AI README Generation (Groq)
+        if: env.GROQ_API_KEY != ''
         env:
           GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
         run: |
-          if [ -z "${GROQ_API_KEY:-}" ]; then
-            echo "GROQ_API_KEY is not configured; skipping optional AI proposal."
-            exit 0
-          fi
-          python - <<'PY'
-          import glob
-          import json
-          import os
-          import urllib.error
-          import urllib.request
+          python3 - <<'PY'
+          import os, json, urllib.request
 
-          files = []
-          for pattern in ("*.py", "Dockerfile", "requirements.txt", "config.py"):
-              for path in glob.glob(pattern):
+          try:
+              with open("project-stats.json", encoding="utf-8") as f:
+                  stats = json.load(f)
+          except Exception:
+              stats = {"python_files": 0, "total_lines": 0, "modules": []}
+
+          # Собираем описания модулей из docstrings
+          modules_desc = []
+          for f in sorted(os.listdir(".")):
+              if f.endswith(".py") and os.path.isfile(f):
                   try:
-                      with open(path, encoding="utf-8") as handle:
-                          files.append(f"=== {path} ===\n{handle.read()[:2500]}")
-                  except OSError:
+                      with open(f, encoding="utf-8", errors="ignore") as file:
+                          first_lines = file.read(300)
+                          if '"''' in first_lines or '"''' in first_lines:
+                              desc = first_lines.split('"''')[1] if '"''' in first_lines else first_lines.split("'''")[1]
+                              modules_desc.append(f"**{f}**: {desc.strip()[:100]}")
+                  except Exception:
                       pass
-          if not files:
-              raise SystemExit("No project files available for the optional proposal")
 
           prompt = (
-              "Создай технический README.md для GRINCH-GRAM на русском языке. "
-              "Не выдумывай возможности: используй только переданный контекст. "
-              "Укажи, что автоматические изменения проходят через pull request. "
-              "Верни только Markdown.\n\n" + "\n\n".join(files)[:10000]
+              "Generate a professional README.md for a cryptocurrency trading bot called GRINCH-GRAM. "
+              "It trades GRINCH/TON on DeDust DEX in the TON ecosystem. "
+              "The bot has AI/ML modules, a Flask dashboard, Docker deployment, and Telegram alerts.\n\n"
+              f"Stats: {stats['python_files']} Python files, {stats['total_lines']} total lines\n\n"
+              f"Key modules:\n" + "\n".join(modules_desc[:15]) + "\n\n"
+              "Generate a complete README with:\n"
+              "1. Title and badges (CI, Docker, Python 3.11, TON)\n"
+              "2. Description and features\n"
+              "3. Architecture overview (Mermaid diagram)\n"
+              "4. Installation (Docker + manual)\n"
+              "5. Configuration (.env variables)\n"
+              "6. Trading strategy overview\n"
+              "7. AI/ML components description\n"
+              "8. Security notes\n"
+              "9. License (MIT placeholder)\n"
+              "Use Russian language."
           )
+
           payload = {
               "model": "llama-3.1-70b-versatile",
               "messages": [{"role": "user", "content": prompt}],
-              "temperature": 0.2,
+              "temperature": 0.3,
               "max_tokens": 4000,
           }
-          request = urllib.request.Request(
+
+          req = urllib.request.Request(
               "https://api.groq.com/openai/v1/chat/completions",
               data=json.dumps(payload).encode(),
               headers={
@@ -78,43 +114,24 @@ jobs:
                   "Content-Type": "application/json",
               },
           )
+
           try:
-              with urllib.request.urlopen(request, timeout=60) as response:
-                  result = json.loads(response.read())
-          except urllib.error.HTTPError as error:
-              print(f"Optional AI proposal skipped: Groq HTTP {error.code}")
-              raise SystemExit(0)
-          content = result.get("choices", [{}])[0].get("message", {}).get("content", "")
-          if not content.strip():
-              raise SystemExit("Optional AI proposal returned no content")
-          with open("README.md", "w", encoding="utf-8") as readme:
-              readme.write(content.rstrip() + "\n")
+              with urllib.request.urlopen(req, timeout=120) as resp:
+                  result = json.loads(resp.read())
+                  readme = result["choices"][0]["message"]["content"]
+              with open("README.md", "w", encoding="utf-8") as f:
+                  f.write(readme)
+              print("README generated successfully")
+          except Exception as e:
+              print(f"README generation failed: {e}")
           PY
 
-      - name: Open or update a documentation PR
-        uses: peter-evans/create-pull-request@v7
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
-          branch: automation/ai-readme
-          delete-branch: true
-          title: "docs: refresh README proposal"
-          commit-message: "docs: refresh README proposal"
-          body: |
-            ## Automated documentation proposal
-
-            This PR was generated by an optional AI job. Review every
-            technical claim before merging. No direct write to `main` is used.
-          labels: |
-            documentation
-            automation
-
-      - name: 📊 AI README Generation Summary
+      - name: 🚀 Commit README
         if: always()
-        run: |
-          echo "# 🤖 AI README Proposal Report" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          if [ -z "${GROQ_API_KEY:-}" ]; then
-            echo "> ⏭️ **Skipped:** GROQ_API_KEY is not configured." >> $GITHUB_STEP_SUMMARY
-          else
-            echo "> ✅ **Executed:** AI proposal generated and submitted as PR." >> $GITHUB_STEP_SUMMARY
-          fi
+        uses: stefanzweifel/git-auto-commit-action@v5
+        with:
+          commit_message: "docs(readme): auto-generated README [skip ci]"
+          branch: main
+          commit_user_name: "Grinch-Gram Bot"
+          commit_user_email: "bot@grinch-gram.local"
+          file_pattern: "README.md"

@@ -1,101 +1,115 @@
-name: 🤖 AI Self-Improve — Learning Loop
+name: 🔄 AI Self-Improvement
 
 on:
   schedule:
-    - cron: "0 5 * * 0"  # каждое воскресенье в 5:00 UTC
+    - cron: "0 1 * * 0"
   workflow_dispatch:
 
 permissions:
-  contents: read
-  issues: read
-  pull-requests: read
+  contents: write
+  pull-requests: write
 
 jobs:
-  learn:
-    name: 🧬 Learning from History
+  self-improve:
+    name: 🤖 AI Code Refactoring
     runs-on: ubuntu-latest
-    timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v4
+      - name: 📥 Checkout
+        uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
-      - name: 📚 Collect Learning Data
+      - name: 🐍 Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: 📦 Install tools
         run: |
-          # Собираем закрытые PR с лейблом ai-generated
-          echo "## AI PR History" > learning_data.md
-          echo "" >> learning_data.md
+          pip install ruff black isort radon
 
-          # Анализируем, какие AI-PR были замержены, а какие отклонены
-          git log --grep="ai(" --oneline -20 >> learning_data.md 2>/dev/null || true
-          echo "" >> learning_data.md
+      - name: 🔬 Analyze code quality
+        run: |
+          radon cc . -s -a --min=C > complexity-hotspots.txt || true
+          ruff check . --output-format=json > ruff-full.json || true
 
-          # Собираем частые ошибки из CI
-          echo "## Recent CI Failures" >> learning_data.md
-          git log --oneline -50 | head -20 >> learning_data.md
-
-      - name: 🧠 Generate Insights
+      - name: 🧠 AI Refactoring Suggestions (Groq)
+        if: env.GROQ_API_KEY != ''
         env:
           GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
         run: |
-          if [ -z "$GROQ_API_KEY" ]; then
-            echo "Skipping self-improvement."
-            exit 0
-          fi
-
           python3 - <<'PY'
           import os, json, urllib.request
 
           try:
-            with open("learning_data.md", encoding="utf-8") as f:
-              data = f.read()[:4000]
+              with open("complexity-hotspots.txt", encoding="utf-8") as f:
+                  complexity = f.read()[:2000]
           except Exception:
-            data = "No learning data."
+              complexity = "N/A"
 
           prompt = (
-            "You are an AI system analyzing your own performance. "
-            "Based on the following history of AI-generated changes and CI failures, "
-            "generate insights to improve future analysis:\n\n"
-            f"{data}\n\n"
-            "Provide:\n"
-            "1. Patterns in successful AI fixes\n"
-            "2. Common false positives to avoid\n"
-            "3. Suggested improvements to analysis prompts\n"
-            "4. New checks to add\n\n"
-            "Return as markdown."
+              "You are a senior Python developer refactoring a crypto trading bot. "
+              "Based on the following complexity analysis, suggest specific refactoring:\n\n"
+              f"{complexity}\n\n"
+              "For each complex function (C grade or higher):\n"
+              "1. Suggest extraction into smaller functions\n"
+              "2. Recommend design patterns\n"
+              "3. Identify duplicated logic\n"
+              "4. Suggest type hints and better naming\n"
+              "Output as a structured refactoring plan."
           )
 
           payload = {
-            "model": "llama-3.1-70b-versatile",
-            "messages": [{"role": "user", "content": prompt}],
-            "temperature": 0.3,
-            "max_tokens": 3000,
+              "model": "llama-3.1-70b-versatile",
+              "messages": [{"role": "user", "content": prompt}],
+              "temperature": 0.2,
+              "max_tokens": 3000,
           }
 
           req = urllib.request.Request(
-            "https://api.groq.com/openai/v1/chat/completions",
-            data=json.dumps(payload).encode(),
-            headers={
-              "Authorization": f"Bearer {os.environ['GROQ_API_KEY']}",
-              "Content-Type": "application/json",
-            },
+              "https://api.groq.com/openai/v1/chat/completions",
+              data=json.dumps(payload).encode(),
+              headers={
+                  "Authorization": f"Bearer {os.environ['GROQ_API_KEY']}",
+                  "Content-Type": "application/json",
+              },
           )
 
           try:
-            with urllib.request.urlopen(req, timeout=120) as resp:
-              result = json.loads(resp.read())
-              insights = result["choices"][0]["message"]["content"]
-            with open(".github/AI_INSIGHTS.md", "w", encoding="utf-8") as f:
-              f.write("# 🤖 AI Self-Improvement Insights\n\n")
-              f.write(f"*Generated: {__import__('datetime').datetime.now().isoformat()}*\n\n")
-              f.write(insights)
-            print("Insights generated successfully.")
+              with urllib.request.urlopen(req, timeout=120) as resp:
+                  result = json.loads(resp.read())
+                  report = result["choices"][0]["message"]["content"]
+              with open("ai-refactoring-plan.md", "w", encoding="utf-8") as f:
+                  f.write("# 🔄 AI Self-Improvement Plan\n\n")
+                  f.write(report)
           except Exception as e:
-            print(f"Self-improvement failed: {e}")
+              with open("ai-refactoring-plan.md", "w", encoding="utf-8") as f:
+                  f.write(f"# 🔄 AI Self-Improvement Plan\n\nError: {e}")
           PY
 
-      - name: 📊 Summary
+      - name: 📤 Upload plan
         if: always()
-        run: |
-          echo "# 🧬 AI Self-Improvement" >> $GITHUB_STEP_SUMMARY
-          echo "Weekly learning cycle completed." >> $GITHUB_STEP_SUMMARY
+        uses: actions/upload-artifact@v4
+        with:
+          name: ai-refactoring-plan
+          path: ai-refactoring-plan.md
+          retention-days: 30
+
+      - name: 🚀 Create improvement PR
+        if: env.GROQ_API_KEY != ''
+        uses: peter-evans/create-pull-request@v7
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          branch: ai/self-improve-${{ github.run_id }}
+          delete-branch: true
+          title: "🔄 AI Self-Improvement Report"
+          commit-message: "docs(refactor): AI refactoring plan [skip ci]"
+          body: |
+            ## 🤖 AI Self-Improvement Analysis
+
+            Weekly automated code quality review.
+            See `ai-refactoring-plan.md` for details.
+          labels: |
+            ai-generated
+            refactoring
+            documentation

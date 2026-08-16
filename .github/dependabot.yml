@@ -1,6 +1,6 @@
 version: 2
 updates:
-  # 🐍 1. Мониторинг Python-зависимостей (requirements.txt)
+  # Python dependencies
   - package-ecosystem: "pip"
     directory: "/"
     target-branch: "main"
@@ -22,11 +22,9 @@ updates:
       prefix: "chore(deps-pip)"
       include: "scope"
     rebase-strategy: "auto"
-    # Игнорируем breaking changes (мажорные апдейты)
     ignore:
       - dependency-name: "*"
         update-types: ["version-update:semver-major"]
-    # Группировка мелких патчей в один аккуратный PR
     groups:
       python-patches:
         applies-to: version-updates
@@ -36,7 +34,7 @@ updates:
           - "patch"
           - "minor"
 
-  # ⚡ 2. Мониторинг GitHub Actions Workflows (.github/workflows)
+  # GitHub Actions
   - package-ecosystem: "github-actions"
     directory: "/"
     target-branch: "main"
@@ -64,7 +62,7 @@ updates:
         patterns:
           - "*"
 
-  # 🐳 3. Мониторинг Dockerfile и контейнеров
+  # Docker
   - package-ecosystem: "docker"
     directory: "/"
     target-branch: "main"
@@ -85,7 +83,6 @@ updates:
       prefix: "chore(docker)"
       include: "scope"
     rebase-strategy: "auto"
-    # Мажорные обновления базовых образов могут ломать совместимость
     ignore:
       - dependency-name: "*"
         update-types: ["version-update:semver-major"]

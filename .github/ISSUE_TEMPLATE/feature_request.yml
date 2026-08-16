@@ -1,0 +1,43 @@
+name: ✨ Feature Request
+description: Предложить улучшение или новую функцию
+title: "[FEATURE] "
+labels: ["enhancement", "triage"]
+assignees:
+  - Alexkkkkk
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Проблема
+      description: Какую проблему решает предложение?
+      placeholder: Сейчас бот не учитывает газ при расчёте позиции...
+
+  - type: textarea
+    id: solution
+    attributes:
+      label: Предлагаемое решение
+      description: Опишите желаемое поведение
+      placeholder: Добавить динамический расчёт газа на основе загруженности сети TON...
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Альтернативы
+      description: Какие ещё варианты рассматривались?
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Область
+      options:
+        - AI/ML (ai_*.py)
+        - Торговый движок (trader, exchange)
+        - Блокчейн / TON (wallet, dedust)
+        - UI / Дашборд (static, templates)
+        - Инфраструктура / DevOps
+        - Безопасность
+        - Другое
+    validations:
+      required: true

@@ -1,47 +1,58 @@
 name: 🐛 Bug Report
-description: Сообщить об ошибке
-labels: [bug]
+description: Сообщить об ошибке в GRINCH-GRAM
+title: "[BUG] "
+labels: ["bug", "triage"]
+assignees:
+  - Alexkkkkk
 body:
   - type: markdown
     attributes:
       value: |
-        Спасибо за репорт! Пожалуйста, заполните все поля.
+        Спасибо за репорт! Пожалуйста, заполните форму максимально подробно.
 
   - type: textarea
     id: description
     attributes:
-      label: Описание
-      description: Что произошло? Что ожидали?
-      placeholder: "Бот не отвечает на команду /start..."
+      label: Описание бага
+      description: Что произошло? Что ожидалось?
+      placeholder: Бот открыл сделку, но не установил TP/SL...
     validations:
       required: true
 
   - type: textarea
     id: reproduce
     attributes:
-      label: Как воспроизвести
-      description: Шаги для воспроизведения
+      label: Шаги воспроизведения
+      description: Как повторить ошибку?
       placeholder: |
-        1. Отправить /start
-        2. Нажать кнопку "Кошелёк"
-        3. Ошибка: ...
+        1. Запустить бота с конфигом X
+        2. Дождаться сигнала на паре GRINCH/TON
+        3. ...
     validations:
       required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Логи / Traceback
+      description: Вставьте релевантные логи (уберите секреты!)
+      render: shell
 
   - type: input
     id: version
     attributes:
       label: Версия / Commit
-      description: git commit hash или тег
-      placeholder: "main@a1b2c3d"
-    validations:
-      required: false
+      description: Хэш коммита или дата деплоя
+      placeholder: main@a1b2c3d
 
-  - type: textarea
-    id: logs
+  - type: dropdown
+    id: severity
     attributes:
-      label: Логи
-      description: Вставьте релевантные логи (если есть)
-      render: shell
+      label: Критичность
+      options:
+        - 🔴 Critical — потеря средств / краш
+        - 🟠 High — некорректная торговля
+        - 🟡 Medium — деградация функционала
+        - 🟢 Low — косметический баг
     validations:
-      required: false
+      required: true

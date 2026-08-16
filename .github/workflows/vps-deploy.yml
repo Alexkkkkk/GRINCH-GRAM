@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       reason:
-        description: "Reason for the manual deployment"
+        description: "Reason for deployment"
         required: false
         default: "manual"
         type: string
@@ -26,12 +26,17 @@ jobs:
     timeout-minutes: 30
 
     steps:
-      - name: Validate deployment secret
+      - name: Validate deployment secrets
         env:
           VPS_SSH_PRIVATE_KEY: ${{ secrets.VPS_SSH_KEY }}
+          VPS_HOST: ${{ secrets.VPS_HOST }}
         run: |
           if [ -z "$VPS_SSH_PRIVATE_KEY" ]; then
             echo "::error::VPS_SSH_KEY is not configured"
+            exit 1
+          fi
+          if [ -z "$VPS_HOST" ]; then
+            echo "::error::VPS_HOST is not configured (should be IP or domain)"
             exit 1
           fi
 
@@ -42,7 +47,7 @@ jobs:
 
       - name: Trust VPS host key
         env:
-          VPS_HOST: 2.27.25.126
+          VPS_HOST: ${{ secrets.VPS_HOST }}
         run: |
           mkdir -p "$HOME/.ssh"
           chmod 700 "$HOME/.ssh"
@@ -51,27 +56,35 @@ jobs:
 
       - name: Deploy main to VPS
         env:
-          VPS_HOST: 2.27.25.126
-          VPS_USER: root
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ secrets.VPS_USER || 'root' }}
         run: |
-          ssh \
-            -o BatchMode=yes \
-            -o StrictHostKeyChecking=yes \
-            "$VPS_USER@$VPS_HOST" \
-            'set -e
+          ssh             -o BatchMode=yes             -o StrictHostKeyChecking=yes             "$VPS_USER@$VPS_HOST"             'set -e
              cd /opt/bot
              export GIT_TERMINAL_PROMPT=0
              git pull origin main
-             docker compose up -d --build'
+             docker compose up -d --build
+             sleep 5
+             docker compose ps
+             docker compose logs --tail 50'
+
+      - name: Health check after deploy
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+        run: |
+          for i in $(seq 1 12); do
+            if curl --fail --silent --max-time 10 "http://$VPS_HOST:3000/health"; then
+              echo "✅ VPS health check passed"
+              exit 0
+            fi
+            sleep 5
+          done
+          echo "::error::VPS health check failed after deploy"
+          exit 1
 
       - name: Record dispatch context
         if: github.event_name == 'repository_dispatch'
-        env:
-          EVENT_SEVERITY: ${{ github.event.client_payload.severity }}
-          EVENT_SERVICE: ${{ github.event.client_payload.service }}
-          EVENT_VPS_IP: ${{ github.event.client_payload.vps_ip }}
         run: |
           echo "Deployment triggered by repository_dispatch"
-          echo "severity=$EVENT_SEVERITY"
-          echo "service=$EVENT_SERVICE"
-          echo "vps_ip=$EVENT_VPS_IP"
+          echo "severity=${{ github.event.client_payload.severity || 'unknown' }}"
+          echo "service=${{ github.event.client_payload.service || 'unknown' }}"
