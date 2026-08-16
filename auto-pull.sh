@@ -2,7 +2,7 @@
 set -euo pipefail
 
 cd /opt/bot
-BRANCH="${VPS_BRANCH:-vps-unpushed-2026-08-13}"
+BRANCH="${VPS_BRANCH:-main}"
 
 git fetch origin "$BRANCH"
 LOCAL=$(git rev-parse HEAD)
