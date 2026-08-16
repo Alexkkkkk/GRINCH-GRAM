@@ -1,24 +1,16 @@
-# CODEOWNERS — обязательные ревьюеры для изменений.
-# Порядок важен: последнее совпадение имеет приоритет.
-# Добавьте backup-мейнтейнера, заменив @backup-maintainer на реальный аккаунт.
-
-# Глобальное правило: все изменения требуют ревью
+# Global owners
 * @Alexkkkkk
 
-# CI/CD и workflow — критичная инфраструктура
-/.github/ @Alexkkkkk
+# Security-sensitive files
 /.github/workflows/ @Alexkkkkk
+/config.py @Alexkkkkk
+/security.py @Alexkkkkk
+/wallet_manager.py @Alexkkkkk
 
-# Исходный код приложения
-/main.py @Alexkkkkk
-/grid_trader.py @Alexkkkkk
+# AI/ML modules
+/ai_*.py @Alexkkkkk
+/brain_fusion.py @Alexkkkkk
 
-# Инфраструктура и контейнеры
-/Dockerfile @Alexkkkkk
-/docker-compose.yml @Alexkkkkk
-
-# Статические ресурсы и UI
+# Frontend
 /static/ @Alexkkkkk
-
-# Сам файл CODEOWNERS — защита от подмены правил ревью
-/.github/CODEOWNERS @Alexkkkkk
+/templates/ @Alexkkkkk

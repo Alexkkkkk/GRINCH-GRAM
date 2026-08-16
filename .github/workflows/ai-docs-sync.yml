@@ -1,117 +1,160 @@
-name: 🤖 AI Docs Sync — Smart Documentation
+name: 📚 AI Documentation Sync
 
 on:
   workflow_call:
   workflow_dispatch:
+  pull_request:
+    branches: [main, master]
 
-permissions: read-all
+permissions:
+  contents: read
+  pull-requests: write
 
 jobs:
-  sync:
-    name: 📚 Documentation Update
+  docs-sync:
+    name: 📝 Documentation Consistency Check
     runs-on: ubuntu-latest
-    timeout-minutes: 15
-    permissions:
-      contents: write
-      pull-requests: write
+    timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v4
+      - name: 📥 Checkout
+        uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
-      - uses: actions/setup-python@v5
+      - name: 🐍 Python 3.11
+        uses: actions/setup-python@v5
         with:
-          python-version: '3.11'
+          python-version: "3.11"
 
-      - name: 📊 Collect Code Changes
+      - name: 🔍 Check Documentation Gaps
         run: |
-          git diff --name-only HEAD~5 HEAD | grep '\.py$' > changed_py.txt || true
-          echo "Changed files since last 5 commits:"
-          cat changed_py.txt 2>/dev/null || echo "None"
+          python3 - <<'PY'
+          import os, json
 
-      - name: 🧠 AI Documentation Update
+          # Проверяем наличие ключевых документов
+          required_docs = {
+              "README.md": "Основное описание проекта",
+              "DEPLOY.md": "Инструкция по деплою",
+              "BUG_REPORT.md": "Шаблон баг-репорта",
+              "AI_NIGHTLY_AUDIT.md": "Последний AI-аудит",
+          }
+
+          gaps = []
+          for doc, desc in required_docs.items():
+              if not os.path.exists(doc):
+                  gaps.append(f"❌ Отсутствует: {doc} ({desc})")
+
+          # Проверяем docstrings в Python-файлах
+          py_files = [f for f in os.listdir(".") if f.endswith(".py") and os.path.isfile(f)]
+          no_docstring = []
+          for f in py_files[:20]:  # Проверяем первые 20
+              with open(f, encoding="utf-8", errors="ignore") as file:
+                  content = file.read(500)
+                  if not content.strip().startswith(('"'', "''', "#")):
+                      no_docstring.append(f)
+
+          report = {
+              "missing_docs": gaps,
+              "no_docstring": no_docstring,
+              "total_py": len(py_files)
+          }
+
+          with open("docs-gap-report.json", "w") as f:
+              json.dump(report, f, indent=2)
+
+          print(f"Missing docs: {len(gaps)}")
+          print(f"Files without docstring: {len(no_docstring)}/{len(py_files)}")
+          PY
+
+      - name: 🧠 AI Documentation Review (Groq)
+        if: env.GROQ_API_KEY != ''
         env:
           GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
         run: |
-          if [ -z "$GROQ_API_KEY" ]; then
-            echo "Skipping docs sync."
-            exit 0
-          fi
-
           python3 - <<'PY'
-          import os, json, urllib.request, glob
+          import os, json, urllib.request
 
-          # Собираем docstrings и сигнатуры функций
-          docs = []
-          for pyfile in glob.glob("*.py"):
-            try:
-              with open(pyfile, encoding="utf-8") as f:
-                content = f.read()
-              # Извлекаем docstrings (простой парсер)
-              lines = content.split('\n')
-              for i, line in enumerate(lines):
-                if 'def ' in line or 'class ' in line:
-                  docs.append(f"{pyfile}:{i+1} {line.strip()}")
-            except Exception:
+          try:
+              with open("docs-gap-report.json", encoding="utf-8") as f:
+                  gaps = json.load(f)
+          except Exception:
+              gaps = {"missing_docs": [], "no_docstring": [], "total_py": 0}
+
+          # Собираем изменённые файлы для контекста
+          changed = []
+          try:
+              with open("changed_files.txt", encoding="utf-8") as f:
+                  changed = [l.strip() for l in f if l.strip().endswith(".py")]
+          except Exception:
               pass
 
-          docs_text = "\n".join(docs[:100]) if docs else "No Python files found."
-
           prompt = (
-            "You are a technical writer. Based on the following code signatures, "
-            "generate or update a concise ARCHITECTURE.md document describing:\n"
-            "1. System overview\n"
-            "2. Key components and their responsibilities\n"
-            "3. Data flow\n"
-            "4. Configuration options\n"
-            "5. Deployment notes\n\n"
-            f"Code signatures:\n{docs_text}\n\n"
-            "Return only the markdown content."
+              "You are a technical documentation reviewer for a crypto trading bot. "
+              "Review the following and suggest documentation improvements:\n\n"
+              f"Missing docs: {gaps['missing_docs']}\n"
+              f"Files lacking docstrings: {gaps['no_docstring'][:10]}\n"
+              f"Recently changed files: {changed[:10]}\n\n"
+              "Provide:\n"
+              "1. Priority list of documentation to add/fix\n"
+              "2. Suggested README sections if missing\n"
+              "3. Docstring templates for key modules\n"
+              "4. Architecture diagram description (Mermaid)\n"
           )
 
           payload = {
-            "model": "llama-3.1-70b-versatile",
-            "messages": [{"role": "user", "content": prompt}],
-            "temperature": 0.2,
-            "max_tokens": 4000,
+              "model": "llama-3.1-70b-versatile",
+              "messages": [{"role": "user", "content": prompt}],
+              "temperature": 0.3,
+              "max_tokens": 2500,
           }
 
           req = urllib.request.Request(
-            "https://api.groq.com/openai/v1/chat/completions",
-            data=json.dumps(payload).encode(),
-            headers={
-              "Authorization": f"Bearer {os.environ['GROQ_API_KEY']}",
-              "Content-Type": "application/json",
-            },
+              "https://api.groq.com/openai/v1/chat/completions",
+              data=json.dumps(payload).encode(),
+              headers={
+                  "Authorization": f"Bearer {os.environ['GROQ_API_KEY']}",
+                  "Content-Type": "application/json",
+              },
           )
 
           try:
-            with urllib.request.urlopen(req, timeout=120) as resp:
-              result = json.loads(resp.read())
-              content = result["choices"][0]["message"]["content"]
-            with open("ARCHITECTURE.md", "w", encoding="utf-8") as f:
-              f.write(content)
-            print("docs_generated=true" >> open(os.environ.get("GITHUB_ENV", "/dev/null"), "a"))
+              with urllib.request.urlopen(req, timeout=120) as resp:
+                  result = json.loads(resp.read())
+                  report = result["choices"][0]["message"]["content"]
+              with open("ai-docs-report.md", "w", encoding="utf-8") as f:
+                  f.write("# 📚 AI Documentation Review\n\n")
+                  f.write(report)
           except Exception as e:
-            print(f"Docs generation failed: {e}")
-            print("docs_generated=false" >> open(os.environ.get("GITHUB_ENV", "/dev/null"), "a"))
+              with open("ai-docs-report.md", "w", encoding="utf-8") as f:
+                  f.write(f"# 📚 AI Documentation Review\n\nError: {e}")
           PY
 
-      - name: 🚀 Create Docs PR
-        if: env.docs_generated == 'true'
-        uses: peter-evans/create-pull-request@v7
+      - name: 📤 Upload Docs Report
+        if: always()
+        uses: actions/upload-artifact@v4
         with:
-          token: ${{ secrets.GITHUB_TOKEN }}
-          branch: ai/docs-update-${{ github.run_id }}
-          delete-branch: true
-          title: "📚 AI Docs: Architecture update"
-          commit-message: "docs(ai): auto-generated architecture update [skip ci]"
-          body: |
-            ## 🤖 AI-Generated Documentation Update
+          name: docs-sync-report
+          path: |
+            docs-gap-report.json
+            ai-docs-report.md
+          retention-days: 30
 
-            This PR updates ARCHITECTURE.md based on recent code changes.
-
-            **Review required before merge.**
-          labels: |
-            documentation
-            ai-generated
+      - name: 💬 PR Comment
+        if: github.event_name == 'pull_request' && always()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            let body = '📚 **AI Documentation Sync** — проверка завершена.\n\n';
+            try {
+              const report = fs.readFileSync('ai-docs-report.md', 'utf8');
+              body += report.substring(0, 2000) + (report.length > 2000 ? '\n\n...*(truncated)*' : '');
+            } catch {
+              body += 'AI-анализ недоступен. См. артефакт docs-sync-report.';
+            }
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: body
+            });

@@ -2,20 +2,18 @@ name: 🤖 AI NIGHTLY — Deep System Audit
 
 on:
   schedule:
-    - cron: "0 2 * * *"  # каждую ночь в 2:00 UTC
+    - cron: "0 2 * * *"
   workflow_dispatch:
 
-permissions: read-all
+permissions:
+  contents: write
+  pull-requests: write
 
 jobs:
   deep-audit:
     name: 🔬 Comprehensive AI Audit
     runs-on: ubuntu-latest
     timeout-minutes: 30
-    permissions:
-      contents: write
-      pull-requests: write
-      security-events: write
     steps:
       - uses: actions/checkout@v4
         with:
@@ -45,13 +43,8 @@ jobs:
         env:
           GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
         run: |
-          if [ -z "$GROQ_API_KEY" ]; then
-            echo "Skipping AI deep audit."
-            exit 0
-          fi
-
           python3 - <<'PY'
-          import os, json, urllib.request
+          import os, json, urllib.request, datetime
 
           try:
             with open("full_audit.md", encoding="utf-8") as f:
@@ -59,7 +52,6 @@ jobs:
           except Exception:
             audit_data = "No audit data."
 
-          # Собираем архитектуру проекта
           try:
             with open("README.md", encoding="utf-8") as f:
               readme = f.read()[:2000]
@@ -67,19 +59,19 @@ jobs:
             readme = "No README."
 
           prompt = (
-            "You are conducting a comprehensive audit of a production cryptocurrency trading bot. "
-            "Analyze the following data and provide a detailed report:\n\n"
-            f"README:\n{readme}\n\n"
-            f"Static Analysis:\n{audit_data}\n\n"
-            "Provide:\n"
-            "1. Executive Summary (overall health score 1-10)\n"
-            "2. Critical Issues requiring immediate attention\n"
-            "3. Performance bottlenecks\n"
-            "4. Code quality recommendations\n"
-            "5. Architecture improvement suggestions\n"
-            "6. Security hardening steps\n"
-            "7. Testing gaps\n\n"
-            "Be specific. Reference files and functions."
+              "You are conducting a comprehensive audit of a production cryptocurrency trading bot. "
+              "Analyze the following data and provide a detailed report:\n\n"
+              f"README:\n{readme}\n\n"
+              f"Static Analysis:\n{audit_data}\n\n"
+              "Provide:\n"
+              "1. Executive Summary (overall health score 1-10)\n"
+              "2. Critical Issues requiring immediate attention\n"
+              "3. Performance bottlenecks\n"
+              "4. Code quality recommendations\n"
+              "5. Architecture improvement suggestions\n"
+              "6. Security hardening steps\n"
+              "7. Testing gaps\n\n"
+              "Be specific. Reference files and functions."
           )
 
           payload = {
@@ -98,24 +90,28 @@ jobs:
             },
           )
 
+          now = datetime.datetime.now().isoformat()
           try:
             with urllib.request.urlopen(req, timeout=180) as resp:
               result = json.loads(resp.read())
               report = result["choices"][0]["message"]["content"]
             with open("AI_NIGHTLY_AUDIT.md", "w", encoding="utf-8") as f:
-              f.write(f"# 🌙 AI Nightly Deep Audit\n\n*Date: {__import__('datetime').datetime.now().isoformat()}*\n\n")
+              f.write(f"# 🌙 AI Nightly Deep Audit\n\n*Date: {now}*\n\n")
               f.write(report)
           except Exception as e:
             with open("AI_NIGHTLY_AUDIT.md", "w", encoding="utf-8") as f:
               f.write(f"# 🌙 AI Nightly Deep Audit\n\nError: {e}\n\n")
           PY
 
-      - name: 📤 Upload to Security Tab
-        uses: github/codeql-action/upload-sarif@v4
+      - name: 📤 Commit Audit Report
         if: always()
-        continue-on-error: true
+        uses: stefanzweifel/git-auto-commit-action@v5
         with:
-          sarif_file: AI_NIGHTLY_AUDIT.md
+          commit_message: "docs(audit): 🌙 nightly deep audit [skip ci]"
+          branch: main
+          commit_user_name: "Grinch-Gram Bot"
+          commit_user_email: "bot@grinch-gram.local"
+          file_pattern: "AI_NIGHTLY_AUDIT.md"
 
       - name: 🚀 Create Audit PR (if critical issues found)
         if: contains(fromJSON('["success"]'), 'success')

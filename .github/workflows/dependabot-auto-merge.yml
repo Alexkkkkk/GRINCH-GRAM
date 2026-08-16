@@ -1,140 +1,36 @@
-name: 👑 BEYOND GOD-MODE Dependabot Governance Agent
+name: 🤖 Dependabot Auto-Merge
 
 on:
-  pull_request:
-    types: [opened, synchronize, reopened, labeled]
+  pull_request_target:
+    types: [opened, synchronize, reopened]
     branches: [main, master]
 
-permissions: read-all
-
-concurrency:
-  group: automerge-supreme-${{ github.event.pull_request.number }}
-  cancel-in-progress: true
+permissions:
+  contents: write
+  pull-requests: write
 
 jobs:
-  supreme-automerge-engine:
-    name: 🛡️ Autonomous CI/CD Gatekeeper & Auto-Merge Engine
+  auto-merge:
+    name: Auto-merge Dependabot PRs
     runs-on: ubuntu-latest
     if: github.actor == 'dependabot[bot]'
-    timeout-minutes: 15
-    permissions:
-      contents: write
-      pull-requests: write
-      checks: read
-      statuses: read
-
     steps:
-      - name: 📥 Fetch Dependabot Intelligence Metadata
+      - name: Dependabot metadata
         id: metadata
-        uses: dependabot/fetch-metadata@v3
+        uses: dependabot/fetch-metadata@v2
         with:
           github-token: "${{ secrets.GITHUB_TOKEN }}"
 
-      - name: 🔬 Deep Security & Scope Risk Matrix
-        id: risk_assessment
-        run: |
-          set -euo pipefail
-          UPDATE_TYPE="${{ steps.metadata.outputs.update-type }}"
-          ECOSYSTEM="${{ steps.metadata.outputs.package-ecosystem }}"
-          
-          echo "🔍 [Dependabot Intelligence] Ecosystem: $ECOSYSTEM | Update Type: $UPDATE_TYPE"
-          
-          # Оценка риска: только проверенные патчи, минорки и инфраструктура
-          if [[ "$UPDATE_TYPE" == "version-update:semver-patch" ]] || \
-             [[ "$UPDATE_TYPE" == "version-update:semver-minor" ]] || \
-             [[ "$ECOSYSTEM" == "github-actions" ]] || \
-             [[ "$ECOSYSTEM" == "docker" ]]; then
-            echo "IS_SAFE=true" >> $GITHUB_ENV
-            echo "RISK_LEVEL=LOW (Safe for Autonomous Merge)" >> $GITHUB_ENV
-            echo "✅ Изменения признаны безопасными."
-          else
-            echo "IS_SAFE=false" >> $GITHUB_ENV
-            echo "RISK_LEVEL=HIGH (Major Version / Manual Review Required)" >> $GITHUB_ENV
-            echo "⚠️ Обнаружено мажорное обновление! Авто-слив заблокирован."
-          fi
-
-      - name: ⏳ Wait for CI/CD Pipeline Checks
-        if: env.IS_SAFE == 'true'
-        uses: poseidon/wait-for-status-checks@v0.7.0
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
-          interval_seconds: 10
-          timeout_seconds: 600
-
-      - name: 🔑 Auto-Approve Pull Request
-        if: env.IS_SAFE == 'true'
-        run: |
-          for i in {1..3}; do
-            gh pr review --approve --body "🟢 [Autonomous Governance] Зависимость проверена и одобрена агентом." "$PR_URL" && break || sleep 5
-          done
+      - name: Auto-approve patch/minor
+        if: steps.metadata.outputs.update-type != 'version-update:semver-major'
+        run: gh pr review --approve "$PR_URL"
         env:
           PR_URL: ${{ github.event.pull_request.html_url }}
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: 🚀 Enable Smart Auto-Merge (Squash & Branch Cleanup)
-        if: env.IS_SAFE == 'true'
-        run: |
-          gh pr merge --auto --squash --delete-branch "$PR_URL"
+      - name: Enable auto-merge
+        if: steps.metadata.outputs.update-type != 'version-update:semver-major'
+        run: gh pr merge --auto --squash "$PR_URL"
         env:
           PR_URL: ${{ github.event.pull_request.html_url }}
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: 🏷️ Flag High-Risk PRs for Human Review
-        if: env.IS_SAFE == 'false'
-        run: |
-          gh pr edit "$PR_URL" --add-label "requires-human-review,major-update"
-        env:
-          PR_URL: ${{ github.event.pull_request.html_url }}
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: 📊 Post Executive DevSecOps Audit Summary
-        if: always()
-        uses: actions/github-script@v7
-        with:
-          script: |
-            const ecosystem = "${{ steps.metadata.outputs.package-ecosystem }}";
-            const updateType = "${{ steps.metadata.outputs.update-type }}";
-            const isSafe = process.env.IS_SAFE === 'true';
-            const riskLevel = process.env.RISK_LEVEL || 'UNKNOWN';
-
-            const summaryComment = `## 👑 GRINCH-GRAM Dependabot Governance Agent
-
-            ### 📊 Матрица анализа рисков:
-            | Параметр | Значение |
-            | :--- | :--- |
-            | 📦 **Экосистема** | \`${ecosystem}\` |
-            | 📈 **Тип обновления** | \`${updateType}\` |
-            | 🛡️ **Уровень риска** | \`${riskLevel}\` |
-            | 🚦 **Решение агента** | ${isSafe ? '🟢 **APPROVED & QUEUED FOR AUTO-MERGE**' : '🔴 **BLOCKED (MANUAL REVIEW REQUIRED)**'} |
-
-            ---
-
-            ### ⚡ Автономный статус:
-            ${isSafe 
-              ? '1. ✅ Пройден фильтр безопасности.\\n2. 🔑 Одобрение выставлено (**Approved**).\\n3. 🧪 Подтвержден зеленый статус CI/CD.\\n4. 🧹 Ветка будет удалена автоматически после Squash-слияния.'
-              : '⚠️ **Ахтунг!** Обнаружен мажорный релиз. Во избежание поломок кода в \\`main.py\\` или интерфейса в \\`static/\\`, авто-слив приостановлен.'
-            }`;
-
-            const comments = await github.rest.issues.listComments({
-              issue_number: context.issue.number,
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-            });
-
-            const botComment = comments.data.find(c => c.body.includes('GRINCH-GRAM Dependabot Governance Agent'));
-
-            if (botComment) {
-              await github.rest.issues.updateComment({
-                comment_id: botComment.id,
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                body: summaryComment
-              });
-            } else {
-              await github.rest.issues.createComment({
-                issue_number: context.issue.number,
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                body: summaryComment
-              });
-            }
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

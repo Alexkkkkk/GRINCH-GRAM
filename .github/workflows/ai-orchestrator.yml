@@ -35,6 +35,7 @@ jobs:
       has_python: ${{ steps.context.outputs.has_python }}
       has_docker: ${{ steps.context.outputs.has_docker }}
       has_workflow: ${{ steps.context.outputs.has_workflow }}
+      has_docs: ${{ steps.context.outputs.has_docs }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -55,6 +56,7 @@ jobs:
           echo "has_python=$(grep -q '\.py$' changed_files.txt && echo 'true' || echo 'false')" >> $GITHUB_OUTPUT
           echo "has_docker=$(grep -q -E 'Dockerfile|docker-compose' changed_files.txt && echo 'true' || echo 'false')" >> $GITHUB_OUTPUT
           echo "has_workflow=$(grep -q '\.github/workflows/' changed_files.txt && echo 'true' || echo 'false')" >> $GITHUB_OUTPUT
+          echo "has_docs=$(grep -q -E '\.md$|README' changed_files.txt && echo 'true' || echo 'false')" >> $GITHUB_OUTPUT
 
   ai-code-review:
     name: 👁️ Deep Code Review
@@ -80,14 +82,14 @@ jobs:
   ai-docs-sync:
     name: 📚 Documentation Sync
     needs: analyze-context
-    if: needs.analyze-context.outputs.has_python == 'true'
+    if: needs.analyze-context.outputs.has_docs == 'true' || needs.analyze-context.outputs.has_python == 'true'
     uses: ./.github/workflows/ai-docs-sync.yml
     secrets: inherit
 
   ai-summary:
     name: 📊 Executive AI Report
     needs: [ai-code-review, ai-bug-hunter, ai-security-audit, ai-docs-sync]
-    if: always()
+    if: always() && github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     permissions:
       pull-requests: write
@@ -103,6 +105,7 @@ jobs:
             ];
 
             const emoji = (s) => s === 'success' ? '✅' : s === 'failure' ? '❌' : '⏭️';
+            const hasFailures = jobs.some(j => j.status === 'failure');
 
             const report = `## 🤖 AI Orchestrator Report
 
@@ -110,11 +113,28 @@ jobs:
             | :--- | :--- |
             ${jobs.map(j => `| ${j.name} | ${emoji(j.status)} ${j.status} |`).join('\n')}
 
-            ${jobs.some(j => j.status === 'failure') ? '🔴 **Внимание:** Найдены проблемы. Проверьте отдельные AI-отчёты выше.' : '🟢 **Все AI-проверки пройдены.**'}`;
+            ${hasFailures ? '🔴 **Внимание:** Найдены проблемы. Проверьте отдельные AI-отчёты выше.' : '🟢 **Все AI-проверки пройдены.**'}`;
 
-            github.rest.issues.createComment({
+            const comments = await github.rest.issues.listComments({
               issue_number: context.issue.number,
               owner: context.repo.owner,
               repo: context.repo.repo,
-              body: report,
             });
+
+            const botComment = comments.data.find(c => c.body.includes('AI Orchestrator Report'));
+
+            if (botComment) {
+              await github.rest.issues.updateComment({
+                comment_id: botComment.id,
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                body: report
+              });
+            } else {
+              await github.rest.issues.createComment({
+                issue_number: context.issue.number,
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                body: report
+              });
+            }

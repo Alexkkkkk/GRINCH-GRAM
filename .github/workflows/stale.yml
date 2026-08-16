@@ -1,33 +1,27 @@
-name: Stale Bot
+name: 🧹 Stale Issues & PRs
 
 on:
   schedule:
-    - cron: "0 0 * * *"
-  workflow_dispatch:
+    - cron: "0 6 * * *"
 
 permissions:
   issues: write
   pull-requests: write
 
-concurrency:
-  group: stale-${{ github.ref }}
-  cancel-in-progress: true
-
 jobs:
   stale:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
     steps:
       - uses: actions/stale@v9
         with:
-          stale-issue-message: "⏳ Этот issue неактивен 60 дней. Закроется через 7 дней без активности."
-          stale-pr-message: "⏳ Этот PR неактивен 30 дней. Закроется через 7 дней."
-          close-issue-message: "🔒 Issue закрыт из-за неактивности. Переоткрой, если актуально."
-          close-pr-message: "🔒 PR закрыт из-за неактивности."
-          days-before-stale: 60
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+          stale-issue-message: "🤖 Этот issue неактивен 30 дней. Отметьте его свежим комментарием, чтобы предотвратить автозакрытие."
+          stale-pr-message: "🤖 Этот PR неактивен 14 дней. Обновите его или закройте, если неактуален."
+          close-issue-message: "🔒 Автоматически закрыто из-за неактивности. Переоткройте, если проблема актуальна."
+          close-pr-message: "🔒 Автоматически закрыто из-за неактивности."
+          days-before-issue-stale: 30
+          days-before-pr-stale: 14
           days-before-close: 7
-          exempt-issue-labels: "pinned,security,wontfix"
-          exempt-pr-labels: "wip,pinned,dependabot"
           stale-issue-label: "stale"
-          stale-pr-label: "stale"
-          remove-stale-when-updated: true
+          exempt-issue-labels: "pinned,security,critical"
+          exempt-pr-labels: "pinned,WIP"

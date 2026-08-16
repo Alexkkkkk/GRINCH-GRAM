@@ -2,9 +2,9 @@ name: 🚀 ULTRA Autonomous CI/CD Engine
 
 on:
   push:
-    branches: [ main, master, develop ]
+    branches: [main, master, develop]
   pull_request:
-    branches: [ main, master ]
+    branches: [main, master]
   workflow_dispatch:
 
 permissions:
@@ -22,7 +22,6 @@ jobs:
     permissions:
       contents: write
       pull-requests: write
-
     steps:
       - name: 📥 Check out repository
         uses: actions/checkout@v4
@@ -51,13 +50,13 @@ jobs:
 
       - name: 🔍 Compile Python Code
         run: |
-          python -m compileall -q \
-            -x '(^|/)(\.git|__pycache__|attached_assets|data|backups)(/|$)' \
-            .
+          python -m compileall -q             -x '(^|/)(\.git|__pycache__|attached_assets|data|backups)(/|$)'             .
 
       - name: 🛡️ Security Audit (Bandit)
         run: |
+          bandit -r . -ll -iii -f json -o bandit-report.json || true
           bandit -r . -ll -iii
+        # Не блокируем CI, но отчёт сохраняем для анализа
         continue-on-error: true
 
       - name: 🛠️ Auto-Fix Code Issues (Ruff & Black)
@@ -74,12 +73,19 @@ jobs:
           commit_user_name: "Grinch-Gram Bot"
           commit_user_email: "bot@grinch-gram.local"
 
+      - name: 📤 Upload Bandit Report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: bandit-security-report
+          path: bandit-report.json
+          retention-days: 30
+
   docker-deep-test:
     name: 🐳 Docker Build & Live Health Audit
     needs: auto-code-doctor
     runs-on: ubuntu-latest
     timeout-minutes: 20
-
     steps:
       - name: 📥 Check out repository
         uses: actions/checkout@v4
@@ -101,13 +107,7 @@ jobs:
           set -euo pipefail
 
           echo "🚀 Запуск контейнера..."
-          docker run --detach \
-            --name grinch-gram-ci \
-            --publish 3000:3000 \
-            --env PORT=3000 \
-            --env LOW_MEMORY_MODE=1 \
-            --env DATA_DIR=/tmp/data \
-            grinch-gram:ultra
+          docker run --detach             --name grinch-gram-ci             --publish 3000:3000             --env PORT=3000             --env LOW_MEMORY_MODE=1             --env DATA_DIR=/tmp/data             grinch-gram:ultra
 
           trap 'docker logs grinch-gram-ci || true; docker rm -f grinch-gram-ci || true' EXIT
 
@@ -144,7 +144,7 @@ jobs:
           echo "| :--- | :--- | :--- |" >> $GITHUB_STEP_SUMMARY
           echo "| 🐍 **Синтаксис Python** | ✅ OK | Ошибок компиляции нет |" >> $GITHUB_STEP_SUMMARY
           echo "| 🛠️ **Авто-исправление (Ruff & Black)** | ✅ Завершено | Код отформатирован и оптимизирован |" >> $GITHUB_STEP_SUMMARY
-          echo "| 🛡️ **Анализ безопасности (Bandit)** | ⚠️ Проверен | См. логи на предмет уязвимостей |" >> $GITHUB_STEP_SUMMARY
+          echo "| 🛡️ **Анализ безопасности (Bandit)** | ⚠️ Проверен | См. артефакт bandit-security-report |" >> $GITHUB_STEP_SUMMARY
           echo "| 🐳 **Docker-сборка** | ✅ Успешно | Образ успешно собран через Buildx |" >> $GITHUB_STEP_SUMMARY
           echo "| 🧪 **Дымовой тест контейнера** | ✅ Пройден | Контейнер стартует и отвечает на /health |" >> $GITHUB_STEP_SUMMARY
           echo "| 🎨 **Защита UI / static** | ✅ Сохранено | Дизайн и статика не повреждены |" >> $GITHUB_STEP_SUMMARY
