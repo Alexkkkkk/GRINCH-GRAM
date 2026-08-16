@@ -2693,7 +2693,9 @@ def webhook_github():
     import threading
 
     # Проверяем подпись (опционально, если задан WEBHOOK_SECRET)
-    secret = os.getenv("WEBHOOK_SECRET", os.getenv("GITHUB_WEBHOOK_SECRET", "")).encode()
+    secret = os.getenv(
+        "WEBHOOK_SECRET", os.getenv("GITHUB_WEBHOOK_SECRET", "")
+    ).encode()
     if secret:
         sig_header = request.headers.get("X-Hub-Signature-256", "")
         expected = (
