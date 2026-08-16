@@ -1737,22 +1737,56 @@ def api_security_unban():
     return jsonify({"ok": True, "unbanned": ip})
 
 
-_GIT_LAST_UPDATE_CACHE = {"value": None}
+_GIT_STATUS_CACHE = {"value": None}
 
 
-def _git_last_update():
-    """Дата и время последнего коммита из git-репозитория (последнее обновление с GitHub).
+def _git_status_info():
+    """Информация о статусе git: коммиты позади origin/main, хэш, дата.
 
-    Успешный результат кешируется навсегда (дата коммита не меняется без перезапуска).
-    Неудача НЕ кешируется, чтобы временная недоступность git могла восстановиться
-    на следующем запросе, а не залипнуть на "—" до перезапуска процесса.
+    Формат: '3 позади | a91459e · 16.08' или 'Актуально | a91459e · 16.08'
+    При недоступности git — пробует GitHub API.
     """
-    if _GIT_LAST_UPDATE_CACHE["value"] is not None:
-        return _GIT_LAST_UPDATE_CACHE["value"]
+    if _GIT_STATUS_CACHE["value"] is not None:
+        return _GIT_STATUS_CACHE["value"]
+
+    cwd = os.path.dirname(os.path.abspath(__file__))
+    behind = 0
+    short_hash = "?"
+    date_str = ""
+
+    # 1. Количество коммитов позади origin/main
+    try:
+        out = subprocess.run(
+            ["git", "rev-list", "--count", "HEAD..origin/main"],
+            cwd=cwd,
+            capture_output=True,
+            text=True,
+            timeout=2,
+        )
+        if out.returncode == 0:
+            behind = int(out.stdout.strip() or 0)
+    except Exception:
+        pass
+
+    # 2. Короткий хэш HEAD
+    try:
+        out = subprocess.run(
+            ["git", "rev-parse", "--short", "HEAD"],
+            cwd=cwd,
+            capture_output=True,
+            text=True,
+            timeout=2,
+        )
+        if out.returncode == 0:
+            short_hash = out.stdout.strip()[:7]
+    except Exception:
+        pass
+
+    # 3. Дата последнего коммита
     try:
         out = subprocess.run(
             ["git", "log", "-1", "--format=%cI"],
-            cwd=os.path.dirname(os.path.abspath(__file__)),
+            cwd=cwd,
             capture_output=True,
             text=True,
             timeout=2,
@@ -1763,12 +1797,45 @@ def _git_last_update():
                 from datetime import datetime
 
                 dt = datetime.fromisoformat(iso)
-                result = dt.strftime("%d.%m.%Y %H:%M")
-                _GIT_LAST_UPDATE_CACHE["value"] = result
-                return result
-    except Exception as e:
-        log.debug(f"[GitInfo] не удалось получить дату последнего коммита: {e}")
-    return "—"
+                date_str = dt.strftime("%d.%m")
+    except Exception:
+        pass
+
+    # 4. Fallback: GitHub API если git полностью недоступен
+    if short_hash == "?":
+        try:
+            import urllib.request
+
+            req = urllib.request.Request(
+                "https://api.github.com/repos/Alexkkkkk/GRINCH-GRAM/commits?per_page=1",
+                headers={"Accept": "application/vnd.github.v3+json"},
+            )
+            with urllib.request.urlopen(req, timeout=3) as resp:
+                data = json.loads(resp.read())
+                if data:
+                    c = data[0]
+                    short_hash = c["sha"][:7]
+                    from datetime import datetime
+
+                    dt = datetime.fromisoformat(
+                        c["commit"]["committer"]["date"].replace("Z", "+00:00")
+                    )
+                    date_str = dt.strftime("%d.%m")
+        except Exception as e:
+            log.debug(f"[GitInfo] GitHub API fallback failed: {e}")
+
+    # Формируем результат
+    if behind > 0:
+        word = "коммит" if behind == 1 else "коммита" if behind < 5 else "коммитов"
+        result = f"{behind} {word} позади | {short_hash}"
+    else:
+        result = f"Актуально | {short_hash}"
+
+    if date_str:
+        result += f" · {date_str}"
+
+    _GIT_STATUS_CACHE["value"] = result
+    return result
 
 
 # ════════════════════════════════════════════════════════════════════════════
@@ -1796,7 +1863,7 @@ def index():
         init_running=init_running,
         init_ai=init_ai,
         init_balance=init_balance,
-        git_last_update=_git_last_update(),
+        git_last_update=_git_status_info(),
     )
 
 
