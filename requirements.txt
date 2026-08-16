@@ -12,16 +12,16 @@ orjson==3.11.9
 
 # ── Database ───────────────────────────────────────────────────────────────────
 psycopg2-binary==2.9.12
-sqlalchemy==2.0.51
+sqlalchemy==2.0.52
 
 # ── AI / ML ────────────────────────────────────────────────────────────────────
 numpy==1.26.4
-pandas==2.2.2
+pandas==2.3.3
 scikit-learn==1.9.0
 xgboost==2.1.4
-lightgbm==4.6.0
-catboost==1.2.7
-joblib==1.4.2
+lightgbm==4.7.0
+catboost==1.2.10
+joblib==1.5.3
 
 # ── Technical Analysis ─────────────────────────────────────────────────────────
 ta==0.11.0
@@ -34,13 +34,13 @@ dedust==1.1.4
 cryptography==50.0.0
 
 # ── HTTP / Async ──────────────────────────────────────────────────────────────
-requests==2.33.0
+requests==2.34.2
 aiohttp==3.14.3
 
 # ── Misc ──────────────────────────────────────────────────────────────────────
 python-dotenv==1.2.2
-python-telegram-bot==21.1.1
-openai==1.65.0
-email-validator==2.2.0
+python-telegram-bot==21.11.1
+openai==1.109.1
+email-validator==2.3.0
 apscheduler==3.11.3
-psutil==7.0.0
+psutil==7.2.2
