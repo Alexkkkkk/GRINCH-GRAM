@@ -1,139 +1,909 @@
-name: 👑 AI Supreme Agent — Master Control
+name: AI Supreme Agent v3
 
 on:
+  repository_dispatch:
+    types: [vps-error, vps-warning, vps-anomaly]
+  pull_request:
+    types: [opened, synchronize, reopened]
+    branches: [main, master]
+  push:
+    branches: [main, master]
   schedule:
-    - cron: "0 0 * * 0"
+    - cron: "0 */3 * * *"
   workflow_dispatch:
     inputs:
-      focus:
-        description: "Focus area"
+      mode:
+        description: "AI Agent Mode"
         required: true
-        default: "full"
+        default: "auto"
         type: choice
         options:
-          - full
-          - security
-          - performance
-          - architecture
+          - auto
+          - deep-scan
+          - emergency-fix
+          - learn-from-history
+          - force-fix-all
 
 permissions:
   contents: read
-  issues: write
+
+env:
+  KIMI_MODEL: "moonshot-v1-auto"
+  KIMI_BASE_URL: "https://api.moonshot.cn/v1"
+  GROQ_MODEL: "llama-3.3-70b-versatile"
+  AI_TEMPERATURE: "0.1"
+  AI_MAX_TOKENS: "4000"
+  AI_TIMEOUT: "120"
+  CACHE_DIR: ".ai-cache"
+  VPS_HOST: "2.27.25.126"
+  VPS_USER: "root"
+  VPS_DEPLOY_DIR: "/opt/bot"
+
+concurrency:
+  group: supreme-ai-${{ github.ref }}-${{ github.event_name }}
+  cancel-in-progress: ${{ github.event_name != 'repository_dispatch' }}
 
 jobs:
-  supreme-analysis:
-    name: 👑 Supreme Intelligence Analysis
+  vps-error-intake:
+    name: Phase 0 — VPS Error Intake
     runs-on: ubuntu-latest
+    if: github.event_name == 'repository_dispatch'
+    outputs:
+      error_log: ${{ steps.intake.outputs.error_log }}
+      severity: ${{ steps.intake.outputs.severity }}
+      service: ${{ steps.intake.outputs.service }}
+      vps_ip: ${{ steps.intake.outputs.vps_ip }}
+      trigger_type: ${{ steps.intake.outputs.trigger_type }}
     steps:
-      - name: 📥 Checkout
-        uses: actions/checkout@v7
+      - name: Receive VPS Error
+        id: intake
+        env:
+          PAYLOAD_JSON: ${{ toJson(github.event.client_payload) }}
+        run: |
+          set -euo pipefail
+          printf '%s\n' "$PAYLOAD_JSON" > /tmp/payload.json
+          ERROR_LOG="$(jq -r '.error_log // ""' /tmp/payload.json)"
+          SEVERITY="$(jq -r '.severity // "warning"' /tmp/payload.json)"
+          SERVICE="$(jq -r '.service // "unknown"' /tmp/payload.json)"
+          VPS_IP="$(jq -r '.vps_ip // empty' /tmp/payload.json)"
+          VPS_IP="${VPS_IP:-${{ env.VPS_HOST }}}"
+          echo "=== VPS ERROR RECEIVED ==="
+          echo "Severity: $SEVERITY"
+          echo "Service: $SERVICE"
+          echo "VPS IP: $VPS_IP"
+          printf '%s\n' "$ERROR_LOG" | head -20
+          {
+            echo "error_log<<GITHUB_ACTIONS_EOF"
+            printf '%s\n' "$ERROR_LOG"
+            echo "GITHUB_ACTIONS_EOF"
+            echo "severity=$SEVERITY"
+            echo "service=$SERVICE"
+            echo "vps_ip=$VPS_IP"
+            echo "trigger_type=vps-realtime"
+          } >> "$GITHUB_OUTPUT"
+
+  context-gathering:
+    name: Phase 1 — Context Intelligence
+    runs-on: ubuntu-latest
+    needs: [vps-error-intake]
+    if: |
+      always() && 
+      (github.event_name != 'repository_dispatch' || needs.vps-error-intake.result == 'success')
+    permissions:
+      contents: read
+    outputs:
+      trigger: ${{ steps.context.outputs.trigger }}
+      changed_files: ${{ steps.context.outputs.files }}
+      changed_py: ${{ steps.context.outputs.py_files }}
+      complexity_score: ${{ steps.metrics.outputs.complexity }}
+      has_secrets: ${{ steps.secrets.outputs.found }}
+      risk_level: ${{ steps.risk.outputs.level }}
+      ai_plan: ${{ steps.planner.outputs.plan }}
+      has_ai_key: ${{ steps.check-key.outputs.has_ai_key }}
+      ai_provider: ${{ steps.check-key.outputs.ai_provider }}
+      vps_error: ${{ steps.vps-info.outputs.vps_error }}
+      vps_severity: ${{ steps.vps-info.outputs.vps_severity }}
+    steps:
+      - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-
-      - name: 🐍 Python 3.11
-        uses: actions/setup-python@v7
+      - uses: actions/setup-python@v5
         with:
-          python-version: "3.11"
-
-      - name: 📦 Install tools
-        run: |
-          pip install ruff bandit radon vulture
-
-      - name: 🔬 Full project analysis
-        run: |
-          echo "# Supreme Agent Analysis" > supreme-report.md
-          echo "## Complexity" >> supreme-report.md
-          radon cc . -s -a >> supreme-report.md 2>/dev/null || true
-          echo "" >> supreme-report.md
-          echo "## Maintainability" >> supreme-report.md
-          radon mi . -s >> supreme-report.md 2>/dev/null || true
-          echo "" >> supreme-report.md
-          echo "## Security" >> supreme-report.md
-          bandit -r . -ll -iii -f txt >> supreme-report.md 2>/dev/null || true
-
-      - name: 🧠 Supreme AI Analysis (Groq)
-        if: env.GROQ_API_KEY != ''
+          python-version: '3.11'
+      - name: VPS Error Info
+        id: vps-info
+        if: github.event_name == 'repository_dispatch'
         env:
-          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
-          FOCUS: ${{ github.event.inputs.focus || 'full' }}
+          PAYLOAD_JSON: ${{ toJson(github.event.client_payload) }}
         run: |
-          python3 - <<'PY'
-          import os, urllib.request, json
-
+          set -euo pipefail
+          printf '%s\n' "$PAYLOAD_JSON" > /tmp/payload.json
+          ERROR_LOG="$(jq -r '.error_log // ""' /tmp/payload.json)"
+          SEVERITY="$(jq -r '.severity // "warning"' /tmp/payload.json)"
+          {
+            echo "vps_error<<GITHUB_ACTIONS_EOF"
+            printf '%s\n' "$ERROR_LOG"
+            echo "GITHUB_ACTIONS_EOF"
+            echo "vps_severity=$SEVERITY"
+          } >> "$GITHUB_OUTPUT"
+      - name: Check AI API Keys
+        id: check-key
+        run: |
+          set -euo pipefail
+          HAS_AI="false"
+          PROVIDER="none"
+          if [ -n "${{ secrets.KIMI_API_KEY }}" ]; then
+            HAS_AI="true"
+            PROVIDER="kimi"
+            echo "::notice::Using Kimi (Moonshot AI)"
+          elif [ -n "${{ secrets.GROQ_API_KEY }}" ]; then
+            HAS_AI="true"
+            PROVIDER="groq"
+            echo "::warning::Falling back to GROQ"
+          else
+            echo "::error::No AI API key configured. Set KIMI_API_KEY or GROQ_API_KEY secret."
+          fi
+          echo "has_ai_key=$HAS_AI" >> "$GITHUB_OUTPUT"
+          echo "ai_provider=$PROVIDER" >> "$GITHUB_OUTPUT"
+      - name: Gather Code Metrics
+        id: metrics
+        run: |
+          set -euo pipefail
+          pip install radon 2>/dev/null || true
+          COMPLEXITY=$(radon cc . -s -a 2>/dev/null | tail -1 || echo "N/A")
+          echo "complexity=$COMPLEXITY" >> "$GITHUB_OUTPUT"
+      - name: Secret Scan
+        id: secrets
+        run: |
+          set -euo pipefail
+          pip install detect-secrets 2>/dev/null || true
+          FOUND="false"
+          if command -v detect-secrets &> /dev/null; then
+            detect-secrets scan --all-files --force-use-all-plugins > .secrets.baseline 2>/dev/null || true
+            if python3 -c "
+          import json, sys
           try:
-              with open("supreme-report.md", encoding="utf-8") as f:
-                  data = f.read()[:4000]
+              with open('.secrets.baseline') as f:
+                  data = json.load(f)
+              sys.exit(1 if data.get('results') else 0)
           except Exception:
-              data = "N/A"
-
-          focus = os.environ.get("FOCUS", "full")
-
-          prompt = (
-              f"You are the Supreme AI Architect of GRINCH-GRAM, a production crypto trading bot. "
-              f"Conduct a {focus.upper()} analysis based on:\n\n{data}\n\n"
-              "Provide strategic recommendations for:\n"
-              "1. Architecture evolution (next 3 months)\n"
-              "2. Technical debt prioritization\n"
-              "3. Performance optimization roadmap\n"
-              "4. Security hardening priorities\n"
-              "5. Team/development process improvements\n"
-              "Be visionary but actionable."
-          )
-
-          payload = {
-              "model": "llama-3.1-70b-versatile",
+              sys.exit(0)
+          " 2>/dev/null; then
+              FOUND="false"
+            else
+              FOUND="true"
+              echo "::warning::Potential secrets detected! Review .secrets.baseline"
+            fi
+          fi
+          echo "found=$FOUND" >> "$GITHUB_OUTPUT"
+      - name: Analyze Context
+        id: context
+        run: |
+          set -euo pipefail
+          if [ "${{ github.event_name }}" == "pull_request" ]; then
+            echo "trigger=pr" >> "$GITHUB_OUTPUT"
+            git fetch origin "${{ github.base_ref }}" --depth=1 2>/dev/null || true
+            git diff --name-only "origin/${{ github.base_ref }}...HEAD" > changed_files.txt 2>/dev/null || \
+            git diff --name-only HEAD~1 HEAD > changed_files.txt 2>/dev/null || echo "" > changed_files.txt
+          elif [ "${{ github.event_name }}" == "repository_dispatch" ]; then
+            echo "trigger=vps-error" >> "$GITHUB_OUTPUT"
+            echo "" > changed_files.txt
+          else
+            echo "trigger=push" >> "$GITHUB_OUTPUT"
+            git diff --name-only HEAD~1 HEAD > changed_files.txt 2>/dev/null || echo "" > changed_files.txt
+          fi
+          echo "files=$(cat changed_files.txt | tr '\n' ' ')" >> "$GITHUB_OUTPUT"
+          echo "py_files=$(grep '\.py$' changed_files.txt | tr '\n' ' ' || echo '')" >> "$GITHUB_OUTPUT"
+      - name: AI Risk Assessment
+        id: planner
+        if: steps.check-key.outputs.has_ai_key == 'true'
+        env:
+          KIMI_API_KEY: ${{ secrets.KIMI_API_KEY }}
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+          KIMI_MODEL: ${{ env.KIMI_MODEL }}
+          KIMI_BASE_URL: ${{ env.KIMI_BASE_URL }}
+          GROQ_MODEL: ${{ env.GROQ_MODEL }}
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import os, json, urllib.request, re, time
+          def call_ai(prompt, max_tokens=500, temperature=0.1, retries=3):
+            kimi_key = os.environ.get("KIMI_API_KEY")
+            groq_key = os.environ.get("GROQ_API_KEY")
+            payload_base = {
               "messages": [{"role": "user", "content": prompt}],
-              "temperature": 0.3,
-              "max_tokens": 4000,
-          }
-
-          req = urllib.request.Request(
-              "https://api.groq.com/openai/v1/chat/completions",
-              data=json.dumps(payload).encode(),
-              headers={
-                  "Authorization": f"Bearer {os.environ['GROQ_API_KEY']}",
-                  "Content-Type": "application/json",
-              },
-          )
-
-          try:
-              with urllib.request.urlopen(req, timeout=180) as resp:
-                  result = json.loads(resp.read())
-                  report = result["choices"][0]["message"]["content"]
-              with open("ai-supreme-report.md", "w", encoding="utf-8") as f:
-                  f.write("# 👑 AI Supreme Agent Report\n\n")
-                  f.write(report)
-          except Exception as e:
-              with open("ai-supreme-report.md", "w", encoding="utf-8") as f:
-                  f.write(f"# 👑 AI Supreme Agent Report\n\nError: {e}")
-          PY
-
-      - name: 📤 Upload report
-        if: always()
-        uses: actions/upload-artifact@v7
-        with:
-          name: supreme-agent-report
-          path: ai-supreme-report.md
-          if-no-files-found: ignore
-          retention-days: 90
-
-      - name: 📝 Create Issue
-        if: env.GROQ_API_KEY != ''
-        uses: actions/github-script@v9
-        with:
-          script: |
-            const fs = require('fs');
-            let body = '👑 **AI Supreme Agent** — еженедельный стратегический анализ.\n\n';
-            try {
-              const report = fs.readFileSync('ai-supreme-report.md', 'utf8');
-              body += report.substring(0, 5000) + (report.length > 5000 ? '\n\n...*(truncated)*' : '');
-            } catch {
-              body += 'Отчёт недоступен. Проверьте артефакт supreme-agent-report.';
+              "temperature": temperature,
+              "max_tokens": max_tokens,
             }
-            github.rest.issues.create({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              title: `👑 Supreme Agent Report — ${new Date().toISOString().split('T')[0]}`,
-              body: body,
-              labels: ['ai-generated', 'supreme-agent', 'architecture']
-            });
+            last_error = None
+            for attempt in range(retries):
+              if kimi_key:
+                payload = {**payload_base, "model": os.environ.get("KIMI_MODEL", "moonshot-v1-auto")}
+                req = urllib.request.Request(
+                  f"{os.environ.get('KIMI_BASE_URL', 'https://api.moonshot.cn/v1')}/chat/completions",
+                  data=json.dumps(payload).encode(),
+                  headers={"Authorization": f"Bearer {kimi_key}", "Content-Type": "application/json"},
+                )
+                try:
+                  with urllib.request.urlopen(req, timeout=30) as resp:
+                    return json.loads(resp.read())["choices"][0]["message"]["content"]
+                except Exception as e:
+                  last_error = e
+                  print(f"Kimi attempt {attempt+1}/{retries} failed: {e}")
+                  if attempt < retries - 1:
+                    time.sleep(2 ** attempt)
+                  if not groq_key:
+                    continue
+              if groq_key:
+                payload = {**payload_base, "model": os.environ.get("GROQ_MODEL", "llama-3.3-70b-versatile")}
+                req = urllib.request.Request(
+                  "https://api.groq.com/openai/v1/chat/completions",
+                  data=json.dumps(payload).encode(),
+                  headers={"Authorization": f"Bearer {groq_key}", "Content-Type": "application/json"},
+                )
+                try:
+                  with urllib.request.urlopen(req, timeout=30) as resp:
+                    return json.loads(resp.read())["choices"][0]["message"]["content"]
+                except Exception as e:
+                  last_error = e
+                  print(f"GROQ attempt {attempt+1}/{retries} failed: {e}")
+                  if attempt < retries - 1:
+                    time.sleep(2 ** attempt)
+            raise RuntimeError(f"All AI providers failed after {retries} attempts. Last error: {last_error}")
+          prompt = (
+            "You are an AI project manager. Decide what checks to run. "
+            "Return ONLY JSON: {\"plan\": [\"code-review\",\"bug-hunt\",\"security\",\"tests\",\"perf\"], \"priority\": \"high\"}"
+          )
+          try:
+            plan = call_ai(prompt, max_tokens=500)
+            json_match = re.search(r'\{.*\}', plan, re.DOTALL)
+            if json_match:
+              with open("ai_plan.json", "w") as f:
+                f.write(json_match.group())
+              plan_result = "ai-generated"
+            else:
+              plan_result = "default"
+          except Exception as e:
+            print(f"AI planning failed: {e}")
+            plan_result = "fallback"
+          with open(os.environ.get("GITHUB_OUTPUT", "/dev/null"), "a") as f:
+            f.write(f"plan={plan_result}\n")
+          PY
+      - name: Risk Level Assessment
+        id: risk
+        run: |
+          set -euo pipefail
+          RISK="low"
+          if [ "${{ steps.secrets.outputs.found }}" == "true" ]; then
+            RISK="critical"
+            echo "::error::SECRETS DETECTED — immediate attention required!"
+          elif [ "${{ github.event_name }}" == "repository_dispatch" ]; then
+            RISK="${{ github.event.client_payload.severity || 'warning' }}"
+          fi
+          echo "level=$RISK" >> "$GITHUB_OUTPUT"
+      - name: Cache Intelligence
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.CACHE_DIR }}
+          key: ai-context-${{ github.sha }}-${{ github.run_id }}
+          restore-keys: |
+            ai-context-
+
+  ai-analysis:
+    name: Phase 2 — ${{ matrix.agent }} Analysis
+    needs: context-gathering
+    if: needs.context-gathering.outputs.has_ai_key == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        agent:
+          - code-reviewer
+          - bug-hunter
+          - security-auditor
+    permissions:
+      pull-requests: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install Agent Tools
+        run: |
+          set -euo pipefail
+          pip install ruff bandit radon vulture 2>/dev/null || true
+      - name: Run AI Agent — ${{ matrix.agent }}
+        id: ai-agent
+        env:
+          KIMI_API_KEY: ${{ secrets.KIMI_API_KEY }}
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+          KIMI_MODEL: ${{ env.KIMI_MODEL }}
+          KIMI_BASE_URL: ${{ env.KIMI_BASE_URL }}
+          GROQ_MODEL: ${{ env.GROQ_MODEL }}
+          AGENT_TYPE: ${{ matrix.agent }}
+          CHANGED_FILES: ${{ needs.context-gathering.outputs.changed_py }}
+          VPS_ERROR: ${{ needs.context-gathering.outputs.vps_error }}
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import os, json, urllib.request, urllib.error, sys, time
+          AGENT = os.environ.get("AGENT_TYPE", "code-reviewer")
+          CHANGED = os.environ.get("CHANGED_FILES", "")
+          VPS_ERROR = os.environ.get("VPS_ERROR", "")
+          def call_ai(prompt, max_tokens=4000, temperature=0.1, timeout=120, retries=3):
+            kimi_key = os.environ.get("KIMI_API_KEY")
+            groq_key = os.environ.get("GROQ_API_KEY")
+            payload_base = {
+              "messages": [{"role": "user", "content": prompt}],
+              "temperature": temperature,
+              "max_tokens": max_tokens,
+            }
+            last_error = None
+            for attempt in range(retries):
+              if kimi_key:
+                payload = {**payload_base, "model": os.environ.get("KIMI_MODEL", "moonshot-v1-auto")}
+                req = urllib.request.Request(
+                  f"{os.environ.get('KIMI_BASE_URL', 'https://api.moonshot.cn/v1')}/chat/completions",
+                  data=json.dumps(payload).encode(),
+                  headers={"Authorization": f"Bearer {kimi_key}", "Content-Type": "application/json"},
+                )
+                try:
+                  with urllib.request.urlopen(req, timeout=timeout) as resp:
+                    return json.loads(resp.read())["choices"][0]["message"]["content"]
+                except Exception as e:
+                  last_error = e
+                  print(f"Kimi attempt {attempt+1}/{retries} failed: {e}", file=sys.stderr)
+                  if attempt < retries - 1:
+                    time.sleep(2 ** attempt)
+                  if not groq_key:
+                    continue
+              if groq_key:
+                payload = {**payload_base, "model": os.environ.get("GROQ_MODEL", "llama-3.3-70b-versatile")}
+                req = urllib.request.Request(
+                  "https://api.groq.com/openai/v1/chat/completions",
+                  data=json.dumps(payload).encode(),
+                  headers={"Authorization": f"Bearer {groq_key}", "Content-Type": "application/json"},
+                )
+                try:
+                  with urllib.request.urlopen(req, timeout=timeout) as resp:
+                    return json.loads(resp.read())["choices"][0]["message"]["content"]
+                except Exception as e:
+                  last_error = e
+                  print(f"GROQ attempt {attempt+1}/{retries} failed: {e}", file=sys.stderr)
+                  if attempt < retries - 1:
+                    time.sleep(2 ** attempt)
+            raise RuntimeError(f"All AI providers failed after {retries} attempts. Last error: {last_error}")
+          code_blocks = []
+          if CHANGED.strip():
+            for f in CHANGED.strip().split():
+              try:
+                with open(f, encoding="utf-8") as fh:
+                  content = fh.read()
+                code_blocks.append(f"=== {f} ===\n{content[:5000]}")
+              except Exception:
+                pass
+          else:
+            import glob
+            for f in sorted(glob.glob("**/*.py", recursive=True))[:5]:
+              try:
+                with open(f, encoding="utf-8") as fh:
+                  code_blocks.append(f"=== {f} ===\n{fh.read()[:3000]}")
+              except Exception:
+                pass
+          code = "\n\n".join(code_blocks) if code_blocks else "No code available."
+          vps_context = ""
+          if VPS_ERROR:
+            vps_context = f"\n\nCRITICAL: VPS runtime error:\n```\n{VPS_ERROR[:4000]}\n```\nFocus on root cause."
+          PROMPTS = {
+            "code-reviewer": "You are a senior Python architect. Review code for quality, maintainability, and best practices." + vps_context,
+            "bug-hunter": "You are an elite bug hunter. Find bugs causing VPS error. Format: severity, file:line, explanation, fix." + vps_context,
+            "security-auditor": "You are a cybersecurity expert. Scan for vulnerabilities, insecure patterns, and data exposure." + vps_context,
+          }
+          prompt = PROMPTS.get(AGENT, PROMPTS["code-reviewer"]) + f"\n\nCode:\n{code}"
+          report_file = f"ai_report_{AGENT}.md"
+          status = "failed"
+          try:
+            content = call_ai(prompt, max_tokens=4000, temperature=0.1, timeout=120)
+            with open(report_file, "w", encoding="utf-8") as f:
+              f.write(f"# AI Agent: {AGENT.upper()}\n\n")
+              f.write(content)
+            status = "success"
+            print(f"Report saved: {report_file}")
+          except urllib.error.HTTPError as e:
+            with open(report_file, "w", encoding="utf-8") as f:
+              f.write(f"# AI Agent: {AGENT.upper()}\n\nAPI Error: HTTP {e.code}\n")
+            status = f"api-error-{e.code}"
+          except Exception as e:
+            with open(report_file, "w", encoding="utf-8") as f:
+              f.write(f"# AI Agent: {AGENT.upper()}\n\nError: {e}\n")
+          with open(os.environ.get("GITHUB_OUTPUT", "/dev/null"), "a") as f:
+            f.write(f"status={status}\n")
+          PY
+      - name: Upload Report Artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ai-report-${{ matrix.agent }}
+          path: ai_report_${{ matrix.agent }}.md
+          retention-days: 30
+
+  auto-fix-everything:
+    name: Phase 3 — Auto-Fix Everything
+    needs: [context-gathering, ai-analysis]
+    if: always() && needs.context-gathering.outputs.has_ai_key == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: write
+      pull-requests: write
+    outputs:
+      changed: ${{ steps.auto-commit.outputs.changed }}
+      pr_url: ${{ steps.create-pr.outputs.pr_url }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Download Agent Reports
+        uses: actions/download-artifact@v4
+        with:
+          path: /tmp/ai_reports
+          pattern: ai-report-*
+          merge-multiple: true
+        continue-on-error: true
+      - name: Apply Known Security & Config Fixes
+        id: known-fixes
+        run: |
+          set -euo pipefail
+          CHANGES=0
+          echo "=== FIX 1: requirements.txt deduplication ==="
+          if [ -f "requirements.txt" ]; then
+            python3 - <<'PY'
+          import os
+          with open("requirements.txt", encoding="utf-8") as f:
+              lines = f.readlines()
+          seen = set()
+          unique = []
+          for line in lines:
+              stripped = line.strip()
+              if not stripped or stripped.startswith('#'):
+                  unique.append(line)
+                  continue
+              pkg = stripped.split('==')[0].split('>=')[0].split('<=')[0].split('~=')[0].strip().lower()
+              if pkg not in seen:
+                  seen.add(pkg)
+                  unique.append(line)
+              else:
+                  print(f"Removed duplicate: {stripped}")
+          with open("requirements.txt", "w", encoding="utf-8") as f:
+              f.writelines(unique)
+          PY
+            if ! git diff --quiet requirements.txt 2>/dev/null; then
+              CHANGES=$((CHANGES + 1))
+            fi
+          fi
+          echo "=== FIX 2: Close SSH backdoor in deploy.sh ==="
+          if [ -f "deploy.sh" ]; then
+            sed -i 's/PasswordAuthentication yes/PasswordAuthentication no/g' deploy.sh
+            sed -i 's/PermitRootLogin yes/PermitRootLogin no/g' deploy.sh
+            if ! git diff --quiet deploy.sh 2>/dev/null; then
+              CHANGES=$((CHANGES + 1))
+            fi
+          fi
+          echo "=== FIX 3: Remove .env.bak_* from .gitignore ==="
+          if [ -f ".gitignore" ]; then
+            sed -i '/\.env\.bak_\*/d' .gitignore
+            sed -i '/\.env\.bak/d' .gitignore
+            if ! git diff --quiet .gitignore 2>/dev/null; then
+              CHANGES=$((CHANGES + 1))
+            fi
+          fi
+          echo "=== FIX 4: Ensure AI artifacts are in .gitignore ==="
+          if [ -f ".gitignore" ]; then
+            if ! grep -q "ai_emergency_fix.md" .gitignore; then
+              echo "" >> .gitignore
+              echo "# AI workflow artifacts" >> .gitignore
+              echo "ai_emergency_fix.md" >> .gitignore
+              echo "all_reports.md" >> .gitignore
+              echo "ai_reports/" >> .gitignore
+              CHANGES=$((CHANGES + 1))
+            fi
+          fi
+          echo "=== FIX 5: Remove replit_key.pub if exists ==="
+          if [ -f "replit_key.pub" ]; then
+            git rm -f replit_key.pub
+            CHANGES=$((CHANGES + 1))
+          fi
+          echo "known_fixes=$CHANGES" >> "$GITHUB_OUTPUT"
+      - name: Generate AI Emergency Fix (VPS-aware)
+        env:
+          KIMI_API_KEY: ${{ secrets.KIMI_API_KEY }}
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+          KIMI_MODEL: ${{ env.KIMI_MODEL }}
+          KIMI_BASE_URL: ${{ env.KIMI_BASE_URL }}
+          GROQ_MODEL: ${{ env.GROQ_MODEL }}
+          VPS_ERROR: ${{ needs.context-gathering.outputs.vps_error }}
+        run: |
+          set -euo pipefail
+          cat /tmp/ai_reports/ai_report_*.md > /tmp/all_reports.md 2>/dev/null || echo "No reports" > /tmp/all_reports.md
+          python3 - <<'PY'
+          import os, json, urllib.request, time
+          def call_ai(prompt, max_tokens=4000, temperature=0.05, timeout=120, retries=3):
+            kimi_key = os.environ.get("KIMI_API_KEY")
+            groq_key = os.environ.get("GROQ_API_KEY")
+            payload_base = {
+              "messages": [{"role": "user", "content": prompt}],
+              "temperature": temperature,
+              "max_tokens": max_tokens,
+            }
+            last_error = None
+            for attempt in range(retries):
+              if kimi_key:
+                payload = {**payload_base, "model": os.environ.get("KIMI_MODEL", "moonshot-v1-auto")}
+                req = urllib.request.Request(
+                  f"{os.environ.get('KIMI_BASE_URL', 'https://api.moonshot.cn/v1')}/chat/completions",
+                  data=json.dumps(payload).encode(),
+                  headers={"Authorization": f"Bearer {kimi_key}", "Content-Type": "application/json"},
+                )
+                try:
+                  with urllib.request.urlopen(req, timeout=timeout) as resp:
+                    return json.loads(resp.read())["choices"][0]["message"]["content"]
+                except Exception as e:
+                  last_error = e
+                  print(f"Kimi attempt {attempt+1}/{retries} failed: {e}")
+                  if attempt < retries - 1:
+                    time.sleep(2 ** attempt)
+                  if not groq_key:
+                    continue
+              if groq_key:
+                payload = {**payload_base, "model": os.environ.get("GROQ_MODEL", "llama-3.3-70b-versatile")}
+                req = urllib.request.Request(
+                  "https://api.groq.com/openai/v1/chat/completions",
+                  data=json.dumps(payload).encode(),
+                  headers={"Authorization": f"Bearer {groq_key}", "Content-Type": "application/json"},
+                )
+                try:
+                  with urllib.request.urlopen(req, timeout=timeout) as resp:
+                    return json.loads(resp.read())["choices"][0]["message"]["content"]
+                except Exception as e:
+                  last_error = e
+                  print(f"GROQ attempt {attempt+1}/{retries} failed: {e}")
+                  if attempt < retries - 1:
+                    time.sleep(2 ** attempt)
+            raise RuntimeError(f"All AI providers failed after {retries} attempts. Last error: {last_error}")
+          try:
+            with open("/tmp/all_reports.md", encoding="utf-8") as f:
+              reports = f.read()[:6000]
+          except Exception:
+            reports = "No reports."
+          vps_error = os.environ.get("VPS_ERROR", "")
+          vps_context = ""
+          if vps_error:
+            vps_context = f"\n\nThis fix MUST address VPS error:\n```\n{vps_error[:4000]}\n```\n"
+          prompt = (
+            "You are an emergency fix engineer. MINIMAL, SAFE fixes. CRITICAL/HIGH only.\n"
+            "Format: FILE: filename.py\n```python\n# FIX: description\nfixed_code\n```\n\n"
+            f"Reports:\n{reports}{vps_context}"
+          )
+          try:
+            fix = call_ai(prompt, max_tokens=4000, temperature=0.05)
+            with open("/tmp/ai_emergency_fix.md", "w", encoding="utf-8") as f:
+              f.write(fix)
+          except Exception as e:
+            with open("/tmp/ai_emergency_fix.md", "w", encoding="utf-8") as f:
+              f.write(f"Fix generation failed: {e}")
+          PY
+      - name: Apply AI Fixes (Safe Patch Mode)
+        id: ai-fixes
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import re, os, sys
+          try:
+            with open("/tmp/ai_emergency_fix.md", encoding="utf-8") as f:
+              content = f.read()
+          except Exception:
+            sys.exit(0)
+          pattern = r'^FILE:\s*([^\n]+?)\s*```python\s*\n(.*?)\n```'
+          matches = re.findall(pattern, content, re.MULTILINE | re.DOTALL)
+          repo_root = os.getcwd()
+          applied = 0
+          skipped = 0
+          for filename, code in matches:
+            code = code.strip()
+            if not code:
+              continue
+            target_path = os.path.abspath(os.path.join(repo_root, filename))
+            if not target_path.startswith(repo_root + os.sep):
+              print(f"SKIP (path escape): {filename}")
+              skipped += 1
+              continue
+            if not target_path.endswith(".py"):
+              print(f"SKIP (not .py): {filename}")
+              skipped += 1
+              continue
+            if not os.path.exists(target_path):
+              print(f"SKIP (not exists): {filename}")
+              skipped += 1
+              continue
+            try:
+              compile(code, target_path, 'exec')
+            except SyntaxError as e:
+              print(f"SKIP (syntax error): {filename} — {e}")
+              skipped += 1
+              continue
+            with open(target_path, "r", encoding="utf-8") as orig:
+              original = orig.read()
+            if len(code) < len(original) * 0.3:
+              print(f"SKIP (too small, likely partial): {filename}")
+              skipped += 1
+              continue
+            backup = target_path + ".ai-backup"
+            with open(backup, "w", encoding="utf-8") as b:
+              b.write(original)
+            with open(target_path, "w", encoding="utf-8") as f:
+              f.write(code + "\n")
+            print(f"APPLIED: {filename}")
+            applied += 1
+          with open(os.environ.get("GITHUB_OUTPUT", "/dev/null"), "a") as f:
+            f.write(f"applied={applied}\n")
+            f.write(f"skipped={skipped}\n")
+          PY
+      - name: Configure Git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+      - name: Create Fix Branch & Commit
+        id: auto-commit
+        run: |
+          set -euo pipefail
+          git add -A
+          if git diff --cached --quiet; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            echo "No changes to commit."
+            exit 0
+          fi
+          echo "=== Files staged ==="
+          git diff --cached --stat
+          BRANCH_NAME="ai/auto-fix-$(date +%Y%m%d-%H%M%S)-${{ github.run_id }}"
+          git checkout -b "$BRANCH_NAME"
+          git commit -m "bot(auto-fix): automated security & code fixes [skip ci]"
+          git push origin "$BRANCH_NAME"
+          echo "changed=true" >> "$GITHUB_OUTPUT"
+          echo "branch=$BRANCH_NAME" >> "$GITHUB_OUTPUT"
+      - name: Create Pull Request
+        id: create-pr
+        if: steps.auto-commit.outputs.changed == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          BRANCH="${{ steps.auto-commit.outputs.branch }}"
+          PR_URL=$(gh pr create \
+            --base main \
+            --head "$BRANCH" \
+            --title "🤖 AI Auto-Fix: Automated security & code fixes" \
+            --body "$(cat <<'EOF'
+          ## Автоматические исправления от AI Supreme Agent
+          ### Что сделано:
+          - Анализ кода на уязвимости и ошибки
+          - Применение известных security-фиксов
+          - AI-generated emergency fixes (если применимы)
+          ### Проверьте перед мержем:
+          - [ ] Изменения не ломают логику торговли
+          - [ ] Нет случайных изменений конфигурации
+          - [ ] Тесты проходят (если есть)
+          > ⚠️ Этот PR создан автоматически. Обязательно проведите ревью!
+          EOF
+          )" \
+            --label "auto-fix,ai-generated" 2>/dev/null || true)
+          if [ -n "$PR_URL" ]; then
+            echo "pr_url=$PR_URL" >> "$GITHUB_OUTPUT"
+            echo "::notice::PR created: $PR_URL"
+          else
+            echo "pr_url=" >> "$GITHUB_OUTPUT"
+            echo "::warning::Failed to create PR"
+          fi
+
+  ai-learning:
+    name: Phase 4 — Learning & Evolution
+    needs: [context-gathering, ai-analysis]
+    if: always() && needs.context-gathering.outputs.has_ai_key == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Download Learning History
+        uses: actions/cache@v4
+        with:
+          path: .ai-learning
+          key: ai-learning-history-${{ github.repository }}
+          restore-keys: |
+            ai-learning-history-
+      - name: Update Learning Database
+        run: |
+          set -euo pipefail
+          mkdir -p .ai-learning
+          {
+            echo "run_id=${{ github.run_id }}"
+            echo "trigger=${{ github.event_name }}"
+            echo "status=${{ needs.ai-analysis.result }}"
+            echo "timestamp=$(date -Iseconds)"
+            echo "changed_files=\"${{ needs.context-gathering.outputs.changed_files }}\""
+          } >> ".ai-learning/run_${{ github.run_id }}.log"
+          ls -t .ai-learning/run_*.log 2>/dev/null | tail -n +51 | xargs -r rm -f 2>/dev/null || true
+      - name: Generate Insights from History
+        env:
+          KIMI_API_KEY: ${{ secrets.KIMI_API_KEY }}
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+          KIMI_MODEL: ${{ env.KIMI_MODEL }}
+          KIMI_BASE_URL: ${{ env.KIMI_BASE_URL }}
+          GROQ_MODEL: ${{ env.GROQ_MODEL }}
+        run: |
+          set -euo pipefail
+          cat .ai-learning/run_*.log 2>/dev/null | tail -100 > history_context.txt || true
+          if [ ! -s history_context.txt ]; then
+            echo "No history data available." > history_context.txt
+          fi
+          python3 - <<'PY'
+          import os, json, urllib.request, time
+          def call_ai(prompt, max_tokens=2000, temperature=0.3, timeout=60, retries=3):
+            kimi_key = os.environ.get("KIMI_API_KEY")
+            groq_key = os.environ.get("GROQ_API_KEY")
+            payload_base = {
+              "messages": [{"role": "user", "content": prompt}],
+              "temperature": temperature,
+              "max_tokens": max_tokens,
+            }
+            last_error = None
+            for attempt in range(retries):
+              if kimi_key:
+                payload = {**payload_base, "model": os.environ.get("KIMI_MODEL", "moonshot-v1-auto")}
+                req = urllib.request.Request(
+                  f"{os.environ.get('KIMI_BASE_URL', 'https://api.moonshot.cn/v1')}/chat/completions",
+                  data=json.dumps(payload).encode(),
+                  headers={"Authorization": f"Bearer {kimi_key}", "Content-Type": "application/json"},
+                )
+                try:
+                  with urllib.request.urlopen(req, timeout=timeout) as resp:
+                    return json.loads(resp.read())["choices"][0]["message"]["content"]
+                except Exception as e:
+                  last_error = e
+                  print(f"Kimi attempt {attempt+1}/{retries} failed: {e}")
+                  if attempt < retries - 1:
+                    time.sleep(2 ** attempt)
+                  if not groq_key:
+                    continue
+              if groq_key:
+                payload = {**payload_base, "model": os.environ.get("GROQ_MODEL", "llama-3.3-70b-versatile")}
+                req = urllib.request.Request(
+                  "https://api.groq.com/openai/v1/chat/completions",
+                  data=json.dumps(payload).encode(),
+                  headers={"Authorization": f"Bearer {groq_key}", "Content-Type": "application/json"},
+                )
+                try:
+                  with urllib.request.urlopen(req, timeout=timeout) as resp:
+                    return json.loads(resp.read())["choices"][0]["message"]["content"]
+                except Exception as e:
+                  last_error = e
+                  print(f"GROQ attempt {attempt+1}/{retries} failed: {e}")
+                  if attempt < retries - 1:
+                    time.sleep(2 ** attempt)
+            raise RuntimeError(f"All AI providers failed after {retries} attempts. Last error: {last_error}")
+          try:
+            with open("history_context.txt", encoding="utf-8") as f:
+              history = f.read()[:3000]
+          except Exception:
+            history = "No history."
+          prompt = (
+            "You are an AI learning from its own performance. Based on this history:\n\n"
+            f"{history}\n\n"
+            "Generate insights:\n"
+            "1. What types of bugs are most common?\n"
+            "2. Which files break most often?\n"
+            "3. What checks should be prioritized?\n"
+            "4. How to improve future analysis?\n"
+            "Return as markdown."
+          )
+          try:
+            insights = call_ai(prompt, max_tokens=2000, temperature=0.3)
+            with open("ai_insights.md", "w", encoding="utf-8") as f:
+              f.write(f"# AI Learning Insights\n\n{insights}")
+            print("Insights generated successfully.")
+          except Exception as e:
+            with open("ai_insights.md", "w", encoding="utf-8") as f:
+              f.write(f"# AI Learning Insights\n\nError generating insights: {e}")
+            print(f"Insight generation failed: {e}")
+          PY
+      - name: Upload Insights Artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ai-learning-insights
+          path: ai_insights.md
+          retention-days: 90
+      - name: Persist Learning Database
+        uses: actions/cache@v4
+        with:
+          path: .ai-learning
+          key: ai-learning-history-${{ github.repository }}
+          restore-keys: |
+            ai-learning-history-${{ github.repository }}
+
+  deploy-to-vps:
+    name: Phase 5 — Auto-Deploy to VPS
+    needs: [context-gathering]
+    if: |
+      always() && 
+      (github.event_name == 'push' || github.event_name == 'repository_dispatch') &&
+      needs.context-gathering.result == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check VPS SSH Key
+        run: |
+          set -euo pipefail
+          if [ -z "${{ secrets.VPS_SSH_KEY }}" ]; then
+            echo "::error::VPS_SSH_KEY secret is not configured. Skipping deploy."
+            exit 1
+          fi
+          echo "::notice::VPS_SSH_KEY is configured."
+      - name: Setup SSH Key
+        run: |
+          set -euo pipefail
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          printf '%s\n' "${{ secrets.VPS_SSH_KEY }}" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          ssh-keyscan -H "${{ env.VPS_HOST }}" >> ~/.ssh/known_hosts 2>/dev/null || true
+      - name: Deploy to VPS (Zero-Downtime)
+        run: |
+          set -euo pipefail
+          echo "=== Deploying to VPS ${{ env.VPS_HOST }} ==="
+          ssh -o StrictHostKeyChecking=yes -o ConnectTimeout=30 -o BatchMode=yes \
+            -i ~/.ssh/id_ed25519 \
+            "${{ env.VPS_USER }}@${{ env.VPS_HOST }}" \
+            "set -ex; \
+             echo '--- Checking /opt/bot ---'; \
+             test -d /opt/bot || { echo '/opt/bot NOT FOUND'; exit 1; }; \
+             cd /opt/bot; \
+             echo '--- Fetching latest code ---'; \
+             git fetch origin main; \
+             git reset --hard origin/main; \
+             echo '--- Checking docker ---'; \
+             DOCKER_CMD='docker compose'; \
+             docker compose version >/dev/null 2>&1 || DOCKER_CMD='docker-compose'; \
+             echo \"Using: \$DOCKER_CMD\"; \
+             echo '--- Rebuilding containers ---'; \
+             \$DOCKER_CMD up -d --build; \
+             echo '--- Waiting for healthcheck ---'; \
+             sleep 10; \
+             echo '--- Checking container health ---'; \
+             \$DOCKER_CMD ps | grep -E 'healthy|running' && echo 'DEPLOY SUCCESS' || echo 'DEPLOY WARNING'"
+      - name: Health Check
+        run: |
+          set -euo pipefail
+          echo "=== Health Check ==="
+          for i in 1 2 3; do
+            if curl -sf --max-time 10 "http://${{ env.VPS_HOST }}:3000/health" > /dev/null 2>&1; then
+              echo "✅ Health check PASSED (attempt $i)"
+              exit 0
+            fi
+            echo "⏳ Health check failed, retrying... ($i/3)"
+            sleep 5
+          done
+          echo "::warning::Health check failed after 3 attempts"
+          exit 1
+      - name: Cleanup SSH Key
+        if: always()
+        run: |
+          rm -f ~/.ssh/id_ed25519
+          ssh-add -D 2>/dev/null || true
