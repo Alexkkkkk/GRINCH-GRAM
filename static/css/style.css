@@ -1435,8 +1435,9 @@ body::after {
 }
 
 @media (max-width: 480px) {
-  .kelly-stats-grid { grid-template-columns: repeat(2,1fr); }
   .qb-models-grid   { grid-template-columns: 1fr; }
+  .ai-pred-grid { grid-template-columns: 1fr !important; }
+  .bm-momentum-stats { grid-template-columns: 1fr !important; }
 }
 
 /* ════ Fix undefined CSS vars (overrides corrected above but kept for specificity) ════ */
@@ -2009,7 +2010,7 @@ body::after {
 
   /* Главная сетка: убираем фиксированную ширину AI-колонки */
   .main-grid-v2 {
-    grid-template-columns: 280px 1fr;
+    grid-template-columns: minmax(240px, 280px) 1fr;
     height: calc(100vh - 50px - 30px);
   }
 
@@ -2149,10 +2150,12 @@ body::after {
   .trades-2col { grid-template-columns: 1fr !important; }
   .mo-grid-c  { grid-template-columns: repeat(2,1fr) !important; }
   .liq-grid-2 { grid-template-columns: 1fr 1fr !important; }
+  .ai-pred-grid { grid-template-columns: repeat(2, 1fr) !important; }
+  .bm-momentum-stats { grid-template-columns: repeat(2, 1fr) !important; }
 
   /* Hero row адаптация */
   .mkt-hero-row {
-    grid-template-columns: 1fr 1fr !important;
+    grid-template-columns: 1fr !important;
     gap: 6px;
   }
   .mkt-price-big { font-size: 16px; }
