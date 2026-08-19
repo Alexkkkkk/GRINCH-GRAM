@@ -1,6 +1,6 @@
 {
   "errors": [],
-  "generated_at": "2026-08-19T18:36:36Z",
+  "generated_at": "2026-08-19T18:46:13Z",
   "metrics": {
     "./ai_advisor.py": {
       "CONFIDENCE.HIGH": 9,
@@ -24,7 +24,7 @@
       "SEVERITY.LOW": 0,
       "SEVERITY.MEDIUM": 0,
       "SEVERITY.UNDEFINED": 0,
-      "loc": 151,
+      "loc": 161,
       "nosec": 0,
       "skipped_tests": 0
     },
@@ -544,7 +544,7 @@
       "SEVERITY.LOW": 231,
       "SEVERITY.MEDIUM": 16,
       "SEVERITY.UNDEFINED": 0,
-      "loc": 30244,
+      "loc": 30254,
       "nosec": 0,
       "skipped_tests": 0
     }
@@ -571,7 +571,7 @@
       "test_name": "blacklist"
     },
     {
-      "code": "1378         try:\n1379             with _ur.urlopen(url, timeout=10) as resp:\n1380                 if resp.status != 200:\n",
+      "code": "1379         try:\n1380             with _ur.urlopen(url, timeout=10) as resp:\n1381                 if resp.status != 200:\n",
       "col_offset": 17,
       "end_col_offset": 45,
       "filename": "./app.py",
@@ -582,16 +582,16 @@
       },
       "issue_severity": "MEDIUM",
       "issue_text": "Audit url open for permitted schemes. Allowing use of file:/ or custom schemes is often unexpected.",
-      "line_number": 1379,
+      "line_number": 1380,
       "line_range": [
-        1379
+        1380
       ],
       "more_info": "https://bandit.readthedocs.io/en/1.9.4/blacklists/blacklist_calls.html#b310-urllib-urlopen",
       "test_id": "B310",
       "test_name": "blacklist"
     },
     {
-      "code": "1820             )\n1821             with urllib.request.urlopen(req, timeout=3) as resp:\n1822                 data = json.loads(resp.read())\n",
+      "code": "1821             )\n1822             with urllib.request.urlopen(req, timeout=3) as resp:\n1823                 data = json.loads(resp.read())\n",
       "col_offset": 17,
       "end_col_offset": 55,
       "filename": "./app.py",
@@ -602,16 +602,16 @@
       },
       "issue_severity": "MEDIUM",
       "issue_text": "Audit url open for permitted schemes. Allowing use of file:/ or custom schemes is often unexpected.",
-      "line_number": 1821,
+      "line_number": 1822,
       "line_range": [
-        1821
+        1822
       ],
       "more_info": "https://bandit.readthedocs.io/en/1.9.4/blacklists/blacklist_calls.html#b310-urllib-urlopen",
       "test_id": "B310",
       "test_name": "blacklist"
     },
     {
-      "code": "2959         url = \"https://api.dexscreener.com/latest/dex/pairs/ton/EQCM3B12QK1e4yZSf8GtBRT0aLMNyEsBc_9Qsof7gbCmkjvi\"\n2960         with urllib.request.urlopen(url, timeout=5) as r:\n2961             d = _json.loads(r.read())\n",
+      "code": "2960         url = \"https://api.dexscreener.com/latest/dex/pairs/ton/EQCM3B12QK1e4yZSf8GtBRT0aLMNyEsBc_9Qsof7gbCmkjvi\"\n2961         with urllib.request.urlopen(url, timeout=5) as r:\n2962             d = _json.loads(r.read())\n",
       "col_offset": 13,
       "end_col_offset": 51,
       "filename": "./app.py",
@@ -622,16 +622,16 @@
       },
       "issue_severity": "MEDIUM",
       "issue_text": "Audit url open for permitted schemes. Allowing use of file:/ or custom schemes is often unexpected.",
-      "line_number": 2960,
+      "line_number": 2961,
       "line_range": [
-        2960
+        2961
       ],
       "more_info": "https://bandit.readthedocs.io/en/1.9.4/blacklists/blacklist_calls.html#b310-urllib-urlopen",
       "test_id": "B310",
       "test_name": "blacklist"
     },
     {
-      "code": "2969         url2 = \"https://tonapi.io/v2/rates?tokens=ton&currencies=usd\"\n2970         with urllib.request.urlopen(url2, timeout=5) as r2:\n2971             d2 = _json.loads(r2.read())\n",
+      "code": "2970         url2 = \"https://tonapi.io/v2/rates?tokens=ton&currencies=usd\"\n2971         with urllib.request.urlopen(url2, timeout=5) as r2:\n2972             d2 = _json.loads(r2.read())\n",
       "col_offset": 13,
       "end_col_offset": 52,
       "filename": "./app.py",
@@ -642,9 +642,9 @@
       },
       "issue_severity": "MEDIUM",
       "issue_text": "Audit url open for permitted schemes. Allowing use of file:/ or custom schemes is often unexpected.",
-      "line_number": 2970,
+      "line_number": 2971,
       "line_range": [
-        2970
+        2971
       ],
       "more_info": "https://bandit.readthedocs.io/en/1.9.4/blacklists/blacklist_calls.html#b310-urllib-urlopen",
       "test_id": "B310",
