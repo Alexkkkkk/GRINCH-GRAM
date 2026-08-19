@@ -1,8 +1,7 @@
-name: 🌙 NIGHTLY OVERLORD Security & Vulnerability Audit
+name: NIGHTLY OVERLORD Security & Vulnerability Audit + Trading Health Check
 
 on:
   schedule:
-    # Автозапуск каждую ночь в 00:00 UTC
     - cron: '0 0 * * *'
   workflow_dispatch:
 
@@ -15,22 +14,27 @@ concurrency:
   group: nightly-audit-${{ github.ref }}
   cancel-in-progress: true
 
+env:
+  VPS_HOST: "2.27.25.126"
+  VPS_USER: "root"
+  VPS_DEPLOY_DIR: "/opt/bot"
+
 jobs:
   nightly-security-audit:
-    name: 🛡️ Deep Security & Vulnerability Audit
+    name: Deep Security & Vulnerability Audit
     runs-on: ubuntu-latest
     timeout-minutes: 15
 
     steps:
-      - name: 📥 Checkout Repository
+      - name: Checkout Repository
         uses: actions/checkout@v7
 
-      - name: 🐍 Set up Python 3.11
+      - name: Set up Python 3.11
         uses: actions/setup-python@v7
         with:
           python-version: '3.11'
 
-      - name: ⚡ Cache Pip Packages
+      - name: Cache Pip Packages
         uses: actions/cache@v6
         with:
           path: ~/.cache/pip
@@ -38,28 +42,27 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-pip-nightly-
 
-      - name: 📦 Install Security Audit Toolchain
+      - name: Install Security Audit Toolchain
         run: |
           python -m pip install --upgrade pip
           pip install pip-audit bandit
           if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
 
-      - name: 🔍 Audit Python Dependencies (pip-audit)
+      - name: Audit Python Dependencies (pip-audit)
         id: pip_audit
         run: |
-          echo "🔍 Проверка сторонних библиотек на известные CVE..."
+          echo "Checking dependencies for known CVE..."
           pip-audit --desc on
         continue-on-error: true
 
-      - name: 🔒 Static Security Code Analysis (Bandit)
+      - name: Static Security Code Analysis (Bandit)
         id: bandit
         run: |
-          echo "🔒 Сканирование всего Python-кода на уязвимости и утечки ключей..."
-          bandit -r . -ll -iii \
-            -x .git,__pycache__,attached_assets,data,backups
+          echo "Scanning Python code for vulnerabilities..."
+          bandit -r . -ll -iii             -x .git,__pycache__,attached_assets,data,backups
         continue-on-error: true
 
-      - name: 🐳 Container & Infrastructure Audit (Trivy)
+      - name: Container & Infrastructure Audit (Trivy)
         id: trivy
         uses: aquasecurity/trivy-action@v0.36.0
         with:
@@ -69,31 +72,230 @@ jobs:
           format: 'sarif'
         continue-on-error: true
 
-      - name: 📤 Upload Trivy Scan Results to GitHub Security
+      - name: Upload Trivy Scan Results to GitHub Security
         uses: github/codeql-action/upload-sarif@v4
         if: always()
         with:
           sarif_file: 'trivy-results.sarif'
         continue-on-error: true
 
-      - name: 📊 Executive Visual Summary
+      - name: Security Audit Summary
         if: always()
         run: |
           PIP_STATUS="${{ steps.pip_audit.outcome }}"
           BANDIT_STATUS="${{ steps.bandit.outcome }}"
           TRIVY_STATUS="${{ steps.trivy.outcome }}"
 
-          pip_emoji=$([ "$PIP_STATUS" == "success" ] && echo "✅" || echo "⚠️")
-          bandit_emoji=$([ "$BANDIT_STATUS" == "success" ] && echo "✅" || echo "⚠️")
-          trivy_emoji=$([ "$TRIVY_STATUS" == "success" ] && echo "✅" || echo "⚠️")
+          pip_emoji=$([ "$PIP_STATUS" == "success" ] && echo "OK" || echo "WARN")
+          bandit_emoji=$([ "$BANDIT_STATUS" == "success" ] && echo "OK" || echo "WARN")
+          trivy_emoji=$([ "$TRIVY_STATUS" == "success" ] && echo "OK" || echo "WARN")
 
-          echo "# 🌙 NIGHTLY SECURITY AUDIT REPORT" >> $GITHUB_STEP_SUMMARY
+          echo "# NIGHTLY SECURITY AUDIT REPORT" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "### 🛡️ Состояние безопасности проекта:" >> $GITHUB_STEP_SUMMARY
-          echo "| Сканер | Назначение | Статус |" >> $GITHUB_STEP_SUMMARY
+          echo "| Scanner | Purpose | Status |" >> $GITHUB_STEP_SUMMARY
           echo "| :--- | :--- | :--- |" >> $GITHUB_STEP_SUMMARY
-          echo "| ${pip_emoji} **pip-audit** | Проверка CVE зависимостей | ${PIP_STATUS} |" >> $GITHUB_STEP_SUMMARY
-          echo "| ${bandit_emoji} **Bandit** | Анализ кода Python | ${BANDIT_STATUS} |" >> $GITHUB_STEP_SUMMARY
-          echo "| ${trivy_emoji} **Trivy** | Проверка Dockerfile и конфигов | ${TRIVY_STATUS} |" >> $GITHUB_STEP_SUMMARY
+          echo "| ${pip_emoji} pip-audit | CVE dependency check | ${PIP_STATUS} |" >> $GITHUB_STEP_SUMMARY
+          echo "| ${bandit_emoji} Bandit | Python code analysis | ${BANDIT_STATUS} |" >> $GITHUB_STEP_SUMMARY
+          echo "| ${trivy_emoji} Trivy | Dockerfile/config scan | ${TRIVY_STATUS} |" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "> 🤖 **Результаты отправлены во вкладку Security. При статусе \`failure\` проверьте логи соответствующего шага.**" >> $GITHUB_STEP_SUMMARY
+          echo "> Results sent to Security tab." >> $GITHUB_STEP_SUMMARY
+
+  trading-health-audit:
+    name: Trading Bot Operational Audit
+    runs-on: ubuntu-latest
+    needs: nightly-security-audit
+    if: always()
+    timeout-minutes: 10
+    continue-on-error: true
+
+    outputs:
+      bot_online: ${{ steps.healthcheck.outputs.bot_online }}
+      grid_active: ${{ steps.grid_status.outputs.grid_active }}
+      errors_24h: ${{ steps.error_scan.outputs.errors_24h }}
+      disk_usage: ${{ steps.disk_check.outputs.disk_usage }}
+      docker_running: ${{ steps.docker_check.outputs.docker_running }}
+
+    steps:
+      - name: Setup SSH Key
+        id: ssh_setup
+        run: |
+          set -euo pipefail
+          if [ -z "${{ secrets.VPS_SSH_KEY }}" ]; then
+            echo "::warning::VPS_SSH_KEY not configured. Skipping operational audit."
+            echo "bot_online=skipped" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          printf '%s\n' "${{ secrets.VPS_SSH_KEY }}" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          ssh-keyscan -H "${{ env.VPS_HOST }}" >> ~/.ssh/known_hosts 2>/dev/null || true
+          echo "::notice::SSH key configured for ${{ env.VPS_HOST }}"
+
+      - name: VPS Bot Healthcheck
+        id: healthcheck
+        if: steps.ssh_setup.outcome == 'success'
+        run: |
+          set -euo pipefail
+          echo "=== Checking bot health on VPS ==="
+          BOT_ONLINE="false"
+          for port in 3000 8080 5000; do
+            if ssh -o BatchMode=yes -o ConnectTimeout=10 -i ~/.ssh/id_ed25519               "${{ env.VPS_USER }}@${{ env.VPS_HOST }}"               "curl -sf --max-time 5 http://127.0.0.1:$port/health > /dev/null 2>&1" 2>/dev/null; then
+              echo "OK Healthcheck PASSED on port $port"
+              BOT_ONLINE="true"
+              break
+            fi
+          done
+          if [ "$BOT_ONLINE" == "false" ]; then
+            echo "::error::No health endpoint responding on VPS"
+            ssh -o BatchMode=yes -i ~/.ssh/id_ed25519               "${{ env.VPS_USER }}@${{ env.VPS_HOST }}"               "ps aux | grep -i grinch | grep -v grep || echo 'No grinch process found'"
+          fi
+          echo "bot_online=$BOT_ONLINE" >> "$GITHUB_OUTPUT"
+
+      - name: Grid Status Check
+        id: grid_status
+        if: steps.ssh_setup.outcome == 'success'
+        run: |
+          set -euo pipefail
+          echo "=== Checking Grid trading status ==="
+          GRID_ACTIVE="unknown"
+          GRID_LOG=$(ssh -o BatchMode=yes -i ~/.ssh/id_ed25519             "${{ env.VPS_USER }}@${{ env.VPS_HOST }}"             "cd ${{ env.VPS_DEPLOY_DIR }} && docker compose logs --tail=100 app 2>/dev/null | grep -iE 'grid.*active|grid.*running|grid.*started' | tail -5 || echo 'NO_GRID_LOG'" 2>/dev/null || echo "SSH_FAILED")
+
+          if echo "$GRID_LOG" | grep -qiE 'active|running|started'; then
+            echo "OK Grid trading appears ACTIVE"
+            GRID_ACTIVE="true"
+          elif [ "$GRID_LOG" == "NO_GRID_LOG" ]; then
+            echo "WARN No grid activity found in recent logs"
+            GRID_ACTIVE="unknown"
+          else
+            echo "WARN Could not determine grid status"
+            GRID_ACTIVE="unknown"
+          fi
+          echo "grid_active=$GRID_ACTIVE" >> "$GITHUB_OUTPUT"
+
+      - name: Docker Containers Check
+        id: docker_check
+        if: steps.ssh_setup.outcome == 'success'
+        run: |
+          set -euo pipefail
+          echo "=== Checking Docker containers ==="
+          DOCKER_STATUS=$(ssh -o BatchMode=yes -i ~/.ssh/id_ed25519             "${{ env.VPS_USER }}@${{ env.VPS_HOST }}"             "docker compose ps 2>/dev/null || docker-compose ps 2>/dev/null || echo 'DOCKER_NOT_FOUND'" 2>/dev/null || echo "SSH_FAILED")
+
+          if echo "$DOCKER_STATUS" | grep -q "running"; then
+            echo "OK Docker containers running:"
+            echo "$DOCKER_STATUS"
+            echo "docker_running=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "::warning::Docker containers issue: $DOCKER_STATUS"
+            echo "docker_running=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Error Log Scan (Last 24h)
+        id: error_scan
+        if: steps.ssh_setup.outcome == 'success'
+        run: |
+          set -euo pipefail
+          echo "=== Scanning for errors in last 24h ==="
+          ERROR_COUNT=$(ssh -o BatchMode=yes -i ~/.ssh/id_ed25519             "${{ env.VPS_USER }}@${{ env.VPS_HOST }}"             "find ${{ env.VPS_DEPLOY_DIR }}/logs -name '*.log' -mtime -1 -exec grep -cH 'ERROR|FATAL|CRITICAL' {} + 2>/dev/null | awk -F: '{sum+=$2} END {print sum+0}' || echo '0'" 2>/dev/null || echo "0")
+
+          echo "Errors found in last 24h: $ERROR_COUNT"
+          if [ "$ERROR_COUNT" -gt 10 ]; then
+            echo "::warning::High error count: $ERROR_COUNT errors in last 24h"
+          elif [ "$ERROR_COUNT" -gt 0 ]; then
+            echo "WARN $ERROR_COUNT errors found in last 24h"
+          else
+            echo "OK No errors in last 24h"
+          fi
+          echo "errors_24h=$ERROR_COUNT" >> "$GITHUB_OUTPUT"
+
+      - name: Disk Space Check
+        id: disk_check
+        if: steps.ssh_setup.outcome == 'success'
+        run: |
+          set -euo pipefail
+          echo "=== Checking VPS disk space ==="
+          DISK_USAGE=$(ssh -o BatchMode=yes -i ~/.ssh/id_ed25519             "${{ env.VPS_USER }}@${{ env.VPS_HOST }}"             "df / | tail -1 | awk '{print \$5}' | sed 's/%//'" 2>/dev/null || echo "100")
+
+          echo "Disk usage: ${DISK_USAGE}%"
+          if [ "$DISK_USAGE" -gt 90 ]; then
+            echo "::error::CRITICAL: Disk usage ${DISK_USAGE}%"
+          elif [ "$DISK_USAGE" -gt 80 ]; then
+            echo "::warning::Disk usage high: ${DISK_USAGE}%"
+          else
+            echo "OK Disk usage OK: ${DISK_USAGE}%"
+          fi
+          echo "disk_usage=$DISK_USAGE" >> "$GITHUB_OUTPUT"
+
+      - name: Operational Audit Summary
+        if: always()
+        run: |
+          BOT_STATUS="${{ steps.healthcheck.outputs.bot_online }}"
+          GRID_STATUS="${{ steps.grid_status.outputs.grid_active }}"
+          ERRORS="${{ steps.error_scan.outputs.errors_24h }}"
+          DISK="${{ steps.disk_check.outputs.disk_usage }}"
+          DOCKER="${{ steps.docker_check.outputs.docker_running }}"
+
+          bot_emoji=$([ "$BOT_STATUS" == "true" ] && echo "OK" || echo "FAIL")
+          grid_emoji=$([ "$GRID_STATUS" == "true" ] && echo "OK" || echo "WARN")
+          docker_emoji=$([ "$DOCKER" == "true" ] && echo "OK" || echo "FAIL")
+
+          error_emoji="OK"
+          if [ "$ERRORS" -gt 10 ]; then error_emoji="FAIL"; elif [ "$ERRORS" -gt 0 ]; then error_emoji="WARN"; fi
+
+          disk_emoji="OK"
+          if [ "$DISK" -gt 90 ]; then disk_emoji="FAIL"; elif [ "$DISK" -gt 80 ]; then disk_emoji="WARN"; fi
+
+          echo "### Trading Bot Operational Audit:" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Check | Status | Value |" >> $GITHUB_STEP_SUMMARY
+          echo "| :--- | :--- | :--- |" >> $GITHUB_STEP_SUMMARY
+          echo "| ${bot_emoji} Bot Online | $BOT_STATUS | Health endpoint |" >> $GITHUB_STEP_SUMMARY
+          echo "| ${grid_emoji} Grid Active | $GRID_STATUS | Trading activity |" >> $GITHUB_STEP_SUMMARY
+          echo "| ${docker_emoji} Docker | $DOCKER | Containers running |" >> $GITHUB_STEP_SUMMARY
+          echo "| ${error_emoji} Errors 24h | $ERRORS | Log errors |" >> $GITHUB_STEP_SUMMARY
+          echo "| ${disk_emoji} Disk Usage | ${DISK}% | VPS storage |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          if [ "$BOT_STATUS" != "true" ] || [ "$DOCKER" != "true" ]; then
+            echo "> ALERT: Bot may be offline! Check VPS immediately." >> $GITHUB_STEP_SUMMARY
+          elif [ "$ERRORS" -gt 10 ]; then
+            echo "> WARNING: High error rate detected. Review logs." >> $GITHUB_STEP_SUMMARY
+          else
+            echo "> OK All operational checks passed." >> $GITHUB_STEP_SUMMARY
+          fi
+
+      - name: Cleanup SSH Key
+        if: always()
+        run: |
+          rm -f ~/.ssh/id_ed25519
+          ssh-add -D 2>/dev/null || true
+
+  executive-summary:
+    name: Executive Summary
+    runs-on: ubuntu-latest
+    needs: [nightly-security-audit, trading-health-audit]
+    if: always()
+    steps:
+      - name: Final Report
+        run: |
+          SEC_STATUS="${{ needs.nightly-security-audit.result }}"
+          TRADE_STATUS="${{ needs.trading-health-audit.result }}"
+
+          sec_emoji=$([ "$SEC_STATUS" == "success" ] && echo "OK" || echo "WARN")
+          trade_emoji=$([ "$TRADE_STATUS" == "success" ] && echo "OK" || echo "WARN")
+
+          echo "# NIGHTLY OVERLORD - FINAL REPORT" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Component | Status |" >> $GITHUB_STEP_SUMMARY
+          echo "| :--- | :--- |" >> $GITHUB_STEP_SUMMARY
+          echo "| ${sec_emoji} Security Audit | ${SEC_STATUS} |" >> $GITHUB_STEP_SUMMARY
+          echo "| ${trade_emoji} Trading Health | ${TRADE_STATUS} |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          if [ "$SEC_STATUS" == "success" ] && [ "$TRADE_STATUS" == "success" ]; then
+            echo "> All systems normal. Good night!" >> $GITHUB_STEP_SUMMARY
+          elif [ "$SEC_STATUS" != "success" ]; then
+            echo "> Security issues detected! Check Security tab." >> $GITHUB_STEP_SUMMARY
+          else
+            echo "> Trading bot issues! Check VPS status." >> $GITHUB_STEP_SUMMARY
+          fi
