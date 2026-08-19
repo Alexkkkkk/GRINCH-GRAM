@@ -327,7 +327,7 @@ body::after {
    ОСНОВНАЯ СЕТКА
 ════════════════════════════════════════════════════════════ */
 .main-grid {
-  display: grid; grid-template-columns: 270px 1fr 300px;
+  display: grid; grid-template-columns: minmax(240px, 270px) 1fr minmax(260px, 300px);
   gap: 0; flex: 1; overflow: hidden;
 }
 .col-left, .col-mid, .col-right {
@@ -786,7 +786,6 @@ body::after {
 .ai-card-title-row { display: flex; align-items: center; gap: 8px; margin-bottom: 5px; }
 .ai-card-title { font-size: 13px; font-weight: 800; color: var(--cyan); text-shadow: 0 0 20px rgba(0,229,255,.3); }
 .ai-card-sub { font-size: 10px; color: var(--text3); font-family: var(--mono); }
-.ai-score-label-row { }
 .ai-score-word { font-size: 11px; color: var(--text2); }
 
 .ai-live-pulse {
@@ -1197,8 +1196,6 @@ body::after {
 /* ════════════════════════════════════════════════════════════
    УТИЛИТЫ
 ════════════════════════════════════════════════════════════ */
-.pos { }
-.neg { }
 .pos b, b.pos { color: var(--green) !important; }
 .neg b, b.neg { color: var(--red) !important; }
 
@@ -1438,7 +1435,7 @@ body::after {
 }
 
 @media (max-width: 480px) {
-  .kelly-stats-grid { grid-template-columns: repeat(4,1fr); }
+  .kelly-stats-grid { grid-template-columns: repeat(2,1fr); }
   .qb-models-grid   { grid-template-columns: 1fr; }
 }
 
@@ -1568,7 +1565,7 @@ body::after {
 /* ── Main grid v2 ── */
 .main-grid-v2 {
   display: grid;
-  grid-template-columns: 340px 1fr;
+  grid-template-columns: minmax(280px, 340px) 1fr;
   height: calc(100vh - 50px - 30px);
   overflow: hidden;
 }
