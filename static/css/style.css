@@ -2150,8 +2150,8 @@ body::after {
   .trades-2col { grid-template-columns: 1fr !important; }
   .mo-grid-c  { grid-template-columns: repeat(2,1fr) !important; }
   .liq-grid-2 { grid-template-columns: 1fr 1fr !important; }
-  .ai-pred-grid { grid-template-columns: repeat(2, 1fr) !important; }
-  .bm-momentum-stats { grid-template-columns: repeat(2, 1fr) !important; }
+  .ai-pred-grid { grid-template-columns: repeat(2, 1fr); }
+  .bm-momentum-stats { grid-template-columns: repeat(2, 1fr); }
 
   /* Hero row адаптация */
   .mkt-hero-row {
