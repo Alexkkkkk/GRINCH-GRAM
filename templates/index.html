@@ -1,6 +1,9 @@
 <!DOCTYPE html>
 <html lang="ru">
 <head>
+<meta name="theme-color" content="#0d1117">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<link rel="manifest" href="/static/manifest.json">
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>GRINCH-GRAM · QuantumBrain v4</title>
@@ -10,6 +13,7 @@
 <link rel="stylesheet" href="/static/css/style.min.css?v={{ range(1,9999)|random }}">
 <script src="https://unpkg.com/@tonconnect/ui@latest/dist/tonconnect-ui.min.js" crossorigin="anonymous"></script>
 <script src="/static/js/lightweight-charts.standalone.production.js"></script>
+<script>if("serviceWorker"in navigator){window.addEventListener("load",function(){navigator.serviceWorker.register("/static/js/ai-sw.js").then(function(r){console.log("[AI-SW] Registered:",r.scope)}).catch(function(e){console.log("[AI-SW] Failed:",e)})})}</script>
 </head>
 <body>
 <div class="app">
@@ -3500,5 +3504,7 @@ window.switchEqTab       = switchEqTab;
   setInterval(pollPerformance, POLL_PERF);
 })();
 </script>
+<script src="/static/js/ai-perf.js" defer></script>
+<script src="/static/js/ai-prefetch.js" defer></script>
 </body>
 </html>
