@@ -4,13 +4,12 @@ QuantumBrain AI Backend v1.0
 AI-аналитика, приём метрик, оптимизации
 """
 
-import json
-import time
 import logging
-from datetime import datetime, timedelta
 from collections import deque
-from flask import Blueprint, request, jsonify, current_app
+from datetime import datetime
 from functools import wraps
+
+from flask import Blueprint, jsonify, request
 
 logger = logging.getLogger("ai_backend")
 
