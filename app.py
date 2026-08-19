@@ -47,6 +47,7 @@ from config import Config
 # ── AI Backend ──
 try:
     from ai_backend import ai_bp
+
     _startup_log.info("ai_backend OK")
 except Exception as ai_err:
     ai_bp = None
@@ -3949,7 +3950,6 @@ def _free_port(port: int):
         except OSError:
             pass
     time.sleep(1)
-
 
 
 # ── Регистрация AI Blueprint ──
