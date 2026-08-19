@@ -44,6 +44,14 @@ import time
 _startup_log.info("stdlib OK")
 from config import Config
 
+# ── AI Backend ──
+try:
+    from ai_backend import ai_bp
+    _startup_log.info("ai_backend OK")
+except Exception as ai_err:
+    ai_bp = None
+    _startup_log.warning("ai_backend failed: %s", ai_err)
+
 _startup_log.info("config OK")
 
 # ── Модуль защиты от атак ─────────────────────────────────────────────────
@@ -3943,6 +3951,11 @@ def _free_port(port: int):
     time.sleep(1)
 
 
+
+# ── Регистрация AI Blueprint ──
+if ai_bp:
+    app.register_blueprint(ai_bp)
+    _startup_log.info("AI blueprint registered at /api/ai")
 if __name__ == "__main__":
     import errno
 
