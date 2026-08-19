@@ -1098,7 +1098,7 @@ user_trader.py:473: unused attribute 'last_signal_at' (60% confidence)
 wallet_tracker.py:311: unused method 'get_whale_hold_score' (60% confidence)
 
 ## Bandit Security
-Run started:2026-08-18 02:55:06.928438+00:00
+Run started:2026-08-19 02:57:02.671057+00:00
 
 Test results:
 >> Issue: [B301:blacklist] Pickle and modules that wrap it can be unsafe when used to deserialize untrusted data, possible security issue.
