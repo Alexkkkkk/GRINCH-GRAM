@@ -51,3 +51,6 @@ fix_stats_test.py
 ai_emergency_fix.md
 all_reports.md
 ai_reports/
+
+# Local VPS backup files
+app.py.bak-*
