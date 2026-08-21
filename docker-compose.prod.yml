@@ -15,6 +15,11 @@ services:
     depends_on:
       bot:
         condition: service_healthy
+    healthcheck:
+      test: ["CMD", "nginx", "-t"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
     networks:
       - grinch-net
 
@@ -23,16 +28,17 @@ services:
     container_name: grinch-db
     restart: unless-stopped
     environment:
-      POSTGRES_USER: ${POSTGRES_USER}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
-      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      POSTGRES_DB: ${POSTGRES_DB:-grinch}
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-grinch}"]
       interval: 10s
       timeout: 5s
       retries: 10
+      start_period: 10s
     networks:
       - grinch-net
 
@@ -74,12 +80,15 @@ services:
     restart: unless-stopped
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
+      - ./.docker-config.json:/config.json:ro
     environment:
       - WATCHTOWER_CLEANUP=true
       - WATCHTOWER_POLL_INTERVAL=300
       - WATCHTOWER_INCLUDE_STOPPED=true
       - WATCHTOWER_REVIVE_STOPPED=true
       - WATCHTOWER_LABEL_ENABLE=true
+      - WATCHTOWER_NOTIFICATIONS=shoutrrr
+      - WATCHTOWER_NOTIFICATION_URL=${WATCHTOWER_NOTIFICATION_URL:-}
     command: --interval 300 --label-enable
     labels:
       - "com.centurylinklabs.watchtower.enable=true"
@@ -88,9 +97,15 @@ services:
 
 volumes:
   bot_data:
+    driver: local
   postgres_data:
+    driver: local
   bot_logs:
+    driver: local
 
 networks:
   grinch-net:
     driver: bridge
+    ipam:
+      config:
+        - subnet: 172.28.0.0/16
