@@ -18,8 +18,12 @@ else
     echo "✅ Docker already installed: $(docker --version)"
 fi
 
-if ! docker compose version &> /dev/null; then
-    apt-get install -y docker-compose-plugin
+if docker compose version &> /dev/null; then
+    echo "✅ Docker Compose v2 available"
+elif command -v docker-compose &> /dev/null; then
+    echo "✅ Docker Compose v1 available: $(docker-compose version --short)"
+else
+    apt-get install -y docker-compose-plugin || apt-get install -y docker-compose
 fi
 
 # ── Create deployer user ────────────────────────────────────────

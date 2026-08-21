@@ -44,6 +44,7 @@ services:
 
   bot:
     image: ghcr.io/alexkkkkk/grinch-gram:latest
+    build: .
     container_name: grinch-bot
     restart: unless-stopped
     depends_on:
@@ -68,9 +69,6 @@ services:
         limits:
           cpus: '2'
           memory: 2G
-        reservations:
-          cpus: '0.5'
-          memory: 512M
     networks:
       - grinch-net
 
@@ -80,7 +78,7 @@ services:
     restart: unless-stopped
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
-      - ./.docker-config.json:/config.json:ro
+      - /root/.docker:/config:ro
     environment:
       - WATCHTOWER_CLEANUP=true
       - WATCHTOWER_POLL_INTERVAL=300
@@ -89,6 +87,7 @@ services:
       - WATCHTOWER_LABEL_ENABLE=true
       - WATCHTOWER_NOTIFICATIONS=shoutrrr
       - WATCHTOWER_NOTIFICATION_URL=${WATCHTOWER_NOTIFICATION_URL:-}
+      - DOCKER_API_VERSION=1.44
     command: --interval 300 --label-enable
     labels:
       - "com.centurylinklabs.watchtower.enable=true"

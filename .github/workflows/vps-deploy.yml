@@ -297,7 +297,10 @@ jobs:
             
             # ── Pull new image ──
             echo "📥 Pulling ${IMAGE}:${VERSION}..."
-            docker pull "${IMAGE}:${VERSION}"
+            if ! docker pull "${IMAGE}:${VERSION}"; then
+              echo "⚠️ GHCR tag unavailable; building from checked-out source"
+              docker build -t "${IMAGE}:${VERSION}" .
+            fi
             
             # ── Tag management ──
             echo "🏷️ Managing tags..."
@@ -310,7 +313,7 @@ jobs:
             
             # ── Deploy ──
             echo "🔄 Starting containers..."
-            docker compose -f docker-compose.prod.yml up -d --no-deps --pull always bot
+            docker-compose -f docker-compose.prod.yml up -d --no-deps --pull always bot
             
             # ── Health check with exponential backoff ──
             echo "⏳ Health check..."
@@ -334,7 +337,7 @@ jobs:
               if docker image inspect "${IMAGE}:previous" > /dev/null 2>&1; then
                 docker tag "${IMAGE}:latest" "${IMAGE}:failed-$(date +%Y%m%d-%H%M%S)"
                 docker tag "${IMAGE}:previous" "${IMAGE}:latest"
-                docker compose -f docker-compose.prod.yml up -d --no-deps bot
+                docker-compose -f docker-compose.prod.yml up -d --no-deps bot
                 sleep 5
                 
                 if curl -sf http://localhost:3000/health > /dev/null 2>&1; then
@@ -342,7 +345,7 @@ jobs:
                   echo "rollback_status=success" >> "$GITHUB_ENV"
                 else
                   echo "❌ Rollback FAILED — attempting full restart..."
-                  docker compose -f docker-compose.prod.yml restart
+                  docker-compose -f docker-compose.prod.yml restart
                   sleep 10
                   if curl -sf http://localhost:3000/health > /dev/null 2>&1; then
                     echo "✅ Restart SUCCESSFUL"
@@ -453,7 +456,7 @@ jobs:
             
             docker tag "${IMAGE}:latest" "${IMAGE}:failed-$(date +%Y%m%d-%H%M%S)"
             docker tag "${IMAGE}:previous" "${IMAGE}:latest"
-            docker compose -f docker-compose.prod.yml up -d --no-deps bot
+            docker-compose -f docker-compose.prod.yml up -d --no-deps bot
             
             sleep 5
             curl -sf http://localhost:3000/health > /dev/null 2>&1
@@ -491,7 +494,7 @@ jobs:
           port: ${{ secrets.VPS_SSH_PORT || '22' }}
           script: |
             cd /opt/bot
-            docker compose -f docker-compose.prod.yml restart
+            docker-compose -f docker-compose.prod.yml restart
             sleep 5
             curl -sf http://localhost:3000/health > /dev/null 2>&1
             echo "✅ Restart OK"
@@ -580,7 +583,7 @@ jobs:
           script: |
             echo "=== GRINCH-GRAM STATUS ==="
             echo "--- Containers ---"
-            docker compose -f /opt/bot/docker-compose.prod.yml ps
+            docker-compose -f /opt/bot/docker-compose.prod.yml ps
             echo "--- Health ---"
             curl -sf http://localhost:3000/health 2>/dev/null || echo "❌ Health check failed"
             echo "--- Disk ---"
