@@ -7,6 +7,20 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>GRINCH-GRAM · QuantumBrain v4</title>
+<meta name="description" content="GRINCH-GRAM — AI-powered crypto trading dashboard with QuantumBrain analytics, real-time signals, and automated strategies">
+<meta name="keywords" content="crypto trading, AI, bitcoin, ethereum, trading bot, GRINCH, QuantumBrain">
+<meta name="author" content="GRINCH-GRAM Team">
+<meta name="robots" content="index, follow">
+<meta property="og:title" content="GRINCH-GRAM QuantumBrain v4">
+<meta property="og:description" content="AI-powered crypto trading dashboard with real-time analytics">
+<meta property="og:type" content="website">
+<meta property="og:url" content="https://grinch-gram.com">
+<meta property="og:image" content="/static/img/og-image.png">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="GRINCH-GRAM QuantumBrain v4">
+<meta name="twitter:description" content="AI-powered crypto trading dashboard">
+<meta name="twitter:image" content="/static/img/og-image.png">
+<link rel="canonical" href="https://grinch-gram.com">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600;700;800&display=swap" rel="stylesheet">
@@ -16,7 +30,7 @@
 <script src="/static/js/lightweight-charts.standalone.production.js"></script>
 <script>if("serviceWorker"in navigator){window.addEventListener("load",function(){navigator.serviceWorker.register("/static/js/ai-sw.js").then(function(r){console.log("[AI-SW] Registered:",r.scope)}).catch(function(e){console.log("[AI-SW] Failed:",e)})})}</script>
 </head>
-<body>
+<body data-theme="dark">
 <div class="app">
 
 <!-- ═══ TRAINING BANNER ═══ -->
@@ -96,7 +110,8 @@
   </div>
 
   <div class="hdr-controls-area">
-    <button id="mobile-brain-toggle" onclick="toggleMobileBrain()" style="display:none" title="AI Brain панель">🧠 AI</button>
+    <button id="theme-toggle" class="btn btn-tiny" onclick="toggleTheme()" aria-label="Переключить тему" title="Тёмная/Светлая тема">🌓</button>
+    <button id="mobile-brain-toggle" onclick="toggleMobileBrain()" style="display:none" title="AI Brain панель" aria-label="Открыть AI Brain панель">🧠 AI</button>
     <div id="ton-connect-button" style="display:inline-flex;align-items:center"></div>
     <div class="ai-auto-pill" id="ai-auto-pill">🤖 AI АВТО</div>
     <button id="btn-start" class="btn btn-green btn-xs" onclick="startAgent()" {% if init_running %}style="display:none"{% endif %}>▶ Пуск</button>
@@ -371,8 +386,8 @@
           <span style="color:var(--text2);font-size:10px">TON</span>
         </div>
         <div class="bm-btns">
-          <button class="ai-manual-buy-btn" id="btn-manual-buy" onclick="manualBuy()">🟢 КУПИТЬ</button>
-          <button class="ai-manual-sell-btn" id="btn-manual-sell" onclick="manualSellAll()">🔴 ПРОДАТЬ ВСЁ</button>
+          <button class="ai-manual-buy-btn" id="btn-manual-buy" onclick="manualBuy()" aria-label="Купить криптовалюту" role="button">🟢 КУПИТЬ</button>
+          <button class="ai-manual-sell-btn" id="btn-manual-sell" onclick="manualSellAll()" aria-label="Продать всю криптовалюту" role="button">🔴 ПРОДАТЬ ВСЁ</button>
         </div>
         <div class="ai-manual-status" id="ai-manual-status"></div>
       </div>
@@ -1191,7 +1206,7 @@
             <input type="number" id="liq-thresh" class="liq-input" value="50" min="0.5" max="200" step="0.5" onchange="setLiqThreshold(this.value)">
           </div>
           <div class="liq-actions">
-            <button class="btn btn-red btn-sm" onclick="forceLiqSell()" id="liq-sell-btn">🔴 Продать сейчас</button>
+            <button class="btn btn-red btn-sm" onclick="forceLiqSell()" id="liq-sell-btn" aria-label="Продать сейчас по рыночной цене" role="button">🔴 Продать сейчас</button>
             <span id="liq-sell-status" class="liq-sell-status"></span>
           </div>
           <div id="liq-msg" class="liq-msg"></div>
