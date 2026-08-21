@@ -199,18 +199,20 @@ def ai_status():
         }
     )
 
+
 # ═══ SQLite Integration for Persistent Metrics ═══
 import sqlite3
 import threading
 
 _db_lock = threading.Lock()
-_db_path = os.environ.get('AI_DB_PATH', '/tmp/ai_metrics.db')
+_db_path = os.environ.get("AI_DB_PATH", "/tmp/ai_metrics.db")
+
 
 def _init_db():
     """Initialize SQLite database for AI metrics."""
     with _db_lock:
         conn = sqlite3.connect(_db_path)
-        conn.execute('''
+        conn.execute("""
             CREATE TABLE IF NOT EXISTS perf_metrics (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 timestamp TEXT,
@@ -224,87 +226,98 @@ def _init_db():
                 ttfb REAL,
                 user_agent TEXT
             )
-        ''')
-        conn.execute('''
+        """)
+        conn.execute("""
             CREATE INDEX IF NOT EXISTS idx_timestamp ON perf_metrics(timestamp)
-        ''')
+        """)
         conn.commit()
         conn.close()
 
+
 _init_db()
+
 
 def _save_metric_to_db(record):
     """Save performance metric to SQLite."""
     with _db_lock:
         conn = sqlite3.connect(_db_path)
-        metrics = record.get('metrics', {})
-        conn.execute('''
+        metrics = record.get("metrics", {})
+        conn.execute(
+            """
             INSERT INTO perf_metrics 
             (timestamp, session, url, ai_score, lcp, fid, cls, fcp, ttfb, user_agent)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        ''', (
-            record.get('timestamp'),
-            record.get('session'),
-            record.get('url'),
-            record.get('ai_score'),
-            metrics.get('LCP'),
-            metrics.get('FID'),
-            metrics.get('CLS'),
-            metrics.get('FCP'),
-            metrics.get('TTFB'),
-            record.get('user_agent')
-        ))
+        """,
+            (
+                record.get("timestamp"),
+                record.get("session"),
+                record.get("url"),
+                record.get("ai_score"),
+                metrics.get("LCP"),
+                metrics.get("FID"),
+                metrics.get("CLS"),
+                metrics.get("FCP"),
+                metrics.get("TTFB"),
+                record.get("user_agent"),
+            ),
+        )
         conn.commit()
         conn.close()
 
+
 # Monkey-patch receive_perf_metrics to also save to DB
 _original_receive = receive_perf_metrics
+
+
 @ai_bp.route("/perf", methods=["POST"])
 def receive_perf_metrics_v2():
     """Enhanced perf endpoint with SQLite persistence."""
     response = _original_receive()
     try:
         data = request.get_json(silent=True) or {}
-        if data.get('metrics'):
+        if data.get("metrics"):
             record = {
-                'timestamp': datetime.utcnow().isoformat(),
-                'session': data.get('session', 'unknown'),
-                'url': data.get('url', ''),
-                'ai_score': data.get('aiScore', 0),
-                'metrics': data.get('metrics', {}),
-                'user_agent': data.get('userAgent', '')[:100]
+                "timestamp": datetime.utcnow().isoformat(),
+                "session": data.get("session", "unknown"),
+                "url": data.get("url", ""),
+                "ai_score": data.get("aiScore", 0),
+                "metrics": data.get("metrics", {}),
+                "user_agent": data.get("userAgent", "")[:100],
             }
             _save_metric_to_db(record)
     except Exception as e:
         logger.warning(f"DB save failed: {e}")
     return response
 
+
 @ai_bp.route("/metrics/history", methods=["GET"])
 @ai_cache_headers(max_age=60)
 def get_metrics_history():
     """Get historical performance metrics from SQLite."""
     try:
-        hours = request.args.get('hours', 24, type=int)
+        hours = request.args.get("hours", 24, type=int)
         with _db_lock:
             conn = sqlite3.connect(_db_path)
-            cursor = conn.execute('''
+            cursor = conn.execute("""
                 SELECT timestamp, ai_score, lcp, cls 
                 FROM perf_metrics 
                 WHERE timestamp > datetime('now', '-{} hours')
                 ORDER BY timestamp DESC
                 LIMIT 1000
-            '''.format(hours))
+            """.format(hours))
             rows = cursor.fetchall()
             conn.close()
-        
-        return jsonify({
-            'ok': True,
-            'count': len(rows),
-            'data': [
-                {'timestamp': r[0], 'ai_score': r[1], 'lcp': r[2], 'cls': r[3]}
-                for r in rows
-            ]
-        })
+
+        return jsonify(
+            {
+                "ok": True,
+                "count": len(rows),
+                "data": [
+                    {"timestamp": r[0], "ai_score": r[1], "lcp": r[2], "cls": r[3]}
+                    for r in rows
+                ],
+            }
+        )
     except Exception as e:
         logger.error(f"metrics_history error: {e}")
-        return jsonify({'ok': False, 'error': str(e)}), 500
+        return jsonify({"ok": False, "error": str(e)}), 500
