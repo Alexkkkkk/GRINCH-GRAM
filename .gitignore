@@ -54,3 +54,6 @@ ai_reports/
 
 # Local VPS backup files
 *.bak-*
+
+# Local Docker auth config
+.docker-config.json/
