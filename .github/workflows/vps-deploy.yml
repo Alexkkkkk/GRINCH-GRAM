@@ -1,94 +1,271 @@
-name: Phase 5 — Deploy to VPS
+name: 🚀 Production Deploy to VPS
 
 on:
   push:
-    branches: [main]
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+    types: [closed]
   workflow_dispatch:
     inputs:
-      reason:
-        description: "Reason for deployment"
-        required: false
-        default: "manual"
-        type: string
-  repository_dispatch:
-    types:
-      - vps-error
+      action:
+        description: 'Action to perform'
+        required: true
+        default: 'deploy'
+        type: choice
+        options:
+          - deploy
+          - rollback
+          - restart
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
 
 permissions:
   contents: read
+  packages: write
 
 concurrency:
   group: vps-deploy
   cancel-in-progress: false
 
 jobs:
-  deploy:
-    name: Phase 5 (Deploy to VPS)
+  build:
+    name: 🐳 Build & Push to GHCR
     runs-on: ubuntu-latest
-    timeout-minutes: 30
-
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      short_sha: ${{ steps.version.outputs.short_sha }}
     steps:
-      - name: Validate deployment secrets
-        env:
-          VPS_SSH_PRIVATE_KEY: ${{ secrets.VPS_SSH_KEY }}
-          VPS_HOST: "2.27.25.126"
-        run: |
-          if [ -z "$VPS_SSH_PRIVATE_KEY" ]; then
-            echo "::error::VPS_SSH_KEY is not configured"
-            exit 1
-          fi
-          if [ -z "$VPS_HOST" ]; then
-            echo "::error::VPS_HOST is not configured (should be IP or domain)"
-            exit 1
-          fi
+      - name: Checkout code
+        uses: actions/checkout@v4
 
-      - name: Load VPS SSH key
-        uses: webfactory/ssh-agent@v0.10.0
+      - name: Generate version
+        id: version
+        run: |
+          DATE=$(date +'%Y%m%d')
+          SHA=${GITHUB_SHA::7}
+          VERSION="${DATE}-${SHA}"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "short_sha=$SHA" >> "$GITHUB_OUTPUT"
+          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
+          echo "📦 Building version: $VERSION"
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@v3
         with:
-          ssh-private-key: ${{ secrets.VPS_SSH_KEY }}
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Trust VPS host key
-        env:
-          VPS_HOST: "2.27.25.126"
-        run: |
-          mkdir -p "$HOME/.ssh"
-          chmod 700 "$HOME/.ssh"
-          ssh-keyscan -H "$VPS_HOST" >> "$HOME/.ssh/known_hosts"
-          chmod 600 "$HOME/.ssh/known_hosts"
+      - name: Extract Docker metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=raw,value=${{ steps.version.outputs.version }}
+            type=raw,value=latest
+            type=sha,prefix=,suffix=,format=short
 
-      - name: Deploy main to VPS
-        env:
-          VPS_HOST: "2.27.25.126"
-          VPS_USER: ${{ secrets.VPS_USER || 'root' }}
-        run: |
-          ssh             -o BatchMode=yes             -o StrictHostKeyChecking=yes             "$VPS_USER@$VPS_HOST"             'set -e
-             cd /opt/bot
-             export GIT_TERMINAL_PROMPT=0
-             git pull origin main
-             COMPOSE="docker compose"
-             if command -v docker-compose >/dev/null 2>&1; then COMPOSE="docker-compose"; fi
-             $COMPOSE up -d --build
-             sleep 5
-             $COMPOSE ps
-             $COMPOSE logs --tail 50'
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          platforms: linux/amd64
 
-      - name: Health check after deploy
-        env:
-          VPS_HOST: "2.27.25.126"
+      - name: Verify image pushed
         run: |
-          for i in $(seq 1 12); do
-            if curl --fail --silent --max-time 10 "http://$VPS_HOST/health"; then
-              echo "✅ VPS health check passed"
-              exit 0
+          docker pull "${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.version.outputs.version }}"
+          echo "✅ Image verified in registry"
+
+  deploy:
+    name: 🚀 Deploy to VPS
+    needs: build
+    runs-on: ubuntu-latest
+    if: |
+      github.event_name == 'push' || 
+      (github.event_name == 'pull_request' && github.event.pull_request.merged == true) || 
+      (github.event_name == 'workflow_dispatch' && github.event.inputs.action == 'deploy')
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Copy configs to VPS
+        uses: appleboy/scp-action@master
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          password: ${{ secrets.VPS_PASSWORD }}
+          port: ${{ secrets.VPS_SSH_PORT || '22' }}
+          source: "docker-compose.prod.yml,nginx.conf,nginx_proxy_params.conf,scripts/"
+          target: "/opt/bot/"
+          overwrite: true
+
+      - name: Deploy on VPS
+        uses: appleboy/ssh-action@master
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          password: ${{ secrets.VPS_PASSWORD }}
+          port: ${{ secrets.VPS_SSH_PORT || '22' }}
+          script_stop: true
+          script: |
+            set -euo pipefail
+            VERSION="${{ needs.build.outputs.version }}"
+            REGISTRY="ghcr.io"
+            IMAGE_NAME="${{ github.repository }}"
+            
+            echo "========================================"
+            echo "🚀 Starting deployment v${VERSION}"
+            echo "========================================"
+            
+            cd /opt/bot
+            mkdir -p backups logs
+            
+            echo "🔐 Logging into GHCR..."
+            echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+            
+            echo "📥 Pulling image ${REGISTRY}/${IMAGE_NAME}:${VERSION}..."
+            docker pull "${REGISTRY}/${IMAGE_NAME}:${VERSION}"
+            
+            echo "🏷️ Tagging current as previous..."
+            docker tag "${REGISTRY}/${IMAGE_NAME}:latest" "${REGISTRY}/${IMAGE_NAME}:previous" 2>/dev/null || true
+            
+            docker tag "${REGISTRY}/${IMAGE_NAME}:${VERSION}" "${REGISTRY}/${IMAGE_NAME}:latest"
+            
+            echo "${VERSION}" > /opt/bot/.version
+            date -Iseconds >> /opt/bot/.version
+            
+            echo "🔄 Starting containers..."
+            docker compose -f docker-compose.prod.yml up -d --no-deps --pull always bot
+            
+            echo "⏳ Health check..."
+            for i in $(seq 1 30); do
+              if curl -sf http://localhost:3000/health > /dev/null 2>&1; then
+                echo "✅ Health check passed!"
+                break
+              fi
+              if [ "$i" -eq 30 ]; then
+                echo "❌ Health check failed after 30 attempts"
+                exit 1
+              fi
+              echo "  Attempt $i/30..."
+              sleep 2
+            done
+            
+            echo "🧹 Cleaning up..."
+            docker system prune -f
+            docker image prune -af --filter "until=168h" 2>/dev/null || true
+            
+            echo "========================================"
+            echo "✅ Deployment v${VERSION} successful!"
+            echo "========================================"
+
+      - name: Notify Telegram - Success
+        if: success() && secrets.TELEGRAM_BOT_TOKEN != ''
+        uses: appleboy/telegram-action@master
+        with:
+          to: ${{ secrets.TELEGRAM_CHAT_ID }}
+          token: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          format: markdown
+          message: |
+            ✅ *GRINCH-GRAM Deployed Successfully*
+            
+            🏷️ Version: `${{ needs.build.outputs.version }}`
+            🔗 Commit: `${{ needs.build.outputs.short_sha }}`
+            👤 Author: ${{ github.actor }}
+            
+            [View Deployment](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }})
+
+      - name: Notify Telegram - Failure
+        if: failure() && secrets.TELEGRAM_BOT_TOKEN != ''
+        uses: appleboy/telegram-action@master
+        with:
+          to: ${{ secrets.TELEGRAM_CHAT_ID }}
+          token: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          format: markdown
+          message: |
+            ❌ *GRINCH-GRAM Deploy FAILED*
+            
+            🔗 Commit: `${{ needs.build.outputs.short_sha }}`
+            👤 Author: ${{ github.actor }}
+            
+            [View Logs](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }})
+
+  rollback:
+    name: ↩️ Rollback to Previous
+    runs-on: ubuntu-latest
+    if: github.event_name == 'workflow_dispatch' && github.event.inputs.action == 'rollback'
+    steps:
+      - name: Execute rollback
+        uses: appleboy/ssh-action@master
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          password: ${{ secrets.VPS_PASSWORD }}
+          port: ${{ secrets.VPS_SSH_PORT || '22' }}
+          script_stop: true
+          script: |
+            set -e
+            cd /opt/bot
+            
+            echo "🔄 Rolling back to previous version..."
+            
+            if ! docker image inspect "ghcr.io/${{ github.repository }}:previous" > /dev/null 2>&1; then
+              echo "❌ No previous image found!"
+              exit 1
             fi
+            
+            docker tag "ghcr.io/${{ github.repository }}:latest" "ghcr.io/${{ github.repository }}:failed-$(date +%Y%m%d-%H%M%S)" 2>/dev/null || true
+            
+            docker tag "ghcr.io/${{ github.repository }}:previous" "ghcr.io/${{ github.repository }}:latest"
+            docker compose -f docker-compose.prod.yml up -d --no-deps bot
+            
             sleep 5
-          done
-          echo "::error::VPS health check failed after deploy"
-          exit 1
+            if curl -sf http://localhost:3000/health > /dev/null 2>&1; then
+              echo "✅ Rollback successful!"
+            else
+              echo "❌ Rollback failed!"
+              exit 1
+            fi
 
-      - name: Record dispatch context
-        if: github.event_name == 'repository_dispatch'
-        run: |
-          echo "Deployment triggered by repository_dispatch"
-          echo "severity=${{ github.event.client_payload.severity || 'unknown' }}"
-          echo "service=${{ github.event.client_payload.service || 'unknown' }}"
+      - name: Notify Telegram - Rollback
+        if: env.TELEGRAM_BOT_TOKEN != ''
+        uses: appleboy/telegram-action@master
+        with:
+          to: ${{ secrets.TELEGRAM_CHAT_ID }}
+          token: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          format: markdown
+          message: |
+            ↩️ *GRINCH-GRAM Rolled Back*
+            
+            👤 Triggered by: ${{ github.actor }}
+            
+            [View Logs](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }})
+
+  restart:
+    name: 🔄 Restart Services
+    runs-on: ubuntu-latest
+    if: github.event_name == 'workflow_dispatch' && github.event.inputs.action == 'restart'
+    steps:
+      - name: Restart services
+        uses: appleboy/ssh-action@master
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          password: ${{ secrets.VPS_PASSWORD }}
+          port: ${{ secrets.VPS_SSH_PORT || '22' }}
+          script: |
+            cd /opt/bot
+            docker compose -f docker-compose.prod.yml restart
+            echo "✅ Services restarted"
