@@ -18,10 +18,29 @@ services:
       timeout: 5s
       retries: 3
 
+  # ── Локальная PostgreSQL-база ───────────────────────────────────────
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
   # ── Торговый бот (порт НЕ выставляем наружу — только nginx) ───────────
   bot:
     build: .
     restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
     expose:
       - "3000"
     volumes:
@@ -37,3 +56,4 @@ services:
 
 volumes:
   bot_data:
+  postgres_data:
