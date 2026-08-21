@@ -53,4 +53,4 @@ all_reports.md
 ai_reports/
 
 # Local VPS backup files
-app.py.bak-*
+*.bak-*
