@@ -1852,7 +1852,6 @@ def _git_status_info():
 # ════════════════════════════════════════════════════════════════════════════
 
 
-
 # ── Безопасная диагностическая консоль ───────────────────────────────────────
 _TERMINAL_COMMANDS = {
     "health": ("curl", "-fsS", "http://127.0.0.1:3000/health"),
@@ -1864,13 +1863,16 @@ _TERMINAL_COMMANDS = {
     "git": ("git", "-C", "/app", "status", "--short"),
 }
 
+
 @app.route("/terminal/")
 def terminal():
     return render_template("terminal.html", csrf_token=session.get("_csrf", ""))
 
+
 @app.route("/api/terminal/exec", methods=["POST"])
 def terminal_exec():
     import shlex
+
     payload = request.get_json(silent=True) or {}
     raw_command = str(payload.get("command", "")).strip()
     args = _TERMINAL_COMMANDS.get(raw_command)
@@ -1891,19 +1893,34 @@ def terminal_exec():
         }
         args = safe.get(" ".join(parts))
     if not args:
-        return jsonify({"ok": False, "error": "Команда не разрешена. Доступны: pwd, uptime, ps, ls -la, df -h, free -h, git status"}), 400
+        return (
+            jsonify(
+                {
+                    "ok": False,
+                    "error": "Команда не разрешена. Доступны: pwd, uptime, ps, ls -la, df -h, free -h, git status",
+                }
+            ),
+            400,
+        )
     try:
         result = subprocess.run(
-            args, cwd="/app", capture_output=True, text=True, timeout=12,
+            args,
+            cwd="/app",
+            capture_output=True,
+            text=True,
+            timeout=12,
             env={"PATH": os.environ.get("PATH", "")},
         )
         output = (result.stdout or "") + (result.stderr or "")
-        return jsonify({"ok": result.returncode == 0, "output": output[-20000:] or "(нет вывода)"})
+        return jsonify(
+            {"ok": result.returncode == 0, "output": output[-20000:] or "(нет вывода)"}
+        )
     except subprocess.TimeoutExpired:
         return jsonify({"ok": False, "error": "Команда превысила лимит 12 секунд"}), 504
     except Exception as exc:
         logger.warning("Terminal command failed: %s", exc)
         return jsonify({"ok": False, "error": "Не удалось выполнить диагностику"}), 500
+
 
 @app.route("/")
 def index():

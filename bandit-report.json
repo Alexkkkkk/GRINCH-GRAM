@@ -1,6 +1,6 @@
 {
   "errors": [],
-  "generated_at": "2026-08-21T03:38:13Z",
+  "generated_at": "2026-08-21T15:17:26Z",
   "metrics": {
     "./ai_advisor.py": {
       "CONFIDENCE.HIGH": 9,
@@ -107,15 +107,15 @@
       "skipped_tests": 0
     },
     "./app.py": {
-      "CONFIDENCE.HIGH": 34,
+      "CONFIDENCE.HIGH": 35,
       "CONFIDENCE.LOW": 0,
       "CONFIDENCE.MEDIUM": 3,
       "CONFIDENCE.UNDEFINED": 0,
       "SEVERITY.HIGH": 0,
-      "SEVERITY.LOW": 32,
+      "SEVERITY.LOW": 33,
       "SEVERITY.MEDIUM": 5,
       "SEVERITY.UNDEFINED": 0,
-      "loc": 3313,
+      "loc": 3361,
       "nosec": 0,
       "skipped_tests": 0
     },
@@ -536,15 +536,15 @@
       "skipped_tests": 0
     },
     "_totals": {
-      "CONFIDENCE.HIGH": 230,
+      "CONFIDENCE.HIGH": 231,
       "CONFIDENCE.LOW": 0,
       "CONFIDENCE.MEDIUM": 17,
       "CONFIDENCE.UNDEFINED": 0,
       "SEVERITY.HIGH": 0,
-      "SEVERITY.LOW": 231,
+      "SEVERITY.LOW": 232,
       "SEVERITY.MEDIUM": 16,
       "SEVERITY.UNDEFINED": 0,
-      "loc": 30254,
+      "loc": 30302,
       "nosec": 0,
       "skipped_tests": 0
     }
@@ -611,7 +611,7 @@
       "test_name": "blacklist"
     },
     {
-      "code": "2960         url = \"https://api.dexscreener.com/latest/dex/pairs/ton/EQCM3B12QK1e4yZSf8GtBRT0aLMNyEsBc_9Qsof7gbCmkjvi\"\n2961         with urllib.request.urlopen(url, timeout=5) as r:\n2962             d = _json.loads(r.read())\n",
+      "code": "3013         url = \"https://api.dexscreener.com/latest/dex/pairs/ton/EQCM3B12QK1e4yZSf8GtBRT0aLMNyEsBc_9Qsof7gbCmkjvi\"\n3014         with urllib.request.urlopen(url, timeout=5) as r:\n3015             d = _json.loads(r.read())\n",
       "col_offset": 13,
       "end_col_offset": 51,
       "filename": "./app.py",
@@ -622,16 +622,16 @@
       },
       "issue_severity": "MEDIUM",
       "issue_text": "Audit url open for permitted schemes. Allowing use of file:/ or custom schemes is often unexpected.",
-      "line_number": 2961,
+      "line_number": 3014,
       "line_range": [
-        2961
+        3014
       ],
       "more_info": "https://bandit.readthedocs.io/en/1.9.4/blacklists/blacklist_calls.html#b310-urllib-urlopen",
       "test_id": "B310",
       "test_name": "blacklist"
     },
     {
-      "code": "2970         url2 = \"https://tonapi.io/v2/rates?tokens=ton&currencies=usd\"\n2971         with urllib.request.urlopen(url2, timeout=5) as r2:\n2972             d2 = _json.loads(r2.read())\n",
+      "code": "3023         url2 = \"https://tonapi.io/v2/rates?tokens=ton&currencies=usd\"\n3024         with urllib.request.urlopen(url2, timeout=5) as r2:\n3025             d2 = _json.loads(r2.read())\n",
       "col_offset": 13,
       "end_col_offset": 52,
       "filename": "./app.py",
@@ -642,9 +642,9 @@
       },
       "issue_severity": "MEDIUM",
       "issue_text": "Audit url open for permitted schemes. Allowing use of file:/ or custom schemes is often unexpected.",
-      "line_number": 2971,
+      "line_number": 3024,
       "line_range": [
-        2971
+        3024
       ],
       "more_info": "https://bandit.readthedocs.io/en/1.9.4/blacklists/blacklist_calls.html#b310-urllib-urlopen",
       "test_id": "B310",
