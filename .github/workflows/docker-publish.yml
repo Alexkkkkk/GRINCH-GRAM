@@ -44,6 +44,7 @@ jobs:
             type=sha,prefix=,suffix=,format=short
 
       - name: 🏗️ Build and push
+        id: build-push
         uses: docker/build-push-action@v7
         with:
           context: .

@@ -1,6 +1,8 @@
 name: Phase 5 — Deploy to VPS
 
 on:
+  push:
+    branches: [main]
   workflow_dispatch:
     inputs:
       reason:
@@ -63,17 +65,19 @@ jobs:
              cd /opt/bot
              export GIT_TERMINAL_PROMPT=0
              git pull origin main
-             docker compose up -d --build
+             COMPOSE="docker compose"
+             if command -v docker-compose >/dev/null 2>&1; then COMPOSE="docker-compose"; fi
+             $COMPOSE up -d --build
              sleep 5
-             docker compose ps
-             docker compose logs --tail 50'
+             $COMPOSE ps
+             $COMPOSE logs --tail 50'
 
       - name: Health check after deploy
         env:
           VPS_HOST: ${{ secrets.VPS_HOST }}
         run: |
           for i in $(seq 1 12); do
-            if curl --fail --silent --max-time 10 "http://$VPS_HOST:3000/health"; then
+            if curl --fail --silent --max-time 10 "http://$VPS_HOST/health"; then
               echo "✅ VPS health check passed"
               exit 0
             fi
