@@ -1,6 +1,7 @@
 """Binance Spot API client."""
+
 import logging
-from decimal import Decimal, ROUND_DOWN
+from decimal import ROUND_DOWN, Decimal
 from typing import Dict, Optional, Tuple
 
 try:
@@ -19,7 +20,7 @@ class BinanceExchangeClient:
         self.client = Client(
             api_key=Config.BINANCE_API_KEY,
             api_secret=Config.BINANCE_API_SECRET,
-            testnet=Config.USE_TESTNET
+            testnet=Config.USE_TESTNET,
         )
         self.symbol = Config.SYMBOL
         self._exchange_info = None
@@ -53,7 +54,11 @@ class BinanceExchangeClient:
 
     def get_balances(self) -> Tuple[float, float]:
         base = self.symbol.replace("USDT", "").replace("BUSD", "").replace("USDC", "")
-        quote = "USDT" if "USDT" in self.symbol else ("BUSD" if "BUSD" in self.symbol else "USDC")
+        quote = (
+            "USDT"
+            if "USDT" in self.symbol
+            else ("BUSD" if "BUSD" in self.symbol else "USDC")
+        )
         return self.get_balance(base), self.get_balance(quote)
 
     def get_filters(self) -> Dict:
@@ -79,9 +84,11 @@ class BinanceExchangeClient:
             order = self.client.order_limit_buy(
                 symbol=self.symbol,
                 quantity=self.format_quantity(quantity),
-                price=self.format_price(price)
+                price=self.format_price(price),
             )
-            log.info("BUY order placed: %s @ %s, id=%s", quantity, price, order["orderId"])
+            log.info(
+                "BUY order placed: %s @ %s, id=%s", quantity, price, order["orderId"]
+            )
             return {"ok": True, "order_id": order["orderId"], "raw": order}
         except BinanceAPIException as e:
             log.error("BUY order failed: %s", e)
@@ -92,9 +99,11 @@ class BinanceExchangeClient:
             order = self.client.order_limit_sell(
                 symbol=self.symbol,
                 quantity=self.format_quantity(quantity),
-                price=self.format_price(price)
+                price=self.format_price(price),
             )
-            log.info("SELL order placed: %s @ %s, id=%s", quantity, price, order["orderId"])
+            log.info(
+                "SELL order placed: %s @ %s, id=%s", quantity, price, order["orderId"]
+            )
             return {"ok": True, "order_id": order["orderId"], "raw": order}
         except BinanceAPIException as e:
             log.error("SELL order failed: %s", e)
@@ -127,7 +136,9 @@ class BinanceExchangeClient:
 
     def get_klines(self, interval: str = "1h", limit: int = 50) -> list:
         try:
-            return self.client.get_klines(symbol=self.symbol, interval=interval, limit=limit)
+            return self.client.get_klines(
+                symbol=self.symbol, interval=interval, limit=limit
+            )
         except Exception as e:
             log.error("Klines fetch error: %s", e)
             return []

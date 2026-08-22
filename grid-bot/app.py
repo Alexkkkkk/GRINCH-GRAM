@@ -1,12 +1,14 @@
 #!/usr/bin/env python3
 """Flask API + WebSocket for Grid Trading Bot."""
+
 import logging
-from flask import Flask, render_template, jsonify, request
-from flask_socketio import SocketIO
+
+from flask import Flask, jsonify, render_template, request
 from flask_cors import CORS
+from flask_socketio import SocketIO
+from grid_engine import GridTradingEngine
 
 from config import Config
-from grid_engine import GridTradingEngine
 from database import GridDatabase
 
 logging.basicConfig(
@@ -55,7 +57,7 @@ def api_build():
         upper=data.get("upper"),
         lower=data.get("lower"),
         grid_count=data.get("grid_count"),
-        investment=data.get("investment")
+        investment=data.get("investment"),
     )
     return jsonify(result)
 
@@ -80,6 +82,7 @@ def ws_connect():
 
 def broadcast_loop():
     import time
+
     while True:
         time.sleep(5)
         try:
@@ -90,6 +93,7 @@ def broadcast_loop():
 
 if __name__ == "__main__":
     import threading
+
     t = threading.Thread(target=broadcast_loop, daemon=True)
     t.start()
     socketio.run(app, host=Config.HOST, port=Config.PORT, debug=Config.DEBUG)

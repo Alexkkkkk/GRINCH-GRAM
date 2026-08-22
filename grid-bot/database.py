@@ -1,7 +1,9 @@
 """SQLite database for trades, PnL and statistics."""
-import sqlite3
+
 import logging
-from typing import List, Dict, Optional
+import sqlite3
+from typing import Dict, List
+
 from config import Config
 
 log = logging.getLogger("database")
@@ -67,17 +69,37 @@ class GridDatabase:
             """)
             conn.commit()
 
-    def save_trade(self, symbol: str, side: str, level_id: int, price: float,
-                   quantity: float, amount_usdt: float = None,
-                   profit_usdt: float = 0, fee_usdt: float = 0,
-                   order_id: str = None) -> int:
+    def save_trade(
+        self,
+        symbol: str,
+        side: str,
+        level_id: int,
+        price: float,
+        quantity: float,
+        amount_usdt: float = None,
+        profit_usdt: float = 0,
+        fee_usdt: float = 0,
+        order_id: str = None,
+    ) -> int:
         with self._connect() as conn:
-            cursor = conn.execute("""
+            cursor = conn.execute(
+                """
                 INSERT INTO trades (symbol, side, level_id, price, quantity,
                                    amount_usdt, profit_usdt, fee_usdt, order_id)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """, (symbol, side, level_id, price, quantity, amount_usdt,
-                  profit_usdt, fee_usdt, order_id))
+            """,
+                (
+                    symbol,
+                    side,
+                    level_id,
+                    price,
+                    quantity,
+                    amount_usdt,
+                    profit_usdt,
+                    fee_usdt,
+                    order_id,
+                ),
+            )
             conn.commit()
             return cursor.lastrowid
 
@@ -87,12 +109,11 @@ class GridDatabase:
             if symbol:
                 rows = conn.execute(
                     "SELECT * FROM trades WHERE symbol = ? ORDER BY created_at DESC LIMIT ?",
-                    (symbol, limit)
+                    (symbol, limit),
                 ).fetchall()
             else:
                 rows = conn.execute(
-                    "SELECT * FROM trades ORDER BY created_at DESC LIMIT ?",
-                    (limit,)
+                    "SELECT * FROM trades ORDER BY created_at DESC LIMIT ?", (limit,)
                 ).fetchall()
             return [dict(row) for row in rows]
 
@@ -103,23 +124,21 @@ class GridDatabase:
             params = (symbol,) if symbol else ()
             total_profit = conn.execute(
                 f"SELECT COALESCE(SUM(profit_usdt), 0) as total FROM trades {where}",
-                params
+                params,
             ).fetchone()["total"]
             buy_count = conn.execute(
-                f"SELECT COUNT(*) as cnt FROM trades {where} AND side = 'buy'",
-                params
+                f"SELECT COUNT(*) as cnt FROM trades {where} AND side = 'buy'", params
             ).fetchone()["cnt"]
             sell_count = conn.execute(
-                f"SELECT COUNT(*) as cnt FROM trades {where} AND side = 'sell'",
-                params
+                f"SELECT COUNT(*) as cnt FROM trades {where} AND side = 'sell'", params
             ).fetchone()["cnt"]
             win_count = conn.execute(
                 f"SELECT COUNT(*) as cnt FROM trades {where} AND profit_usdt > 0",
-                params
+                params,
             ).fetchone()["cnt"]
             loss_count = conn.execute(
                 f"SELECT COUNT(*) as cnt FROM trades {where} AND profit_usdt < 0",
-                params
+                params,
             ).fetchone()["cnt"]
             return {
                 "total_profit_usdt": round(total_profit, 4),
@@ -130,40 +149,60 @@ class GridDatabase:
                 "total_trades": buy_count + sell_count,
             }
 
-    def save_pnl_snapshot(self, symbol: str, total_profit: float,
-                          roi_pct: float, current_price: float):
+    def save_pnl_snapshot(
+        self, symbol: str, total_profit: float, roi_pct: float, current_price: float
+    ):
         with self._connect() as conn:
-            conn.execute("""
+            conn.execute(
+                """
                 INSERT INTO pnl_history (symbol, total_profit_usdt, roi_pct, current_price)
                 VALUES (?, ?, ?, ?)
-            """, (symbol, total_profit, roi_pct, current_price))
+            """,
+                (symbol, total_profit, roi_pct, current_price),
+            )
             conn.commit()
 
     def get_pnl_history(self, symbol: str = None, hours: int = 24) -> List[Dict]:
         with self._connect() as conn:
             conn.row_factory = sqlite3.Row
             if symbol:
-                rows = conn.execute("""
+                rows = conn.execute(
+                    """
                     SELECT * FROM pnl_history
                     WHERE symbol = ? AND recorded_at > datetime('now', ?)
                     ORDER BY recorded_at ASC
-                """, (symbol, f"-{hours} hours")).fetchall()
+                """,
+                    (symbol, f"-{hours} hours"),
+                ).fetchall()
             else:
-                rows = conn.execute("""
+                rows = conn.execute(
+                    """
                     SELECT * FROM pnl_history
                     WHERE recorded_at > datetime('now', ?)
                     ORDER BY recorded_at ASC
-                """, (f"-{hours} hours",)).fetchall()
+                """,
+                    (f"-{hours} hours",),
+                ).fetchall()
             return [dict(row) for row in rows]
 
-    def save_grid_config(self, symbol: str, upper: float, lower: float,
-                         grid_count: int, investment: float, step_pct: float):
+    def save_grid_config(
+        self,
+        symbol: str,
+        upper: float,
+        lower: float,
+        grid_count: int,
+        investment: float,
+        step_pct: float,
+    ):
         with self._connect() as conn:
-            conn.execute("""
+            conn.execute(
+                """
                 INSERT INTO grid_configs (symbol, upper_price, lower_price,
                                           grid_count, total_investment, step_pct)
                 VALUES (?, ?, ?, ?, ?, ?)
-            """, (symbol, upper, lower, grid_count, investment, step_pct))
+            """,
+                (symbol, upper, lower, grid_count, investment, step_pct),
+            )
             conn.commit()
 
     def clear_levels(self, symbol: str):
@@ -171,16 +210,35 @@ class GridDatabase:
             conn.execute("DELETE FROM grid_levels WHERE symbol = ?", (symbol,))
             conn.commit()
 
-    def save_level(self, symbol: str, level_id: int, side: str, price: float,
-                   quantity: float, status: str, order_id: str = None,
-                   paired_level_id: int = None):
+    def save_level(
+        self,
+        symbol: str,
+        level_id: int,
+        side: str,
+        price: float,
+        quantity: float,
+        status: str,
+        order_id: str = None,
+        paired_level_id: int = None,
+    ):
         with self._connect() as conn:
-            conn.execute("""
+            conn.execute(
+                """
                 INSERT OR REPLACE INTO grid_levels
                 (symbol, level_id, side, price, quantity, status, order_id, paired_level_id)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-            """, (symbol, level_id, side, price, quantity, status,
-                  order_id, paired_level_id))
+            """,
+                (
+                    symbol,
+                    level_id,
+                    side,
+                    price,
+                    quantity,
+                    status,
+                    order_id,
+                    paired_level_id,
+                ),
+            )
             conn.commit()
 
     def get_levels(self, symbol: str) -> List[Dict]:
@@ -188,6 +246,6 @@ class GridDatabase:
             conn.row_factory = sqlite3.Row
             rows = conn.execute(
                 "SELECT * FROM grid_levels WHERE symbol = ? ORDER BY price ASC",
-                (symbol,)
+                (symbol,),
             ).fetchall()
             return [dict(row) for row in rows]
