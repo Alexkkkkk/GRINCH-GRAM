@@ -1,6 +1,6 @@
 {
   "errors": [],
-  "generated_at": "2026-08-22T11:02:41Z",
+  "generated_at": "2026-08-22T15:59:23Z",
   "metrics": {
     "./ai_advisor.py": {
       "CONFIDENCE.HIGH": 9,
@@ -107,15 +107,15 @@
       "skipped_tests": 0
     },
     "./app.py": {
-      "CONFIDENCE.HIGH": 35,
+      "CONFIDENCE.HIGH": 32,
       "CONFIDENCE.LOW": 0,
       "CONFIDENCE.MEDIUM": 3,
       "CONFIDENCE.UNDEFINED": 0,
       "SEVERITY.HIGH": 0,
-      "SEVERITY.LOW": 33,
+      "SEVERITY.LOW": 30,
       "SEVERITY.MEDIUM": 5,
       "SEVERITY.UNDEFINED": 0,
-      "loc": 3375,
+      "loc": 3156,
       "nosec": 0,
       "skipped_tests": 0
     },
@@ -145,6 +145,19 @@
       "nosec": 0,
       "skipped_tests": 0
     },
+    "./clean_app.py": {
+      "CONFIDENCE.HIGH": 0,
+      "CONFIDENCE.LOW": 0,
+      "CONFIDENCE.MEDIUM": 0,
+      "CONFIDENCE.UNDEFINED": 0,
+      "SEVERITY.HIGH": 0,
+      "SEVERITY.LOW": 0,
+      "SEVERITY.MEDIUM": 0,
+      "SEVERITY.UNDEFINED": 0,
+      "loc": 184,
+      "nosec": 0,
+      "skipped_tests": 0
+    },
     "./coin_info.py": {
       "CONFIDENCE.HIGH": 0,
       "CONFIDENCE.LOW": 0,
@@ -167,7 +180,7 @@
       "SEVERITY.LOW": 1,
       "SEVERITY.MEDIUM": 0,
       "SEVERITY.UNDEFINED": 0,
-      "loc": 373,
+      "loc": 383,
       "nosec": 0,
       "skipped_tests": 0
     },
@@ -315,15 +328,15 @@
       "skipped_tests": 0
     },
     "./grid_trader.py": {
-      "CONFIDENCE.HIGH": 24,
+      "CONFIDENCE.HIGH": 0,
       "CONFIDENCE.LOW": 0,
       "CONFIDENCE.MEDIUM": 0,
       "CONFIDENCE.UNDEFINED": 0,
       "SEVERITY.HIGH": 0,
-      "SEVERITY.LOW": 24,
+      "SEVERITY.LOW": 0,
       "SEVERITY.MEDIUM": 0,
       "SEVERITY.UNDEFINED": 0,
-      "loc": 3256,
+      "loc": 403,
       "nosec": 0,
       "skipped_tests": 0
     },
@@ -505,7 +518,7 @@
       "SEVERITY.LOW": 81,
       "SEVERITY.MEDIUM": 0,
       "SEVERITY.UNDEFINED": 0,
-      "loc": 4625,
+      "loc": 4641,
       "nosec": 0,
       "skipped_tests": 0
     },
@@ -549,15 +562,15 @@
       "skipped_tests": 0
     },
     "_totals": {
-      "CONFIDENCE.HIGH": 243,
+      "CONFIDENCE.HIGH": 216,
       "CONFIDENCE.LOW": 0,
       "CONFIDENCE.MEDIUM": 19,
       "CONFIDENCE.UNDEFINED": 0,
       "SEVERITY.HIGH": 0,
-      "SEVERITY.LOW": 244,
+      "SEVERITY.LOW": 217,
       "SEVERITY.MEDIUM": 18,
       "SEVERITY.UNDEFINED": 0,
-      "loc": 30546,
+      "loc": 27684,
       "nosec": 0,
       "skipped_tests": 0
     }
@@ -584,7 +597,7 @@
       "test_name": "blacklist"
     },
     {
-      "code": "1379         try:\n1380             with _ur.urlopen(url, timeout=10) as resp:\n1381                 if resp.status != 200:\n",
+      "code": "1311         try:\n1312             with _ur.urlopen(url, timeout=10) as resp:\n1313                 if resp.status != 200:\n",
       "col_offset": 17,
       "end_col_offset": 45,
       "filename": "./app.py",
@@ -595,16 +608,16 @@
       },
       "issue_severity": "MEDIUM",
       "issue_text": "Audit url open for permitted schemes. Allowing use of file:/ or custom schemes is often unexpected.",
-      "line_number": 1380,
+      "line_number": 1312,
       "line_range": [
-        1380
+        1312
       ],
       "more_info": "https://bandit.readthedocs.io/en/1.9.4/blacklists/blacklist_calls.html#b310-urllib-urlopen",
       "test_id": "B310",
       "test_name": "blacklist"
     },
     {
-      "code": "1821             )\n1822             with urllib.request.urlopen(req, timeout=3) as resp:\n1823                 data = json.loads(resp.read())\n",
+      "code": "1753             )\n1754             with urllib.request.urlopen(req, timeout=3) as resp:\n1755                 data = json.loads(resp.read())\n",
       "col_offset": 17,
       "end_col_offset": 55,
       "filename": "./app.py",
@@ -615,16 +628,16 @@
       },
       "issue_severity": "MEDIUM",
       "issue_text": "Audit url open for permitted schemes. Allowing use of file:/ or custom schemes is often unexpected.",
-      "line_number": 1822,
+      "line_number": 1754,
       "line_range": [
-        1822
+        1754
       ],
       "more_info": "https://bandit.readthedocs.io/en/1.9.4/blacklists/blacklist_calls.html#b310-urllib-urlopen",
       "test_id": "B310",
       "test_name": "blacklist"
     },
     {
-      "code": "3030         url = \"https://api.dexscreener.com/latest/dex/pairs/ton/EQCM3B12QK1e4yZSf8GtBRT0aLMNyEsBc_9Qsof7gbCmkjvi\"\n3031         with urllib.request.urlopen(url, timeout=5) as r:\n3032             d = _json.loads(r.read())\n",
+      "code": "2892         url = \"https://api.dexscreener.com/latest/dex/pairs/ton/EQCM3B12QK1e4yZSf8GtBRT0aLMNyEsBc_9Qsof7gbCmkjvi\"\n2893         with urllib.request.urlopen(url, timeout=5) as r:\n2894             d = _json.loads(r.read())\n",
       "col_offset": 13,
       "end_col_offset": 51,
       "filename": "./app.py",
@@ -635,16 +648,16 @@
       },
       "issue_severity": "MEDIUM",
       "issue_text": "Audit url open for permitted schemes. Allowing use of file:/ or custom schemes is often unexpected.",
-      "line_number": 3031,
+      "line_number": 2893,
       "line_range": [
-        3031
+        2893
       ],
       "more_info": "https://bandit.readthedocs.io/en/1.9.4/blacklists/blacklist_calls.html#b310-urllib-urlopen",
       "test_id": "B310",
       "test_name": "blacklist"
     },
     {
-      "code": "3040         url2 = \"https://tonapi.io/v2/rates?tokens=ton&currencies=usd\"\n3041         with urllib.request.urlopen(url2, timeout=5) as r2:\n3042             d2 = _json.loads(r2.read())\n",
+      "code": "2902         url2 = \"https://tonapi.io/v2/rates?tokens=ton&currencies=usd\"\n2903         with urllib.request.urlopen(url2, timeout=5) as r2:\n2904             d2 = _json.loads(r2.read())\n",
       "col_offset": 13,
       "end_col_offset": 52,
       "filename": "./app.py",
@@ -655,9 +668,9 @@
       },
       "issue_severity": "MEDIUM",
       "issue_text": "Audit url open for permitted schemes. Allowing use of file:/ or custom schemes is often unexpected.",
-      "line_number": 3041,
+      "line_number": 2903,
       "line_range": [
-        3041
+        2903
       ],
       "more_info": "https://bandit.readthedocs.io/en/1.9.4/blacklists/blacklist_calls.html#b310-urllib-urlopen",
       "test_id": "B310",

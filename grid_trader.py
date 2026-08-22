@@ -21,6 +21,7 @@ TRADE_HISTORY_FILE = os.path.join(DATA_DIR, "grid_trade_history.json")
 
 class GridConfig:
     """Конфигурация классической сетки (значения берутся из Config.py)."""
+
     DEFAULT_STEP_PCT = 3.5
     MIN_STEP_PCT = 3.0
     MAX_STEP_PCT = 8.0
@@ -155,9 +156,9 @@ class GridTrader:
 
     def _get_price(self):
         try:
-            if self._dc and hasattr(self._dc, 'get_grinch_ton_price'):
+            if self._dc and hasattr(self._dc, "get_grinch_ton_price"):
                 return self._dc.get_grinch_ton_price()
-            if self._trader and hasattr(self._trader, 'get_price'):
+            if self._trader and hasattr(self._trader, "get_price"):
                 return self._trader.get_price()
         except Exception as e:
             log.debug("[Grid] price error: %s", e)
@@ -165,9 +166,9 @@ class GridTrader:
 
     def _get_balances(self):
         try:
-            if self._trader and hasattr(self._trader, 'get_balances'):
+            if self._trader and hasattr(self._trader, "get_balances"):
                 return self._trader.get_balances()
-            if self._dc and hasattr(self._dc, 'get_balances'):
+            if self._dc and hasattr(self._dc, "get_balances"):
                 return self._dc.get_balances()
         except Exception as e:
             log.debug("[Grid] balance error: %s", e)
@@ -182,7 +183,7 @@ class GridTrader:
             return GridConfig.DEFAULT_STEP_PCT
         trs = []
         for i in range(1, len(recent)):
-            trs.append(abs(recent[i] - recent[i-1]))
+            trs.append(abs(recent[i] - recent[i - 1]))
         atr = sum(trs) / len(trs)
         current = recent[-1]
         return (atr / current * 100) if current > 0 else GridConfig.DEFAULT_STEP_PCT
@@ -229,9 +230,7 @@ class GridTrader:
                     res = self._execute_buy(level, price_ton)
                     if res.get("ok"):
                         self._record_trade("BUY", level, price_ton)
-                        self._state.last_action = (
-                            f"BUY L{level.id}: {level.amount_grinch:.0f} @ {price_ton:.6f}"
-                        )
+                        self._state.last_action = f"BUY L{level.id}: {level.amount_grinch:.0f} @ {price_ton:.6f}"
                         log.info("[Grid] %s", self._state.last_action)
                         self._place_resell(level)
                     self._save_state()
@@ -240,7 +239,9 @@ class GridTrader:
     def _should_recenter(self, price_ton):
         if not self._state.center_price or not self._state.step_pct:
             return False
-        steps_away = abs(math.log(price_ton / self._state.center_price)) / math.log(1 + self._state.step_pct / 100)
+        steps_away = abs(math.log(price_ton / self._state.center_price)) / math.log(
+            1 + self._state.step_pct / 100
+        )
         if steps_away >= GridConfig.RECENTER_STEPS:
             if time.time() - self._state.last_rebuild >= GridConfig.RECENTER_COOLDOWN:
                 return True
@@ -253,10 +254,19 @@ class GridTrader:
             return
         atr_pct = self._calc_atr_pct()
         step = GridConfig.adaptive_step(atr_pct)
-        self.build_grid(center_price, step_pct=step, grinch_balance=grin_bal, ton_balance=ton_bal)
+        self.build_grid(
+            center_price, step_pct=step, grinch_balance=grin_bal, ton_balance=ton_bal
+        )
 
-    def build_grid(self, center_price, step_pct=None, sell_levels=None, buy_levels=None,
-                   grinch_balance=None, ton_balance=None):
+    def build_grid(
+        self,
+        center_price,
+        step_pct=None,
+        sell_levels=None,
+        buy_levels=None,
+        grinch_balance=None,
+        ton_balance=None,
+    ):
         with self._lock:
             step = step_pct or GridConfig.DEFAULT_STEP_PCT
             step = max(GridConfig.MIN_STEP_PCT, min(GridConfig.MAX_STEP_PCT, step))
@@ -279,10 +289,15 @@ class GridTrader:
 
             for i in range(1, n_sell + 1):
                 price = center_price * (1 + step / 100) ** i
-                s.sell_levels.append(GridLevel(
-                    id=i, side="sell", price_ton=round(price, 6),
-                    amount_grinch=round(grin_per_sell, 2), amount_ton=0
-                ))
+                s.sell_levels.append(
+                    GridLevel(
+                        id=i,
+                        side="sell",
+                        price_ton=round(price, 6),
+                        amount_grinch=round(grin_per_sell, 2),
+                        amount_ton=0,
+                    )
+                )
             s.grid_reserved_grinch = avail_grinch
 
             # Распределяем TON на BUY-уровни
@@ -295,17 +310,30 @@ class GridTrader:
                 amount_ton = ton_per_buy
                 if amount_ton < min_order:
                     amount_ton = 0
-                s.buy_levels.append(GridLevel(
-                    id=-i, side="buy", price_ton=round(price, 6),
-                    amount_grinch=0, amount_ton=round(amount_ton, 2)
-                ))
+                s.buy_levels.append(
+                    GridLevel(
+                        id=-i,
+                        side="buy",
+                        price_ton=round(price, 6),
+                        amount_grinch=0,
+                        amount_ton=round(amount_ton, 2),
+                    )
+                )
 
             self._state = s
             self._save_state()
-            log.info("[Grid] Built: center=%.6f step=%.1f%% sell=%d buy=%d "
-                     "upper=%.6f lower=%.6f grin=%.0f ton=%.1f",
-                     center_price, step, n_sell, n_buy, s.upper_price, s.lower_price,
-                     avail_grinch, avail_ton)
+            log.info(
+                "[Grid] Built: center=%.6f step=%.1f%% sell=%d buy=%d "
+                "upper=%.6f lower=%.6f grin=%.0f ton=%.1f",
+                center_price,
+                step,
+                n_sell,
+                n_buy,
+                s.upper_price,
+                s.lower_price,
+                avail_grinch,
+                avail_ton,
+            )
             return s
 
     def _execute_sell(self, level, price_ton):
@@ -314,10 +342,16 @@ class GridTrader:
                 return {"ok": False, "error": "zero_amount"}
             result = self._dc.sell(level.amount_grinch)
             if result.get("ok"):
-                received_ton = result.get("received_ton",
-                    level.amount_grinch * price_ton * (1 - GridConfig.FEE_PCT))
+                received_ton = result.get(
+                    "received_ton",
+                    level.amount_grinch * price_ton * (1 - GridConfig.FEE_PCT),
+                )
                 net_ton = received_ton - GridConfig.GAS_PER_TRADE_TON
-                cost_ton = level.amount_ton or (level.amount_grinch * level.price_ton / (1 + self._state.step_pct / 100))
+                cost_ton = level.amount_ton or (
+                    level.amount_grinch
+                    * level.price_ton
+                    / (1 + self._state.step_pct / 100)
+                )
                 profit = net_ton - cost_ton
                 level.status = "filled"
                 level.filled_at = time.time()
@@ -326,8 +360,9 @@ class GridTrader:
                 level.tx_hash = result.get("tx_hash", "")
                 self._state.total_profit_ton += profit
                 self._state.total_sell_cycles += 1
-                self._state.grid_reserved_grinch = max(0.0,
-                    self._state.grid_reserved_grinch - level.amount_grinch)
+                self._state.grid_reserved_grinch = max(
+                    0.0, self._state.grid_reserved_grinch - level.amount_grinch
+                )
                 if profit > 0:
                     self._state.win_streak += 1
                     self._state.loss_streak = 0
@@ -346,8 +381,10 @@ class GridTrader:
                 return {"ok": False, "error": "zero_amount"}
             result = self._dc.buy(level.amount_ton)
             if result.get("ok"):
-                received_grinch = result.get("received_grinch",
-                    level.amount_ton / price_ton * (1 - GridConfig.FEE_PCT))
+                received_grinch = result.get(
+                    "received_grinch",
+                    level.amount_ton / price_ton * (1 - GridConfig.FEE_PCT),
+                )
                 level.amount_grinch = round(received_grinch, 2)
                 level.status = "filled"
                 level.filled_at = time.time()
@@ -365,23 +402,35 @@ class GridTrader:
             id=sold_level.id * 1000,
             side="buy",
             price_ton=round(sold_level.price_ton / (1 + self._state.step_pct / 100), 6),
-            amount_ton=round(sold_level.profit_ton + sold_level.amount_ton, 2) if sold_level.profit_ton > 0 else sold_level.amount_ton,
-            status="waiting"
+            amount_ton=(
+                round(sold_level.profit_ton + sold_level.amount_ton, 2)
+                if sold_level.profit_ton > 0
+                else sold_level.amount_ton
+            ),
+            status="waiting",
         )
         self._state.buy_levels.append(rebuy)
-        log.info("[Grid] ReBUY placed @ %.6f for %.2f TON", rebuy.price_ton, rebuy.amount_ton)
+        log.info(
+            "[Grid] ReBUY placed @ %.6f for %.2f TON", rebuy.price_ton, rebuy.amount_ton
+        )
 
     def _place_resell(self, bought_level):
         """После BUY — ставим SELL на цену покупки + шаг."""
         resell = GridLevel(
             id=bought_level.id * 1000,
             side="sell",
-            price_ton=round(bought_level.fill_price_ton * (1 + self._state.step_pct / 100), 6),
+            price_ton=round(
+                bought_level.fill_price_ton * (1 + self._state.step_pct / 100), 6
+            ),
             amount_grinch=bought_level.amount_grinch,
-            status="waiting"
+            status="waiting",
         )
         self._state.sell_levels.append(resell)
-        log.info("[Grid] ReSELL placed @ %.6f for %.0f GRINCH", resell.price_ton, resell.amount_grinch)
+        log.info(
+            "[Grid] ReSELL placed @ %.6f for %.0f GRINCH",
+            resell.price_ton,
+            resell.amount_grinch,
+        )
 
     def _record_trade(self, side, level, price_ton):
         entry = {
@@ -435,7 +484,9 @@ class GridTrader:
         s = self._state
         profit_per_grid = 0.0
         if s.step_pct > 0:
-            cycle_factor = (1.0 + s.step_pct / 100.0) * (1.0 - GridConfig.FEE_PCT) ** 2 - 1.0
+            cycle_factor = (1.0 + s.step_pct / 100.0) * (
+                1.0 - GridConfig.FEE_PCT
+            ) ** 2 - 1.0
             profit_per_grid = round(cycle_factor * 100, 2)
         return {
             "active": s.active,

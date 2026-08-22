@@ -3336,7 +3336,7 @@ def api_config_set():
     if (v := num("trail_stage4_pct", 0.5, 50)) is not None:
         Config.TRAIL_STAGE4_PCT = v
 
-    # Детектор крупных продаж
+        # Детектор крупных продаж
         Config.LARGE_SELL_MIN_TON = v
         Config.LARGE_SELL_COOLDOWN_SEC = int(v)
 

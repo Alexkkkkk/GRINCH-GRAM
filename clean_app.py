@@ -1,14 +1,15 @@
-with open('app.py', 'r', encoding='utf-8') as f:
+with open("app.py", "r", encoding="utf-8") as f:
     content = f.read()
 
 # 1. Remove DCA_REENTRY_COOLDOWN_SEC from restore loop
 content = content.replace(
     '            ("DCA_REENTRY_COOLDOWN_SEC", lambda v: int(float(v))),\n            ("FAST_REENTRY_PULLBACK_PCT", float),',
-    '            ("FAST_REENTRY_PULLBACK_PCT", float),')
+    '            ("FAST_REENTRY_PULLBACK_PCT", float),',
+)
 
 # 2. Remove DCA AI-guard from protective_filters endpoint
 content = content.replace(
-    '''    # ── DCA AI-guard: проверяем текущее состояние ────────────────────────────
+    """    # ── DCA AI-guard: проверяем текущее состояние ────────────────────────────
     ai_signal = last_ai.get("ai_signal", "HOLD")
     ai_conf = float(last_ai.get("confidence", 0) or 0)
     dca_guard_active = ai_signal == "SELL" and ai_conf >= Config.DCA_AI_SELL_BLOCK_CONF
@@ -42,8 +43,8 @@ content = content.replace(
             },
             "blocked_recent": blocked_recent,
         }
-    )''',
-    '''    return jsonify(
+    )""",
+    """    return jsonify(
         {
             "cooldown": {
                 "active": cooldown_active,
@@ -65,10 +66,11 @@ content = content.replace(
             },
             "blocked_recent": blocked_recent,
         }
-    )''')
+    )""",
+)
 
 # 3. Remove DCA block from status endpoint
-old_dca_status = '''            # DCA стратегия
+old_dca_status = """            # DCA стратегия
             "dca_mode": Config.DCA_MODE,
             "dca_stake_ton": Config.DCA_STAKE_TON,
             "dca_target_profit_pct": Config.DCA_TARGET_PROFIT_PCT,
@@ -93,22 +95,23 @@ old_dca_status = '''            # DCA стратегия
             "large_sell_dca_ton": Config.LARGE_SELL_DCA_TON,
             "large_sell_min_ton": Config.LARGE_SELL_MIN_TON,
             "large_sell_cooldown_sec": Config.LARGE_SELL_COOLDOWN_SEC,
-'''
-new_dca_status = '''            # Grid стратегия
+"""
+new_dca_status = """            # Grid стратегия
             "grid_mode": Config.GRID_MODE,
             "grid_step_pct": Config.GRID_STEP_PCT,
             "grid_sell_levels": Config.GRID_SELL_LEVELS,
             "grid_buy_levels": Config.GRID_BUY_LEVELS,
-'''
+"""
 content = content.replace(old_dca_status, new_dca_status)
 
 # 4. Remove dca_ai_sell_block_conf from status
 content = content.replace(
     '            "loss_cooldown_sec": Config.LOSS_COOLDOWN_SEC,\n            "dca_ai_sell_block_conf": Config.DCA_AI_SELL_BLOCK_CONF,\n            "confluence_enabled": Config.CONFLUENCE_ENABLED,',
-    '            "loss_cooldown_sec": Config.LOSS_COOLDOWN_SEC,\n            "confluence_enabled": Config.CONFLUENCE_ENABLED,')
+    '            "loss_cooldown_sec": Config.LOSS_COOLDOWN_SEC,\n            "confluence_enabled": Config.CONFLUENCE_ENABLED,',
+)
 
 # 5. Remove DCA config update block
-old_dca_update = '''    # DCA стратегия
+old_dca_update = """    # DCA стратегия
     if "dca_mode" in data:
         new_dca = bool(data["dca_mode"])
         if new_dca != Config.DCA_MODE:
@@ -174,8 +177,8 @@ old_dca_update = '''    # DCA стратегия
         Config.LARGE_SELL_MIN_TON = v
     if (v := num("large_sell_cooldown_sec", 60, 86400)) is not None:
         Config.LARGE_SELL_COOLDOWN_SEC = int(v)
-'''
-new_dca_update = '''    # Grid стратегия
+"""
+new_dca_update = """    # Grid стратегия
     if "grid_mode" in data:
         new_grid = bool(data["grid_mode"])
         if new_grid != Config.GRID_MODE:
@@ -187,20 +190,22 @@ new_dca_update = '''    # Grid стратегия
         Config.GRID_SELL_LEVELS = int(v)
     if (v := num("grid_buy_levels", 1, 100)) is not None:
         Config.GRID_BUY_LEVELS = int(v)
-'''
+"""
 content = content.replace(old_dca_update, new_dca_update)
 
 # 6. Remove DCA_REENTRY_COOLDOWN_SEC from config export
 content = content.replace(
     '                "DCA_REENTRY_COOLDOWN_SEC": Config.DCA_REENTRY_COOLDOWN_SEC,\n                "FAST_REENTRY_MIN_CONF": Config.FAST_REENTRY_MIN_CONF,',
-    '                "FAST_REENTRY_MIN_CONF": Config.FAST_REENTRY_MIN_CONF,')
+    '                "FAST_REENTRY_MIN_CONF": Config.FAST_REENTRY_MIN_CONF,',
+)
 
 # 7. Remove DCA_AI_SELL_BLOCK_CONF from config export
 content = content.replace(
     '                "DCA_AI_SELL_BLOCK_CONF": Config.DCA_AI_SELL_BLOCK_CONF,\n            }\n        )\n\n    return jsonify({"ok": True, "message": "Настройки обновлены"})',
-    '            }\n        )\n\n    return jsonify({"ok": True, "message": "Настройки обновлены"})')
+    '            }\n        )\n\n    return jsonify({"ok": True, "message": "Настройки обновлены"})',
+)
 
-with open('app.py', 'w', encoding='utf-8') as f:
+with open("app.py", "w", encoding="utf-8") as f:
     f.write(content)
 
 print("app.py cleaned")

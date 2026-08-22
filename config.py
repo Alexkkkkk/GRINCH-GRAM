@@ -333,15 +333,15 @@ class Config:
     # Классическая сетка: покупаем на откатах вниз, продаём на росте вверх.
     # Прибыль с каждой сетки = шаг − комиссия (DeDust 1%×2 + газ).
     # Для прибыли ~0.3% за вычетом комиссии DeDust шаг минимум 3.5%.
-    GRID_STEP_PCT = 3.5          # шаг сетки %
-    GRID_MIN_STEP_PCT = 3.0      # мин. шаг
-    GRID_MAX_STEP_PCT = 8.0      # макс. шаг
-    GRID_SELL_LEVELS = 20        # уровней продажи
-    GRID_BUY_LEVELS = 20         # уровней покупки
-    GRID_ADAPTIVE_STEP = True    # ATR-адаптация шага
-    GRID_MIN_ORDER_TON = 15.0    # мин. ордер
-    GRID_GAS_RESERVE_TON = 5.0   # резерв газа
-    GRID_TICK_SEC = 15           # интервал тика
+    GRID_STEP_PCT = 3.5  # шаг сетки %
+    GRID_MIN_STEP_PCT = 3.0  # мин. шаг
+    GRID_MAX_STEP_PCT = 8.0  # макс. шаг
+    GRID_SELL_LEVELS = 20  # уровней продажи
+    GRID_BUY_LEVELS = 20  # уровней покупки
+    GRID_ADAPTIVE_STEP = True  # ATR-адаптация шага
+    GRID_MIN_ORDER_TON = 15.0  # мин. ордер
+    GRID_GAS_RESERVE_TON = 5.0  # резерв газа
+    GRID_TICK_SEC = 15  # интервал тика
 
     # TON за каждый вход (первая покупка и каждая докупка) — legacy, не используется в Grid
     DCA_STAKE_TON = float(os.getenv("DCA_STAKE_TON", "100"))
