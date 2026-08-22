@@ -1,6 +1,6 @@
 {
   "errors": [],
-  "generated_at": "2026-08-22T15:59:23Z",
+  "generated_at": "2026-08-22T16:02:50Z",
   "metrics": {
     "./ai_advisor.py": {
       "CONFIDENCE.HIGH": 9,
@@ -154,7 +154,7 @@
       "SEVERITY.LOW": 0,
       "SEVERITY.MEDIUM": 0,
       "SEVERITY.UNDEFINED": 0,
-      "loc": 184,
+      "loc": 189,
       "nosec": 0,
       "skipped_tests": 0
     },
@@ -336,7 +336,7 @@
       "SEVERITY.LOW": 0,
       "SEVERITY.MEDIUM": 0,
       "SEVERITY.UNDEFINED": 0,
-      "loc": 403,
+      "loc": 453,
       "nosec": 0,
       "skipped_tests": 0
     },
@@ -570,7 +570,7 @@
       "SEVERITY.LOW": 217,
       "SEVERITY.MEDIUM": 18,
       "SEVERITY.UNDEFINED": 0,
-      "loc": 27684,
+      "loc": 27739,
       "nosec": 0,
       "skipped_tests": 0
     }
