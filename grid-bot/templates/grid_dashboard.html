@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>GRINCH-GRAM Spot Grid</title>
+<link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
+</head>
+<body>
+<div class="container">
+  <header class="header">
+    <div>
+      <h1>GRINCH-GRAM Spot Grid</h1>
+      <div class="symbol-badge" id="symbol">AUDIO/USDT</div>
+    </div>
+    <div class="price-block">
+      <div class="price-live" id="currentPrice">0.01315</div>
+      <div class="price-change" id="priceChange">+1.78%</div>
+    </div>
+  </header>
+
+  <section class="stats-grid">
+    <div class="stat-card">
+      <div class="stat-label">ROI</div>
+      <div class="stat-value positive" id="roi">+4.88%</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">PnL (USD)</div>
+      <div class="stat-value positive" id="pnl">+260.11</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Прибыль/сетка</div>
+      <div class="stat-value" id="avgProfit">0.20% - 0.27%</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Сделок Buy/Sell</div>
+      <div class="stat-value" id="trades">77 / 180</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Время работы</div>
+      <div class="stat-value" id="uptime">6д. 2ч. 8мин.</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Активных ордеров</div>
+      <div class="stat-value" id="activeOrders">40</div>
+    </div>
+  </section>
+
+  <section class="charts-row">
+    <div class="chart-card">
+      <h3>История прибыли</h3>
+      <canvas id="pnlChart"></canvas>
+    </div>
+    <div class="chart-card">
+      <h3>Предпросмотр бота</h3>
+      <canvas id="priceChart"></canvas>
+    </div>
+  </section>
+
+  <section class="grid-preview">
+    <h3>Что такое сетка спота</h3>
+    <div class="grid-info">
+      <div class="grid-legend">
+        <span class="legend-buy">&#9650; Buy</span>
+        <span class="legend-sell">&#9660; Sell</span>
+      </div>
+      <div class="grid-visual" id="gridVisual"></div>
+    </div>
+    <div class="features">
+      <div class="feature">
+        <div class="feature-icon">&#9851;</div>
+        <div class="feature-title">Автоматизация</div>
+        <div class="feature-desc">Экономия времени за счет автоматизации ордеров на покупку и продажу.</div>
+      </div>
+      <div class="feature">
+        <div class="feature-icon">&#128200;</div>
+        <div class="feature-title">Прибыль от волатильности</div>
+        <div class="feature-desc">Возможность заработать на небольших изменениях цены.</div>
+      </div>
+      <div class="feature">
+        <div class="feature-icon">&#128336;</div>
+        <div class="feature-title">Последовательная стратегия</div>
+        <div class="feature-desc">Устойчивый подход к торговле.</div>
+      </div>
+    </div>
+  </section>
+
+  <section class="controls">
+    <button class="btn btn-success" onclick="startBot()">&#9654; Запустить</button>
+    <button class="btn btn-danger" onclick="stopBot()">&#9632; Остановить</button>
+    <button class="btn btn-primary" onclick="buildGrid()">&#9874; Построить сетку</button>
+    <div class="input-group"><label>Верхняя:</label><input type="number" id="upperInput" step="0.0001" placeholder="Авто"></div>
+    <div class="input-group"><label>Нижняя:</label><input type="number" id="lowerInput" step="0.0001" placeholder="Авто"></div>
+    <div class="input-group"><label>Сеток:</label><input type="number" id="gridCount" value="40" min="5" max="200"></div>
+    <div class="input-group"><label>USDT:</label><input type="number" id="investment" value="1000" min="10"></div>
+  </section>
+
+  <section class="log-panel" id="logPanel">
+    <div class="log-entry info">[20:41:00] Система готова к работе</div>
+  </section>
+
+  <div class="disclaimer">
+    * Из-за разницы в рыночных условиях данные параметры не гарантируют идентичных результатов.
+  </div>
+</div>
+<script src="{{ url_for('static', filename='js/grid_dashboard.js') }}"></script>
+</body>
+</html>
