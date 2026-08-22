@@ -1,0 +1,56 @@
+modules = ["python-3.11", "web", "nodejs-20"]
+[agent]
+expertMode = true
+stack = "FLASK_VANILLA_JS"
+integrations = ["python_openai:1.0.0"]
+
+[nix]
+channel = "stable-25_05"
+packages = ["cargo", "glibcLocales", "iana-etc", "libiconv", "libxcrypt", "ocl-icd", "opencl-headers", "openssl", "pkg-config", "postgresql", "rustc"]
+
+[workflows]
+runButton = "Project"
+
+[[workflows.workflow]]
+name = "Project"
+mode = "parallel"
+author = "agent"
+
+[[workflows.workflow.tasks]]
+task = "workflow.run"
+args = "Start application"
+
+[[workflows.workflow]]
+name = "Start application"
+author = "agent"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "python3 main.py"
+waitForPort = 5000
+
+[workflows.workflow.metadata]
+outputType = "webview"
+
+[[ports]]
+localPort = 5000
+externalPort = 80
+
+[deployment]
+# vm-деплой обязателен: бот хранит состояние в памяти (AI-engine, trader, фоновые потоки).
+# autoscale/multi-instance дублируют процессы и теряют состояние при scale-to-zero.
+deploymentTarget = "vm"
+run = ["gunicorn", "--bind", "0.0.0.0:5000", "--worker-class", "gthread", "--threads", "4", "--workers", "1", "main:app"]
+
+[userenv]
+
+[userenv.shared]
+TRADE_MODE = "dedust"
+DEMO_MODE = "true"
+MIN_STAKE_TON = "5"
+SMART_TP_ENABLED = "1"
+SMART_TP_MIN_CONF = "68"
+SMART_TP_TIGHT_TRAIL_PCT = "1.0"
+TRAIL_STAGE4_AT = "20"
+TRAIL_STAGE4_PCT = "1.5"
+TRAIL_TREND_WIDEN = "3.0"

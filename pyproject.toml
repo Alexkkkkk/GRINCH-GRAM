@@ -1,0 +1,48 @@
+[project]
+name = "grinch-gram"
+version = "0.1.0"
+description = "GRINCH-GRAM Trading Bot"
+requires-python = ">=3.11"
+dependencies = [
+    "apscheduler>=3.11.2",
+    "ccxt>=4.5.73",
+    "dedust>=1.1.4",
+    "email-validator>=2.2.0",
+    "eventlet>=0.41.0",
+    "flask>=3.1.3",
+    "flask-socketio>=5.6.1",
+    "flask-sqlalchemy>=3.1.1",
+    "gunicorn>=23.0.0",
+    "joblib>=1.4.2",
+    "numpy>=1.26.4",
+    "pandas>=2.2.2",
+    "psycopg2-binary>=2.9.12",
+    "python-dotenv>=1.2.2",
+    "python-telegram-bot>=21.1.1",
+    "pytoniq>=0.1.43",
+    "pytoniq-core>=0.2.0",
+    "requests>=2.33.0",
+    "scikit-learn>=1.9.0",
+    "sqlalchemy>=2.0.51",
+    "ta>=0.11.0",
+    "aiohttp>=3.14.3",
+    "cryptography>=50.0.0",
+    "orjson>=3.11.9",
+]
+
+[tool.ruff]
+target-version = "py311"
+line-length = 100
+extend-exclude = [
+    "attached_assets",
+    "backups",
+    "data",
+    ".git",
+    "__pycache__",
+]
+
+[tool.ruff.lint]
+# The initial blocking gate targets correctness failures. Broader style
+# cleanup is prepared by auto-fix.yml as a reviewable PR instead of being
+# silently pushed into the trading branch.
+select = ["E9", "F63", "F7", "F82"]

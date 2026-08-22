@@ -1,0 +1,55 @@
+/* ════════════════════════════════════════════════════════════════════════════ ═══ AI GRID ENHANCEMENT LAYER — QuantumBrain Grid v2.0 ═══ Современные CSS Grid Level 2/3 фичи: container queries, subgrid, clamp(), ═══ aspect-ratio, auto-fit, grid-template-areas, place-items, dense flow ════════════════════════════════════════════════════════════════════════════ *//* ═══ CSS Custom Properties — Grid System Tokens ═══ */:root {  --grid-gap-xs: clamp(4px, 0.5vw, 8px);  --grid-gap-sm: clamp(8px, 1vw, 12px);  --grid-gap-md: clamp(12px, 1.5vw, 20px);  --grid-gap-lg: clamp(16px, 2vw, 32px);  --grid-col-min: clamp(200px, 25vw, 320px);  --grid-col-max: 1fr;  --grid-aspect-card: 16 / 10;  --grid-aspect-square: 1 / 1;  --grid-aspect-wide: 21 / 9;  --grid-radius: clamp(8px, 1vw, 16px);}/* ═══ Container Queries — Компонентно-зависимая адаптивность ═══ *//* Родительский контейнер для .coin-stats, .sr-grid, .ai-pred-grid */.ai-grid-container {  container-type: inline-size;  container-name: ai-grid;}/* Адаптивные карточки внутри контейнера (не зависит от viewport!) */@container ai-grid (max-width: 400px) {  .ai-grid-container .coin-stats,  .ai-grid-container .sr-grid {    grid-template-columns: 1fr !important;  }  .ai-grid-container .ai-pred-grid {    grid-template-columns: 1fr !important;  }}@container ai-grid (min-width: 401px) and (max-width: 700px) {  .ai-grid-container .coin-stats,  .ai-grid-container .sr-grid {    grid-template-columns: 1fr 1fr !important;  }  .ai-grid-container .ai-pred-grid {    grid-template-columns: repeat(2, 1fr) !important;  }}@container ai-grid (min-width: 701px) {  .ai-grid-container .ai-pred-grid {    grid-template-columns: repeat(3, 1fr) !important;  }}/* ═══ Subgrid — Вложенные layout'ы наследуют родительскую сетку ═══ */.ai-subgrid-parent {  display: grid;  grid-template-columns: minmax(240px, 270px) 1fr minmax(260px, 300px);  gap: var(--grid-gap-md);}.ai-subgrid-child {  display: grid;  grid-template-columns: subgrid;  grid-column: 1 / -1; /* Занимает все колонки родителя */  gap: var(--grid-gap-sm);}/* ═══ Auto-fit — Самоадаптивные карточки ═══ */.ai-auto-grid {  display: grid;  grid-template-columns: repeat(auto-fit, minmax(var(--grid-col-min), var(--grid-col-max)));  gap: var(--grid-gap-md);}/* ═══ Dense Flow — Заполнение пустот в сетке ═══ */.ai-dense-grid {  display: grid;  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));  grid-auto-flow: dense;  gap: var(--grid-gap-sm);}.ai-dense-grid > *:nth-child(3n) {  grid-column: span 2; /* Каждый 3-й элемент — шире */}.ai-dense-grid > *:nth-child(5n) {  grid-row: span 2;    /* Каждый 5-й — выше */}/* ═══ Grid Template Areas — Семантичные layout'ы ═══ */.ai-layout-dashboard {  display: grid;  grid-template-columns: 260px 1fr 300px;  grid-template-rows: auto 1fr auto;  grid-template-areas:    'sidebar header  panel'    'sidebar main    panel'    'sidebar footer  panel';  gap: var(--grid-gap-md);  min-height: 100vh;}.ai-layout-dashboard .ai-area-header  { grid-area: header; }.ai-layout-dashboard .ai-area-sidebar { grid-area: sidebar; }.ai-layout-dashboard .ai-area-main    { grid-area: main; }.ai-layout-dashboard .ai-area-panel   { grid-area: panel; }.ai-layout-dashboard .ai-area-footer  { grid-area: footer; }/* Адаптив dashboard через container query */@container (max-width: 900px) {  .ai-layout-dashboard {    grid-template-columns: 1fr;    grid-template-rows: auto auto 1fr auto auto;    grid-template-areas:      'header'      'sidebar'      'main'      'panel'      'footer';  }}/* ═══ Aspect Ratio — Предсказуемые карточки ═══ */.ai-card {  aspect-ratio: var(--grid-aspect-card);  border-radius: var(--grid-radius);  overflow: hidden;}.ai-card-square {  aspect-ratio: var(--grid-aspect-square);}.ai-card-wide {  aspect-ratio: var(--grid-aspect-wide);}/* ═══ Place Items — Центрирование в 1 строку ═══ */.ai-center-grid {  display: grid;  place-items: center; /* align-items + justify-items */  place-content: center; /* align-content + justify-content */  min-height: 100%;}/* ═══ Clamp-based Fluid Spacing — Плавная типографика ═══ */.ai-fluid-text {  font-size: clamp(12px, 1.2vw + 0.5rem, 18px);  line-height: clamp(1.3, 1.5vw, 1.6);}.ai-fluid-padding {  padding: clamp(8px, 2vw, 24px);}.ai-fluid-margin {  margin: clamp(4px, 1vw, 16px);}/* ═══ Logical Properties — Интернационализация ═══ */.ai-logical-grid {  display: grid;  grid-template-columns: repeat(3, 1fr);  gap: var(--grid-gap-md);  /* Вместо margin-left/right используем margin-inline */  margin-inline: auto;  padding-inline: var(--grid-gap-lg);  padding-block: var(--grid-gap-md);  border-inline-start: 2px solid var(--cyan);  border-block-end: 1px solid rgba(255,255,255,0.05);}/* ═══ Scroll-driven Animations — Grid items появляются при скролле ═══ */@supports (animation-timeline: scroll()) {  .ai-scroll-grid > * {    opacity: 0;    transform: translateY(30px);    animation: ai-grid-reveal linear both;    animation-timeline: view();    animation-range: entry 10% cover 30%;  }  @keyframes ai-grid-reveal {    to { opacity: 1; transform: translateY(0); }  }}/* ═══ Fallback для старых браузеров ═══ */@supports not (container-type: inline-size) {  .ai-grid-container {    /* Fallback: используем обычные media queries */  }  @media (max-width: 400px) {    .ai-grid-container .coin-stats,    .ai-grid-container .sr-grid {      grid-template-columns: 1fr !important;    }  }}@supports not (grid-template-columns: subgrid) {  .ai-subgrid-child {    grid-template-columns: repeat(3, 1fr); /* Fallback */  }}/* ═══ AI Grid Utility Classes ═══ */.ai-grid-2 { display: grid; grid-template-columns: repeat(2, 1fr); gap: var(--grid-gap-md); }.ai-grid-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: var(--grid-gap-md); }.ai-grid-4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: var(--grid-gap-md); }.ai-grid-responsive {  display: grid;  grid-template-columns: repeat(auto-fit, minmax(clamp(150px, 20vw, 300px), 1fr));  gap: var(--grid-gap-md);}/* ═══ Print Styles — Grid для печати ═══ */@media print {  .ai-layout-dashboard {    display: block;  }  .ai-auto-grid,  .ai-dense-grid {    display: block;  }  .ai-auto-grid > *,  .ai-dense-grid > * {    page-break-inside: avoid;    margin-bottom: 12px;  }}
+/* ═══ Light Theme Support ═══ */
+[data-theme="light"] {
+  --bg: #f0f2f5;
+  --bg2: #ffffff;
+  --bg3: #e8eaf0;
+  --text: #1a1a2e;
+  --text2: #4a4a6a;
+  --text3: #6a6a8a;
+  --border: rgba(0,0,0,0.08);
+  --border2: rgba(0,0,0,0.12);
+  --green: #00c853;
+  --red: #ff1744;
+  --cyan: #00b0ff;
+  --yellow: #ffab00;
+  --shadow: rgba(0,0,0,0.06);
+}
+
+[data-theme="light"] .ai-card {
+  background: var(--bg2);
+  border-color: var(--border);
+  box-shadow: 0 2px 8px var(--shadow);
+}
+
+[data-theme="light"] .ai-manual-buy-btn {
+  background: linear-gradient(135deg, #00c853 0%, #00e676 100%);
+  color: #fff;
+}
+
+[data-theme="light"] .ai-manual-sell-btn {
+  background: linear-gradient(135deg, #ff1744 0%, #ff5252 100%);
+  color: #fff;
+}
+
+[data-theme="light"] .hdr-v2 {
+  background: rgba(255,255,255,0.85);
+  backdrop-filter: blur(12px);
+  border-bottom: 1px solid var(--border);
+}
+
+#theme-toggle {
+  background: transparent;
+  border: 1px solid var(--border2);
+  border-radius: 8px;
+  padding: 4px 8px;
+  cursor: pointer;
+  font-size: 14px;
+  transition: all 0.2s;
+  margin-right: 8px;
+}
+
+#theme-toggle:hover {
+  background: var(--bg3);
+  transform: scale(1.05);
+}

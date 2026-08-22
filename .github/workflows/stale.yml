@@ -1,0 +1,27 @@
+name: 🧹 Stale Issues & PRs
+
+on:
+  schedule:
+    - cron: "0 6 * * *"
+
+permissions:
+  issues: write
+  pull-requests: write
+
+jobs:
+  stale:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/stale@v11
+        with:
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+          stale-issue-message: "🤖 Этот issue неактивен 30 дней. Отметьте его свежим комментарием, чтобы предотвратить автозакрытие."
+          stale-pr-message: "🤖 Этот PR неактивен 14 дней. Обновите его или закройте, если неактуален."
+          close-issue-message: "🔒 Автоматически закрыто из-за неактивности. Переоткройте, если проблема актуальна."
+          close-pr-message: "🔒 Автоматически закрыто из-за неактивности."
+          days-before-issue-stale: 30
+          days-before-pr-stale: 14
+          days-before-close: 7
+          stale-issue-label: "stale"
+          exempt-issue-labels: "pinned,security,critical"
+          exempt-pr-labels: "pinned,WIP"

@@ -1,0 +1,59 @@
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+dist/
+build/
+.eggs/
+*.egg
+.env
+.env.*
+cookies.txt
+cookies*.txt
+.venv
+venv/
+env/
+*.log
+.DS_Store
+*.sqlite3
+*.db
+.session_secret
+
+# Данные бота (хранятся в data/ или /app/data/ на Bothost — не в Git)
+data/
+experience.json
+settings.json
+wallets.json
+
+# Артефакты Replit (не нужны на Bothost — содержат package.json который сбивает автодетект)
+artifacts/
+.cache/
+.local/
+.upm/
+.pythonlibs/
+attached_assets/
+backups/
+
+deploy_secrets_local/
+ai_advisor.py.bak
+fix_stats_test.py
+.deploy.lock
+.last_docker_prune
+
+# Файлы которые пересоздаются на VPS и не должны трекаться git
+/app.js
+/index.html
+.local/keys/
+
+# AI workflow artifacts
+ai_emergency_fix.md
+all_reports.md
+ai_reports/
+
+# Local VPS backup files
+*.bak-*
+
+# Local Docker auth config
+.docker-config.json/

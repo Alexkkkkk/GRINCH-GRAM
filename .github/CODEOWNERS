@@ -1,0 +1,16 @@
+# Global owners
+* @Alexkkkkk
+
+# Security-sensitive files
+/.github/workflows/ @Alexkkkkk
+/config.py @Alexkkkkk
+/security.py @Alexkkkkk
+/wallet_manager.py @Alexkkkkk
+
+# AI/ML modules
+/ai_*.py @Alexkkkkk
+/brain_fusion.py @Alexkkkkk
+
+# Frontend
+/static/ @Alexkkkkk
+/templates/ @Alexkkkkk

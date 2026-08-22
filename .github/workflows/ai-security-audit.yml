@@ -1,0 +1,209 @@
+name: 🛡️ AI Security Auditor
+
+on:
+  workflow_call:
+  workflow_dispatch:
+  pull_request:
+    branches: [main, master]
+  schedule:
+    - cron: "0 3 * * *"
+
+permissions:
+  contents: read
+  pull-requests: write
+  security-events: write
+
+jobs:
+  security-scan:
+    name: 🔒 Multi-Layer Security Scan
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: 📥 Checkout
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: 🐍 Python 3.11
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.11"
+
+      - name: ⚡ Cache
+        uses: actions/cache@v6
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-sec-${{ hashFiles('requirements.txt') }}
+
+      - name: 📦 Install Security Tools
+        run: |
+          pip install bandit safety pip-audit
+
+      - name: 🔍 Bandit Security Scan
+        run: |
+          bandit -r . -ll -iii -f json -o bandit-security.json || true
+          bandit -r . -ll -iii -f txt -o bandit-security.txt || true
+
+      - name: 🧪 Pip-Audit Dependencies
+        run: |
+          pip-audit --format=json --output=pip-audit.json || true
+          pip-audit --format=markdown --output=pip-audit.md || true
+
+      - name: 🛡️ Safety Check
+        run: |
+          safety check --json --output safety-report.json || true
+
+      - name: 🔎 Secret Detection (GitLeaks-style regex)
+        run: |
+          python3 - <<'PY'
+          import re, os, json
+
+          PATTERNS = {
+              "AWS Access Key": r"AKIA[0-9A-Z]{16}",
+              "GitHub Token": r"ghp_[a-zA-Z0-9]{36}",
+              "Private Key": r"-----BEGIN (RSA |EC |DSA |OPENSSH )?PRIVATE KEY-----",
+              "TON Mnemonic": r"\b(?:[a-z]+\s+){23,24}[a-z]+\b",
+              "API Key (generic)": r"['"](api[_-]?key|apikey)['"]\s*[:=]\s*['"][a-zA-Z0-9_\-]{20,}['"]",
+              "Password in code": r"['"](password|passwd|pwd)['"]\s*[:=]\s*['"][^'"]{4,}['"]",
+          }
+
+          findings = []
+          for root, _, files in os.walk("."):
+              if "/.git/" in root or "__pycache__" in root:
+                  continue
+              for fname in files:
+                  if not fname.endswith(".py"):
+                      continue
+                  path = os.path.join(root, fname)
+                  try:
+                      with open(path, encoding="utf-8", errors="ignore") as f:
+                          for i, line in enumerate(f, 1):
+                              for name, pattern in PATTERNS.items():
+                                  if re.search(pattern, line, re.IGNORECASE):
+                                      findings.append({
+                                          "file": path,
+                                          "line": i,
+                                          "type": name,
+                                          "snippet": line.strip()[:80]
+                                      })
+                  except Exception:
+                      pass
+
+          with open("secret-scan.json", "w") as f:
+              json.dump(findings, f, indent=2)
+
+          print(f"Found {len(findings)} potential secrets")
+          for f in findings[:10]:
+              print(f"  {f['file']}:{f['line']} — {f['type']}")
+          PY
+
+      - name: 🐳 Trivy Container Scan
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: "fs"
+          scan-ref: "."
+          format: "sarif"
+          output: "trivy-results.sarif"
+        continue-on-error: true
+
+      - name: 🧠 AI Security Synthesis (Groq)
+        if: env.GROQ_API_KEY != ''
+        env:
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+        run: |
+          python3 - <<'PY'
+          import os, json, urllib.request
+
+          def load_json(path):
+              try:
+                  with open(path, encoding="utf-8") as f:
+                      return json.load(f)
+              except Exception:
+                  return []
+
+          bandit = load_json("bandit-security.json")
+          pip_audit = load_json("pip-audit.json")
+          secrets = load_json("secret-scan.json")
+
+          b_count = len(bandit.get('results', [])) if isinstance(bandit, dict) else 0
+          p_count = len(pip_audit) if isinstance(pip_audit, list) else 0
+          s_count = len(secrets)
+
+          summary = f"Bandit issues: {b_count}\nPip-audit CVEs: {p_count}\nPotential secrets: {s_count}"
+
+          prompt = (
+              "You are a cybersecurity expert auditing a production cryptocurrency trading bot. "
+              "Analyze the following security scan results and provide actionable recommendations:\n\n"
+              f"{summary}\n\n"
+              "Focus on:\n"
+              "1. Critical vulnerabilities that could lead to fund loss\n"
+              "2. Dependency vulnerabilities with known exploits\n"
+              "3. Secret leakage risks\n"
+              "4. Secure coding recommendations for TON blockchain integration\n"
+              "5. Priority-ranked remediation plan\n\n"
+              "Be specific about files and lines when possible."
+          )
+
+          payload = {
+              "model": "llama-3.1-70b-versatile",
+              "messages": [{"role": "user", "content": prompt}],
+              "temperature": 0.2,
+              "max_tokens": 3000,
+          }
+
+          req = urllib.request.Request(
+              "https://api.groq.com/openai/v1/chat/completions",
+              data=json.dumps(payload).encode(),
+              headers={
+                  "Authorization": f"Bearer {os.environ['GROQ_API_KEY']}",
+                  "Content-Type": "application/json",
+              },
+          )
+
+          try:
+              with urllib.request.urlopen(req, timeout=120) as resp:
+                  result = json.loads(resp.read())
+                  report = result["choices"][0]["message"]["content"]
+              with open("ai-security-report.md", "w", encoding="utf-8") as f:
+                  f.write("# 🛡️ AI Security Audit Report\n\n")
+                  f.write(report)
+          except Exception as e:
+              with open("ai-security-report.md", "w", encoding="utf-8") as f:
+                  f.write(f"# 🛡️ AI Security Audit Report\n\nError: {e}\n\n{summary}")
+          PY
+
+      - name: 📤 Upload Security Reports
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: security-audit-reports
+          path: |
+            bandit-security.json
+            bandit-security.txt
+            pip-audit.json
+            pip-audit.md
+            safety-report.json
+            secret-scan.json
+            trivy-results.sarif
+            ai-security-report.md
+          retention-days: 90
+
+      - name: 💬 PR Comment
+        if: github.event_name == 'pull_request' && always()
+        uses: actions/github-script@v9
+        with:
+          script: |
+            const fs = require('fs');
+            let body = '🛡️ **AI Security Auditor** — сканирование завершено.\n\n';
+            try {
+              const report = fs.readFileSync('ai-security-report.md', 'utf8');
+              body += report.substring(0, 2500) + (report.length > 2500 ? '\n\n...*(truncated)*' : '');
+            } catch {
+              body += 'AI-синтез недоступен. См. артефакт security-audit-reports.';
+            }
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: body
+            });

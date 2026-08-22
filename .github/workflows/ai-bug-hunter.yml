@@ -1,0 +1,104 @@
+name: 🐛 AI Predictive Bug Hunter
+
+on:
+  workflow_call:
+  workflow_dispatch:
+  pull_request:
+    branches: [main, master]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  bug-hunt:
+    name: 🔍 Static Bug Detection
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: 📥 Checkout
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: 🐍 Python 3.11
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.11"
+
+      - name: ⚡ Cache
+        uses: actions/cache@v6
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-bug-${{ hashFiles('requirements.txt') }}
+
+      - name: 📦 Install Tools
+        run: pip install ruff pylint mypy vulture radon
+
+      - name: 🔬 Ruff Deep Scan
+        run: |
+          ruff check . --output-format=json > ruff-bugs.json || true
+          ruff check . --output-format=github || true
+
+      - name: 🦅 Pylint Analysis
+        run: pylint $(git ls-files '*.py') --output-format=json > pylint-report.json || true
+
+      - name: 📝 MyPy Type Check
+        run: mypy . --ignore-missing-imports --show-error-codes --json-file mypy-report.json || true
+
+      - name: 🧟 Vulture Dead Code Scan
+        run: vulture . --min-confidence 80 > vulture-report.txt || true
+
+      - name: 📊 Complexity Hotspots
+        run: |
+          echo "## 🔥 Cyclomatic Complexity Hotspots" > complexity-report.md
+          radon cc . -s -a --min=C >> complexity-report.md || true
+
+      - name: 📤 Upload Reports
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: bug-hunter-reports
+          path: |
+            ruff-bugs.json
+            pylint-report.json
+            mypy-report.json
+            vulture-report.txt
+            complexity-report.md
+          retention-days: 30
+
+      - name: 💬 PR Comment Summary
+        if: github.event_name == 'pull_request' && always()
+        uses: actions/github-script@v9
+        with:
+          script: |
+            const fs = require('fs');
+            let summary = '🐛 **AI Bug Hunter** — статический анализ завершён.\n\n';
+            const files = [
+              {name: 'Ruff', file: 'ruff-bugs.json'},
+              {name: 'Pylint', file: 'pylint-report.json'},
+              {name: 'MyPy', file: 'mypy-report.json'},
+            ];
+            for (const item of files) {
+              try {
+                const data = JSON.parse(fs.readFileSync(item.file, 'utf8'));
+                const count = Array.isArray(data) ? data.length : 0;
+                summary += '- ' + item.name + ': ' + count + ' issues\n';
+              } catch {
+                summary += '- ' + item.name + ': N/A\n';
+              }
+            }
+            try {
+              const vulture = fs.readFileSync('vulture-report.txt', 'utf8');
+              const lines = vulture.split('\n').filter(l => l.trim());
+              summary += '- Vulture: ' + lines.length + ' dead code findings\n';
+            } catch {
+              summary += '- Vulture: N/A\n';
+            }
+            summary += '\n📎 Подробные отчёты доступны в артефакте **bug-hunter-reports**.';
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: summary
+            });

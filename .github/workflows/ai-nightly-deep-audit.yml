@@ -1,0 +1,133 @@
+name: 🤖 AI NIGHTLY — Deep System Audit
+
+on:
+  schedule:
+    - cron: "0 2 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  deep-audit:
+    name: 🔬 Comprehensive AI Audit
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.11'
+
+      - name: 📦 Install Analysis Tools
+        run: |
+          pip install ruff bandit radon vulture
+
+      - name: 🔍 Comprehensive Static Analysis
+        run: |
+          echo "# Static Analysis Report" > full_audit.md
+          echo "## Radon Complexity" >> full_audit.md
+          radon cc . -s -a >> full_audit.md 2>/dev/null || true
+          echo "" >> full_audit.md
+          echo "## Vulture (Dead Code)" >> full_audit.md
+          vulture . >> full_audit.md 2>/dev/null || true
+          echo "" >> full_audit.md
+          echo "## Bandit Security" >> full_audit.md
+          bandit -r . -ll -iii -f txt >> full_audit.md 2>/dev/null || true
+
+      - name: 🧠 AI Deep Audit
+        env:
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+        run: |
+          python3 - <<'PY'
+          import os, json, urllib.request, datetime
+
+          try:
+            with open("full_audit.md", encoding="utf-8") as f:
+              audit_data = f.read()[:5000]
+          except Exception:
+            audit_data = "No audit data."
+
+          try:
+            with open("README.md", encoding="utf-8") as f:
+              readme = f.read()[:2000]
+          except Exception:
+            readme = "No README."
+
+          prompt = (
+              "You are conducting a comprehensive audit of a production cryptocurrency trading bot. "
+              "Analyze the following data and provide a detailed report:\n\n"
+              f"README:\n{readme}\n\n"
+              f"Static Analysis:\n{audit_data}\n\n"
+              "Provide:\n"
+              "1. Executive Summary (overall health score 1-10)\n"
+              "2. Critical Issues requiring immediate attention\n"
+              "3. Performance bottlenecks\n"
+              "4. Code quality recommendations\n"
+              "5. Architecture improvement suggestions\n"
+              "6. Security hardening steps\n"
+              "7. Testing gaps\n\n"
+              "Be specific. Reference files and functions."
+          )
+
+          payload = {
+            "model": "llama-3.1-70b-versatile",
+            "messages": [{"role": "user", "content": prompt}],
+            "temperature": 0.2,
+            "max_tokens": 4000,
+          }
+
+          req = urllib.request.Request(
+            "https://api.groq.com/openai/v1/chat/completions",
+            data=json.dumps(payload).encode(),
+            headers={
+              "Authorization": f"Bearer {os.environ['GROQ_API_KEY']}",
+              "Content-Type": "application/json",
+            },
+          )
+
+          now = datetime.datetime.now().isoformat()
+          try:
+            with urllib.request.urlopen(req, timeout=180) as resp:
+              result = json.loads(resp.read())
+              report = result["choices"][0]["message"]["content"]
+            with open("AI_NIGHTLY_AUDIT.md", "w", encoding="utf-8") as f:
+              f.write(f"# 🌙 AI Nightly Deep Audit\n\n*Date: {now}*\n\n")
+              f.write(report)
+          except Exception as e:
+            with open("AI_NIGHTLY_AUDIT.md", "w", encoding="utf-8") as f:
+              f.write(f"# 🌙 AI Nightly Deep Audit\n\nError: {e}\n\n")
+          PY
+
+      - name: 📤 Commit Audit Report
+        if: always()
+        uses: stefanzweifel/git-auto-commit-action@v7
+        with:
+          commit_message: "docs(audit): 🌙 nightly deep audit [skip ci]"
+          branch: main
+          commit_user_name: "Grinch-Gram Bot"
+          commit_user_email: "bot@grinch-gram.local"
+          file_pattern: "AI_NIGHTLY_AUDIT.md"
+
+      - name: 🚀 Create Audit PR (if critical issues found)
+        if: contains(fromJSON('["success"]'), 'success')
+        uses: peter-evans/create-pull-request@v8
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          branch: ai/nightly-audit-${{ github.run_id }}
+          delete-branch: true
+          title: "🌙 AI Nightly Audit Report"
+          commit-message: "docs(audit): nightly deep audit [skip ci]"
+          body: |
+            ## 🤖 AI Nightly Deep Audit
+
+            Automated comprehensive system analysis.
+            Review AI_NIGHTLY_AUDIT.md for details.
+          labels: |
+            audit
+            ai-generated
+            documentation

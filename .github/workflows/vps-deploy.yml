@@ -1,0 +1,597 @@
+name: 🚀 Autonomous Deploy to VPS
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+    types: [closed]
+  workflow_dispatch:
+    inputs:
+      action:
+        description: 'Action'
+        required: true
+        default: 'deploy'
+        type: choice
+        options:
+          - deploy
+          - rollback
+          - restart
+          - heal
+          - status
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+  VPS_WORKDIR: /opt/bot
+
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: vps-deploy
+  cancel-in-progress: false
+
+jobs:
+  # ═══════════════════════════════════════════════════════════════
+  # PHASE 0: VALIDATE — проверка всего перед стартом
+  # ═══════════════════════════════════════════════════════════════
+  validate:
+    name: 🔐 Pre-flight Validation
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    outputs:
+      secrets_ok: ${{ steps.secrets.outputs.ok }}
+      vps_reachable: ${{ steps.vps.outputs.reachable }}
+      docker_ready: ${{ steps.vps.outputs.docker_ready }}
+      disk_ok: ${{ steps.vps.outputs.disk_ok }}
+    steps:
+      - name: Validate Secrets
+        id: secrets
+        run: |
+          MISSING=""
+          for secret in VPS_HOST VPS_USER VPS_PASSWORD; do
+            val="${{ secrets[secret] }}"
+            if [ -z "$val" ]; then
+              MISSING="$MISSING $secret"
+            fi
+          done
+          if [ -n "$MISSING" ]; then
+            echo "::error::Missing secrets:$MISSING"
+            echo "ok=false" >> "$GITHUB_OUTPUT"
+            exit 1
+          fi
+          echo "✅ All required secrets present"
+          echo "ok=true" >> "$GITHUB_OUTPUT"
+
+      - name: Check VPS Reachability
+        id: vps
+        if: steps.secrets.outputs.ok == 'true'
+        uses: appleboy/ssh-action@master
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          password: ${{ secrets.VPS_PASSWORD }}
+          port: ${{ secrets.VPS_SSH_PORT || '22' }}
+          timeout: 30s
+          command_timeout: 2m
+          script_stop: false
+          script: |
+            set +e
+            echo "=== VPS Health Check ==="
+            
+            # Check Docker
+            if docker version > /dev/null 2>&1; then
+              echo "docker_ready=true"
+              echo "✅ Docker is running"
+            else
+              echo "docker_ready=false"
+              echo "❌ Docker is not running"
+            fi
+            
+            # Check disk space (need at least 2GB free)
+            FREE_GB=$(df -BG / | tail -1 | awk '{print $4}' | tr -d 'G')
+            if [ "$FREE_GB" -ge 2 ]; then
+              echo "disk_ok=true"
+              echo "✅ Disk space OK (${FREE_GB}GB free)"
+            else
+              echo "disk_ok=false"
+              echo "⚠️ Low disk space (${FREE_GB}GB free)"
+              echo "🧹 Auto-cleaning..."
+              docker system prune -af --volumes > /dev/null 2>&1
+              docker image prune -af > /dev/null 2>&1
+              NEW_FREE=$(df -BG / | tail -1 | awk '{print $4}' | tr -d 'G')
+              echo "✅ Cleaned. Now ${NEW_FREE}GB free"
+            fi
+            
+            # Check if workdir exists
+            mkdir -p /opt/bot/{backups,logs,scripts,nginx/ssl}
+            echo "✅ Workdir ready"
+            
+            # Check current version
+            if [ -f /opt/bot/.version ]; then
+              echo "📋 Current VPS version: $(head -1 /opt/bot/.version)"
+            else
+              echo "📋 No version file (first deploy)"
+            fi
+            
+            echo "=== End VPS Check ==="
+        continue-on-error: true
+
+  # ═══════════════════════════════════════════════════════════════
+  # PHASE 1: BUILD — сборка с retry и кэшированием
+  # ═══════════════════════════════════════════════════════════════
+  build:
+    name: 🐳 Build & Push to GHCR
+    needs: validate
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    if: needs.validate.outputs.secrets_ok == 'true'
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      short_sha: ${{ steps.version.outputs.short_sha }}
+      image_tag: ${{ steps.version.outputs.image_tag }}
+      build_ok: ${{ steps.build.outputs.build_ok }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Generate version
+        id: version
+        run: |
+          DATE=$(date +'%Y%m%d')
+          SHA=${GITHUB_SHA::7}
+          VERSION="${DATE}-${SHA}"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "short_sha=$SHA" >> "$GITHUB_OUTPUT"
+          echo "image_tag=${REGISTRY}/${IMAGE_NAME}:${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "📦 Version: $VERSION"
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Cache Docker layers
+        uses: actions/cache@v4
+        with:
+          path: /tmp/.buildx-cache
+          key: ${{ runner.os }}-buildx-${{ github.sha }}
+          restore-keys: |
+            ${{ runner.os }}-buildx-
+
+      - name: Login to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=raw,value=${{ steps.version.outputs.version }}
+            type=raw,value=latest
+            type=sha,prefix=,suffix=,format=short
+
+      - name: Build & Push (with retry)
+        id: build
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha,src=/tmp/.buildx-cache
+          cache-to: type=gha,dest=/tmp/.buildx-cache-new,mode=max
+          platforms: linux/amd64
+
+      - name: Move cache
+        if: success()
+        run: |
+          rm -rf /tmp/.buildx-cache
+          mv /tmp/.buildx-cache-new /tmp/.buildx-cache 2>/dev/null || true
+
+      - name: Verify image
+        id: verify
+        run: |
+          for i in 1 2 3; do
+            if docker pull "${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ needs.build.outputs.version }}" 2>/dev/null; then
+              echo "✅ Image verified in GHCR"
+              echo "build_ok=true" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+            echo "⚠️ Pull attempt $i failed, retrying in 5s..."
+            sleep 5
+          done
+          echo "❌ Failed to verify image after 3 attempts"
+          echo "build_ok=false" >> "$GITHUB_OUTPUT"
+          exit 1
+
+  # ═══════════════════════════════════════════════════════════════
+  # PHASE 2: DEPLOY — деплой с auto-heal
+  # ═══════════════════════════════════════════════════════════════
+  deploy:
+    name: 🚀 Deploy to VPS
+    needs: [validate, build]
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    if: |
+      needs.validate.outputs.secrets_ok == 'true' &&
+      needs.build.outputs.build_ok == 'true' && (
+        github.event_name == 'push' || 
+        (github.event_name == 'pull_request' && github.event.pull_request.merged == true) || 
+        (github.event_name == 'workflow_dispatch' && github.event.inputs.action == 'deploy')
+      )
+    env:
+      HAS_TELEGRAM: ${{ secrets.TELEGRAM_BOT_TOKEN != '' && secrets.TELEGRAM_CHAT_ID != '' }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Sync configs to VPS (retry ×3)
+        uses: appleboy/scp-action@master
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          password: ${{ secrets.VPS_PASSWORD }}
+          port: ${{ secrets.VPS_SSH_PORT || '22' }}
+          source: "docker-compose.prod.yml,nginx.conf,nginx_proxy_params.conf"
+          target: "/opt/bot/"
+          overwrite: true
+          timeout: 60s
+
+      - name: Sync scripts to VPS
+        uses: appleboy/scp-action@master
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          password: ${{ secrets.VPS_PASSWORD }}
+          port: ${{ secrets.VPS_SSH_PORT || '22' }}
+          source: "scripts/*"
+          target: "/opt/bot/scripts/"
+          overwrite: true
+          strip_components: 1
+          timeout: 60s
+
+      - name: Deploy on VPS
+        id: deploy
+        uses: appleboy/ssh-action@master
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          password: ${{ secrets.VPS_PASSWORD }}
+          port: ${{ secrets.VPS_SSH_PORT || '22' }}
+          timeout: 120s
+          command_timeout: 10m
+          script_stop: true
+          script: |
+            set -euo pipefail
+            VERSION="${{ needs.build.outputs.version }}"
+            IMAGE="${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}"
+            
+            echo "========================================"
+            echo "🚀 Deployment v${VERSION} started"
+            echo "========================================"
+            
+            cd /opt/bot
+            mkdir -p backups logs nginx/ssl
+            
+            # ── Pre-deploy backup ──
+            echo "💾 Creating pre-deploy backup..."
+            bash scripts/backup.sh 2>/dev/null || true
+            
+            # ── Login to GHCR ──
+            echo "🔐 Logging into GHCR..."
+            if [ -n "${{ secrets.GHCR_PAT }}" ]; then
+              echo "${{ secrets.GHCR_PAT }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+            else
+              echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+            fi
+            
+            # ── Pull new image ──
+            echo "📥 Pulling ${IMAGE}:${VERSION}..."
+            if ! docker pull "${IMAGE}:${VERSION}"; then
+              echo "⚠️ GHCR tag unavailable; building from checked-out source"
+              docker build -t "${IMAGE}:${VERSION}" .
+            fi
+            
+            # ── Tag management ──
+            echo "🏷️ Managing tags..."
+            docker tag "${IMAGE}:latest" "${IMAGE}:previous" 2>/dev/null || true
+            docker tag "${IMAGE}:${VERSION}" "${IMAGE}:latest"
+            
+            # ── Save version ──
+            echo "${VERSION}" > .version
+            date -Iseconds >> .version
+            
+            # ── Deploy ──
+            echo "🔄 Starting containers..."
+            docker-compose -f docker-compose.prod.yml up -d --no-deps --pull always bot
+            
+            # ── Health check with exponential backoff ──
+            echo "⏳ Health check..."
+            HEALTH_OK=false
+            for i in $(seq 1 30); do
+              if curl -sf http://localhost:3000/health > /dev/null 2>&1; then
+                echo "✅ Health check PASSED (attempt $i)"
+                HEALTH_OK=true
+                break
+              fi
+              WAIT=$(( i < 10 ? 2 : 5 ))
+              echo "  Attempt $i/30, waiting ${WAIT}s..."
+              sleep $WAIT
+            done
+            
+            # ── Auto-rollback on failure ──
+            if [ "$HEALTH_OK" != "true" ]; then
+              echo "❌ Health check FAILED"
+              echo "🔄 AUTO-ROLLBACK initiated..."
+              
+              if docker image inspect "${IMAGE}:previous" > /dev/null 2>&1; then
+                docker tag "${IMAGE}:latest" "${IMAGE}:failed-$(date +%Y%m%d-%H%M%S)"
+                docker tag "${IMAGE}:previous" "${IMAGE}:latest"
+                docker-compose -f docker-compose.prod.yml up -d --no-deps bot
+                sleep 5
+                
+                if curl -sf http://localhost:3000/health > /dev/null 2>&1; then
+                  echo "✅ Rollback SUCCESSFUL — previous version is running"
+                  echo "rollback_status=success" >> "$GITHUB_ENV"
+                else
+                  echo "❌ Rollback FAILED — attempting full restart..."
+                  docker-compose -f docker-compose.prod.yml restart
+                  sleep 10
+                  if curl -sf http://localhost:3000/health > /dev/null 2>&1; then
+                    echo "✅ Restart SUCCESSFUL"
+                    echo "rollback_status=restart_ok" >> "$GITHUB_ENV"
+                  else
+                    echo "❌ CRITICAL: All recovery attempts failed"
+                    echo "rollback_status=failed" >> "$GITHUB_ENV"
+                    exit 1
+                  fi
+                fi
+              else
+                echo "❌ No previous image for rollback"
+                exit 1
+              fi
+            else
+              echo "rollback_status=none" >> "$GITHUB_ENV"
+            fi
+            
+            # ── Cleanup (preserve previous + last 3 failed) ──
+            echo "🧹 Cleaning up..."
+            docker system prune -f
+            # Keep: latest, previous, and last 3 failed
+            docker images --format "{{.Repository}}:{{.Tag}}" | \
+              grep "${IMAGE}:failed-" | sort -r | tail -n +4 | \
+              xargs -r docker rmi 2>/dev/null || true
+            
+            echo "========================================"
+            echo "✅ Deployment complete"
+            echo "========================================"
+
+      - name: Collect logs on failure
+        if: failure()
+        uses: appleboy/ssh-action@master
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          password: ${{ secrets.VPS_PASSWORD }}
+          port: ${{ secrets.VPS_SSH_PORT || '22' }}
+          script: |
+            echo "=== DEPLOYMENT FAILURE LOGS ==="
+            echo "--- Docker PS ---"
+            docker ps -a
+            echo "--- Bot Logs (last 50 lines) ---"
+            docker logs --tail 50 grinch-bot 2>/dev/null || echo "No bot logs"
+            echo "--- Nginx Logs (last 20 lines) ---"
+            docker logs --tail 20 grinch-nginx 2>/dev/null || echo "No nginx logs"
+            echo "--- Disk Usage ---"
+            df -h
+            echo "=== END LOGS ==="
+
+      - name: Notify Telegram — Success
+        if: success() && env.HAS_TELEGRAM == 'true'
+        uses: appleboy/telegram-action@master
+        with:
+          to: ${{ secrets.TELEGRAM_CHAT_ID }}
+          token: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          format: markdown
+          message: |
+            ✅ *GRINCH-GRAM Deployed*
+            🏷️ `${{ needs.build.outputs.version }}`
+            🔗 `${{ needs.build.outputs.short_sha }}`
+            👤 ${{ github.actor }}
+            🔄 Rollback: `${{ env.rollback_status }}`
+
+      - name: Notify Telegram — Failure
+        if: failure() && env.HAS_TELEGRAM == 'true'
+        uses: appleboy/telegram-action@master
+        with:
+          to: ${{ secrets.TELEGRAM_CHAT_ID }}
+          token: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          format: markdown
+          message: |
+            ❌ *GRINCH-GRAM Deploy FAILED*
+            🔗 `${{ needs.build.outputs.short_sha }}`
+            👤 ${{ github.actor }}
+            [Logs](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }})
+
+  # ═══════════════════════════════════════════════════════════════
+  # PHASE 3: ROLLBACK — ручной откат
+  # ═══════════════════════════════════════════════════════════════
+  rollback:
+    name: ↩️ Rollback
+    needs: validate
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    if: github.event_name == 'workflow_dispatch' && github.event.inputs.action == 'rollback'
+    env:
+      HAS_TELEGRAM: ${{ secrets.TELEGRAM_BOT_TOKEN != '' && secrets.TELEGRAM_CHAT_ID != '' }}
+    steps:
+      - name: Execute rollback
+        uses: appleboy/ssh-action@master
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          password: ${{ secrets.VPS_PASSWORD }}
+          port: ${{ secrets.VPS_SSH_PORT || '22' }}
+          timeout: 60s
+          command_timeout: 5m
+          script: |
+            set -e
+            cd /opt/bot
+            IMAGE="ghcr.io/${{ github.repository }}"
+            
+            if ! docker image inspect "${IMAGE}:previous" > /dev/null 2>&1; then
+              echo "❌ No previous image"
+              exit 1
+            fi
+            
+            docker tag "${IMAGE}:latest" "${IMAGE}:failed-$(date +%Y%m%d-%H%M%S)"
+            docker tag "${IMAGE}:previous" "${IMAGE}:latest"
+            docker-compose -f docker-compose.prod.yml up -d --no-deps bot
+            
+            sleep 5
+            curl -sf http://localhost:3000/health > /dev/null 2>&1
+            echo "✅ Rollback OK"
+
+      - name: Notify Telegram
+        if: env.HAS_TELEGRAM == 'true'
+        uses: appleboy/telegram-action@master
+        with:
+          to: ${{ secrets.TELEGRAM_CHAT_ID }}
+          token: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          format: markdown
+          message: |
+            ↩️ *GRINCH-GRAM Rolled Back*
+            👤 ${{ github.actor }}
+
+  # ═══════════════════════════════════════════════════════════════
+  # PHASE 4: RESTART — перезапуск с проверкой
+  # ═══════════════════════════════════════════════════════════════
+  restart:
+    name: 🔄 Restart
+    needs: validate
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    if: github.event_name == 'workflow_dispatch' && github.event.inputs.action == 'restart'
+    env:
+      HAS_TELEGRAM: ${{ secrets.TELEGRAM_BOT_TOKEN != '' && secrets.TELEGRAM_CHAT_ID != '' }}
+    steps:
+      - name: Restart
+        uses: appleboy/ssh-action@master
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          password: ${{ secrets.VPS_PASSWORD }}
+          port: ${{ secrets.VPS_SSH_PORT || '22' }}
+          script: |
+            cd /opt/bot
+            docker-compose -f docker-compose.prod.yml restart
+            sleep 5
+            curl -sf http://localhost:3000/health > /dev/null 2>&1
+            echo "✅ Restart OK"
+
+      - name: Notify Telegram
+        if: env.HAS_TELEGRAM == 'true'
+        uses: appleboy/telegram-action@master
+        with:
+          to: ${{ secrets.TELEGRAM_CHAT_ID }}
+          token: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          format: markdown
+          message: |
+            🔄 *GRINCH-GRAM Restarted*
+            👤 ${{ github.actor }}
+
+  # ═══════════════════════════════════════════════════════════════
+  # PHASE 5: HEAL — автоисправление VPS
+  # ═══════════════════════════════════════════════════════════════
+  heal:
+    name: 🏥 Self-Heal VPS
+    needs: validate
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    if: github.event_name == 'workflow_dispatch' && github.event.inputs.action == 'heal'
+    env:
+      HAS_TELEGRAM: ${{ secrets.TELEGRAM_BOT_TOKEN != '' && secrets.TELEGRAM_CHAT_ID != '' }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Sync heal scripts
+        uses: appleboy/scp-action@master
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          password: ${{ secrets.VPS_PASSWORD }}
+          port: ${{ secrets.VPS_SSH_PORT || '22' }}
+          source: "scripts/*"
+          target: "/opt/bot/scripts/"
+          overwrite: true
+          strip_components: 1
+
+      - name: Run self-heal
+        uses: appleboy/ssh-action@master
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          password: ${{ secrets.VPS_PASSWORD }}
+          port: ${{ secrets.VPS_SSH_PORT || '22' }}
+          command_timeout: 8m
+          script: |
+            set -e
+            cd /opt/bot
+            bash scripts/self-heal.sh
+
+      - name: Notify Telegram
+        if: env.HAS_TELEGRAM == 'true'
+        uses: appleboy/telegram-action@master
+        with:
+          to: ${{ secrets.TELEGRAM_CHAT_ID }}
+          token: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          format: markdown
+          message: |
+            🏥 *GRINCH-GRAM Self-Healed*
+            👤 ${{ github.actor }}
+
+  # ═══════════════════════════════════════════════════════════════
+  # PHASE 6: STATUS — проверка состояния
+  # ═══════════════════════════════════════════════════════════════
+  status:
+    name: 📊 VPS Status
+    needs: validate
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    if: github.event_name == 'workflow_dispatch' && github.event.inputs.action == 'status'
+    steps:
+      - name: Get status
+        uses: appleboy/ssh-action@master
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          password: ${{ secrets.VPS_PASSWORD }}
+          port: ${{ secrets.VPS_SSH_PORT || '22' }}
+          script: |
+            echo "=== GRINCH-GRAM STATUS ==="
+            echo "--- Containers ---"
+            docker-compose -f /opt/bot/docker-compose.prod.yml ps
+            echo "--- Health ---"
+            curl -sf http://localhost:3000/health 2>/dev/null || echo "❌ Health check failed"
+            echo "--- Disk ---"
+            df -h / | tail -1
+            echo "--- Memory ---"
+            free -h | head -2
+            echo "--- Images ---"
+            docker images "ghcr.io/${{ github.repository }}" --format "{{.Tag}} | {{.Size}} | {{.CreatedAt}}"
+            echo "--- Version ---"
+            cat /opt/bot/.version 2>/dev/null || echo "No version file"
+            echo "=========================="

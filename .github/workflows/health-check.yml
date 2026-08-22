@@ -1,0 +1,119 @@
+name: 🏥 Periodic Health Check
+
+on:
+  schedule:
+    - cron: '*/5 * * * *'  # Every 5 minutes
+  workflow_dispatch:
+
+env:
+  HAS_TELEGRAM: ${{ secrets.TELEGRAM_BOT_TOKEN != '' && secrets.TELEGRAM_CHAT_ID != '' }}
+
+jobs:
+  check:
+    name: Check VPS Health
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: Check VPS Health
+        id: health
+        uses: appleboy/ssh-action@master
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          password: ${{ secrets.VPS_PASSWORD }}
+          port: ${{ secrets.VPS_SSH_PORT || '22' }}
+          timeout: 30s
+          script_stop: false
+          script: |
+            set +e
+            HEALTH=$(curl -sf http://localhost:3000/health 2>/dev/null)
+            if [ $? -eq 0 ]; then
+              echo "✅ Health OK"
+              echo "$HEALTH"
+              echo "status=ok" >> "$GITHUB_OUTPUT"
+            else
+              echo "❌ Health check FAILED"
+              echo "status=fail" >> "$GITHUB_OUTPUT"
+            fi
+
+      - name: Alert Telegram — Health Failed
+        if: steps.health.outputs.status == 'fail' && env.HAS_TELEGRAM == 'true'
+        uses: appleboy/telegram-action@master
+        with:
+          to: ${{ secrets.TELEGRAM_CHAT_ID }}
+          token: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          format: markdown
+          message: |
+            ⚠️ *GRINCH-GRAM Health Check FAILED*
+
+            🏥 Health endpoint unreachable on VPS
+            🔄 Auto-heal starting...
+
+            [Check Dashboard](http://${{ secrets.VPS_HOST }})
+
+      - name: Self-heal if unhealthy
+        id: heal
+        if: steps.health.outputs.status == 'fail'
+        uses: appleboy/ssh-action@master
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          password: ${{ secrets.VPS_PASSWORD }}
+          port: ${{ secrets.VPS_SSH_PORT || '22' }}
+          command_timeout: 5m
+          script: |
+            echo "🔄 Auto-healing..."
+            cd /opt/bot
+
+            # Try restart first
+            docker compose -f docker-compose.prod.yml restart bot
+            sleep 10
+
+            if curl -sf http://localhost:3000/health > /dev/null 2>&1; then
+              echo "✅ Healed by restart"
+              echo "heal_result=restart" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+
+            # Try full down/up
+            docker compose -f docker-compose.prod.yml down
+            sleep 2
+            docker compose -f docker-compose.prod.yml up -d
+            sleep 10
+
+            if curl -sf http://localhost:3000/health > /dev/null 2>&1; then
+              echo "✅ Healed by recreate"
+              echo "heal_result=recreate" >> "$GITHUB_OUTPUT"
+            else
+              echo "❌ Heal failed — manual intervention needed"
+              echo "heal_result=failed" >> "$GITHUB_OUTPUT"
+              exit 1
+            fi
+
+      - name: Alert Telegram — Recovered
+        if: steps.heal.outputs.heal_result != '' && steps.heal.outputs.heal_result != 'failed' && env.HAS_TELEGRAM == 'true'
+        uses: appleboy/telegram-action@master
+        with:
+          to: ${{ secrets.TELEGRAM_CHAT_ID }}
+          token: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          format: markdown
+          message: |
+            ✅ *GRINCH-GRAM Recovered*
+
+            🔧 Auto-heal succeeded via: ${{ steps.heal.outputs.heal_result }}
+            🏥 Health endpoint responding again
+
+      - name: Alert Telegram — Critical
+        if: failure() && env.HAS_TELEGRAM == 'true'
+        uses: appleboy/telegram-action@master
+        with:
+          to: ${{ secrets.TELEGRAM_CHAT_ID }}
+          token: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          format: markdown
+          message: |
+            🚨 *GRINCH-GRAM CRITICAL*
+
+            ❌ Health check + auto-heal BOTH FAILED
+            👨‍💻 Manual intervention required ASAP!
+
+            [Check VPS](http://${{ secrets.VPS_HOST }}/health)

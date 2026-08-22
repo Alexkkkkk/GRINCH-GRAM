@@ -1,0 +1,10 @@
+.github/workflows/
+deploy-vps.yml
+static/css/style.min.css
+static/js/ai-*.js
+ai_backend.py
+manifest.json
+requirements.txt
+tests/
+*.db
+*.sqlite

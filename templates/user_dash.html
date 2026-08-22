@@ -1,0 +1,523 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>GRINCH-GRAM — Мой дашборд</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🐸</text></svg>">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --ton: #0098EA; --ton2: #33b5ff;
+      --grinch: #00ff88; --grinch2: #00cc6a;
+      --bg: #030508; --bg2: #060a10; --bg3: #0a1018;
+      --card: #0e1420; --card2: #121c2c;
+      --border: rgba(255,255,255,.07); --border2: rgba(255,255,255,.12);
+      --text: #e8eef8; --text2: #6a7d9f; --text3: #3d4f6a;
+      --red: #ff2d55; --yellow: #ffd700;
+      --r: 14px; --r2: 10px; --r3: 7px;
+      --t: all .2s cubic-bezier(.4,0,.2,1);
+    }
+    html { scroll-behavior: smooth; }
+    body {
+      background: var(--bg); color: var(--text);
+      font-family: 'Inter', system-ui, sans-serif;
+      font-size: 14px; line-height: 1.5;
+      min-height: 100vh;
+      -webkit-font-smoothing: antialiased;
+    }
+    /* Grid background */
+    body::before {
+      content: '';
+      position: fixed; inset: 0; pointer-events: none; z-index: 0;
+      background-image:
+        linear-gradient(rgba(0,229,255,.02) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(0,229,255,.02) 1px, transparent 1px);
+      background-size: 48px 48px;
+    }
+
+    /* ── Header ── */
+    header {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 0 28px; height: 52px;
+      background: rgba(6,10,16,.92); backdrop-filter: blur(20px);
+      border-bottom: 1px solid rgba(0,229,255,.08);
+      position: sticky; top: 0; z-index: 100;
+    }
+    header::after {
+      content: ''; position: absolute; bottom: 0; left: 0; right: 0; height: 1px;
+      background: linear-gradient(90deg, transparent, rgba(0,229,255,.3), transparent);
+      pointer-events: none;
+    }
+    .logo { display: flex; align-items: center; gap: 9px; text-decoration: none; }
+    .logo-icon { font-size: 1.1rem; }
+    .logo-text {
+      font-size: 1rem; font-weight: 900; letter-spacing: .06em;
+      background: linear-gradient(135deg, #00e5ff, #00ff88);
+      -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;
+    }
+    .hdr-right { display: flex; align-items: center; gap: 10px; }
+    .pill {
+      padding: 4px 12px; border-radius: 100px;
+      font-size: .72rem; font-weight: 700; letter-spacing: .04em; text-transform: uppercase;
+    }
+    .pill-ok  { background: rgba(0,255,136,.08); border: 1px solid rgba(0,255,136,.25); color: var(--grinch); }
+    .pill-off { background: rgba(255,45,85,.08);  border: 1px solid rgba(255,45,85,.25);  color: var(--red); }
+    .hdr-link {
+      font-size: .8rem; color: var(--text2); text-decoration: none;
+      padding: 4px 10px; border-radius: 8px;
+      border: 1px solid rgba(255,255,255,.07);
+      transition: var(--t);
+    }
+    .hdr-link:hover { color: var(--ton2); border-color: rgba(0,152,234,.3); }
+
+    /* ── Main ── */
+    .main { max-width: 1080px; margin: 0 auto; padding: 28px 20px 80px; position: relative; z-index: 1; }
+
+    /* ── User title ── */
+    .user-title { font-size: 1.4rem; font-weight: 900; margin-bottom: 3px; }
+    .user-addr {
+      font-size: .78rem; color: var(--text2); font-family: 'JetBrains Mono', monospace;
+      margin-bottom: 24px; word-break: break-all;
+    }
+
+    /* ── Deposit card (unified) ── */
+    .deposit-card {
+      background: linear-gradient(135deg, rgba(0,152,234,.1), rgba(0,255,136,.05));
+      border: 1px solid rgba(0,152,234,.25); border-radius: var(--r);
+      margin-bottom: 24px; overflow: hidden;
+      transition: var(--t);
+    }
+    .deposit-card-hdr {
+      display: flex; align-items: center; gap: 10px;
+      padding: 14px 20px; cursor: pointer; user-select: none;
+    }
+    .deposit-card-hdr:hover { background: rgba(255,255,255,.02); }
+    .deposit-card-hdr-icon { font-size: 1.2rem; }
+    .deposit-card-hdr-text { flex: 1; }
+    .deposit-card-hdr-text h2 { font-size: 1rem; font-weight: 800; margin-bottom: 1px; }
+    .deposit-card-hdr-text p { font-size: .78rem; color: var(--text2); }
+    .deposit-card-arrow { color: var(--text2); font-size: .8rem; transition: transform .25s; }
+    .deposit-card-arrow.open { transform: rotate(180deg); }
+    .deposit-card-body { display: none; padding: 0 20px 18px; }
+    .deposit-card-body.open { display: block; }
+
+    .dep-row { display: grid; grid-template-columns: 1fr auto; gap: 10px; align-items: start; margin-bottom: 10px; }
+    .dep-block {
+      background: var(--card2); border: 1px solid var(--border);
+      border-radius: var(--r2); padding: 11px 15px;
+    }
+    .dep-lbl {
+      font-size: .7rem; font-weight: 700; color: var(--text2);
+      text-transform: uppercase; letter-spacing: .05em; margin-bottom: 4px;
+    }
+    .dep-val { font-family: 'JetBrains Mono', monospace; font-size: .84rem; word-break: break-all; }
+    .dep-code-big {
+      font-family: 'JetBrains Mono', monospace; font-size: 1.1rem;
+      font-weight: 800; color: var(--grinch); letter-spacing: .1em;
+    }
+    .copy-btn {
+      background: rgba(0,152,234,.1); border: 1px solid rgba(0,152,234,.3);
+      color: var(--ton2); border-radius: 9px; padding: 7px 14px;
+      font-size: .76rem; font-weight: 700; cursor: pointer; white-space: nowrap;
+      transition: var(--t);
+    }
+    .copy-btn:hover { background: rgba(0,152,234,.2); }
+    .dep-note { font-size: .76rem; color: var(--text2); padding-top: 4px; }
+
+    /* ── KPI grid ── */
+    .kpi-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 14px; margin-bottom: 22px; }
+    .kpi {
+      background: var(--card); border: 1px solid var(--border); border-radius: var(--r);
+      padding: 18px 20px; transition: var(--t); position: relative; overflow: hidden;
+    }
+    .kpi::before {
+      content: ''; position: absolute; inset: 0; border-radius: var(--r);
+      background: linear-gradient(135deg, rgba(255,255,255,.02), transparent);
+      pointer-events: none;
+    }
+    .kpi:hover { border-color: rgba(0,229,255,.15); transform: translateY(-1px); }
+    .kpi-lbl {
+      font-size: .7rem; font-weight: 700; color: var(--text2);
+      text-transform: uppercase; letter-spacing: .06em; margin-bottom: 6px;
+    }
+    .kpi-val { font-size: 1.7rem; font-weight: 900; font-family: 'JetBrains Mono', monospace; }
+    .kpi-val.blue  { color: var(--ton2); text-shadow: 0 0 20px rgba(0,152,234,.3); }
+    .kpi-val.green { color: var(--grinch); text-shadow: 0 0 20px rgba(0,255,136,.3); }
+    .kpi-val.red   { color: var(--red); }
+    .kpi-sub { font-size: .74rem; color: var(--text2); margin-top: 3px; }
+
+    /* ── Section header ── */
+    .sec-hdr {
+      display: flex; align-items: center; gap: 8px;
+      font-size: .88rem; font-weight: 800; color: var(--text);
+      margin: 26px 0 12px; text-transform: uppercase; letter-spacing: .04em;
+    }
+    .sec-hdr::after {
+      content: ''; flex: 1; height: 1px;
+      background: linear-gradient(90deg, rgba(255,255,255,.08), transparent);
+    }
+
+    /* ── Withdrawal ── */
+    .withdraw-bar { display: flex; gap: 10px; align-items: flex-start; margin-bottom: 4px; }
+    .wd-input {
+      background: var(--card2); border: 1px solid var(--border2); color: var(--text);
+      border-radius: var(--r2); padding: 10px 14px; font-size: .9rem; width: 140px;
+      outline: none; font-family: inherit; transition: var(--t);
+    }
+    .wd-input:focus { border-color: var(--ton); box-shadow: 0 0 0 3px rgba(0,152,234,.12); }
+    .wd-btn {
+      background: linear-gradient(135deg, var(--ton), var(--ton2)); color: #fff;
+      border: none; border-radius: var(--r2); padding: 10px 20px;
+      font-size: .88rem; font-weight: 800; cursor: pointer; transition: var(--t);
+    }
+    .wd-btn:hover { opacity: .88; transform: translateY(-1px); }
+    .wd-result { font-size: .82rem; margin-top: 6px; min-height: 1.2em; }
+
+    /* ── Open position ── */
+    .pos-card {
+      background: var(--card); border: 1px solid rgba(0,255,136,.25);
+      border-radius: var(--r); padding: 18px 20px; margin-bottom: 4px;
+      transition: var(--t);
+    }
+    .pos-card.empty { border-color: var(--border); opacity: .65; }
+    .pos-row { display: flex; flex-wrap: wrap; gap: 20px; align-items: center; }
+    .pos-item .pi-lbl { font-size: .7rem; color: var(--text2); margin-bottom: 3px; text-transform: uppercase; letter-spacing: .04em; }
+    .pos-item .pi-val { font-size: 1.05rem; font-weight: 800; font-family: 'JetBrains Mono', monospace; }
+
+    /* ── Trades table ── */
+    .table-wrap {
+      background: var(--card); border: 1px solid var(--border); border-radius: var(--r);
+      overflow: hidden;
+    }
+    table { width: 100%; border-collapse: collapse; font-size: .8rem; }
+    th {
+      padding: 10px 16px; text-align: left; color: var(--text2);
+      font-size: .68rem; font-weight: 700; text-transform: uppercase;
+      letter-spacing: .06em; border-bottom: 1px solid var(--border);
+      background: rgba(255,255,255,.02);
+    }
+    td { padding: 10px 16px; border-bottom: 1px solid rgba(255,255,255,.04); }
+    tr:last-child td { border-bottom: none; }
+    tr:hover td { background: rgba(255,255,255,.02); }
+    .pnl-pos { color: var(--grinch); font-weight: 700; }
+    .pnl-neg { color: var(--red); font-weight: 700; }
+    .empty-row { text-align: center; padding: 36px; color: var(--text2); }
+    .badge-buy  { background: rgba(0,255,136,.1);  color: var(--grinch); padding: 2px 9px; border-radius: 6px; font-size: .7rem; font-weight: 800; }
+    .badge-sell { background: rgba(255,45,85,.1);   color: var(--red);    padding: 2px 9px; border-radius: 6px; font-size: .7rem; font-weight: 800; }
+
+    /* ── Logs ── */
+    .log-wrap {
+      background: var(--card); border: 1px solid var(--border); border-radius: var(--r);
+      padding: 12px 14px; max-height: 260px; overflow-y: auto;
+    }
+    .log-line { display: flex; gap: 10px; padding: 4px 2px; border-bottom: 1px solid rgba(255,255,255,.04); font-size: .78rem; }
+    .log-line:last-child { border-bottom: none; }
+    .log-time { color: var(--text2); font-family: 'JetBrains Mono', monospace; flex-shrink: 0; }
+    .log-INFO  { color: var(--text); }
+    .log-BUY   { color: var(--grinch); font-weight: 700; }
+    .log-SELL  { color: var(--red); font-weight: 700; }
+    .log-WARN  { color: var(--yellow); }
+    .log-ERROR { color: var(--red); }
+
+    /* ── Footer ── */
+    footer {
+      text-align: center; padding: 20px; color: var(--text2); font-size: .75rem;
+      border-top: 1px solid var(--border); position: relative; z-index: 1;
+    }
+    footer a { color: var(--ton2); text-decoration: none; }
+    footer a:hover { text-decoration: underline; }
+
+    /* ── Scrollbar ── */
+    ::-webkit-scrollbar { width: 4px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: rgba(0,229,255,.2); border-radius: 2px; }
+
+    /* ── Responsive ── */
+    @media (max-width: 768px) {
+      header { padding: 0 16px; }
+      .main { padding: 18px 14px 60px; }
+      .kpi-grid { grid-template-columns: 1fr 1fr; gap: 10px; }
+      .kpi { padding: 14px 14px; }
+      .kpi-val { font-size: 1.4rem; }
+      .dep-row { grid-template-columns: 1fr; gap: 6px; }
+      .copy-btn { width: 100%; text-align: center; }
+      .withdraw-bar { flex-wrap: wrap; }
+      .wd-input { width: 100%; }
+      .wd-btn { width: 100%; }
+      .table-wrap { overflow-x: auto; }
+      table { min-width: 460px; }
+      th, td { padding: 8px 10px; }
+      .hdr-right .hdr-link { display: none; }
+    }
+    @media (max-width: 400px) {
+      .kpi-grid { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+
+<header>
+  <a class="logo" href="/">
+    <span class="logo-icon">◆×🐸</span>
+    <span class="logo-text">GRINCH-GRAM</span>
+  </a>
+  <div class="hdr-right">
+    <span id="status-pill" class="pill pill-ok">● АКТИВЕН</span>
+    <a href="/join" class="hdr-link">+ Новый аккаунт</a>
+  </div>
+</header>
+
+<div class="main">
+
+  <div class="user-title" id="user-name">Загрузка…</div>
+  <div class="user-addr" id="user-addr">{{ init_status.ton_address if init_status else '' }}</div>
+
+  <!-- ── Unified deposit card (auto-expands when balance = 0) ── -->
+  <div id="deposit-card" class="deposit-card">
+    <div class="deposit-card-hdr" onclick="toggleDeposit()">
+      <span class="deposit-card-hdr-icon">💰</span>
+      <div class="deposit-card-hdr-text">
+        <h2>Пополнить баланс</h2>
+        <p id="dep-hdr-sub">Отправь TON с обязательным кодом-комментарием</p>
+      </div>
+      <span class="deposit-card-arrow" id="dep-arrow">▼</span>
+    </div>
+    <div class="deposit-card-body" id="dep-body">
+      <div class="dep-row">
+        <div class="dep-block">
+          <div class="dep-lbl">Адрес платформы</div>
+          <div class="dep-val" id="dep-addr">{{ platform_wallet }}</div>
+        </div>
+        <button class="copy-btn" onclick="copyEl('dep-addr', this)">📋 Копировать</button>
+      </div>
+      <div class="dep-row">
+        <div class="dep-block">
+          <div class="dep-lbl">Комментарий к переводу (обязательно!)</div>
+          <div class="dep-code-big" id="dep-code">{{ deposit_code }}</div>
+        </div>
+        <button class="copy-btn" onclick="copyEl('dep-code', this)">📋 Копировать</button>
+      </div>
+      <div class="dep-note">
+        Баланс зачислится за 1–2 минуты после подтверждения транзакции.
+        Всего пополнено: <strong style="color:var(--text)">{{ '%.4f'|format(total_deposited) }} TON</strong>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── KPIs ── -->
+  <div class="kpi-grid">
+    <div class="kpi">
+      <div class="kpi-lbl">Баланс TON</div>
+      <div class="kpi-val blue" id="kpi-balance">—</div>
+      <div class="kpi-sub">виртуальный счёт</div>
+    </div>
+    <div class="kpi">
+      <div class="kpi-lbl">GRINCH в позиции</div>
+      <div class="kpi-val green" id="kpi-grinch">—</div>
+    </div>
+    <div class="kpi">
+      <div class="kpi-lbl">Общий P&L</div>
+      <div class="kpi-val" id="kpi-pnl">—</div>
+    </div>
+    <div class="kpi">
+      <div class="kpi-lbl">Win rate / Сделок</div>
+      <div class="kpi-val blue" id="kpi-wr">—</div>
+    </div>
+  </div>
+
+  <!-- ── Withdrawal ── -->
+  <div class="sec-hdr">📤 Вывод средств</div>
+  <div class="withdraw-bar">
+    <input class="wd-input" type="number" id="wd-amount" placeholder="TON" min="0.1" step="0.1">
+    <button class="wd-btn" onclick="doWithdraw()">Вывести TON</button>
+  </div>
+  <div class="wd-result" id="wd-result"></div>
+
+  <!-- ── Open position ── -->
+  <div class="sec-hdr">📂 Открытая позиция</div>
+  <div id="pos-card" class="pos-card empty">
+    <span style="color:var(--text2);font-size:.88rem">Нет открытых позиций — ожидаем BUY сигнал</span>
+  </div>
+
+  <!-- ── Trade history ── -->
+  <div class="sec-hdr">📈 История сделок</div>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Тип</th><th>Цена</th><th>TON</th><th>P&L</th><th>Время</th>
+        </tr>
+      </thead>
+      <tbody id="trades-body">
+        <tr><td colspan="5" class="empty-row">Сделок пока нет</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- ── Bot logs ── -->
+  <div class="sec-hdr">📋 Лог бота</div>
+  <div id="log-wrap" class="log-wrap">
+    <div style="color:var(--text2);font-size:.8rem">Загрузка…</div>
+  </div>
+
+</div><!-- /.main -->
+
+<footer>
+  <p>GRINCH-GRAM &nbsp;|&nbsp; <a href="/">Главный дашборд</a> &nbsp;·&nbsp; <a href="/join">Подключить кошелёк</a></p>
+</footer>
+
+<script>
+  const TOKEN = "{{ token }}";
+  const PLATFORM_WALLET = "{{ platform_wallet }}";
+
+  // ── Deposit card toggle ────────────────────────────────────────────────────
+  let _depOpen = false;
+
+  function toggleDeposit(force) {
+    _depOpen = (force !== undefined) ? force : !_depOpen;
+    const body  = document.getElementById('dep-body');
+    const arrow = document.getElementById('dep-arrow');
+    body.classList.toggle('open', _depOpen);
+    arrow.classList.toggle('open', _depOpen);
+  }
+
+  // ── Init ──────────────────────────────────────────────────────────────────
+  const initStatus = {{ init_status | tojson | safe }};
+  if (initStatus) render(initStatus);
+
+  async function loadStatus() {
+    try {
+      const r = await fetch('/api/user/status/' + TOKEN);
+      const d = await r.json();
+      if (d.ok) render(d);
+    } catch(e) {}
+  }
+
+  function render(d) {
+    // Name + address
+    document.getElementById('user-name').textContent = d.name || 'Трейдер';
+    if (d.ton_address) document.getElementById('user-addr').textContent = d.ton_address;
+
+    // Deposit card: auto-expand when balance is empty
+    const bal = d.balance_ton ?? 0;
+    if (bal < 0.01) {
+      toggleDeposit(true);
+      document.getElementById('dep-hdr-sub').textContent = 'Пополни баланс для начала торговли — отправь TON с кодом';
+    } else {
+      document.getElementById('dep-hdr-sub').textContent = 'Всего пополнено: ' + bal.toFixed(4) + ' TON';
+    }
+
+    // KPIs
+    document.getElementById('kpi-balance').textContent = bal.toFixed(4) + ' TON';
+    const grn = d.grinch_held ?? 0;
+    document.getElementById('kpi-grinch').textContent = grn > 0 ? '~' + Math.round(grn).toLocaleString('ru') : '—';
+
+    const pnl   = d.stats?.total_pnl_ton ?? 0;
+    const pnlEl = document.getElementById('kpi-pnl');
+    pnlEl.textContent = (pnl >= 0 ? '+' : '') + pnl.toFixed(4) + ' TON';
+    pnlEl.className   = 'kpi-val ' + (pnl >= 0 ? 'green' : 'red');
+
+    const tt = d.stats?.total_trades ?? 0;
+    document.getElementById('kpi-wr').textContent = `${d.stats?.winrate ?? 0}% / ${tt}`;
+
+    // Status pill
+    const pill = document.getElementById('status-pill');
+    pill.className   = 'pill pill-ok';
+    pill.textContent = '● АКТИВЕН';
+
+    // Open position
+    const posCard = document.getElementById('pos-card');
+    if (grn > 0 && d.entry_price) {
+      posCard.className = 'pos-card';
+      posCard.innerHTML = `<div class="pos-row">
+        <div class="pos-item"><div class="pi-lbl">Цена входа</div><div class="pi-val" style="color:var(--grinch)">${fmtPrice(d.entry_price)}</div></div>
+        <div class="pos-item"><div class="pi-lbl">GRINCH</div><div class="pi-val">~${Math.round(grn).toLocaleString('ru')}</div></div>
+        <div class="pos-item"><div class="pi-lbl">Последний сигнал</div><div class="pi-val" style="color:var(--ton2)">${d.last_signal || 'HOLD'}</div></div>
+      </div>`;
+    } else {
+      posCard.className = 'pos-card empty';
+      posCard.innerHTML = `<span style="color:var(--text2);font-size:.88rem">Нет открытых позиций — ожидаем BUY сигнал</span>`;
+    }
+
+    // Trades
+    const tbody  = document.getElementById('trades-body');
+    const trades = (d.recent_trades || []).slice().reverse();
+    if (!trades.length) {
+      tbody.innerHTML = `<tr><td colspan="5" class="empty-row">Сделок пока нет</td></tr>`;
+    } else {
+      tbody.innerHTML = trades.map(t => {
+        const isBuy = t.type === 'buy';
+        const badge = isBuy ? '<span class="badge-buy">BUY</span>' : '<span class="badge-sell">SELL</span>';
+        const price = fmtPrice(t.price);
+        const ton   = isBuy ? (t.ton_spent ?? 0).toFixed(4) : (t.received ?? 0).toFixed(4);
+        const pnl   = isBuy ? '—' : pnlCell(t.pnl_ton);
+        const dt    = fmtTime(t.time);
+        return `<tr><td>${badge}</td><td>${price}</td><td>${ton}</td><td>${pnl}</td><td style="color:var(--text2)">${dt}</td></tr>`;
+      }).join('');
+    }
+
+    // Logs
+    const logWrap = document.getElementById('log-wrap');
+    const logs    = (d.logs || []).slice().reverse();
+    if (!logs.length) {
+      logWrap.innerHTML = `<div style="color:var(--text2);font-size:.8rem">Лог пуст</div>`;
+    } else {
+      logWrap.innerHTML = logs.map(l =>
+        `<div class="log-line"><span class="log-time">${l.time}</span><span class="log-${l.level}">${l.msg}</span></div>`
+      ).join('');
+    }
+  }
+
+  // ── Withdrawal ────────────────────────────────────────────────────────────
+  async function doWithdraw() {
+    const amount = parseFloat(document.getElementById('wd-amount').value);
+    const res = document.getElementById('wd-result');
+    if (isNaN(amount) || amount < 0.1) {
+      res.textContent = '⚠️ Минимум 0.1 TON'; res.style.color = 'var(--yellow)'; return;
+    }
+    res.textContent = 'Отправляем…'; res.style.color = 'var(--text2)';
+    try {
+      const r = await fetch('/api/user/withdraw', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ token: TOKEN, amount }),
+      });
+      const d = await r.json();
+      if (d.ok) { res.textContent = `✅ ${amount} TON выведено`; res.style.color = 'var(--grinch)'; loadStatus(); }
+      else       { res.textContent = `❌ ${d.error}`;             res.style.color = 'var(--red)'; }
+    } catch(e) { res.textContent = '❌ Ошибка сети'; res.style.color = 'var(--red)'; }
+  }
+
+  // ── Helpers ───────────────────────────────────────────────────────────────
+  function fmtPrice(p) {
+    if (!p) return '—';
+    if (p < 0.001) return p.toFixed(8) + ' TON';
+    if (p < 1)     return p.toFixed(6) + ' TON';
+    return p.toFixed(4) + ' TON';
+  }
+  function pnlCell(pnl) {
+    if (pnl == null) return '—';
+    const s = pnl >= 0 ? '+' : '';
+    const c = pnl >= 0 ? 'pnl-pos' : 'pnl-neg';
+    return `<span class="${c}">${s}${pnl.toFixed(4)} TON</span>`;
+  }
+  function fmtTime(iso) {
+    if (!iso) return '—';
+    return new Date(iso).toLocaleString('ru-RU', {day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'});
+  }
+  function copyEl(elId, btn) {
+    const text = document.getElementById(elId)?.textContent?.trim() || '';
+    navigator.clipboard.writeText(text).then(() => {
+      if (btn) { btn.textContent = '✓ Скопировано'; setTimeout(() => btn.textContent = '📋 Копировать', 2000); }
+    });
+  }
+
+  // Poll every 6 sec
+  setInterval(loadStatus, 6000);
+</script>
+</body>
+</html>

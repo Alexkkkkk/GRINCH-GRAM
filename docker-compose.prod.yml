@@ -1,0 +1,119 @@
+version: "3.9"
+
+services:
+  nginx:
+    image: nginx:1.27-alpine
+    container_name: grinch-nginx
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./nginx_proxy_params.conf:/etc/nginx/proxy_params.conf:ro
+      - ./nginx/ssl:/etc/nginx/ssl:ro
+    depends_on:
+      bot:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "nginx", "-t"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    networks:
+      - grinch-net
+
+  db:
+    image: postgres:16-alpine
+    container_name: grinch-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      POSTGRES_DB: ${POSTGRES_DB:-grinch}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-grinch}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+    networks:
+      - grinch-net
+
+  bot:
+    image: ghcr.io/alexkkkkk/grinch-gram:latest
+    build: .
+    container_name: grinch-bot
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    expose:
+      - "3000"
+    volumes:
+      - bot_data:/app/data
+      - ./backups:/app/backups
+      - bot_logs:/app/logs
+    environment:
+      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN:-}
+      - TELEGRAM_CHAT_ID=${TELEGRAM_CHAT_ID:-}
+    env_file:
+      - .env
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    deploy:
+      resources:
+        limits:
+          cpus: '2'
+          memory: 2G
+    # ═══ Watchtower auto-update label ═══
+    labels:
+      - "com.centurylinklabs.watchtower.enable=true"
+      - "com.centurylinklabs.watchtower.lifecycle.pre-check=curl -f http://localhost:3000/health || exit 1"
+    networks:
+      - grinch-net
+
+  watchtower:
+    image: containrrr/watchtower
+    container_name: grinch-watchtower
+    restart: unless-stopped
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - /root/.docker:/config:ro
+    environment:
+      - WATCHTOWER_CLEANUP=true
+      - WATCHTOWER_POLL_INTERVAL=300
+      - WATCHTOWER_INCLUDE_STOPPED=true
+      - WATCHTOWER_REVIVE_STOPPED=true
+      - WATCHTOWER_LABEL_ENABLE=true
+      - WATCHTOWER_NOTIFICATIONS=shoutrrr
+      - WATCHTOWER_NOTIFICATION_URL=${WATCHTOWER_NOTIFICATION_URL:-}
+      - WATCHTOWER_TIMEOUT=60s
+      - WATCHTOWER_ROLLING_RESTART=true
+      - DOCKER_API_VERSION=1.44
+    command: --interval 300 --label-enable --rolling-restart
+    labels:
+      - "com.centurylinklabs.watchtower.enable=true"
+    networks:
+      - grinch-net
+
+volumes:
+  bot_data:
+    driver: local
+  postgres_data:
+    driver: local
+  bot_logs:
+    driver: local
+
+networks:
+  grinch-net:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.28.0.0/16

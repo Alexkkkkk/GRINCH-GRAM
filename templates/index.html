@@ -1,0 +1,3558 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta name="theme-color" content="#0d1117">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<link rel="manifest" href="/static/manifest.json">
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>GRINCH-GRAM · QuantumBrain v4</title>
+<meta name="description" content="GRINCH-GRAM — AI-powered crypto trading dashboard with QuantumBrain analytics, real-time signals, and automated strategies">
+<meta name="keywords" content="crypto trading, AI, bitcoin, ethereum, trading bot, GRINCH, QuantumBrain">
+<meta name="author" content="GRINCH-GRAM Team">
+<meta name="robots" content="index, follow">
+<meta property="og:title" content="GRINCH-GRAM QuantumBrain v4">
+<meta property="og:description" content="AI-powered crypto trading dashboard with real-time analytics">
+<meta property="og:type" content="website">
+<meta property="og:url" content="https://grinch-gram.com">
+<meta property="og:image" content="/static/img/og-image.png">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="GRINCH-GRAM QuantumBrain v4">
+<meta name="twitter:description" content="AI-powered crypto trading dashboard">
+<meta name="twitter:image" content="/static/img/og-image.png">
+<link rel="canonical" href="https://grinch-gram.com">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/static/css/ai-grid.css?v=2">
+<link rel="stylesheet" href="/static/css/style.css?v=2">
+<link rel="stylesheet" href="/static/css/dex-pro-theme.css?v=1">
+<script src="https://unpkg.com/@tonconnect/ui@latest/dist/tonconnect-ui.min.js" crossorigin="anonymous"></script>
+<script src="/static/js/lightweight-charts.standalone.production.js"></script>
+<script>if("serviceWorker"in navigator){window.addEventListener("load",function(){navigator.serviceWorker.register("/static/js/ai-sw.js").then(function(r){console.log("[AI-SW] Registered:",r.scope)}).catch(function(e){console.log("[AI-SW] Failed:",e)})})}</script>
+</head>
+<body data-theme="dark">
+<div class="app">
+
+<!-- ═══ TRAINING BANNER ═══ -->
+<div id="training-banner" style="display:none">
+  <div class="tb-inner">
+    <div class="tb-head">
+      <div class="tb-title">
+        <span class="tb-icon" id="tb-icon">🧠</span>
+        <span class="tb-name">QuantumBrain v4 — Обучение</span>
+      </div>
+      <div style="flex:1;padding:0 16px">
+        <div class="tb-label" id="tb-label">Инициализация…</div>
+      </div>
+      <div class="tb-pct" id="tb-pct">0%</div>
+    </div>
+    <div class="tb-track"><div class="tb-fill" id="tb-fill" style="width:0%"></div></div>
+    <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap">
+      <div class="tb-stages">
+        <span class="tb-stage pending" id="ts-collecting">📡 Данные</span>
+        <span class="tb-stage pending" id="ts-features">🔬 65 Признаков</span>
+        <span class="tb-stage pending" id="ts-rf">🌲 RF+ET+GB</span>
+        <span class="tb-stage pending" id="ts-gb">🔥 XGB+HGB+MLP</span>
+        <span class="tb-stage pending" id="ts-validate">💰 Kelly</span>
+        <span class="tb-stage pending" id="ts-ready">✅ Готово</span>
+      </div>
+      <div class="tb-meta">
+        <div class="tb-meta-item">Баров: <strong id="tb-samples">—</strong></div>
+        <div class="tb-meta-item">6 нейросетей · Kelly Criterion</div>
+        <div class="tb-meta-item">Обновление с GitHub: <strong id="tb-git-update">{{ git_last_update }}</strong></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══ HEADER ═══ -->
+<header class="header hdr-v2">
+  <div class="hdr-logo-area">
+    <div class="logo">
+      <span class="logo-ton">◆</span>
+      <span class="logo-x">×</span>
+      <span class="logo-grn">🐸</span>
+      <span class="logo-txt">GRINCH-GRAM</span>
+    </div>
+    <span id="demo-badge" class="badge badge-demo" {% if not demo %}style="display:none"{% endif %}>ДЕМО</span>
+    <span id="status-badge" class="badge {{ 'badge-running' if init_running else 'badge-stopped' }}">
+      {{ 'РАБОТАЕТ' if init_running else 'ОСТАНОВЛЕН' }}
+    </span>
+  </div>
+
+  <div class="hdr-price-area">
+    <span class="live-dot"></span>
+    <span class="price hdr-price" id="price" aria-live="polite" aria-atomic="true">{% if init_gram and init_gram > 0 %}{{ "{:,.8f}".format(init_gram).rstrip('0').rstrip('.') }}{% else %}—{% endif %} TON</span>
+    <span class="hdr-price-usd" id="price-in-ton">{% if init_price and init_price > 0 %}≈ ${{ "{:,.8f}".format(init_price).rstrip('0').rstrip('.') }}{% else %}≈ $0.00{% endif %}</span>
+    <span class="price-change" id="price-change">0.00%</span>
+    <div class="signal-block signal-HOLD hdr-sig" id="signal-block">
+      <div class="signal-label" id="signal-text" aria-live="assertive" aria-atomic="true">HOLD</div>
+      <div class="signal-strength" id="signal-strength">Tech</div>
+    </div>
+    <div class="signal-block signal-HOLD hdr-sig" id="ai-signal-block">
+      <div class="signal-label" id="ai-signal-text" aria-live="assertive" aria-atomic="true">HOLD</div>
+      <div class="signal-strength" id="ai-confidence">AI 0%</div>
+    </div>
+    <span id="symbol-label" style="display:none">GRINCH/TON</span>
+  </div>
+
+  <div class="hdr-bal-area">
+    <div class="hdr-bal hdr-bal-ton">
+      <span class="hdr-bal-icon">◆</span>
+      <span class="hdr-bal-val" id="hdr-ton-bal">{{ "%.2f"|format(init_balance.get('TON', 0)) if init_balance.get('TON') is not none else '—' }}</span>
+      <span class="hdr-bal-sym">TON</span>
+    </div>
+    <div class="hdr-bal hdr-bal-grn">
+      <span class="hdr-bal-icon">🐸</span>
+      <span class="hdr-bal-val" id="hdr-grn-bal">{{ "%.0f"|format(init_balance.get('GRINCH', 0)) if init_balance.get('GRINCH') is not none else '0' }}</span>
+      <span class="hdr-bal-sym">GRN</span>
+    </div>
+  </div>
+
+  <div class="hdr-controls-area">
+    <button id="theme-toggle" class="btn btn-tiny" onclick="toggleTheme()" aria-label="Переключить тему" title="Тёмная/Светлая тема">🌓</button>
+    <button id="mobile-brain-toggle" onclick="toggleMobileBrain()" style="display:none" title="AI Brain панель" aria-label="Открыть AI Brain панель">🧠 AI</button>
+    <div id="ton-connect-button" style="display:inline-flex;align-items:center"></div>
+    <div class="ai-auto-pill" id="ai-auto-pill">🤖 AI АВТО</div>
+    <button id="btn-start" class="btn btn-green btn-xs" onclick="startAgent()" {% if init_running %}style="display:none"{% endif %}>▶ Пуск</button>
+    <button id="btn-stop"  class="btn btn-red   btn-xs" onclick="stopAgent()"  {% if not init_running %}style="display:none"{% endif %}>⏹ Стоп</button>
+    <button id="btn-trading-toggle" class="btn btn-xs" onclick="toggleTrading()" title="Разрешить/запретить боту совершать сделки">🔴 Торговля выкл</button>
+    <a href="/logout" class="btn btn-tiny" style="text-decoration:none;display:inline-flex;align-items:center">⎋</a>
+  </div>
+</header>
+
+<!-- ═══ STATUS TICKER ═══ -->
+<div class="ai-ticker" id="ai-ticker">
+  <div class="ai-ticker-inner">
+    <div class="at-item at-mode">
+      <span class="at-mode-dot" id="at-mode-dot"></span>
+      <span id="at-mode-txt">AUTO</span>
+    </div>
+    <div class="at-sep">│</div>
+    <div class="at-item at-lock">🔒 ТОЛЬКО В ПЛЮС</div>
+    <div class="at-sep">│</div>
+    <div class="at-item" id="at-db">
+      <span id="at-db-icon">🗄️</span> DB <span id="at-db-status">—</span>
+    </div>
+    <div class="at-sep">│</div>
+    <div class="at-item">📊 <span id="at-rsi">RSI —</span> <span class="at-regime" id="at-regime">—</span></div>
+    <div class="at-sep">│</div>
+    <div class="at-item">AI <span id="at-ai-sig">—</span> <span id="at-ai-conf" style="color:rgba(255,255,255,.4)">0%</span></div>
+    <div class="at-sep">│</div>
+    <div class="at-item at-pnl">💰 P&amp;L: <span id="at-pnl">+0.0000 TON</span></div>
+    <div class="at-sep">│</div>
+    <div class="at-item" id="at-daily-pnl-wrap" title="P&L за сутки UTC">
+      📅 Сегодня: <span id="at-daily-pnl" style="font-weight:700">—</span>
+    </div>
+    <div class="at-sep">│</div>
+    <div class="at-item" id="at-streak-wrap" title="Серия побед подряд" style="display:none">
+      🔥 <span id="at-streak">0</span> подряд
+    </div>
+    <div class="at-sep" id="at-streak-sep" style="display:none">│</div>
+    <div class="at-item" id="at-cb-wrap" title="Circuit Breaker" style="display:none;color:#ff4d6d;font-weight:700">
+      ⛔ CB АКТИВЕН
+    </div>
+    <div class="at-sep" id="at-cb-sep" style="display:none">│</div>
+    <div class="at-item" style="color:var(--purple2)">🎲 Kelly: <span id="at-kelly-frac">—</span></div>
+    <div class="at-sep">│</div>
+    <div class="at-clock" id="at-clock">00:00:00</div>
+  </div>
+</div>
+
+<!-- ═══ MAIN 2-COLUMN GRID ═══ -->
+<div class="main-grid-v2">
+
+  <!-- ════════════ LEFT: AI BRAIN ════════════ -->
+  <div class="ai-brain-col">
+
+    <!-- Brain header -->
+    <div class="brain-hdr">
+      <div class="brain-hdr-left">
+        <div class="brain-icon-wrap">🧠</div>
+        <div>
+          <div class="brain-title">QuantumBrain <span class="brain-v3">v4</span></div>
+          <div class="brain-sub">6 нейросетей · Kelly · 65 признаков</div>
+        </div>
+      </div>
+      <div class="brain-hdr-right">
+        <span id="ai-trained-badge2" class="badge brain-train-badge">обучается…</span>
+        <div class="brain-samples"><span id="ai-samples">0</span> баров · <span id="ai-last-update">—</span></div>
+      </div>
+    </div>
+
+    <!-- AI Brain Tabs -->
+    <div class="ai-tab-bar">
+      <button class="ai-tab active" onclick="switchBrainTab('overview',this)" aria-selected="true" role="tab">📊 Обзор</button>
+      <button class="ai-tab" onclick="switchBrainTab('models',this)" aria-selected="false" role="tab">🧠 Модели</button>
+      <button class="ai-tab" onclick="switchBrainTab('breakout',this)" aria-selected="false" role="tab">💥 Breakout</button>
+      <button class="ai-tab" onclick="switchBrainTab('manual',this)" aria-selected="false" role="tab">⚡ Ручное</button>
+    </div>
+
+    <!-- Tab: Overview -->
+    <div id="brain-tab-overview" class="ai-tab-panel active" role="tabpanel">
+<!-- Signal row: Gauge + Decision + Probs -->
+    <div class="brain-sig-row">
+      <svg id="ai-gauge" viewBox="0 0 120 110" class="brain-gauge-svg">
+        <circle cx="60" cy="65" r="48" fill="none" stroke="#1c2030" stroke-width="10"
+          stroke-dasharray="226 302" stroke-linecap="round" transform="rotate(-225 60 65)"/>
+        <circle id="gauge-fill" cx="60" cy="65" r="48" fill="none" stroke="#ffd166" stroke-width="10"
+          stroke-dasharray="0 302" stroke-linecap="round" transform="rotate(-225 60 65)"/>
+        <text id="gauge-pct" x="60" y="60" text-anchor="middle" font-size="22" font-weight="800"
+          font-family="monospace" fill="#ffd166">0%</text>
+        <text id="gauge-sig" x="60" y="77" text-anchor="middle" font-size="10" font-weight="700"
+          fill="#7888a8" letter-spacing="1">HOLD</text>
+      </svg>
+
+      <div class="brain-decision">
+        <div id="ai-decision-signal" class="brain-ds ai-ds-HOLD">HOLD</div>
+        <div id="ai-decision-why" class="brain-why">Инициализация…</div>
+        <div id="ai-regime-chip" class="ai-regime-chip" style="margin-top:4px">—</div>
+        <div class="ai-thinking-dots" id="ai-thinking"><span></span><span></span><span></span><span></span><span></span></div>
+      </div>
+
+      <div class="ai-vprobs">
+        <div class="ai-vprob-col">
+          <div class="ai-vprob-track"><div id="vpb-up"   class="ai-vprob-bar vp-up"   style="height:0%"></div></div>
+          <div class="ai-vprob-lbl ai-vp-up">▲</div>
+          <div class="ai-vprob-val" id="vpv-up">0%</div>
+        </div>
+        <div class="ai-vprob-col">
+          <div class="ai-vprob-track"><div id="vpb-hold" class="ai-vprob-bar vp-hold" style="height:0%"></div></div>
+          <div class="ai-vprob-lbl ai-vp-hold">◆</div>
+          <div class="ai-vprob-val" id="vpv-hold">0%</div>
+        </div>
+        <div class="ai-vprob-col">
+          <div class="ai-vprob-track"><div id="vpb-down" class="ai-vprob-bar vp-down" style="height:0%"></div></div>
+          <div class="ai-vprob-lbl ai-vp-down">▼</div>
+          <div class="ai-vprob-val" id="vpv-down">0%</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Untrained warning: shown when AI has not completed first training -->
+    <div id="ai-untrained-banner" class="ai-untrained-banner" style="display:none;">
+      <span style="font-size:18px">⏳</span>
+      <div>
+        <div style="font-size:13px;font-weight:700;color:#ffd166">AI ещё не обучен</div>
+        <div style="font-size:11px;color:#8892b0;margin-top:2px">
+          Накапливаем исторические данные. Сигнал будет <b style="color:#ffd166">HOLD</b>,
+          торговля заблокирована до завершения первого обучения.
+        </div>
+      </div>
+    </div>
+
+    <!-- Regime -->
+    <div id="ai-regime-banner" class="ai-regime-banner">
+      <span id="ai-rb-icon" class="ai-rb-icon">📊</span>
+      <div class="ai-rb-center">
+        <span id="ai-rb-name" class="ai-rb-name">Загрузка…</span>
+        <span id="ai-rb-desc" class="ai-rb-desc">—</span>
+      </div>
+      <div class="ai-rb-meta">
+        <div class="ai-rb-stat"><div class="ai-rb-stat-lbl">ATR</div><div id="ai-rb-atr" class="ai-rb-stat-val">—%</div></div>
+        <div class="ai-rb-stat"><div class="ai-rb-stat-lbl">Волат.</div><div id="ai-rb-vol" class="ai-rb-stat-val">—x</div></div>
+      </div>
+    </div>
+
+    <!-- Kelly (compact inline) -->
+    <div class="brain-kelly-row">
+      <div class="brain-kelly-donut-wrap">
+        <svg viewBox="0 0 80 80" class="kelly-donut kelly-donut-sm">
+          <circle cx="40" cy="40" r="30" fill="none" stroke="rgba(255,255,255,.06)" stroke-width="10"/>
+          <circle cx="40" cy="40" r="30" id="kelly-arc"
+            fill="none" stroke="#00ff88" stroke-width="10"
+            stroke-dasharray="0 188.5" stroke-linecap="round"
+            transform="rotate(-90 40 40)" style="transition:stroke-dasharray .8s ease"/>
+          <text x="40" y="44" text-anchor="middle" fill="white"
+            font-size="13" font-weight="900" font-family="monospace" id="kelly-frac-text">—</text>
+        </svg>
+        <div class="brain-kelly-lbl">Kelly</div>
+      </div>
+      <div class="brain-kelly-stats">
+        <div class="bks-grid">
+          <div class="bks-item"><span class="bks-val" id="kelly-winrate">—</span><span class="bks-lbl">Win%</span></div>
+          <div class="bks-item"><span class="bks-val" id="kelly-rr">—</span><span class="bks-lbl">R:R</span></div>
+          <div class="bks-item"><span class="bks-val" id="kelly-ev">—</span><span class="bks-lbl">EV</span></div>
+          <div class="bks-item"><span class="bks-val" id="kelly-trades">—</span><span class="bks-lbl">Сделок</span></div>
+        </div>
+        <div class="bks-desc" id="kelly-desc">Накапливаем данные…</div>
+      </div>
+    </div>
+
+        </div>
+
+    <!-- Tab: Models -->
+    <div id="brain-tab-models" class="ai-tab-panel" role="tabpanel" style="display:none">
+<!-- 6 Models grid (compact) -->
+    <div class="brain-section-lbl">Ансамбль из 6 нейросетей</div>
+    <div class="brain-models-grid" id="qb-models-grid"></div>
+
+    <!-- Sparkline + Forecast (one row) -->
+    <div class="brain-spark-row">
+      <div class="brain-spark">
+        <div class="brain-spark-hdr">
+          <span style="color:var(--text2);font-size:10px">Уверенность AI</span>
+          <span id="ai-spark-last" class="ai-spark-cur">—</span>
+        </div>
+        <canvas id="ai-sparkline" height="32"></canvas>
+      </div>
+      <div class="brain-forecast-col">
+        <div class="brain-fc-hdr">🔮 Прогноз</div>
+        <div class="ai-fc-items brain-fc-items">
+          <div class="ai-fc-item"><div class="ai-fc-t">+1</div><div id="fc-t1" class="fc-val">—</div></div>
+          <div class="ai-fc-item"><div class="ai-fc-t">+2</div><div id="fc-t2" class="fc-val">—</div></div>
+          <div class="ai-fc-item"><div class="ai-fc-t">+3</div><div id="fc-t3" class="fc-val">—</div></div>
+        </div>
+        <div id="fc-range" class="ai-fc-range" style="font-size:9px;margin-top:2px">—</div>
+      </div>
+    </div>
+
+    <!-- Anomaly -->
+    <div id="ai-anomaly" class="ai-anomaly-banner" style="display:none">
+      <span class="ai-anom-pulse"></span>
+      ⚡ АНОМАЛИЯ: <span id="ai-anomaly-text">—</span>
+    </div>
+
+        </div>
+
+    <!-- Tab: Breakout -->
+    <div id="brain-tab-breakout" class="ai-tab-panel" role="tabpanel" style="display:none">
+<!-- Breakout Engine: Предсказатель GRINCH-пампа -->
+    <div class="brain-breakout-row" id="brain-breakout-row">
+      <div class="bbr-header">
+        <span id="bo-icon" class="bo-icon">💤</span>
+        <div class="bbr-title-col">
+          <span class="bbr-title">BREAKOUT ENGINE</span>
+          <span id="bo-signal" class="bo-signal">FLAT</span>
+        </div>
+        <div class="bo-score-ring">
+          <svg viewBox="0 0 44 44" class="bo-ring-svg">
+            <circle cx="22" cy="22" r="18" fill="none" stroke="rgba(255,255,255,.06)" stroke-width="4"/>
+            <circle cx="22" cy="22" r="18" id="bo-ring-arc"
+              fill="none" stroke="#00ff88" stroke-width="4"
+              stroke-dasharray="0 113.1" stroke-linecap="round"
+              transform="rotate(-90 22 22)" style="transition:stroke-dasharray .8s ease"/>
+          </svg>
+          <span id="bo-score-txt" class="bo-score-txt">0</span>
+        </div>
+      </div>
+      <div class="bbr-bars">
+        <div class="bbr-bar-item"><span class="bbr-lbl">BB Сжатие</span><div class="bbr-bar-track"><div id="bo-bb" class="bbr-bar-fill" style="width:0%"></div></div></div>
+        <div class="bbr-bar-item"><span class="bbr-lbl">Vol Разгон</span><div class="bbr-bar-track"><div id="bo-vol" class="bbr-bar-fill" style="width:0%"></div></div></div>
+        <div class="bbr-bar-item"><span class="bbr-lbl">RSI Рост</span><div class="bbr-bar-track"><div id="bo-rsi" class="bbr-bar-fill" style="width:0%"></div></div></div>
+        <div class="bbr-bar-item"><span class="bbr-lbl">MACD ×</span><div class="bbr-bar-track"><div id="bo-macd" class="bbr-bar-fill" style="width:0%"></div></div></div>
+        <div class="bbr-bar-item"><span class="bbr-lbl">Сжатие</span><div class="bbr-bar-track"><div id="bo-coil" class="bbr-bar-fill" style="width:0%"></div></div></div>
+      </div>
+      <div class="bbr-footer">
+        <span class="bbr-lbl">Kelly×</span><span id="bo-kelly-mult" class="bbr-kelly-mult">1.0×</span>
+        <span class="bbr-sep">·</span>
+        <span class="bbr-lbl">Буст</span><span id="bo-conf-boost" class="bbr-conf-boost">+0%</span>
+        <span class="bbr-sep">·</span>
+        <span class="bbr-lbl">Трейл</span><span id="bo-trail-hint" class="bbr-trail-hint">норма</span>
+      </div>
+    </div>
+
+    <!-- AI Full Rights + Momentum Engine -->
+    <div class="brain-momentum-row" id="brain-momentum-row">
+      <div class="bm-rights-badge" id="bm-rights-badge" title="AI имеет полные права торговли — ATR-фильтр снят">
+        <span class="bm-rights-dot"></span>AI ПОЛНЫЕ ПРАВА
+      </div>
+      <div class="bm-momentum-block">
+        <div class="bm-momentum-label">MOMENTUM</div>
+        <div class="bm-momentum-bar-wrap">
+          <div class="bm-momentum-bar" id="bm-momentum-bar" style="width:0%"></div>
+        </div>
+        <div class="bm-momentum-meta">
+          <span id="bm-momentum-sig" class="bm-momentum-sig">CALM</span>
+          <span id="bm-momentum-score" class="bm-momentum-score">0</span>
+        </div>
+      </div>
+      <div class="bm-momentum-stats">
+        <div class="bm-ms-item"><span class="bm-ms-lbl">Vol</span><span id="bm-vol-ratio" class="bm-ms-val">1×</span></div>
+        <div class="bm-ms-item"><span class="bm-ms-lbl">RSIΔ</span><span id="bm-rsi-vel" class="bm-ms-val">0</span></div>
+        <div class="bm-ms-item"><span class="bm-ms-lbl">Ход</span><span id="bm-price-vel" class="bm-ms-val">0%</span></div>
+        <div class="bm-ms-item"><span class="bm-ms-lbl">Буст</span><span id="bm-boost" class="bm-ms-val bm-boost-val">+0%</span></div>
+      </div>
+    </div>
+
+    <!-- AI Decision log -->
+    <div class="brain-declog">
+      <div class="brain-declog-hdr">
+        <span>📋 AI Лог решений</span>
+        <span class="ai-declog-live"><span class="ai-live-pulse" style="width:5px;height:5px"></span> LIVE</span>
+      </div>
+      <div class="ai-declog-list" id="ai-declog-list">
+        <div class="empty-msg">Ждём первые тики…</div>
+      </div>
+    </div>
+
+        </div>
+
+    <!-- Tab: Manual -->
+    <div id="brain-tab-manual" class="ai-tab-panel" role="tabpanel" style="display:none">
+<!-- Manual controls -->
+    <div class="brain-manual">
+      <div class="brain-manual-hdr">
+        <span>⚡ Ручное управление</span>
+        <span class="ai-manual-lock-badge">🔒 только в плюс</span>
+      </div>
+      <div class="brain-manual-body">
+        <div class="bm-amount-row">
+          <button class="ai-manual-adj" onclick="adjustManualAmt(-5)">−5</button>
+          <button class="ai-manual-adj" onclick="adjustManualAmt(-1)">−1</button>
+          <input type="number" id="manual-amount" class="ai-manual-input" value="7" min="1" max="1000" step="1">
+          <button class="ai-manual-adj" onclick="adjustManualAmt(1)">+1</button>
+          <button class="ai-manual-adj" onclick="adjustManualAmt(5)">+5</button>
+          <span style="color:var(--text2);font-size:10px">TON</span>
+        </div>
+        <div class="bm-btns">
+          <button class="ai-manual-buy-btn" id="btn-manual-buy" onclick="manualBuy()" aria-label="Купить криптовалюту" role="button">🟢 КУПИТЬ</button>
+          <button class="ai-manual-sell-btn" id="btn-manual-sell" onclick="manualSellAll()" aria-label="Продать всю криптовалюту" role="button">🔴 ПРОДАТЬ ВСЁ</button>
+        </div>
+        <div class="ai-manual-status" id="ai-manual-status"></div>
+      </div>
+      <div class="ai-db-sync-row" id="ai-db-sync-row">
+        <span class="ai-db-icon" id="ai-db-icon">🗄️</span>
+        <div class="ai-db-info">
+          <span class="ai-db-label">PostgreSQL</span>
+          <span class="ai-db-detail" id="ai-db-detail">Подключение…</span>
+        </div>
+        <span class="ai-db-badge" id="ai-db-badge">—</span>
+      </div>
+    </div>
+
+  </div><!-- /.ai-brain-col -->
+
+  <!-- ════════════ RIGHT: TABBED PANEL ════════════ -->
+  <div class="right-panel-col">
+
+    <!-- Tab navigation -->
+    <div class="tnb">
+      <button class="tnb-btn active" id="tnb-market"   onclick="switchMainTab('market')">📈 РЫНОК</button>
+      <button class="tnb-btn"        id="tnb-trades"   onclick="switchMainTab('trades')">💱 СДЕЛКИ</button>
+      <button class="tnb-btn"        id="tnb-wallet"   onclick="switchMainTab('wallet')">💰 КОШЕЛЁК</button>
+      <button class="tnb-btn"        id="tnb-ai"       onclick="switchMainTab('ai')">🧠 ИИ</button>
+      <button class="tnb-btn"        id="tnb-settings" onclick="switchMainTab('settings')">⚙️ НАСТРОЙКИ</button>
+    </div>
+
+    <!-- ─── TAB: РЫНОК ─── -->
+    <div class="tab-pane" id="tab-market">
+
+      <!-- Price + coin inline -->
+      <div class="mkt-hero-row">
+        <div class="mkt-price-col">
+          <div class="mkt-price-label"><span class="live-dot"></span> GRINCH/TON · DeDust</div>
+          <div class="mkt-price-big" id="price-echo">{% if init_gram and init_gram > 0 %}{{ "{:,.8f}".format(init_gram).rstrip('0').rstrip('.') }} TON{% else %}— TON{% endif %}</div>
+          <div class="mkt-price-usd-echo">{% if init_price and init_price > 0 %}≈ ${{ "{:,.8f}".format(init_price).rstrip('0').rstrip('.') }}{% else %}≈ $—{% endif %}</div>
+        </div>
+        <div class="mkt-coin-row">
+          <img id="coin-img" alt="" style="display:none;width:28px;height:28px;border-radius:50%">
+          <div>
+            <div style="font-weight:700;color:var(--text);font-size:12px" id="coin-name">Pepe Grinch</div>
+            <span id="coin-sym" style="display:none">GRINCH</span>
+            <div class="mkt-coin-stats">
+              <span>$ <b id="coin-price">—</b></span>
+              <span>24ч: <b id="coin-change">—</b></span>
+              <span>Vol: <b id="coin-vol">—</b></span>
+              <span>Liq: <b id="coin-liq">—</b></span>
+              <span>MCap: <b id="coin-mcap">—</b></span>
+              <span>Tx: <b id="coin-txns">—</b></span>
+            </div>
+          </div>
+          <span id="coin-source" class="coin-source" style="margin-left:auto;align-self:flex-start"></span>
+          <a id="coin-link" class="coin-link" href="#" target="_blank" rel="noopener" style="display:none">↗</a>
+        </div>
+        <div class="mkt-sm-col">
+          <div class="sm-signal" id="sm-signal">
+            <div class="sm-row"><span class="sm-label" style="font-size:10px">🐋 Умные деньги</span><span class="sm-score" id="sm-score">—</span></div>
+            <div class="sm-bar-wrap"><div class="sm-bar" id="sm-bar"></div></div>
+            <div class="sm-flow" style="font-size:10px">
+              <span class="pos">▲ <b id="sm-buy">—</b></span>
+              <span class="neg">▼ <b id="sm-sell">—</b></span>
+            </div>
+          </div>
+          <div style="display:flex;gap:8px;font-size:9px;color:var(--text3);margin-top:4px">
+            <span>🔑 <b id="wl-total">—</b></span>
+            <span>⭐ <b id="wl-smart">—</b></span>
+            <span>📋 <b id="wl-seen">—</b></span>
+            <span id="wallets-src" class="coin-source"></span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Chart -->
+      <div class="card card-c">
+        <div class="card-title ctit">
+          📈 GRINCH/TON <span class="chart-tf">15м</span>
+          <span class="chart-last" id="chart-last-price">—</span>
+          <span id="trades-note" class="coin-source" style="margin-left:auto"></span>
+        </div>
+        <div class="dex-chart-wrap">
+          <div class="dex-chart-header">
+            <span class="dex-chart-pair">GRINCH/TON</span>
+            <span class="dex-chart-tf" id="chart-tf">15m</span>
+            <span class="dex-chart-price" id="chart-live-price">—</span>
+            <span class="dex-chart-dex-badge">DEX</span>
+          </div>
+          <div id="grinch-chart" class="dex-chart-canvas"></div>
+        </div>
+      </div>
+
+      <!-- Market overview -->
+      <div class="card card-c" id="market-overview-card">
+        <div class="card-title ctit">
+          🌍 Рынок
+          <span id="mo-regime-badge" class="mo-regime-badge">—</span>
+          <span class="mo-sr-inline">🛡️<b id="mo-support">—</b> 🧱<b id="mo-resistance">—</b> EMA50:<b id="mo-ema50-dist">—</b></span>
+        </div>
+        <div class="mo-grid-c">
+          <div class="moc"><span class="moc-n">RSI</span><span class="moc-v" id="mo-rsi-val">—</span><span class="moc-z" id="mo-rsi-zone">—</span><div class="mo-bar-track"><div class="mo-bar-fill" id="mo-rsi-bar"></div><div class="mo-bar-marker" id="mo-rsi-marker"></div></div></div>
+          <div class="moc"><span class="moc-n">ADX</span><span class="moc-v" id="mo-adx-val">—</span><span class="moc-z" id="mo-adx-zone">—</span><div class="mo-bar-track"><div class="mo-bar-fill" id="mo-adx-bar"></div></div><div style="display:flex;gap:6px;font-size:9px;margin-top:2px"><span style="color:var(--green)">▲<span id="mo-di-plus">—</span></span><span style="color:#ff4d6d">▼<span id="mo-di-minus">—</span></span></div></div>
+          <div class="moc"><span class="moc-n">Объём</span><span class="moc-v" id="mo-vol-val">—</span><span class="moc-z" id="mo-vol-zone">—</span><div class="mo-bar-track"><div class="mo-bar-fill" id="mo-vol-bar"></div></div></div>
+          <div class="moc"><span class="moc-n">MACD</span><span class="moc-v" id="mo-macd-val">—</span><span class="moc-z" id="mo-macd-zone">—</span><div class="mo-bar-track"><div class="mo-bar-fill" id="mo-macd-bar"></div></div></div>
+          <div class="moc"><span class="moc-n">StochRSI</span><span class="moc-v" id="mo-stoch-val">—</span><span class="moc-z" id="mo-stoch-zone">—</span><div class="mo-bar-track"><div class="mo-bar-fill" id="mo-stoch-bar"></div></div></div>
+          <div class="moc"><span class="moc-n">ATR%</span><span class="moc-v" id="mo-atr-val">—</span><span class="moc-z" id="mo-atr-zone">—</span><div class="mo-bar-track"><div class="mo-bar-fill" id="mo-atr-bar"></div></div></div>
+          <div class="moc"><span class="moc-n">BB поз.</span><span class="moc-v" id="mo-bb-val">—</span><span class="moc-z" id="mo-bb-zone">—</span><div class="mo-bar-track mo-bb-track"><div class="mo-bb-low-zone"></div><div class="mo-bb-high-zone"></div><div class="mo-bar-marker" id="mo-bb-marker"></div></div></div>
+          <div class="moc"><span class="moc-n">EMA тренд</span><span class="moc-v" id="mo-ema-val">—</span><span class="moc-z" id="mo-ema-zone">—</span><div class="mo-ema-dots" id="mo-ema-dots"></div></div>
+        </div>
+        <div class="mo-trends-row">
+          <div class="mo-trend-item"><span class="mo-trend-lbl">OBV</span><span class="mo-trend-val" id="mo-obv">—</span></div>
+          <div class="mo-trend-item"><span class="mo-trend-lbl">Vol тренд</span><span class="mo-trend-val" id="mo-voltrd">—</span></div>
+          <div class="mo-trend-item"><span class="mo-trend-lbl">BB сжатие</span><span class="mo-trend-val" id="mo-bbw">—</span></div>
+        </div>
+        <div class="mo-factors-title">🎯 Факторы входа <span id="mo-eq-grade">—</span> <span id="mo-eq-score" style="color:var(--text2);font-size:11px"></span></div>
+        <div class="mo-factors" id="mo-factors-list"></div>
+      </div>
+
+      <!-- DEX trades + Wallet events 2-col -->
+      <div class="mkt-2col">
+        <div class="card card-c">
+          <div class="card-title ctit">💱 DEX сделки GRINCH</div>
+          <div id="dex-trades" class="dex-trades" style="max-height:180px;overflow-y:auto"><div class="empty-msg">Загрузка…</div></div>
+        </div>
+        <div class="card card-c">
+          <div class="card-title ctit">📋 Сделки пула
+            <div class="wl-tabs" style="margin-left:auto">
+              <button class="wl-tab active" id="wl-tab-profit" onclick="switchWalletTab('profit')">💰 Топ</button>
+              <button class="wl-tab" id="wl-tab-volume" onclick="switchWalletTab('volume')">📊 Оборот</button>
+            </div>
+          </div>
+          <div id="wl-list" class="wl-list" style="max-height:100px;overflow-y:auto"><div class="empty-msg">Накапливаем…</div></div>
+          <div id="wl-events" class="wl-events" style="max-height:80px;overflow-y:auto"></div>
+        </div>
+      </div>
+
+      <!-- Exchanges + S/R + Patterns 3-col -->
+      <div class="mkt-3col">
+        <div class="card card-c">
+          <div class="card-title ctit">◆ Биржи <span id="exch-count" class="coin-source"></span></div>
+          <div class="exch-ai" id="exch-ai" style="display:none">
+            <div class="exch-ai-row"><span class="exch-ai-signal" id="exch-signal">—</span><span class="exch-ai-spread" id="exch-spread"></span></div>
+            <div class="exch-ai-note" id="exch-note"></div>
+            <div class="exch-ai-avg"><span>Средняя: <b id="exch-avg">—</b></span></div>
+            <div class="exch-best"><span class="pos">▼ <b id="exch-buy">—</b></span><span class="neg">▲ <b id="exch-sell">—</b></span></div>
+          </div>
+          <div id="exch-list" class="exch-list" style="max-height:120px;overflow-y:auto"><div class="empty-msg">Загрузка…</div></div>
+        </div>
+        <div class="card card-c">
+          <div class="card-title ctit">📐 Уровни S/R</div>
+          <div class="sr-grid">
+            <div><div class="sr-label" style="color:#ff4d6d">🔴 Сопр.</div><div id="sr-res" class="sr-list"></div></div>
+            <div><div class="sr-label" style="color:var(--green)">🟢 Подд.</div><div id="sr-sup" class="sr-list"></div></div>
+          </div>
+        </div>
+        <div class="card card-c">
+          <div class="card-title ctit">🕯️ Паттерны</div>
+          <div id="patterns-list" class="patterns-list" style="max-height:140px;overflow-y:auto"><div class="empty-msg">Не обнаружены</div></div>
+        </div>
+      </div>
+
+    </div><!-- /#tab-market -->
+
+    <!-- ─── TAB: СДЕЛКИ ─── -->
+    <div class="tab-pane tab-hidden" id="tab-trades">
+
+      <!-- Stats bar -->
+      <div class="trades-stats-bar">
+        <div class="tsb-item"><div class="tsb-lbl">Сделок</div><div class="tsb-val" id="stat-total">0</div></div>
+        <div class="tsb-item"><div class="tsb-lbl">Win Rate</div><div class="tsb-val" id="stat-winrate">0%</div></div>
+        <div class="tsb-item"><div class="tsb-lbl">P&amp;L</div><div class="tsb-val" id="stat-pnl">0 TON</div></div>
+        <div class="tsb-item"><div class="tsb-lbl">Открытых</div><div class="tsb-val" id="stat-open">0</div></div>
+        <div class="tsb-item" title="Текущая серия побед подряд"><div class="tsb-lbl">🔥 Серия</div><div class="tsb-val" id="stat-streak">—</div></div>
+        <div class="tsb-item" title="Лучшая серия за сессию"><div class="tsb-lbl">⭐ Рекорд</div><div class="tsb-val" id="stat-max-streak">—</div></div>
+        <div class="tsb-item" title="Sharpe Ratio (ann.)"><div class="tsb-lbl">📐 Sharpe</div><div class="tsb-val" id="stat-sharpe">—</div></div>
+        <div class="tsb-item" title="P&L за сутки UTC"><div class="tsb-lbl">📅 Сегодня</div><div class="tsb-val" id="stat-daily-pnl">—</div></div>
+        <div class="tsb-balance"><div id="balance-list" class="balance-list"></div></div>
+      </div>
+
+      <!-- Bidir info strip -->
+      <div class="bidir-strip">
+        <div class="bds-long">📈 ЛОНГ: TON → GRINCH · цель ≥+20% нетто</div>
+        <div class="bds-vs">⟷</div>
+        <div class="bds-short">📉 ШОРТ: GRINCH → TON · цель ≥−20%</div>
+        <div class="bds-lock">🔒 Выход только в плюс · 1%+1% DEX</div>
+      </div>
+
+      <!-- AI Analytics (compact) -->
+      <div class="card card-c">
+        <div class="card-title ctit">🤖 AI Аналитика
+          <span class="ai-live-pulse" style="margin-left:6px"></span>
+          <span class="ai-card-sub" style="margin-left:4px">GRINCH/TON · DeDust</span>
+          <span class="ai-score-word" id="ai-score-word" style="margin-left:auto;font-size:11px;font-weight:700">—</span>
+        </div>
+        <div class="ai-main-row" style="gap:10px">
+          <div class="ai-gauge-wrap" style="flex-shrink:0">
+            <svg class="ai-gauge-svg" viewBox="0 0 180 140">
+              <defs>
+                <linearGradient id="gaugeGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+                  <stop offset="0%" stop-color="#ff4d6d"/>
+                  <stop offset="40%" stop-color="#ffd166"/>
+                  <stop offset="75%" stop-color="#5cc8ff"/>
+                  <stop offset="100%" stop-color="#00ff88"/>
+                </linearGradient>
+                <filter id="glowG"><feGaussianBlur stdDeviation="3" result="blur"/><feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+              </defs>
+              <circle cx="90" cy="90" r="62" fill="none" stroke="rgba(255,255,255,.06)" stroke-width="12" stroke-dasharray="245 144" stroke-dashoffset="-72" stroke-linecap="round" transform="rotate(-225 90 90)"/>
+              <circle cx="90" cy="90" r="62" id="ai-gauge-arc" fill="none" stroke="url(#gaugeGrad)" stroke-width="12" stroke-dasharray="0 389" stroke-dashoffset="-72" stroke-linecap="round" transform="rotate(-225 90 90)" style="transition:stroke-dasharray 1s ease;filter:url(#glowG)"/>
+              <text x="28" y="118" fill="#ff4d6d" font-size="9" font-family="monospace" opacity=".7">0</text>
+              <text x="147" y="118" fill="#00ff88" font-size="9" font-family="monospace" opacity=".7">100</text>
+              <text x="90" y="85" id="ai-gauge-num" fill="white" font-size="32" font-weight="900" font-family="monospace" text-anchor="middle">—</text>
+              <text x="90" y="103" fill="rgba(255,255,255,.45)" font-size="9" text-anchor="middle" font-family="monospace" letter-spacing="2">ШАНС ВХОДА</text>
+            </svg>
+          </div>
+          <div class="ai-mtf-col">
+            <div class="ai-mtf-title">МУЛЬТИТАЙМФРЕЙМ</div>
+            <div class="ai-mtf-list" id="ai-mtf-list"></div>
+          </div>
+          <div style="flex:1;min-width:120px">
+            <div class="ai-pred-row" id="ai-pred-row" style="margin:0">
+              <div class="ai-pred-title" style="font-size:10px">📍 Ценовые уровни</div>
+              <div class="ai-pred-grid">
+                <div class="ai-pred-item ai-pred-stop"><span class="ai-pred-lbl">🛑 Стоп</span><span class="ai-pred-val" id="ai-pred-stop">—</span></div>
+                <div class="ai-pred-item ai-pred-now"><span class="ai-pred-lbl">📌 Сейчас</span><span class="ai-pred-val" id="ai-pred-now">—</span></div>
+                <div class="ai-pred-item ai-pred-tgt"><span class="ai-pred-lbl">🎯 Цель</span><span class="ai-pred-val" id="ai-pred-tgt">—</span></div>
+              </div>
+              <div class="ai-rr-bar-wrap"><div class="ai-rr-stop-fill" id="ai-rr-stop-fill"></div><div class="ai-rr-mid"></div><div class="ai-rr-gain-fill" id="ai-rr-gain-fill"></div></div>
+              <div class="ai-rr-stats"><span>R:R <strong id="ai-rr-val">—</strong></span><span>Win <strong id="ai-win-prob">—</strong>%</span></div>
+            </div>
+          </div>
+        </div>
+        <div class="ai-components-title" style="margin-top:8px;font-size:10px">Компоненты оценки</div>
+        <div class="ai-components-list" id="ai-components-list"></div>
+      </div>
+
+      <!-- Open longs + shorts (2-col) -->
+      <div class="trades-2col">
+        <div class="card card-c">
+          <div class="card-title ctit">📈 Лонг — ожидает продажи</div>
+          <div id="open-trades-list" class="trades-list"><div class="empty-msg">Нет открытых лонгов</div></div>
+        </div>
+        <div class="card card-c">
+          <div class="card-title ctit">📉 Шорт — ожидает откупки</div>
+          <div id="open-short-trades-list" class="trades-list"><div class="empty-msg">Нет открытых шортов</div></div>
+        </div>
+      </div>
+
+      <!-- History -->
+      <div class="card card-c">
+        <div class="card-title ctit">📋 История сделок</div>
+        <div style="max-height:420px;overflow-y:auto;overflow-x:hidden">
+          <div id="trades-history" class="trades-list"></div>
+        </div>
+      </div>
+
+      <!-- Grid Trading Panel -->
+      <div class="card card-c" id="grid-panel">
+        <div class="card-title ctit" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+          🔲 Grid-сетка
+          <span id="grid-status-badge" style="font-size:10px;font-weight:700;padding:2px 9px;border-radius:10px;background:rgba(255,255,255,.07);color:var(--text2)">загрузка…</span>
+          <span id="grid-regime-badge" style="font-size:10px;padding:2px 9px;border-radius:10px;background:rgba(0,212,255,.1);color:#00d4ff;display:none"></span>
+          <span id="grid-ai-paused-badge" style="font-size:10px;font-weight:700;padding:2px 9px;border-radius:10px;background:rgba(255,107,107,.12);color:var(--red);display:none">⏸ AI-пауза</span>
+          <span style="margin-left:auto;font-size:12px;font-family:var(--mono);color:var(--green);font-weight:700" id="grid-total-profit">+0.000 TON</span>
+        </div>
+
+        <!-- Метрики -->
+        <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin-bottom:10px">
+          <div style="background:rgba(0,212,255,.06);border:1px solid rgba(0,212,255,.12);border-radius:8px;padding:7px;text-align:center">
+            <div style="font-size:9px;color:var(--text2);margin-bottom:2px">Центр</div>
+            <div id="grid-center" style="font-size:11px;font-weight:700;font-family:var(--mono);color:var(--text)">—</div>
+          </div>
+          <div style="background:rgba(0,255,136,.06);border:1px solid rgba(0,255,136,.12);border-radius:8px;padding:7px;text-align:center">
+            <div style="font-size:9px;color:var(--text2);margin-bottom:2px">Шаг</div>
+            <div id="grid-step" style="font-size:12px;font-weight:700;font-family:var(--mono);color:var(--green)">—</div>
+          </div>
+          <div style="background:rgba(160,0,255,.06);border:1px solid rgba(160,0,255,.12);border-radius:8px;padding:7px;text-align:center">
+            <div style="font-size:9px;color:var(--text2);margin-bottom:2px">SELL ожид.</div>
+            <div id="grid-sell-waiting" style="font-size:12px;font-weight:700;font-family:var(--mono);color:#c084fc">— / —</div>
+          </div>
+          <div style="background:rgba(251,191,36,.06);border:1px solid rgba(251,191,36,.12);border-radius:8px;padding:7px;text-align:center">
+            <div style="font-size:9px;color:var(--text2);margin-bottom:2px">Циклов</div>
+            <div id="grid-cycles" style="font-size:12px;font-weight:700;font-family:var(--mono);color:var(--yellow)">—</div>
+          </div>
+        </div>
+      <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:6px;margin-bottom:10px">
+        <div style="background:rgba(0,212,255,.06);border:1px solid rgba(0,212,255,.12);border-radius:8px;padding:7px;text-align:center">
+          <div style="font-size:9px;color:var(--text2);margin-bottom:2px">Резерв Grid</div>
+          <div id="grid-reserved-grinch" style="font-size:12px;font-weight:700;font-family:var(--mono);color:#00d4ff">— GRINCH</div>
+        </div>
+        <div style="background:rgba(192,132,252,.06);border:1px solid rgba(192,132,252,.12);border-radius:8px;padding:7px;text-align:center">
+          <div style="font-size:9px;color:var(--text2);margin-bottom:2px">Резерв DCA</div>
+          <div id="dca-reserved-grinch" style="font-size:12px;font-weight:700;font-family:var(--mono);color:#c084fc">— GRINCH</div>
+        </div>
+      </div>
+
+        <!-- SELL уровни -->
+        <div style="margin-bottom:6px">
+          <div style="font-size:10px;font-weight:700;color:var(--text-mid);margin-bottom:5px;letter-spacing:.5px">📊 SELL УРОВНИ</div>
+          <div id="grid-sell-levels" style="display:flex;flex-direction:column;gap:2px;max-height:190px;overflow-y:auto"></div>
+        </div>
+
+        <!-- BUY уровни -->
+        <div style="margin-bottom:6px">
+          <div style="font-size:10px;font-weight:700;color:var(--text-mid);margin-bottom:5px;letter-spacing:.5px">🟢 BUY УРОВНИ</div>
+          <div id="grid-buy-levels" style="display:flex;flex-direction:column;gap:2px;max-height:130px;overflow-y:auto"></div>
+        </div>
+
+        <!-- Idle-Deploy статистика -->
+        <div id="grid-idle-deploy-row" style="display:none;margin-bottom:10px;padding:6px 10px;background:rgba(251,191,36,.05);border:1px solid rgba(251,191,36,.12);border-radius:8px">
+          <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+            <span style="font-size:10px;font-weight:700;color:var(--yellow)">💰 Idle-Deploy</span>
+            <span id="grid-idle-waiting" style="font-size:10px;font-family:var(--mono);color:var(--text2)">—</span>
+            <span id="grid-idle-ton" style="font-size:10px;font-family:var(--mono);color:var(--yellow);font-weight:700"></span>
+            <span id="grid-idle-filled" style="font-size:10px;color:var(--text2)"></span>
+          </div>
+        </div>
+
+        <!-- GridAI-менеджер -->
+        <div style="padding:8px 10px;background:rgba(0,255,136,.04);border:1px solid rgba(0,255,136,.1);border-radius:8px">
+          <div style="display:flex;align-items:center;gap:6px;margin-bottom:5px">
+            <span style="font-size:10px;font-weight:700;color:var(--green)">🤖 GridAI-менеджер</span>
+            <span id="grid-ai-rebuild-cd" style="font-size:10px;color:var(--text2)"></span>
+          </div>
+          <div id="grid-ai-mgr-log" style="display:flex;flex-direction:column;gap:3px;max-height:110px;overflow-y:auto">
+            <div style="font-size:11px;color:var(--text2)">Решений пока нет</div>
+          </div>
+        </div>
+
+        <!-- GridAI v6 stats -->
+        <div style="padding:8px 10px;background:rgba(0,212,255,.04);border:1px solid rgba(0,212,255,.1);border-radius:8px">
+          <div style="display:flex;align-items:center;gap:6px;margin-bottom:6px">
+            <span style="font-size:10px;font-weight:700;color:#00d4ff">⚡ GridAI v6</span>
+            <span id="grid-ai-v5-badge" style="font-size:9px;padding:1px 6px;border-radius:8px;background:rgba(0,255,136,.12);color:var(--green);display:none">обучен</span>
+            <span id="grid-v6-gen" style="font-size:9px;padding:1px 6px;border-radius:8px;background:rgba(255,209,0,.1);color:#ffd166;display:none">Gen #0</span>
+            <span id="grid-ai-v5-samples" style="font-size:9px;color:var(--text2);margin-left:auto"></span>
+          </div>
+          <!-- Модели VolModel / ExitModel -->
+          <div style="display:flex;gap:6px;margin-bottom:6px;flex-wrap:wrap">
+            <span id="grid-v5-volmodel" style="font-size:9px;padding:2px 7px;border-radius:6px;background:rgba(255,255,255,.06);color:var(--text2)">📈 VolModel —</span>
+            <span id="grid-v5-exitmodel" style="font-size:9px;padding:2px 7px;border-radius:6px;background:rgba(255,255,255,.06);color:var(--text2)">🎯 ExitModel —</span>
+          </div>
+          <!-- v6 саморазвитие -->
+          <div style="display:flex;gap:6px;margin-bottom:6px;flex-wrap:wrap">
+            <span id="grid-v6-drift" style="font-size:9px;padding:2px 7px;border-radius:6px;background:rgba(255,107,107,.08);color:var(--text2)">🚨 Дрейф: 0</span>
+            <span id="grid-v6-bandit" style="font-size:9px;padding:2px 7px;border-radius:6px;background:rgba(192,132,252,.08);color:var(--text2)">🎲 Стратегия: —</span>
+            <span id="grid-v6-rl" style="font-size:9px;padding:2px 7px;border-radius:6px;background:rgba(0,255,136,.08);color:var(--text2)">🔄 RL: 0 эп.</span>
+          </div>
+          <!-- v6 режимные модели -->
+          <div id="grid-v6-regime-models" style="display:none;margin-bottom:6px">
+            <div style="font-size:9px;color:var(--text2);margin-bottom:3px">🧠 Режимные модели:</div>
+            <div id="grid-v6-regime-list" style="display:flex;gap:4px;flex-wrap:wrap"></div>
+          </div>
+          <!-- Kelly · Backtest -->
+          <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:4px">
+            <div style="text-align:center">
+              <div style="font-size:9px;color:var(--text2)">Kelly×</div>
+              <div id="grid-v5-kelly" style="font-size:11px;font-weight:700;font-family:var(--mono);color:#ffd166">—</div>
+            </div>
+            <div style="text-align:center">
+              <div style="font-size:9px;color:var(--text2)">Backtest R²</div>
+              <div id="grid-v5-r2" style="font-size:11px;font-weight:700;font-family:var(--mono);color:#00d4ff">—</div>
+            </div>
+            <div style="text-align:center">
+              <div style="font-size:9px;color:var(--text2)">Dir.Acc</div>
+              <div id="grid-v5-diracc" style="font-size:11px;font-weight:700;font-family:var(--mono);color:#c084fc">—</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- GridAI Trap Alert -->
+        <div id="grid-trap-alert" class="grid-trap-alert" style="display:none">
+          <div style="display:flex;align-items:center;gap:8px">
+            <span style="font-size:14px">🚨</span>
+            <div style="flex:1">
+              <div id="grid-trap-title" style="font-size:11px;font-weight:700;color:#ff4d6d">ЛОВУШКА</div>
+              <div id="grid-trap-reason" style="font-size:10px;color:rgba(255,255,255,.6);margin-top:2px"></div>
+            </div>
+            <div style="text-align:right">
+              <div id="grid-trap-conf" style="font-size:14px;font-weight:900;color:#ff4d6d;font-family:var(--mono)">0%</div>
+              <div style="font-size:9px;color:rgba(255,255,255,.4)">уверенность</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Feature importance -->
+      <div class="card card-c">
+        <div class="card-title ctit">🏆 Ключевые признаки AI <span style="font-size:10px;color:var(--text2);font-weight:400;margin-left:4px">RF · XGB · MLP</span></div>
+        <div id="fi-list" class="fi-list"></div>
+      </div>
+
+    </div><!-- /#tab-trades -->
+
+    <!-- ─── TAB: КОШЕЛЁК ─── -->
+    <div class="tab-pane tab-hidden" id="tab-wallet">
+
+      <!-- ══ FULL WALLET HEADER: Портфель TON + GRINCH ══ -->
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px">
+        <!-- TON Card -->
+        <div class="card card-c" style="background:linear-gradient(135deg,rgba(0,152,234,.12),rgba(0,152,234,.04));border:1px solid rgba(0,152,234,.25)">
+          <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
+            <span style="font-size:20px">◆</span>
+            <div>
+              <div style="font-size:10px;color:var(--ton);font-weight:700;letter-spacing:.5px">TON</div>
+              <div style="font-size:9px;color:var(--text2)">The Open Network</div>
+            </div>
+            <button onclick="refreshWalletFull()" style="margin-left:auto;background:rgba(0,152,234,.15);border:1px solid rgba(0,152,234,.3);border-radius:6px;padding:3px 8px;color:var(--ton);font-size:10px;cursor:pointer">⟳</button>
+          </div>
+          <div id="wf-ton-bal" style="font-size:26px;font-weight:900;font-family:var(--mono);color:var(--text)">—</div>
+          <div id="wf-ton-usd" style="font-size:11px;color:var(--text2);margin-top:2px">≈ $—</div>
+          <div style="margin-top:8px;padding-top:8px;border-top:1px solid rgba(0,152,234,.1)">
+            <div style="display:flex;justify-content:space-between;font-size:10px">
+              <span style="color:var(--text2)">Цена TON</span>
+              <span id="wf-ton-price" style="color:var(--ton);font-weight:700">—</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- GRINCH Card -->
+        <div class="card card-c" style="background:linear-gradient(135deg,rgba(0,255,136,.1),rgba(0,255,136,.03));border:1px solid rgba(0,255,136,.2)">
+          <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
+            <span style="font-size:20px">🐸</span>
+            <div>
+              <div style="font-size:10px;color:var(--green);font-weight:700;letter-spacing:.5px">GRINCH</div>
+              <div style="font-size:9px;color:var(--text2)">TON Jetton</div>
+            </div>
+          </div>
+          <div id="wf-grn-bal" style="font-size:22px;font-weight:900;font-family:var(--mono);color:var(--text)">—</div>
+          <div id="wf-grn-usd" style="font-size:11px;color:var(--text2);margin-top:2px">≈ $— · ≈ — TON</div>
+          <div style="margin-top:8px;padding-top:8px;border-top:1px solid rgba(0,255,136,.1)">
+            <div style="display:flex;justify-content:space-between;font-size:10px">
+              <span style="color:var(--text2)">Цена GRINCH</span>
+              <span id="wf-grn-price" style="color:var(--green);font-weight:700">—</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ══ TOTAL PORTFOLIO ══ -->
+      <div class="portfolio-total-wrap">
+        <div class="portfolio-total-left">
+          <div class="pt-label">ПОРТФЕЛЬ ИТОГО</div>
+          <div class="pt-value" id="pt-total">—</div>
+          <div class="pt-change" id="pt-change">—</div>
+        </div>
+        <div class="portfolio-roi-ring">
+          <svg viewBox="0 0 72 72" class="roi-ring-svg">
+            <circle cx="36" cy="36" r="28" fill="none" stroke="rgba(255,255,255,.06)" stroke-width="7"/>
+            <circle cx="36" cy="36" r="28" id="roi-ring-arc"
+              fill="none" stroke="#00ff88" stroke-width="7" stroke-dasharray="0 175.9"
+              stroke-linecap="round" transform="rotate(-90 36 36)"
+              style="transition:stroke-dasharray .9s ease,stroke .5s"/>
+            <text x="36" y="40" text-anchor="middle" font-family="monospace" font-size="11" font-weight="900" fill="white" id="roi-ring-pct">0%</text>
+          </svg>
+          <div class="roi-ring-label">к цели<br>+20%</div>
+        </div>
+      </div>
+      <div class="roi-goal-wrap">
+        <div class="roi-goal-header">
+          <span class="roi-goal-lbl">📈 Прогресс к цели +20%</span>
+          <span class="roi-goal-val" id="roi-goal-pct">0%</span>
+        </div>
+        <div class="roi-goal-track">
+          <div class="roi-goal-fill" id="roi-goal-bar" style="width:0%"></div>
+          <div class="roi-goal-marker" style="left:100%"><div class="roi-goal-flag">🎯 20%</div></div>
+        </div>
+        <div class="roi-goal-sub" id="roi-goal-sub">Накапливаем историю…</div>
+      </div>
+
+      <!-- ══ GRINCH POSITION ANALYSIS ══ -->
+      <div class="card card-c" id="grinch-position-card">
+        <div class="card-title ctit">
+          🐸 GRINCH Позиция — Полный анализ
+          <span id="wf-position-badge" style="display:none;font-size:10px;font-weight:700;padding:2px 8px;border-radius:8px;background:rgba(0,255,136,.15);color:var(--green);border:1px solid rgba(0,255,136,.3)">В ПОЗИЦИИ</span>
+          <span id="wf-no-position-badge" style="font-size:10px;color:var(--text2)">нет позиции</span>
+        </div>
+
+        <!-- Количество GRINCH + цена покупки -->
+        <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:10px">
+          <div style="background:rgba(0,255,136,.06);border:1px solid rgba(0,255,136,.12);border-radius:8px;padding:8px;text-align:center">
+            <div style="font-size:9px;color:var(--text2);margin-bottom:3px">GRINCH на кошельке</div>
+            <div id="wf-pos-grinch" style="font-size:16px;font-weight:900;font-family:var(--mono);color:var(--green)">—</div>
+          </div>
+          <div style="background:rgba(0,152,234,.06);border:1px solid rgba(0,152,234,.12);border-radius:8px;padding:8px;text-align:center">
+            <div style="font-size:9px;color:var(--text2);margin-bottom:3px">Куплено по цене</div>
+            <div id="wf-entry-ton" style="font-size:13px;font-weight:800;font-family:var(--mono);color:var(--ton)">—</div>
+            <div id="wf-entry-usd" style="font-size:10px;color:var(--text2);margin-top:1px">—</div>
+          </div>
+          <div id="wf-pnl-card" style="background:rgba(255,255,136,.06);border:1px solid rgba(255,255,136,.12);border-radius:8px;padding:8px;text-align:center">
+            <div style="font-size:9px;color:var(--text2);margin-bottom:3px">P&amp;L (с комиссией)</div>
+            <div id="wf-pnl-ton" style="font-size:16px;font-weight:900;font-family:var(--mono);color:var(--text2)">—</div>
+            <div id="wf-pnl-pct" style="font-size:11px;color:var(--text2)">—</div>
+          </div>
+        </div>
+
+        <!-- Текущая цена vs цена входа -->
+        <div style="background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.06);border-radius:8px;padding:10px;margin-bottom:10px">
+          <div style="font-size:10px;font-weight:700;color:var(--text-mid);margin-bottom:6px;letter-spacing:.5px">ЦЕНА GRINCH</div>
+          <div style="display:grid;grid-template-columns:1fr auto 1fr;gap:8px;align-items:center">
+            <div>
+              <div style="font-size:9px;color:var(--text2)">Куплено по</div>
+              <div id="wf-entry-price-display" style="font-size:14px;font-weight:800;font-family:var(--mono);color:var(--ton)">— TON</div>
+            </div>
+            <div style="text-align:center;color:var(--text3)">→</div>
+            <div>
+              <div style="font-size:9px;color:var(--text2)">Текущая цена</div>
+              <div id="wf-cur-price-display" style="font-size:14px;font-weight:800;font-family:var(--mono);color:var(--green)">— TON</div>
+            </div>
+          </div>
+          <!-- Движение цены прогресс-бар -->
+          <div style="margin-top:8px;background:rgba(255,255,255,.06);border-radius:4px;height:4px;overflow:hidden">
+            <div id="wf-price-move-bar" style="height:100%;width:50%;background:linear-gradient(90deg,#0098ea,#00ff88);border-radius:4px;transition:width .8s"></div>
+          </div>
+          <div style="display:flex;justify-content:space-between;font-size:9px;color:var(--text3);margin-top:2px">
+            <span>цена входа</span><span id="wf-price-move-pct" style="color:var(--text-mid)">0%</span><span>текущая</span>
+          </div>
+        </div>
+
+        <!-- Потенциал при разных целях -->
+        <div id="wf-potential-block" style="display:none">
+          <div style="font-size:10px;font-weight:700;color:var(--yellow);margin-bottom:6px;letter-spacing:.5px">🎯 ПОТЕНЦИАЛ ПРИБЫЛИ (расчёт с учётом комиссий)</div>
+          <div id="wf-potential-grid" style="display:grid;grid-template-columns:repeat(5,1fr);gap:4px"></div>
+        </div>
+
+        <!-- Точка безубытка -->
+        <div id="wf-breakeven-row" style="display:none;margin-top:10px;padding:8px 10px;background:rgba(255,107,107,.07);border:1px solid rgba(255,107,107,.2);border-radius:8px">
+          <div style="font-size:9px;color:var(--text2);margin-bottom:2px">🔴 Точка безубытка (с газом)</div>
+          <div id="wf-breakeven-val" style="font-size:13px;font-weight:800;font-family:var(--mono);color:var(--red)">—</div>
+        </div>
+
+        <!-- ══ AMM LIVE PREVIEW ══ -->
+        <div id="amm-preview-card" style="margin-top:12px;border-radius:10px;overflow:hidden;border:1px solid rgba(255,255,255,.08);background:rgba(10,18,30,.6)">
+          <!-- Заголовок -->
+          <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 12px;background:rgba(255,255,255,.04);border-bottom:1px solid rgba(255,255,255,.06)">
+            <span style="font-size:11px;font-weight:700;color:var(--text-mid);letter-spacing:.5px">🔄 AMM РЕАЛЬНЫЙ ВЫХОД (CPMM)</span>
+            <span id="amm-age" style="font-size:9px;color:var(--text3)">обновление…</span>
+          </div>
+
+          <!-- Основная строка: ожидается / нужно / дефицит -->
+          <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:1px;background:rgba(255,255,255,.04)">
+            <div style="background:rgba(10,18,30,.9);padding:10px 8px;text-align:center">
+              <div style="font-size:9px;color:var(--text2);margin-bottom:4px">📤 Пул вернёт (нетто)</div>
+              <div id="amm-net-ton" style="font-size:17px;font-weight:900;font-family:var(--mono);color:var(--text-mid)">—</div>
+              <div id="amm-impact" style="font-size:9px;color:var(--text2);margin-top:2px">impact —</div>
+            </div>
+            <div style="background:rgba(10,18,30,.9);padding:10px 8px;text-align:center">
+              <div style="font-size:9px;color:var(--text2);margin-bottom:4px">🎯 Нужно для безубытка</div>
+              <div id="amm-min-ton" style="font-size:17px;font-weight:900;font-family:var(--mono);color:var(--yellow)">—</div>
+              <div style="font-size:9px;color:var(--text2);margin-top:2px" id="amm-entries-lbl">— позиций</div>
+            </div>
+            <div style="background:rgba(10,18,30,.9);padding:10px 8px;text-align:center">
+              <div style="font-size:9px;color:var(--text2);margin-bottom:4px" id="amm-delta-lbl">⚖️ Баланс</div>
+              <div id="amm-shortfall" style="font-size:17px;font-weight:900;font-family:var(--mono);color:var(--text-mid)">—</div>
+              <div id="amm-verdict" style="font-size:9px;margin-top:2px;font-weight:700">—</div>
+            </div>
+          </div>
+
+          <!-- Прогресс-бар: net_ton / min_net_ton -->
+          <div style="padding:8px 12px 4px">
+            <div style="display:flex;justify-content:space-between;font-size:9px;color:var(--text3);margin-bottom:3px">
+              <span>0 TON</span>
+              <span id="amm-bar-label" style="color:var(--text-mid)">—</span>
+              <span id="amm-bar-target">— TON нужно</span>
+            </div>
+            <div style="background:rgba(255,255,255,.06);border-radius:4px;height:6px;overflow:hidden;position:relative">
+              <div id="amm-bar" style="height:100%;width:0%;border-radius:4px;transition:width 1s,background .5s;background:#3d4f6a"></div>
+              <!-- Маркер цели -->
+              <div id="amm-bar-marker" style="position:absolute;top:0;height:100%;width:2px;background:rgba(255,209,102,.6);display:none"></div>
+            </div>
+          </div>
+
+          <!-- Резервы пула -->
+          <div style="padding:4px 12px 8px;display:flex;justify-content:space-between;align-items:center">
+            <span style="font-size:9px;color:var(--text3)">Резервы пула:</span>
+            <span id="amm-reserves" style="font-size:9px;font-family:var(--mono);color:var(--text-muted)">—</span>
+            <span id="amm-grinch-lbl" style="font-size:9px;color:var(--text3)">GRINCH в позиции: <b id="amm-grinch-amt" style="color:var(--text-mid)">—</b></span>
+          </div>
+        </div>
+      </div>
+
+      <!-- ══ MARKET HUB — 6 внешних источников ══ -->
+      <div id="hub-card" style="margin-top:10px;border-radius:10px;overflow:hidden;border:1px solid rgba(255,255,255,.07);background:rgba(10,18,30,.6)">
+        <div style="padding:7px 12px;background:rgba(56,189,248,.05);display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid rgba(255,255,255,.05)">
+          <span style="font-size:11px;font-weight:700;color:var(--ton2);letter-spacing:.5px">🌐 РЫНОК — 6 ИСТОЧНИКОВ</span>
+          <span id="hub-updated" style="font-size:9px;color:var(--text-muted)">обновление…</span>
+        </div>
+        <div style="padding:9px 12px;display:grid;grid-template-columns:1fr 1fr;gap:7px">
+          <!-- Fear & Greed -->
+          <div style="background:rgba(255,255,255,.03);border-radius:8px;padding:8px">
+            <div style="font-size:9px;color:var(--text2);margin-bottom:3px">😨 FEAR &amp; GREED</div>
+            <div style="display:flex;align-items:baseline;gap:6px">
+              <span id="hub-fg-val" style="font-size:18px;font-weight:900;font-family:var(--mono);color:var(--yellow)">—</span>
+              <span id="hub-fg-lbl" style="font-size:10px;color:var(--text2)">—</span>
+            </div>
+            <div style="height:4px;background:rgba(255,255,255,.07);border-radius:2px;margin-top:5px;overflow:hidden">
+              <div id="hub-fg-bar" style="height:100%;width:50%;background:#8892b0;border-radius:2px;transition:width .8s,background .5s"></div>
+            </div>
+          </div>
+          <!-- BTC тренд -->
+          <div style="background:rgba(255,255,255,.03);border-radius:8px;padding:8px">
+            <div style="font-size:9px;color:var(--text2);margin-bottom:3px">₿ BTC 24ч</div>
+            <div id="hub-btc" style="font-size:14px;font-weight:900;font-family:var(--mono);color:#f7931a">—</div>
+            <div style="font-size:10px;color:var(--text-muted);margin-top:3px" id="hub-btc-price">$—</div>
+          </div>
+          <!-- TON CEX -->
+          <div style="background:rgba(255,255,255,.03);border-radius:8px;padding:8px">
+            <div style="font-size:9px;color:var(--text2);margin-bottom:3px">💎 TON CEX (Binance)</div>
+            <div id="hub-ton-price" style="font-size:14px;font-weight:900;font-family:var(--mono);color:var(--ton2)">—</div>
+            <div style="font-size:10px;color:var(--text-muted);margin-top:3px" id="hub-ton-vol">объём: —</div>
+          </div>
+          <!-- Funding rate -->
+          <div style="background:rgba(255,255,255,.03);border-radius:8px;padding:8px">
+            <div style="font-size:9px;color:var(--text2);margin-bottom:3px">📊 FUNDING (Bybit TON)</div>
+            <div id="hub-funding" style="font-size:14px;font-weight:900;font-family:var(--mono);color:var(--text)">—</div>
+            <div style="font-size:10px;color:var(--text-muted);margin-top:3px" id="hub-oi">OI: —</div>
+          </div>
+          <!-- TVL TON -->
+          <div style="background:rgba(255,255,255,.03);border-radius:8px;padding:8px">
+            <div style="font-size:9px;color:var(--text2);margin-bottom:3px">🏦 TVL TON (DeFiLlama)</div>
+            <div id="hub-tvl" style="font-size:14px;font-weight:900;font-family:var(--mono);color:var(--purple2)">—</div>
+            <div style="font-size:10px;color:var(--text-muted);margin-top:3px" id="hub-stonfi">STON.fi: —</div>
+          </div>
+          <!-- GRINCH trending -->
+          <div style="background:rgba(255,255,255,.03);border-radius:8px;padding:8px">
+            <div style="font-size:9px;color:var(--text2);margin-bottom:3px">🐸 GRINCH ТРЕНДЫ</div>
+            <div id="hub-trend" style="font-size:14px;font-weight:900;color:var(--green)">—</div>
+            <div style="font-size:10px;color:var(--text-muted);margin-top:3px" id="hub-trend-vol">vol: —</div>
+          </div>
+        </div>
+        <!-- Статус источников -->
+        <div style="padding:0 12px 8px;display:flex;gap:5px;flex-wrap:wrap" id="hub-sources"></div>
+      </div>
+
+      <!-- ══ LIVING ORGANISM ══ -->
+      <div id="organism-card" style="margin-top:10px;border-radius:10px;overflow:hidden;border:1px solid rgba(0,255,136,.15);background:rgba(10,18,30,.6)">
+        <!-- Header -->
+        <div style="padding:8px 12px;background:rgba(0,255,136,.06);display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid rgba(255,255,255,.06)">
+          <span style="font-size:11px;font-weight:700;color:var(--green);letter-spacing:.5px">🧬 ЖИВОЙ ОРГАНИЗМ</span>
+          <span id="org-health-badge" style="font-size:10px;font-weight:700;padding:2px 8px;border-radius:10px;background:rgba(0,255,136,.15);color:var(--green)">❤️ хорошее</span>
+        </div>
+        <!-- 4-cell grid: mood, hunger, energy, dreams -->
+        <div style="padding:10px 12px;display:grid;grid-template-columns:1fr 1fr;gap:8px">
+          <div style="background:rgba(255,255,255,.03);border-radius:8px;padding:8px">
+            <div style="font-size:9px;color:var(--text2);margin-bottom:4px">🧠 НАСТРОЕНИЕ</div>
+            <div id="org-emotion" style="font-size:12px;font-weight:700;color:var(--text)">—</div>
+            <div style="height:4px;background:rgba(255,255,255,.07);border-radius:2px;margin-top:5px;overflow:hidden">
+              <div id="org-mood-bar" style="height:100%;width:50%;background:#8892b0;border-radius:2px;transition:width .8s,background .5s"></div>
+            </div>
+          </div>
+          <div style="background:rgba(255,255,255,.03);border-radius:8px;padding:8px">
+            <div style="font-size:9px;color:var(--text2);margin-bottom:4px">🍽️ ГОЛОД</div>
+            <div id="org-hunger-val" style="font-size:12px;font-weight:700;font-family:var(--mono);color:var(--yellow)">—</div>
+            <div style="height:4px;background:rgba(255,255,255,.07);border-radius:2px;margin-top:5px;overflow:hidden">
+              <div id="org-hunger-bar" style="height:100%;width:0%;background:#ffd166;border-radius:2px;transition:width .8s"></div>
+            </div>
+          </div>
+          <div style="background:rgba(255,255,255,.03);border-radius:8px;padding:8px">
+            <div style="font-size:9px;color:var(--text2);margin-bottom:4px">⚡ ЭНЕРГИЯ</div>
+            <div id="org-energy-val" style="font-size:12px;font-weight:700;font-family:var(--mono);color:var(--teal)">—</div>
+            <div style="height:4px;background:rgba(255,255,255,.07);border-radius:2px;margin-top:5px;overflow:hidden">
+              <div id="org-energy-bar" style="height:100%;width:70%;background:#64ffda;border-radius:2px;transition:width .8s,background .5s"></div>
+            </div>
+          </div>
+          <div style="background:rgba(255,255,255,.03);border-radius:8px;padding:8px">
+            <div style="font-size:9px;color:var(--text2);margin-bottom:4px">💤 СНЫ</div>
+            <div id="org-dream-val" style="font-size:12px;font-weight:700;font-family:var(--mono);color:var(--purple2)">—</div>
+            <div style="height:4px;background:rgba(255,255,255,.07);border-radius:2px;margin-top:5px;overflow:hidden">
+              <div id="org-dream-bar" style="height:100%;width:50%;background:#a78bfa;border-radius:2px;transition:width .8s"></div>
+            </div>
+          </div>
+        </div>
+        <!-- Row 2: instincts, evolution, modifiers -->
+        <div style="padding:0 12px 10px;display:flex;gap:8px;flex-wrap:wrap">
+          <div style="flex:1;min-width:70px;background:rgba(255,255,255,.03);border-radius:8px;padding:7px 9px">
+            <div style="font-size:9px;color:var(--text2);margin-bottom:3px">⚡ ИНСТИНКТ</div>
+            <div id="org-instinct" style="font-size:11px;font-weight:700;color:var(--green)">✅ норма</div>
+          </div>
+          <div style="flex:1;min-width:70px;background:rgba(255,255,255,.03);border-radius:8px;padding:7px 9px">
+            <div style="font-size:9px;color:var(--text2);margin-bottom:3px">🧬 ЭВОЛЮЦИЯ</div>
+            <div id="org-evo" style="font-size:11px;font-weight:700;font-family:var(--mono);color:var(--ton2)">#0 | 50%</div>
+          </div>
+          <div style="flex:1;min-width:70px;background:rgba(255,255,255,.03);border-radius:8px;padding:7px 9px">
+            <div style="font-size:9px;color:var(--text2);margin-bottom:3px">🎚️ ПОПРАВКИ</div>
+            <div id="org-mods" style="font-size:11px;font-weight:700;font-family:var(--mono);color:var(--text-mid)">Δ0 ×1.0</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ══ AI MODULES STATUS ══ -->
+      <div id="ai-modules-card" style="margin-top:10px;border-radius:10px;overflow:hidden;border:1px solid rgba(100,180,255,.18);background:rgba(10,18,30,.6)">
+        <!-- Header -->
+        <div style="padding:8px 12px;background:rgba(100,180,255,.07);display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid rgba(255,255,255,.06)">
+          <span style="font-size:11px;font-weight:700;color:#64b4ff;letter-spacing:.5px">🤖 AI-МОДУЛИ</span>
+          <span id="aim-scanner-badge" style="font-size:10px;font-weight:700;padding:2px 8px;border-radius:10px;background:rgba(100,180,255,.12);color:#64b4ff">сканер</span>
+        </div>
+        <div style="padding:10px 12px;display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px">
+          <!-- Entry Optimizer -->
+          <div style="background:rgba(255,255,255,.03);border-radius:8px;padding:8px">
+            <div style="font-size:9px;color:var(--text2);margin-bottom:4px">📍 ВХОД</div>
+            <div id="aim-entry-model" style="font-size:10px;font-weight:700;color:var(--green)">—</div>
+            <div id="aim-entry-samples" style="font-size:9px;color:var(--text-mid);margin-top:2px">0 примеров</div>
+          </div>
+          <!-- TP Optimizer -->
+          <div style="background:rgba(255,255,255,.03);border-radius:8px;padding:8px">
+            <div style="font-size:9px;color:var(--text2);margin-bottom:4px">🎯 ТЕЙК</div>
+            <div id="aim-tp-model" style="font-size:10px;font-weight:700;color:var(--yellow)">—</div>
+            <div id="aim-tp-samples" style="font-size:9px;color:var(--text-mid);margin-top:2px">avg —%</div>
+          </div>
+          <!-- Market Scanner -->
+          <div style="background:rgba(255,255,255,.03);border-radius:8px;padding:8px">
+            <div style="font-size:9px;color:var(--text2);margin-bottom:4px">🔭 ПАТТЕРН</div>
+            <div id="aim-scan-pattern" style="font-size:10px;font-weight:700;color:#a78bfa">—</div>
+            <div id="aim-scan-conf" style="font-size:9px;color:var(--text-mid);margin-top:2px">—</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ══ EQUITY HISTORY CHART ══ -->
+      <div class="card card-c wallet-card">
+        <div class="wallet-title">
+          📈 История баланса TON + GRINCH
+          <span id="eq-range-lbl" style="font-size:10px;color:var(--text-mid);margin-left:6px"></span>
+          <button class="btn-wallet-refresh" onclick="refreshWalletFull()" style="margin-left:auto">⟳</button>
+        </div>
+
+        <!-- Chart tabs: TON / GRINCH / Equity -->
+        <div style="display:flex;gap:6px;margin-bottom:8px">
+          <button id="eq-tab-equity" onclick="switchEqTab('equity')" style="padding:4px 10px;font-size:10px;border-radius:6px;border:1px solid rgba(0,255,136,.3);background:rgba(0,255,136,.15);color:var(--green);cursor:pointer;font-weight:700">Портфель</button>
+          <button id="eq-tab-ton"    onclick="switchEqTab('ton')"    style="padding:4px 10px;font-size:10px;border-radius:6px;border:1px solid rgba(255,255,255,.1);background:transparent;color:var(--text2);cursor:pointer">TON</button>
+          <button id="eq-tab-grinch" onclick="switchEqTab('grinch')" style="padding:4px 10px;font-size:10px;border-radius:6px;border:1px solid rgba(255,255,255,.1);background:transparent;color:var(--text2);cursor:pointer">GRINCH</button>
+          <button id="eq-tab-pnl"    onclick="switchEqTab('pnl')"    style="padding:4px 10px;font-size:10px;border-radius:6px;border:1px solid rgba(255,255,255,.1);background:transparent;color:var(--text2);cursor:pointer">P&amp;L</button>
+        </div>
+
+        <div style="position:relative;height:120px;margin:6px 0 10px">
+          <canvas id="eq-chart" style="width:100%;height:120px;display:block;border-radius:8px"></canvas>
+          <div id="eq-empty" style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:11px;color:var(--text-muted)">Накапливаем историю…</div>
+        </div>
+
+        <!-- Balance summary -->
+        <div class="wallet-balances" style="margin-bottom:10px">
+          <div class="wb-item wb-ton">
+            <div class="wb-icon">◆</div><div class="wb-label">TON</div>
+            <div class="wb-amount" id="wb-ton-bal">—</div><div class="wb-usd" id="wb-ton-usd">≈ $—</div>
+          </div>
+          <div class="wb-item wb-grn">
+            <div class="wb-icon">🐸</div><div class="wb-label">GRINCH</div>
+            <div class="wb-amount" id="wb-grn-bal">—</div><div class="wb-usd" id="wb-grn-usd">≈ $—</div>
+          </div>
+        </div>
+
+        <div class="wallet-section-lbl">◆ Адрес TON кошелька</div>
+        <div class="wallet-addr-row">
+          <code id="ton-addr" class="wallet-addr">—</code>
+          <button class="btn-wallet-copy" onclick="copyTon()">📋</button>
+        </div>
+        <div id="ton-copied" class="wallet-copied" style="display:none">✓ Скопировано!</div>
+        <div class="ton-deposits-title">◆ Последние поступления TON</div>
+        <div id="ton-deposits" class="ton-deposits"><div class="ton-empty">Загрузка…</div></div>
+        <div id="ton-error" class="ton-error" style="display:none"></div>
+      </div>
+
+      <!-- ══ GRINCH ANALYTICS — ИСТОРИЯ СДЕЛОК ══ -->
+      <div class="card card-c" id="grinch-analytics-card">
+        <div class="card-title ctit">📊 Аналитика GRINCH — История покупок/продаж</div>
+
+        <!-- Cumulative stats -->
+        <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin-bottom:10px">
+          <div style="background:rgba(0,255,136,.06);border:1px solid rgba(0,255,136,.1);border-radius:8px;padding:8px;text-align:center">
+            <div style="font-size:9px;color:var(--text2);margin-bottom:2px">Куплено GRINCH</div>
+            <div id="wfa-bought" style="font-size:14px;font-weight:800;font-family:var(--mono);color:var(--green)">—</div>
+          </div>
+          <div style="background:rgba(255,69,58,.06);border:1px solid rgba(255,69,58,.1);border-radius:8px;padding:8px;text-align:center">
+            <div style="font-size:9px;color:var(--text2);margin-bottom:2px">Продано GRINCH</div>
+            <div id="wfa-sold" style="font-size:14px;font-weight:800;font-family:var(--mono);color:var(--red)">—</div>
+          </div>
+          <div style="background:rgba(0,212,255,.06);border:1px solid rgba(0,212,255,.1);border-radius:8px;padding:8px;text-align:center">
+            <div style="font-size:9px;color:var(--text2);margin-bottom:2px">Чистый P&amp;L</div>
+            <div id="wfa-pnl" style="font-size:14px;font-weight:800;font-family:var(--mono);color:#00d4ff">—</div>
+          </div>
+        </div>
+
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:10px;font-size:11px">
+          <div style="background:rgba(255,255,255,.03);border-radius:6px;padding:8px">
+            <div style="color:var(--text2);margin-bottom:3px">Потрачено TON</div>
+            <div id="wfa-ton-spent" style="font-weight:700;color:var(--ton)">—</div>
+          </div>
+          <div style="background:rgba(255,255,255,.03);border-radius:6px;padding:8px">
+            <div style="color:var(--text2);margin-bottom:3px">Получено TON</div>
+            <div id="wfa-ton-recv" style="font-weight:700;color:var(--green)">—</div>
+          </div>
+        </div>
+
+        <!-- Recent trades -->
+        <div style="font-size:10px;font-weight:700;color:var(--text-mid);margin-bottom:6px;letter-spacing:.5px">📋 ПОСЛЕДНИЕ СДЕЛКИ GRINCH</div>
+        <div id="wfa-trades-list" style="max-height:200px;overflow-y:auto;display:flex;flex-direction:column;gap:4px">
+          <div style="text-align:center;color:var(--text-muted);font-size:11px;padding:20px">Загрузка…</div>
+        </div>
+      </div>
+
+      <!-- ══ AI ADVISOR WALLET CONTEXT ══ -->
+      <div class="card card-c" id="wallet-ai-context-card">
+        <div class="card-title ctit">🤖 ИИ-анализ позиции GRINCH
+          <button onclick="loadWalletAI()" style="margin-left:auto;background:rgba(160,0,255,.15);border:1px solid rgba(160,0,255,.3);border-radius:6px;padding:3px 10px;color:#a06fff;font-size:10px;cursor:pointer">🔄 Обновить</button>
+        </div>
+        <div id="wallet-ai-body" style="font-size:11px;color:var(--text2)">
+          Нажмите «Обновить» для загрузки AI-анализа текущей позиции GRINCH…
+        </div>
+      </div>
+
+      <!-- Liquidator -->
+      <div class="card card-c" id="liquidator-card">
+        <div class="card-title ctit">🐸 Авто-ликвидатор GRINCH</div>
+        <div id="liq-body">
+          <div class="liq-grid-2">
+            <div class="liq-row"><span class="liq-lbl">На кошельке</span><span class="liq-val" id="liq-bal">—</span></div>
+            <div class="liq-row"><span class="liq-lbl">TON для газа</span><span class="liq-val" id="liq-ton">—</span></div>
+            <div class="liq-row"><span class="liq-lbl">Опорная цена</span><span class="liq-val" id="liq-ref">—</span></div>
+            <div class="liq-row"><span class="liq-lbl">Текущая цена</span><span class="liq-val" id="liq-cur">—</span></div>
+            <div class="liq-row"><span class="liq-lbl">Цель продажи</span><span class="liq-val liq-target" id="liq-tgt">—</span></div>
+            <div class="liq-row"><span class="liq-lbl">Изменение</span><span class="liq-val" id="liq-pct">—</span></div>
+          </div>
+          <div id="liq-gas-warn" class="liq-gas-warn" style="display:none">⛽ Мало TON для газа</div>
+          <div class="liq-progress-wrap"><div class="liq-progress-bar" id="liq-bar" style="width:0%"></div></div>
+          <div class="liq-row" style="margin-top:8px">
+            <label class="liq-lbl" for="liq-thresh">Порог (+%)</label>
+            <input type="number" id="liq-thresh" class="liq-input" value="50" min="0.5" max="200" step="0.5" onchange="setLiqThreshold(this.value)">
+          </div>
+          <div class="liq-actions">
+            <button class="btn btn-red btn-sm" onclick="forceLiqSell()" id="liq-sell-btn" aria-label="Продать сейчас по рыночной цене" role="button">🔴 Продать сейчас</button>
+            <span id="liq-sell-status" class="liq-sell-status"></span>
+          </div>
+          <div id="liq-msg" class="liq-msg"></div>
+        </div>
+      </div>
+
+      <!-- Liquidity Guard -->
+      <div class="card card-c" id="liqguard-card">
+        <div class="card-title ctit">💧 Мониторинг ликвидности GRINCH</div>
+        <div id="liqguard-body">
+          <div class="liq-grid-2">
+            <div class="liq-row"><span class="liq-lbl">Текущая ликвидность</span><span class="liq-val" id="lg-current">—</span></div>
+            <div class="liq-row"><span class="liq-lbl">Пик</span><span class="liq-val" id="lg-peak">—</span></div>
+            <div class="liq-row"><span class="liq-lbl">Просадка от пика</span><span class="liq-val" id="lg-drop">—</span></div>
+            <div class="liq-row"><span class="liq-lbl">Статус BUY</span><span class="liq-val" id="lg-status">—</span></div>
+          </div>
+          <div class="liq-progress-wrap"><div class="liq-progress-bar" id="lg-bar" style="width:0%"></div></div>
+          <div id="lg-warn" class="liq-gas-warn" style="display:none"></div>
+          <div style="font-size:10px;color:var(--text-mid);margin-top:8px">Постоянный опрос пула каждые 15с. Если ликвидность резко проседает (вывод ликвидности, обвал), новые покупки автоматически ставятся на паузу — открытые позиции и продажи никогда не блокируются.</div>
+        </div>
+      </div>
+
+    </div><!-- /#tab-wallet -->
+
+    <!-- ─── TAB: НАСТРОЙКИ ─── -->
+    <div class="tab-pane tab-hidden" id="tab-settings">
+
+      <!-- AI Autonomy status card -->
+      <div class="ai-auto-card">
+        <div class="aac-icon">🤖</div>
+        <div class="aac-body">
+          <div class="aac-title">QuantumBrain v4 — Полная автономия</div>
+          <div class="aac-desc">AI запускается автоматически при старте и управляет всеми торговыми решениями. Kelly Criterion определяет размер ставки на основе реальной статистики win rate и R:R. Агент работает 24/7 в режиме только-прибыль.</div>
+        </div>
+        <div class="aac-indicator">
+          <span class="at-mode-dot" style="width:10px;height:10px"></span>
+          <span style="font-size:10px;font-weight:700;color:var(--green)">АВТО</span>
+        </div>
+      </div>
+
+      <!-- Settings form -->
+      <div class="card card-c">
+        <div class="card-title ctit">⚙️ Параметры AI + торговли</div>
+        <div class="settings-form">
+          <label>Пара <select id="cfg-symbol" onchange="switchPair(this.value)"><option value="GRINCH/TON">GRINCH/TON 🐸</option><option value="GRINCH/USDT">GRINCH/USDT 🐸</option><option value="TON/USDT">TON/USDT ◆</option></select></label>
+          <label>Сумма сделки (TON) <input type="number" id="cfg-amount" value="5" min="5" step="0.5"></label>
+          <label>Тейк-профит (%) <input type="number" id="cfg-tp" value="4.0" step="0.1" min="0.1" max="1000"></label>
+          <label>Трейлинг-стоп (%) <input type="number" id="cfg-trail" value="1.5" step="0.1" min="0" max="90"></label>
+          <label>Комиссия (%) <input type="number" id="cfg-fee" value="0.3" step="0.05" min="0" max="10"></label>
+          <label>Мин. уверенность AI (%) <input type="number" id="cfg-minconf" value="55" step="1" min="0" max="100"></label>
+          <label>Макс. открытых сделок <input type="number" id="cfg-max" value="3" min="1" max="50"></label>
+          <label class="cfg-check"><input type="checkbox" id="cfg-dyn" checked> Динамические цели по ATR</label>
+          <label class="cfg-check"><input type="checkbox" id="cfg-trend" checked> Не покупать в нисходящем тренде</label>
+          <div class="cfg-section-title">🎯 Smart BUY — умная покупка с откатом</div>
+          <label class="cfg-check"><input type="checkbox" id="cfg-smart-buy"> Включить Smart BUY</label>
+          <label>Ждать откат (%) <input type="number" id="cfg-sb-pullback" value="0.8" step="0.1" min="0.1" max="5"></label>
+          <label>Макс. ожидание (тиков) <input type="number" id="cfg-sb-wait" value="3" step="1" min="1" max="20"></label>
+          <label>AI для мгновенной покупки (%) <input type="number" id="cfg-sb-skip" value="90" step="1" min="50" max="100"></label>
+          <div class="cfg-section-title">🧠 Smart TP — умная продажа с ИИ</div>
+          <label class="cfg-check"><input type="checkbox" id="cfg-smart-tp"> Включить Smart TP</label>
+          <label>Мин. AI для удержания (%) <input type="number" id="cfg-stp-conf" value="75" step="1" min="50" max="100"></label>
+          <label>Тугой трейлинг при удержании (%) <input type="number" id="cfg-stp-trail" value="1.5" step="0.1" min="0.5" max="10"></label>
+          <div class="cfg-section-title">🤖 Авто-TP — ИИ сам подбирает цель прибыли</div>
+          <label>Мин. прибыль (% от ставки)
+            <input type="number" id="cfg-min-profit-ton" value="5" min="0.1" max="100" step="0.5">
+            <small style="color:var(--text-mid)">5 = 5% от любой ставки: 100 TON → 5 TON мин., 200 TON → 10 TON мин., 500 TON → 25 TON мин. и так далее</small>
+          </label>
+          <label>Стартовать авто-TP со сделки №
+            <input type="number" id="cfg-ai-tp-min-trades" value="5" min="1" max="100" step="1">
+            <small style="color:var(--text-mid)">Сколько сделок нужно закрыть прежде чем ИИ начнёт адаптировать процент</small>
+          </label>
+          <label>Потолок авто-TP (%)
+            <input type="number" id="cfg-ai-tp-cap" value="80" min="5" max="500" step="1">
+            <small style="color:var(--text-mid)">ИИ не поставит цель выше этого % (защита от нереалистичных целей)</small>
+          </label>
+          <!-- Статус авто-TP -->
+          <div id="ai-tp-status" style="margin:10px 0 4px;padding:10px 12px;background:rgba(0,255,136,.06);border:1px solid rgba(0,255,136,.18);border-radius:8px;font-size:11px">
+            <div style="font-weight:700;color:var(--green);margin-bottom:6px">🎯 Авто-TP статус</div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:4px 12px;color:var(--text-mid)">
+              <span>Режим:</span>        <span id="ai-tp-mode-label" style="color:var(--yellow);font-weight:700">Загружаю…</span>
+              <span>Текущий TP:</span>   <span id="ai-tp-current" style="font-weight:700;color:#00d4ff">—</span>
+              <span>Пол (мин.):</span>   <span id="ai-tp-floor" style="font-weight:700;color:var(--green)">—</span>
+              <span>Ср. прибыль:</span>  <span id="ai-tp-avg-win" style="font-weight:700">—</span>
+              <span>Обучено сделок:</span><span id="ai-tp-trades" style="font-weight:700">—</span>
+            </div>
+          </div>
+          <button class="btn btn-blue" id="btn-save-cfg" onclick="saveConfig()">💾 Сохранить настройки</button>
+          <div class="cfg-note">🟢 Режим «только в плюс»: бот никогда не продаёт в минус. TARGET NET: +20%</div>
+          <div class="cfg-note">◆ Реальный DEX DeDust: 1% вход + 1% выход. Каждая сделка — реальная транзакция TON.</div>
+        </div>
+      </div>
+
+      <!-- DCA Strategy Card -->
+      <div class="card card-c" id="dca-settings-card">
+        <div class="card-title ctit">📉 DCA Стратегия — Усреднение позиции</div>
+        <div class="settings-form">
+          <div class="cfg-section-title" style="color:var(--yellow)">⚠️ При включении DCA — ИИ отключается. Бот торгует по ценовым уровням.</div>
+          <label class="cfg-check" style="margin-bottom:12px">
+            <input type="checkbox" id="cfg-dca-mode">
+            <span style="font-weight:700;color:var(--green)">Включить DCA стратегию</span>
+          </label>
+
+          <div id="dca-params" style="display:none">
+            <label>Ставка за вход (TON)
+              <input type="number" id="cfg-dca-stake" value="100" min="1" step="5">
+              <small style="color:var(--text-mid)">Сколько TON тратить на каждую покупку (первую и каждую докупку)</small>
+            </label>
+            <label>Цель прибыли портфеля (%)
+              <input type="number" id="cfg-dca-target" value="20" min="1" max="200" step="1">
+              <small style="color:var(--text-mid)">Продать ВСЁ когда суммарный GRINCH вырос на N% от вложенных TON</small>
+            </label>
+            <label>Докупка при падении (%)
+              <input type="number" id="cfg-dca-drop" value="12" min="1" max="90" step="1">
+              <small style="color:var(--text-mid)">Купить ещё если цена упала на N% от цены последней покупки</small>
+            </label>
+            <label>Ждать откат после продажи (%)
+              <input type="number" id="cfg-dca-pullback" value="25" min="5" max="90" step="1">
+              <small style="color:var(--text-mid)">После продажи — ждать падения на N% от пика перед новым входом</small>
+            </label>
+            <label>Макс. докупок за цикл
+              <input type="number" id="cfg-dca-max-entries" value="10" min="1" max="50" step="1">
+              <small style="color:var(--text-mid)">Максимум раз докупиться в одном цикле (защита от бесконечного усреднения)</small>
+            </label>
+
+            <!-- ── 4 улучшения DCA ──────────────────────────────────── -->
+            <div style="margin-top:14px;padding:10px;background:rgba(255,214,0,.07);border:1px solid rgba(255,214,0,.2);border-radius:8px">
+              <div style="font-size:11px;font-weight:700;color:var(--yellow);margin-bottom:10px">⚡ Улучшения DCA</div>
+
+              <!-- Каскадный выход -->
+              <label class="cfg-check">
+                <input type="checkbox" id="cfg-dca-cascade" checked>
+                <span style="font-weight:600;color:var(--green)">🎯 Каскадный выход (продажа частями)</span>
+              </label>
+              <div style="padding-left:22px;margin-bottom:8px">
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px">
+                  <label style="font-size:11px">Уровень 1 (%) — продать 50%
+                    <input type="number" id="cfg-dca-cascade-l1" value="20" min="5" max="100" step="1" style="font-size:11px">
+                  </label>
+                  <label style="font-size:11px">Уровень 2 (%) — продать остаток
+                    <input type="number" id="cfg-dca-cascade-l2" value="40" min="5" max="200" step="1" style="font-size:11px">
+                  </label>
+                </div>
+                <small style="color:var(--text-mid)">+20% → фиксируем 50% прибыли, +40% → продаём остаток</small>
+              </div>
+
+              <!-- Умный реentri -->
+              <label class="cfg-check">
+                <input type="checkbox" id="cfg-dca-smart-reentry" checked>
+                <span style="font-weight:600;color:#00d4ff">⚡ Умный реentri (AI бычий → меньший откат)</span>
+              </label>
+              <div style="padding-left:22px;margin-bottom:8px">
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px">
+                  <label style="font-size:11px">Откат для реentri (%)
+                    <input type="number" id="cfg-dca-reentry-pullback" value="8" min="1" max="50" step="1" style="font-size:11px">
+                  </label>
+                  <label style="font-size:11px">Мин. AI-уверенность (%)
+                    <input type="number" id="cfg-dca-reentry-ai-conf" value="60" min="30" max="99" step="1" style="font-size:11px">
+                  </label>
+                </div>
+                <small style="color:var(--text-mid)">Вместо -25% откат: при AI BUY ≥60% достаточно -8%</small>
+              </div>
+
+              <!-- Компаундирование -->
+              <label class="cfg-check">
+                <input type="checkbox" id="cfg-dca-compound" checked>
+                <span style="font-weight:600;color:var(--yellow)">🔄 Компаундирование (реинвест прибыли)</span>
+              </label>
+              <div style="padding-left:22px;margin-bottom:8px">
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px">
+                  <label style="font-size:11px">Доля прибыли в реинвест (0–1)
+                    <input type="number" id="cfg-dca-compound-ratio" value="0.30" min="0.01" max="0.9" step="0.05" style="font-size:11px">
+                  </label>
+                  <label style="font-size:11px">Макс. бонус (TON)
+                    <input type="number" id="cfg-dca-compound-max" value="500" min="10" max="10000" step="10" style="font-size:11px">
+                  </label>
+                </div>
+                <small id="dca-compound-hint" style="color:var(--text-mid)">Прибыль 20 TON → +30% = +6 TON к следующей ставке</small>
+              </div>
+
+              <!-- Адаптивный триггер -->
+              <label class="cfg-check">
+                <input type="checkbox" id="cfg-dca-adaptive" checked>
+                <span style="font-weight:600;color:#ff79c6">⚡ Адаптивный триггер (агрессивнее при ракете)</span>
+              </label>
+              <div style="padding-left:22px">
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px">
+                  <label style="font-size:11px">Порог «ракетного» движения (%)
+                    <input type="number" id="cfg-dca-fast-move" value="5" min="1" max="30" step="0.5" style="font-size:11px">
+                  </label>
+                  <label style="font-size:11px">Агрессивный порог докупки (%)
+                    <input type="number" id="cfg-dca-fast-drop" value="6" min="1" max="30" step="0.5" style="font-size:11px">
+                  </label>
+                </div>
+                <small id="dca-adaptive-hint" style="color:var(--text-mid)">Если рынок вырос >5% за 75 сек → докупать уже при -6% (не -12%)</small>
+              </div>
+            </div>
+          </div>
+
+          <!-- DCA Status Panel -->
+          <div id="dca-status-panel" style="display:none;margin-top:14px;padding:12px;background:rgba(0,212,255,.07);border:1px solid rgba(0,212,255,.2);border-radius:10px">
+            <div style="font-size:11px;font-weight:700;color:#00d4ff;margin-bottom:8px">📊 DCA — ТЕКУЩИЙ ЦИКЛ</div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px 12px;font-size:11px">
+              <span style="color:var(--text-mid)">Фаза:</span>          <span id="dca-phase" style="font-weight:700">—</span>
+              <span style="color:var(--text-mid)">Входов в цикле:</span><span id="dca-entries" style="font-weight:700">—</span>
+              <span style="color:var(--text-mid)">Вложено TON:</span>   <span id="dca-stake" style="font-weight:700">—</span>
+              <span style="color:var(--text-mid)">Прибыль порт. (с комиссиями):</span><span id="dca-profit" style="font-weight:700">—</span>
+              <span style="color:var(--text-mid)">Цена посл. докупки:</span>    <span id="dca-last-buy" style="font-weight:700">—</span>
+              <span style="color:var(--text-mid)">Пик (откат от):</span><span id="dca-peak" style="font-weight:700">—</span>
+              <span style="color:var(--text-mid)">Каскад:</span>        <span id="dca-cascade-status" style="font-weight:700">—</span>
+              <span style="color:var(--text-mid)">Компаунд-бонус:</span><span id="dca-compound-bonus" style="font-weight:700">—</span>
+            </div>
+            <div style="margin-top:8px">
+              <div style="font-size:10px;color:var(--text-mid);margin-bottom:3px">Прогресс к цели <span id="dca-target-label">+20%</span></div>
+              <div style="background:rgba(255,255,255,.08);border-radius:4px;height:6px;overflow:hidden">
+                <div id="dca-progress-bar" style="height:100%;background:linear-gradient(90deg,#00ff88,#00d4ff);border-radius:4px;transition:width .5s;width:0%"></div>
+              </div>
+            </div>
+          </div>
+
+          <button class="btn btn-blue" id="btn-save-dca" onclick="saveDcaConfig()" style="margin-top:14px">💾 Сохранить DCA настройки</button>
+        </div>
+      </div>
+
+      <!-- Profit Protection Card -->
+      <div class="card card-c" id="profit-protect-card">
+        <div class="card-title ctit">🛡️ Защита прибыли — Фиксация при развороте</div>
+        <div class="settings-form">
+          <div class="cfg-section-title" style="color:var(--green)">
+            Если портфель в плюсе ≥ N TON <strong>и рынок начинает падать</strong> — бот немедленно
+            продаёт весь GRINCH. Работает в AI-режиме и DCA-режиме.
+          </div>
+          <label class="cfg-check" style="margin-bottom:12px">
+            <input type="checkbox" id="cfg-pp-enabled">
+            <span style="font-weight:700;color:var(--green)">Включить защиту прибыли</span>
+          </label>
+
+          <label>Мин. прибыль для защиты (TON)
+            <input type="number" id="cfg-pp-ton" value="2" min="0.1" step="0.5">
+            <small style="color:var(--text-mid)">Защита активируется только когда портфель вырос на ≥ N TON. ИИ может снижать порог по истории сделок.</small>
+          </label>
+          <label>Откат от пика портфеля (%)
+            <input type="number" id="cfg-pp-drop" value="1.5" min="0.3" max="20" step="0.5">
+            <small style="color:var(--text-mid)">Если стоимость портфеля упала на N% от своего пика — продаём немедленно</small>
+          </label>
+          <label class="cfg-check">
+            <input type="checkbox" id="cfg-pp-ai-sell">
+            <span>Продавать также при AI-сигнале SELL (≥55% уверенность)</span>
+          </label>
+
+          <div style="margin-top:10px;padding:8px 12px;background:rgba(0,255,136,.07);border:1px solid rgba(0,255,136,.15);border-radius:8px;font-size:11px;color:var(--text-mid)">
+            <strong style="color:var(--green)">ИИ-адаптация:</strong> ИИ автоматически снижает порог защиты до 50% от средней прибыли
+            по истории сделок — ловит прибыль раньше по мере обучения.
+          </div>
+
+          <button class="btn btn-blue" onclick="saveProfitProtectConfig()" style="margin-top:14px">💾 Сохранить защиту прибыли</button>
+        </div>
+      </div>
+
+      <!-- Large Sell DCA Card -->
+      <div class="card card-c" id="large-sell-dca-card">
+        <div class="card-title ctit">🚨 Детектор крупных продаж — Безусловная закупка</div>
+        <div class="settings-form">
+          <div class="cfg-section-title" style="color:#00d4ff">
+            Когда в пуле фиксируется крупная продажа GRINCH — бот <strong>автоматически покупает</strong>,
+            игнорируя AI-сигнал. Работает и в AI-режиме, и в DCA-режиме.
+          </div>
+          <label class="cfg-check" style="margin-bottom:12px">
+            <input type="checkbox" id="cfg-lsd-enabled">
+            <span style="font-weight:700;color:var(--green)">Включить детектор крупных продаж</span>
+          </label>
+
+          <div id="lsd-params">
+            <label>Сумма покупки (TON)
+              <input type="number" id="cfg-lsd-buy-ton" value="100" min="10" step="10">
+              <small style="color:var(--text-mid)">Сколько TON тратить на каждую безусловную покупку при срабатывании детектора</small>
+            </label>
+            <label>Порог продажи в пуле (TON)
+              <input type="number" id="cfg-lsd-min-ton" value="500" min="50" step="50">
+              <small style="color:var(--text-mid)">Минимальный объём одной продажи в пуле (TON) для срабатывания триггера</small>
+            </label>
+            <label>Пауза между сигналами (сек)
+              <input type="number" id="cfg-lsd-cooldown" value="300" min="30" step="30">
+              <small style="color:var(--text-mid)">Минимальная пауза (секунды) между двумя безусловными покупками по этому сигналу</small>
+            </label>
+          </div>
+
+          <!-- Статус последнего срабатывания -->
+          <div id="lsd-status-panel" style="margin-top:12px;padding:10px;background:rgba(255,69,58,.07);border:1px solid rgba(255,69,58,.2);border-radius:10px;font-size:11px;display:none">
+            <div style="font-weight:700;color:var(--red);margin-bottom:4px">🚨 ПОСЛЕДНЕЕ СРАБАТЫВАНИЕ</div>
+            <div style="color:var(--text-mid)">Куплено: <span id="lsd-last-buy" style="color:#fff;font-weight:700">—</span></div>
+          </div>
+
+          <button class="btn btn-blue" onclick="saveLargeSellConfig()" style="margin-top:14px">💾 Сохранить настройки детектора</button>
+        </div>
+      </div>
+
+      <!-- ─── AI Советник — Полная Автономия ─── -->
+      <div class="card card-c" id="advisor-card">
+        <div class="card-title ctit" style="display:flex;align-items:center;flex-wrap:wrap;gap:6px">
+          🤖 AI Советник
+          <span style="font-size:10px;font-weight:600;color:#a0f;background:rgba(160,0,255,.13);padding:2px 8px;border-radius:10px">LLaMA 3.3-70B · Groq</span>
+          <span id="adv-status-dot" style="display:inline-block;width:8px;height:8px;border-radius:50%;background:#444"></span>
+          <span id="adv-auto-badge" style="display:none;font-size:10px;font-weight:700;color:var(--green);background:rgba(0,255,136,.12);padding:2px 8px;border-radius:10px;border:1px solid rgba(0,255,136,.3)">⚡ АВТОНОМИЯ</span>
+          <span id="adv-running-badge" style="display:none;font-size:10px;color:var(--yellow);margin-left:4px">⚙️ думает…</span>
+          <span style="margin-left:auto;font-size:11px;color:var(--green)" id="adv-adapt-count">0 адаптаций</span>
+        </div>
+
+        <!-- Лимит Groq (если исчерпан) -->
+        <div id="adv-ratelimit-wrap" style="display:none;margin-bottom:10px;padding:8px 12px;background:rgba(255,107,107,.08);border:1px solid rgba(255,107,107,.25);border-radius:8px">
+          <div style="font-size:11px;font-weight:700;color:var(--red);margin-bottom:3px">⏳ Лимит токенов Groq исчерпан</div>
+          <div id="adv-ratelimit-text" style="font-size:11px;color:var(--text-dim);line-height:1.6"></div>
+        </div>
+
+        <!-- Панель автономии -->
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:10px">
+          <div style="background:rgba(0,255,136,.06);border:1px solid rgba(0,255,136,.15);border-radius:8px;padding:8px;text-align:center">
+            <div style="font-size:10px;color:var(--text-mid);margin-bottom:3px">следующий анализ</div>
+            <div id="adv-countdown" style="font-size:16px;font-weight:700;color:var(--green);font-family:var(--mono)">—</div>
+          </div>
+          <div style="background:rgba(0,212,255,.06);border:1px solid rgba(0,212,255,.15);border-radius:8px;padding:8px;text-align:center">
+            <div style="font-size:10px;color:var(--text-mid);margin-bottom:3px">сделок до анализа</div>
+            <div id="adv-trades-count" style="font-size:16px;font-weight:700;color:#00d4ff;font-family:var(--mono)">— / 3</div>
+          </div>
+          <div style="background:rgba(160,0,255,.06);border:1px solid rgba(160,0,255,.15);border-radius:8px;padding:8px;text-align:center">
+            <div style="font-size:10px;color:var(--text-mid);margin-bottom:3px">вердикт</div>
+            <div id="adv-verdict-mini" style="font-size:11px;font-weight:700;color:var(--yellow);font-family:var(--mono)">—</div>
+          </div>
+        </div>
+
+        <!-- Последний анализ -->
+        <div id="adv-verdict-row" style="display:none;margin:0 0 10px;padding:10px 14px;border-radius:10px;background:rgba(0,212,255,.06);border:1px solid rgba(0,212,255,.18)">
+          <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;flex-wrap:wrap">
+            <span id="adv-verdict-badge" style="font-size:11px;font-weight:700;padding:2px 10px;border-radius:8px;background:rgba(0,255,136,.15);color:var(--green)">—</span>
+            <span id="adv-conf-label" style="font-size:10px;color:var(--text-mid)"></span>
+            <span id="adv-trigger-label" style="font-size:10px;color:#555"></span>
+            <span id="adv-time-label" style="font-size:10px;color:#555;margin-left:auto"></span>
+          </div>
+          <div id="adv-analysis-text" style="font-size:11px;color:var(--text-dim);line-height:1.6"></div>
+        </div>
+
+        <!-- Рекомендации -->
+        <div id="adv-recs-wrap" style="display:none;margin-bottom:10px">
+          <div style="font-size:10px;font-weight:700;color:var(--yellow);margin-bottom:5px;letter-spacing:.5px">📋 РЕКОМЕНДАЦИИ</div>
+          <div id="adv-recs-list" style="display:flex;flex-direction:column;gap:4px"></div>
+        </div>
+
+        <!-- Применённые изменения -->
+        <div id="adv-applied-wrap" style="display:none;margin-bottom:10px;padding:8px 12px;background:rgba(0,255,136,.07);border:1px solid rgba(0,255,136,.18);border-radius:8px">
+          <div style="font-size:10px;font-weight:700;color:var(--green);margin-bottom:4px">✅ ПРИМЕНЕНО АВТОМАТИЧЕСКИ</div>
+          <div id="adv-applied-list" style="font-size:11px;color:var(--text-dim);line-height:1.7"></div>
+        </div>
+
+        <!-- Лог адаптаций -->
+        <div id="adv-adapt-log-wrap" style="display:none;margin-bottom:10px">
+          <div style="font-size:10px;font-weight:700;color:var(--text-mid);margin-bottom:4px;letter-spacing:.5px">📝 ЛОГ ВСЕХ АДАПТАЦИЙ</div>
+          <div id="adv-adapt-log-list" style="max-height:110px;overflow-y:auto;display:flex;flex-direction:column;gap:2px"></div>
+        </div>
+
+        <!-- Money management -->
+        <div style="margin-bottom:10px;padding:9px 12px;background:rgba(255,209,102,.06);border:1px solid rgba(255,209,102,.2);border-radius:8px">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px">
+            <span style="font-size:10px;font-weight:700;color:var(--yellow);letter-spacing:.5px">💰 РАЗМЕР ПОЗИЦИИ (AI money management)</span>
+            <span id="adv-size-mult" style="font-size:13px;font-weight:700;color:var(--yellow);font-family:var(--mono)">×1.00</span>
+          </div>
+          <div style="height:5px;border-radius:3px;background:rgba(255,255,255,.06);overflow:hidden">
+            <div id="adv-size-bar" style="height:100%;width:58%;background:linear-gradient(90deg,#ff6b6b,#ffd166,#00ff88);border-radius:3px"></div>
+          </div>
+          <div style="display:flex;justify-content:space-between;font-size:8px;color:#555;margin-top:2px"><span>0.3× осторожно</span><span>1.5× агрессивно</span></div>
+        </div>
+
+        <!-- Стратегии под управлением AI -->
+        <div style="margin-bottom:10px">
+          <div style="font-size:10px;font-weight:700;color:#00d4ff;margin-bottom:5px;letter-spacing:.5px">🧠 СТРАТЕГИИ ПОД УПРАВЛЕНИЕМ AI</div>
+          <div id="adv-strategy-toggles" style="display:grid;grid-template-columns:1fr 1fr;gap:6px"></div>
+        </div>
+
+        <!-- Вопрос советнику -->
+        <div style="margin-bottom:8px">
+          <div style="font-size:10px;color:var(--text-mid);margin-bottom:4px">Вопрос советнику (необязательно):</div>
+          <input id="adv-user-msg" type="text" placeholder="Например: цена падает, стоит ли ждать или усреднять?" style="width:100%;box-sizing:border-box;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.1);border-radius:8px;padding:7px 10px;font-size:11px;color:var(--text-dim);outline:none">
+        </div>
+
+        <!-- Кнопки -->
+        <div style="display:flex;gap:7px;flex-wrap:wrap;margin-bottom:8px">
+          <button class="btn btn-blue" id="adv-btn-run" onclick="advRun(false)" style="flex:1;min-width:110px;font-size:11px">🔍 Анализ</button>
+          <button class="btn" id="adv-btn-apply" onclick="advRun(true)" style="flex:1;min-width:130px;background:rgba(0,255,136,.15);border:1px solid rgba(0,255,136,.35);color:var(--green);font-size:11px">⚡ Анализ + Применить</button>
+          <button class="btn-tiny" id="adv-btn-auto" onclick="advToggleAuto()" style="padding:7px 12px;font-size:10px;white-space:nowrap">
+            🔄 Авто: <span id="adv-auto-label">ВКЛ</span>
+          </button>
+        </div>
+
+        <!-- Настройки автономии -->
+        <details style="margin-bottom:8px" id="adv-settings-details">
+          <summary style="font-size:10px;color:var(--text-mid);cursor:pointer;padding:4px 0">⚙️ Настройки автономии</summary>
+
+          <!-- 🌍 МУЛЬТИ-ПРОВАЙДЕР AI -->
+          <div style="margin-top:10px;padding:10px 12px;background:rgba(160,0,255,.07);border:1px solid rgba(160,0,255,.2);border-radius:8px">
+            <div style="font-size:10px;font-weight:700;color:#a06fff;margin-bottom:8px;letter-spacing:.5px">🌍 AI ПРОВАЙДЕР — ЛУЧШИЙ МОЗГ МИРА</div>
+            <div id="adv-active-provider" style="font-size:10px;color:#c084fc;margin-bottom:10px;padding:4px 8px;background:rgba(160,0,255,.12);border-radius:5px">⏳ Загрузка...</div>
+
+            <!-- Список провайдеров -->
+            <div id="adv-providers-list" style="display:flex;flex-direction:column;gap:6px;margin-bottom:8px"></div>
+
+            <!-- Кнопка авто -->
+            <button class="btn-tiny" onclick="advSelectProvider(null)" style="font-size:9px;padding:4px 10px;opacity:.7">🔄 Авто-выбор (лучший доступный)</button>
+          </div>
+
+          <!-- GROQ API KEY (обратная совместимость) -->
+          <div style="margin-top:8px;padding:8px 12px;background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.06);border-radius:8px">
+            <div style="font-size:9px;font-weight:700;color:#888;margin-bottom:5px;letter-spacing:.5px">🔑 GROQ API KEY (бесплатный фолбэк)</div>
+            <div id="adv-key-status" style="font-size:10px;color:var(--text-mid);margin-bottom:6px"></div>
+            <div style="display:flex;gap:6px;align-items:center">
+              <input type="password" id="adv-apikey-inp" placeholder="gsk_..." autocomplete="off"
+                style="flex:1;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.12);border-radius:6px;padding:6px 10px;font-size:11px;color:var(--text-dim);outline:none;font-family:var(--mono)">
+              <button class="btn-tiny" onclick="advSaveKey()" style="padding:6px 12px;font-size:10px;white-space:nowrap;background:rgba(160,0,255,.2);border-color:rgba(160,0,255,.4);color:#c084fc">💾 Сохранить</button>
+            </div>
+            <div style="font-size:9px;color:#555;margin-top:4px">Бесплатно: <a href="https://console.groq.com/keys" target="_blank" style="color:#a06fff;text-decoration:none">console.groq.com/keys</a></div>
+          </div>
+
+          <div style="margin-top:8px;display:grid;grid-template-columns:1fr 1fr;gap:8px">
+            <label style="font-size:11px;color:var(--text-mid)">Таймер (мин)
+              <input type="number" id="adv-cfg-interval" value="15" min="5" max="120" style="display:block;width:100%;margin-top:4px;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.1);border-radius:6px;padding:5px 8px;font-size:11px;color:var(--text-dim)">
+            </label>
+            <label style="font-size:11px;color:var(--text-mid)">Сделок до анализа
+              <input type="number" id="adv-cfg-trades" value="3" min="1" max="20" style="display:block;width:100%;margin-top:4px;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.1);border-radius:6px;padding:5px 8px;font-size:11px;color:var(--text-dim)">
+            </label>
+          </div>
+          <button class="btn-tiny" onclick="advSaveCfg()" style="margin-top:8px;padding:5px 12px;font-size:10px">💾 Сохранить</button>
+        </details>
+
+        <!-- Спиннер -->
+        <div id="adv-spinner" style="display:none;text-align:center;padding:10px;font-size:11px;color:var(--text-mid)">
+          <span style="animation:spin 1s linear infinite;display:inline-block;margin-right:6px">⚙️</span>LLaMA анализирует рынок…
+        </div>
+
+        <div id="adv-error-msg" style="display:none;margin-top:6px;padding:7px 12px;background:rgba(255,69,58,.1);border:1px solid rgba(255,69,58,.3);border-radius:8px;font-size:11px;color:var(--red)"></div>
+
+        <!-- История -->
+        <div id="adv-history-wrap" style="display:none;margin-top:8px">
+          <div style="font-size:10px;color:#555;font-weight:700;margin-bottom:3px">ИСТОРИЯ ЗАПУСКОВ</div>
+          <div id="adv-history-list" style="display:flex;flex-direction:column;gap:2px;max-height:90px;overflow-y:auto"></div>
+        </div>
+      </div>
+
+      <!-- Telegram Alerts -->
+      <div class="card card-c">
+        <div class="card-title ctit">🔔 Оповещения в Telegram</div>
+        <div style="font-size:11px;color:var(--text-mid);margin-bottom:10px">
+          Бот пришлёт сообщение, если торговый цикл завис или упал с ошибкой — не нужно держать дашборд открытым.
+        </div>
+        <div style="padding:10px 12px;background:rgba(0,180,255,.07);border:1px solid rgba(0,180,255,.2);border-radius:8px">
+          <label class="cfg-check" style="margin-bottom:8px"><input type="checkbox" id="al-enabled" checked> Включить оповещения</label>
+          <div style="font-size:10px;color:var(--text-mid);margin-bottom:6px">Bot Token (от <a href="https://t.me/BotFather" target="_blank" style="color:#00d4ff;text-decoration:none">@BotFather</a>)</div>
+          <input type="password" id="al-token-inp" placeholder="123456:ABC-..." autocomplete="off"
+            style="width:100%;box-sizing:border-box;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.12);border-radius:6px;padding:6px 10px;font-size:11px;color:var(--text-dim);outline:none;font-family:var(--mono);margin-bottom:8px">
+          <div style="font-size:10px;color:var(--text-mid);margin-bottom:6px">Chat ID (ваш личный или ID группы — узнать у <a href="https://t.me/userinfobot" target="_blank" style="color:#00d4ff;text-decoration:none">@userinfobot</a>)</div>
+          <input type="text" id="al-chatid-inp" placeholder="123456789" autocomplete="off"
+            style="width:100%;box-sizing:border-box;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.12);border-radius:6px;padding:6px 10px;font-size:11px;color:var(--text-dim);outline:none;font-family:var(--mono);margin-bottom:8px">
+          <div style="display:flex;gap:6px">
+            <button class="btn-tiny" onclick="alSaveConfig()" style="flex:1;padding:6px 12px;font-size:10px;background:rgba(0,180,255,.2);border-color:rgba(0,180,255,.4);color:#5ec9ff">💾 Сохранить</button>
+            <button class="btn-tiny" onclick="alSendTest()" style="flex:1;padding:6px 12px;font-size:10px">🔔 Тест</button>
+          </div>
+          <div id="al-status-msg" style="font-size:10px;margin-top:6px;color:var(--text-mid)"></div>
+        </div>
+      </div>
+
+      <!-- Logs -->
+      <div class="card card-c">
+        <div class="card-title ctit">📝 Логи бота <button class="btn-tiny" onclick="clearLogs()">Очистить</button></div>
+        <div id="log-container" class="log-container"></div>
+      </div>
+
+    </div><!-- /#tab-settings -->
+
+    <!-- ─── TAB: ИИ — История обучения ─── -->
+    <div class="tab-pane tab-hidden" id="tab-ai">
+      <div style="padding:10px 0 4px;display:flex;flex-direction:column;gap:12px">
+
+        <!-- ══ ПАНЕЛЬ ЗАЩИТНЫХ ФИЛЬТРОВ ══ -->
+        <div class="card card-c" id="filters-panel" style="padding:16px">
+          <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:6px;margin-bottom:14px">
+            <div class="card-title ctit" style="margin:0">🛡️ Защитные фильтры — реальное время</div>
+            <span id="filters-last-upd" style="font-size:10px;color:#4a5d7f">—</span>
+          </div>
+
+          <!-- Три блока фильтров -->
+          <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:14px">
+
+            <!-- Loss Cooldown -->
+            <div id="fc-cooldown" style="padding:12px;border-radius:10px;border:1px solid rgba(255,255,255,.08);background:rgba(255,255,255,.03)">
+              <div style="font-size:10px;color:var(--text2);font-weight:700;letter-spacing:.5px;margin-bottom:8px">⏸️ ПАУЗА ПОСЛЕ УБЫТКА</div>
+              <div id="fc-cd-status" style="font-size:13px;font-weight:700;color:var(--green);margin-bottom:6px">— ожидание</div>
+              <div style="height:4px;border-radius:4px;background:rgba(255,255,255,.06);overflow:hidden;margin-bottom:5px">
+                <div id="fc-cd-bar" style="height:100%;border-radius:4px;background:#00ff88;transition:width .5s;width:100%"></div>
+              </div>
+              <div id="fc-cd-time" style="font-size:10px;color:#4a5d7f">10 мин кулдаун</div>
+            </div>
+
+            <!-- Confluence RSI -->
+            <div id="fc-rsi" style="padding:12px;border-radius:10px;border:1px solid rgba(255,255,255,.08);background:rgba(255,255,255,.03)">
+              <div style="font-size:10px;color:var(--text2);font-weight:700;letter-spacing:.5px;margin-bottom:8px">📊 RSI ФИЛЬТР</div>
+              <div id="fc-rsi-val" style="font-size:20px;font-weight:800;color:var(--green);font-family:var(--mono);margin-bottom:4px">—</div>
+              <div style="height:4px;border-radius:4px;background:rgba(255,255,255,.06);overflow:hidden;margin-bottom:5px">
+                <div id="fc-rsi-bar" style="height:100%;border-radius:4px;background:#00ff88;transition:width .5s;width:50%"></div>
+              </div>
+              <div id="fc-rsi-label" style="font-size:10px;color:#4a5d7f">порог &lt; 72</div>
+            </div>
+
+            <!-- Confluence Volume -->
+            <div id="fc-vol" style="padding:12px;border-radius:10px;border:1px solid rgba(255,255,255,.08);background:rgba(255,255,255,.03)">
+              <div style="font-size:10px;color:var(--text2);font-weight:700;letter-spacing:.5px;margin-bottom:8px">📈 ОБЪЁМ (×MA20)</div>
+              <div id="fc-vol-val" style="font-size:20px;font-weight:800;color:var(--green);font-family:var(--mono);margin-bottom:4px">—</div>
+              <div style="height:4px;border-radius:4px;background:rgba(255,255,255,.06);overflow:hidden;margin-bottom:5px">
+                <div id="fc-vol-bar" style="height:100%;border-radius:4px;background:#00ff88;transition:width .5s;width:50%"></div>
+              </div>
+              <div id="fc-vol-label" style="font-size:10px;color:#4a5d7f">порог ≥ 0.8×MA20</div>
+            </div>
+          </div>
+
+          <!-- DCA AI Guard -->
+          <div id="fc-dca-guard" style="padding:10px 14px;border-radius:8px;border:1px solid rgba(255,255,255,.08);background:rgba(255,255,255,.03);margin-bottom:14px;display:flex;align-items:center;gap:12px">
+            <div id="fc-dca-dot" style="width:10px;height:10px;border-radius:50%;background:#00ff88;flex-shrink:0"></div>
+            <div>
+              <div style="font-size:11px;font-weight:700;color:var(--text-dim)">🛡️ DCA AI-guard (защита от падающего ножа)</div>
+              <div id="fc-dca-txt" style="font-size:11px;color:#4a5d7f;margin-top:2px">Ожидание данных…</div>
+            </div>
+          </div>
+
+          <!-- Последние заблокированные сигналы -->
+          <div>
+            <div style="font-size:10px;color:#4a5d7f;font-weight:700;letter-spacing:.5px;margin-bottom:8px">🚫 ПОСЛЕДНИЕ БЛОКИРОВКИ BUY</div>
+            <div id="fc-blocked-list" style="display:flex;flex-direction:column;gap:4px;max-height:160px;overflow-y:auto">
+              <div style="font-size:11px;color:#2a3a5a;text-align:center;padding:8px">Блокировок нет — все BUY-сигналы прошли</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Статистика в карточках -->
+        <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px">
+          <div class="card card-c" style="padding:14px;text-align:center">
+            <div style="font-size:11px;color:var(--text2);margin-bottom:6px;text-transform:uppercase;letter-spacing:.5px">Примеров в БД</div>
+            <div id="ai-hist-total" style="font-size:28px;font-weight:800;color:var(--green);font-family:'JetBrains Mono',monospace">—</div>
+            <div style="font-size:10px;color:#4a5d7f;margin-top:4px">накоплено навсегда</div>
+          </div>
+          <div class="card card-c" style="padding:14px;text-align:center">
+            <div style="font-size:11px;color:var(--text2);margin-bottom:6px;text-transform:uppercase;letter-spacing:.5px">Буфер в памяти</div>
+            <div id="ai-hist-buf" style="font-size:28px;font-weight:800;color:#00d4ff;font-family:'JetBrains Mono',monospace">—</div>
+            <div style="font-size:10px;color:#4a5d7f;margin-top:4px">для горячего обучения</div>
+          </div>
+          <div class="card card-c" style="padding:14px;text-align:center">
+            <div style="font-size:11px;color:var(--text2);margin-bottom:6px;text-transform:uppercase;letter-spacing:.5px">Переобучений</div>
+            <div id="ai-hist-retrains" style="font-size:28px;font-weight:800;color:var(--yellow);font-family:'JetBrains Mono',monospace">—</div>
+            <div style="font-size:10px;color:#4a5d7f;margin-top:4px">с момента старта</div>
+          </div>
+        </div>
+
+        <!-- График накопления примеров -->
+        <div class="card card-c" style="padding:16px">
+          <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:12px">
+            <div class="card-title ctit" style="margin:0">📈 Накопление обучающих примеров</div>
+            <a id="btn-csv-export" href="/api/ai/examples/export.csv" download
+              style="padding:6px 14px;border-radius:8px;border:1px solid rgba(255,209,102,.35);
+                background:rgba(255,209,102,.10);color:var(--yellow);font-size:12px;font-weight:700;
+                text-decoration:none;white-space:nowrap;display:inline-block">
+              ⬇️ Скачать CSV
+            </a>
+          </div>
+          <div id="ai-hist-chart" style="width:100%;height:120px;position:relative;overflow:hidden">
+            <svg id="ai-hist-svg" width="100%" height="100%" style="display:block"></svg>
+          </div>
+          <div style="display:flex;justify-content:space-between;font-size:10px;color:#4a5d7f;margin-top:4px">
+            <span>начало</span>
+            <span id="ai-hist-chart-max"></span>
+          </div>
+        </div>
+
+        <!-- Живой ансамбль -->
+        <div class="card card-c" style="padding:16px">
+          <div class="card-title ctit" style="margin-bottom:10px">⚡ Живые модели в памяти процесса</div>
+          <div id="ai-live-slots" style="display:flex;flex-wrap:wrap;gap:8px">
+            <span style="color:#4a5d7f;font-size:12px">Загрузка…</span>
+          </div>
+        </div>
+
+        <!-- Тяжёлые модели из БД -->
+        <div class="card card-c" style="padding:16px">
+          <div class="card-title ctit" style="margin-bottom:10px">🗄️ Тяжёлые модели в БД (HGB / XGB / LGBM / MLP)</div>
+          <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:10px">
+            <div style="font-size:10px;color:#4a5d7f">
+              Обучаются раз в 2 дня в изолированном процессе — не нагружают основной процесс.<br>
+              На LOW_MEMORY_MODE хостах остаются только здесь.
+            </div>
+            <button id="btn-deep-retrain" onclick="triggerDeepRetrain()"
+              style="padding:7px 16px;border-radius:8px;border:1px solid rgba(0,212,255,.4);
+                background:rgba(0,212,255,.12);color:#00d4ff;font-size:12px;font-weight:700;
+                cursor:pointer;white-space:nowrap;transition:.2s">
+              🔁 Запустить переобучение
+            </button>
+          </div>
+          <div id="ai-retrain-status" style="display:none;margin-bottom:8px;padding:8px 12px;
+            border-radius:8px;font-size:12px"></div>
+          <div id="ai-deep-models-wrap">
+            <table id="ai-deep-table" style="width:100%;border-collapse:collapse;font-size:12px">
+              <thead>
+                <tr style="color:var(--text2);border-bottom:1px solid rgba(255,255,255,.06)">
+                  <th style="text-align:left;padding:6px 8px">Модель</th>
+                  <th style="text-align:center;padding:6px 8px">Точность</th>
+                  <th style="text-align:center;padding:6px 8px">Примеров</th>
+                  <th style="text-align:right;padding:6px 8px">Обучена</th>
+                  <th style="text-align:center;padding:6px 8px">Статус</th>
+                </tr>
+              </thead>
+              <tbody id="ai-deep-tbody">
+                <tr><td colspan="5" style="padding:16px;text-align:center;color:#4a5d7f">
+                  Тяжёлые модели появятся здесь после первого накопления<br>
+                  достаточного числа сделок (≥30) и срабатывания deep-retrain
+                </td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+      </div>
+    </div><!-- /#tab-ai -->
+
+  </div><!-- /.right-panel-col -->
+
+</div><!-- /.main-grid-v2 -->
+
+<!-- Hidden compat elements (referenced by JS but not visible in new layout) -->
+<div style="display:none">
+  <span id="ai-trained-badge"></span>
+  <div id="bar-up"></div><div id="bar-hold"></div><div id="bar-down"></div>
+  <span id="val-up"></span><span id="val-hold"></span><span id="val-down"></span>
+  <div id="regime-badge"></div>
+  <div id="anomaly-alert"><span id="anomaly-desc"></span></div>
+  <span id="rsi">—</span><span id="macd">—</span>
+  <span id="ema-fast">—</span><span id="ema-slow">—</span>
+  <span id="bb-upper">—</span><span id="bb-lower">—</span>
+  <div id="entry-quality-bar"></div>
+  <div id="open-trades"></div>
+  <div id="smart-buy-banner"></div>
+  <div id="sm-global-bar"></div>
+  <div id="ai-mgmt-bar"></div>
+</div>
+
+</div><!-- /.app -->
+
+<script src="/static/js/socket.io.min.js"></script>
+<script>
+  window._socketio_path = "/socket.io";
+  window._socketio_url  = window.location.origin;
+  window._initAI = {{ init_ai | tojson | safe }};
+</script>
+
+<script>
+(function initTonConnect() {
+  if (window.tonConnectUI) return;
+  if (typeof TON_CONNECT_UI === "undefined") return setTimeout(initTonConnect, 300);
+  try {
+    const tc = new TON_CONNECT_UI.TonConnectUI({
+      manifestUrl: window.location.origin + "/tonconnect-manifest.json",
+      buttonRootId: "ton-connect-button",
+    });
+    window.tonConnectUI = tc;
+    tc.onStatusChange(w => { window._connectedWallet = w?.account?.address || null; });
+  } catch(e) { console.error("[TonConnect]", e); }
+})();
+</script>
+
+<script>
+(function initGrinchChart() {
+  if (typeof LightweightCharts === "undefined") return setTimeout(initGrinchChart, 300);
+  const el = document.getElementById("grinch-chart");
+  if (!el) return;
+  const chart = LightweightCharts.createChart(el, {
+    layout: { background: { type:"solid", color:"transparent" }, textColor:"#8aa0c0", fontFamily:"Inter,system-ui,sans-serif" },
+    grid: { vertLines:{color:"rgba(30,45,74,.4)"}, horzLines:{color:"rgba(30,45,74,.4)"} },
+    rightPriceScale: { borderColor:"rgba(30,45,74,.6)" },
+    timeScale: { borderColor:"rgba(30,45,74,.6)", timeVisible:true, secondsVisible:false },
+    crosshair: { mode:LightweightCharts.CrosshairMode.Normal },
+    autoSize: true,
+  });
+  const cs = chart.addCandlestickSeries({
+    upColor:"#2dd4bf", downColor:"#f87171",
+    wickUpColor:"#14b8a6", wickDownColor:"#ef4444",
+    borderVisible:false,
+    priceFormat:{ type:"price", precision:8, minMove:0.00000001 },
+  });
+  const vs = chart.addHistogramSeries({ priceFormat:{type:"volume"}, priceScaleId:"vol" });
+  chart.priceScale("vol").applyOptions({ scaleMargins:{ top:0.8, bottom:0 } });
+  const lastEl = document.getElementById("chart-last-price");
+  function fmtP(p) { return p==null?"—":Number(p).toFixed(8).replace(/0+$/,"").replace(/\.$/,"")+" TON"; }
+  function toEpoch(ts) { const ms=Date.parse(String(ts).replace(" ","T")+"Z"); return isNaN(ms)?null:Math.floor(ms/1000); }
+  let refreshBusy = false;
+  async function refresh() {
+    if (refreshBusy) return;
+    refreshBusy = true;
+    try {
+      const d = await fetch("/api/candles").then(r=>r.json());
+      const candles = d.candles||[];
+      if (!candles.length) return;
+      const byTime = new Map();
+      for (const c of candles) { const t=toEpoch(c.timestamp); if (t) byTime.set(t,c); }
+      const sorted = [...byTime.entries()].sort((a,b)=>a[0]-b[0]);
+      cs.setData(sorted.map(([t,c])=>({time:t,open:c.open,high:c.high,low:c.low,close:c.close})));
+      vs.setData(sorted.map(([t,c])=>({time:t,value:c.volume||0,color:c.close>=c.open?"rgba(45,212,191,.45)":"rgba(248,113,113,.45)"})));
+      const last = sorted[sorted.length-1][1];
+      if (lastEl) { lastEl.textContent=fmtP(last.close); lastEl.style.color=last.close>=last.open?"#2dd4bf":"#f87171"; }
+    } catch(e) { console.warn("[Chart]",e); }
+    finally { refreshBusy = false; }
+  }
+  refresh();
+  // Серверный кэш свечей — 30с; не создаём 9 лишних запросов между
+  // обновлениями и не запускаем новый fetch поверх медленного предыдущего.
+  setInterval(refresh, 30000);
+  window.addEventListener("resize", ()=>chart.timeScale().fitContent());
+})();
+</script>
+
+<script>
+function switchMainTab(tab) {
+  ['market','trades','wallet','ai','settings'].forEach(t => {
+    document.getElementById('tab-'+t).classList.toggle('tab-hidden', t!==tab);
+    const btn = document.getElementById('tnb-'+t);
+    if (btn) btn.classList.toggle('active', t===tab);
+  });
+  if (tab==='market') setTimeout(()=>window.dispatchEvent(new Event('resize')), 60);
+  if (tab==='market') {
+    const p = document.getElementById('price');
+    const echo = document.getElementById('price-echo');
+    if (p && echo && p.textContent) echo.textContent = p.textContent;
+  }
+  if (tab==='ai') loadAiHistory();
+}
+
+// Auto-sync price echo on price updates
+document.addEventListener('DOMContentLoaded', () => {
+  const obs = new MutationObserver(() => {
+    const p = document.getElementById('price');
+    const echo = document.getElementById('price-echo');
+    if (p && echo) echo.textContent = p.textContent;
+  });
+  const priceEl = document.getElementById('price');
+  if (priceEl) obs.observe(priceEl, {childList:true, characterData:true, subtree:true});
+  advLoadStatus();
+  advLoadKey();
+  alLoadConfig();
+  if (typeof advLoadProviders === "function") advLoadProviders();
+});
+
+// Плавная замена innerHTML: короткий fade-out → подмена контента → fade-in.
+// Используется для списков, перерисовываемых целиком при каждом автообновлении
+// (иначе контент "дёргается" мгновенной подменой каждые несколько секунд).
+function _smoothHTML(el, html) {
+  if (!el) return;
+  if (el.innerHTML === html) return; // без изменений — не дёргаем opacity
+  el.classList.add('fade-refresh', 'fade-out');
+  setTimeout(() => {
+    el.innerHTML = html;
+    el.classList.remove('fade-out');
+  }, 140);
+}
+
+// ─── Вкладка ИИ: история обучения ────────────────────────────────────────────
+function loadAiHistory() {
+  fetch('/api/ai/history').then(r=>r.json()).then(d=>{
+    // Счётчики
+    document.getElementById('ai-hist-total').textContent    = d.total_db ?? 0;
+    document.getElementById('ai-hist-buf').textContent      = d.confirmed_buf ?? 0;
+    document.getElementById('ai-hist-retrains').textContent = d.retrains ?? 0;
+
+    // Живые слоты
+    const slotWrap = document.getElementById('ai-live-slots');
+    if (d.live_slots && d.live_slots.length) {
+      _smoothHTML(slotWrap, d.live_slots.map(s => {
+        const isDeep = s.name.includes('(db)');
+        const bg  = isDeep ? 'rgba(0,212,255,.12)' : 'rgba(0,255,136,.10)';
+        const bc  = isDeep ? 'rgba(0,212,255,.35)' : 'rgba(0,255,136,.30)';
+        const clr = isDeep ? '#00d4ff' : '#00ff88';
+        const tag = isDeep ? ' <span style="font-size:9px;color:#00d4ff;opacity:.7">БД</span>' : '';
+        return `<div style="display:inline-flex;align-items:center;gap:6px;padding:6px 12px;
+          border-radius:8px;border:1px solid ${bc};background:${bg}">
+          <span style="color:${clr};font-weight:700;font-size:12px">${s.name}</span>${tag}
+          <span style="color:var(--text2);font-size:11px">точн: <b style="color:#fff">${s.accuracy}%</b></span>
+          <span style="color:var(--text2);font-size:11px">вес: <b style="color:var(--yellow)">${s.weight}</b></span>
+        </div>`;
+      }).join(''));
+    } else {
+      _smoothHTML(slotWrap, '<span style="color:#4a5d7f;font-size:12px">Модели загружаются…</span>');
+    }
+
+    // Тяжёлые модели
+    const tbody = document.getElementById('ai-deep-tbody');
+    if (d.deep_models && d.deep_models.length) {
+      _smoothHTML(tbody, d.deep_models.map(m => {
+        const acc     = m.accuracy != null ? (m.accuracy*100).toFixed(1)+'%' : '—';
+        const accClr  = m.accuracy > 0.6 ? '#00ff88' : m.accuracy > 0.5 ? '#ffd166' : '#ff6b6b';
+        const nEx     = m.n_examples ?? '—';
+        const trained = m.trained_at ?? '—';
+        return `<tr style="border-bottom:1px solid rgba(255,255,255,.04)">
+          <td style="padding:8px;font-weight:700;color:#00d4ff">${m.model_name}</td>
+          <td style="padding:8px;text-align:center;color:${accClr};font-weight:700">${acc}</td>
+          <td style="padding:8px;text-align:center;color:#aaa">${nEx}</td>
+          <td style="padding:8px;text-align:right;color:var(--text2);font-size:11px">${trained}</td>
+          <td style="padding:8px;text-align:center">
+            <span style="padding:2px 8px;border-radius:4px;font-size:10px;font-weight:700;
+              background:rgba(0,255,136,.15);color:var(--green)">✓ В БД</span>
+          </td>
+        </tr>`;
+      }).join(''));
+    } else {
+      _smoothHTML(tbody, `<tr><td colspan="5" style="padding:20px;text-align:center;color:#4a5d7f;font-size:12px">
+        Тяжёлые модели появятся после накопления ≥30 сделок и срабатывания deep-retrain (раз в 2 дня)
+      </td></tr>`);
+    }
+
+    // Мини-график SVG накопления
+    _renderAiChart(d.cumulative || [], d.total_db || 0);
+  }).catch(()=>{});
+}
+
+function _renderAiChart(points, total) {
+  const svg = document.getElementById('ai-hist-svg');
+  if (!svg) return;
+  const W = svg.parentElement.clientWidth || 400;
+  const H = 110;
+  svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
+  if (!points || points.length < 2) {
+    svg.innerHTML = `<text x="${W/2}" y="${H/2}" text-anchor="middle"
+      fill="#4a5d7f" font-size="12">Данные появятся после первых сделок</text>`;
+    document.getElementById('ai-hist-chart-max').textContent = total ? total + ' примеров' : '';
+    return;
+  }
+  const maxY = Math.max(...points.map(p=>p.y), 1);
+  const pad  = 4;
+  const xs   = points.map((p,i) => pad + i*(W-pad*2)/(points.length-1));
+  const ys   = points.map(p => H-pad - (p.y/maxY)*(H-pad*2));
+  // Заливка под кривой
+  const fillPts = `${xs[0]},${H} ` + xs.map((x,i)=>`${x},${ys[i]}`).join(' ') + ` ${xs[xs.length-1]},${H}`;
+  // Линия
+  const linePts = xs.map((x,i)=>`${i===0?'M':'L'}${x},${ys[i]}`).join(' ');
+  svg.innerHTML = `
+    <defs>
+      <linearGradient id="gfill" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0%"   stop-color="#00ff88" stop-opacity=".35"/>
+        <stop offset="100%" stop-color="#00ff88" stop-opacity=".02"/>
+      </linearGradient>
+    </defs>
+    <polygon points="${fillPts}" fill="url(#gfill)"/>
+    <path d="${linePts}" fill="none" stroke="#00ff88" stroke-width="2" stroke-linejoin="round"/>
+    <circle cx="${xs[xs.length-1]}" cy="${ys[ys.length-1]}" r="3" fill="#00ff88"/>
+    <text x="${xs[xs.length-1]}" y="${ys[ys.length-1]-7}" text-anchor="middle"
+      fill="#00ff88" font-size="10" font-weight="700">${total}</text>`;
+  document.getElementById('ai-hist-chart-max').textContent = total + ' примеров всего';
+}
+
+// ─── Deep-retrain: ручной запуск + поллинг статуса ───────────────────────────
+let _deepRetainPollTimer = null;
+
+function triggerDeepRetrain() {
+  const btn    = document.getElementById('btn-deep-retrain');
+  const status = document.getElementById('ai-retrain-status');
+  if (!btn || !status) return;
+
+  btn.disabled = true;
+  btn.textContent = '⏳ Запускаю…';
+
+  fetch('/api/ai/deep-retrain', {method:'POST'})
+    .then(r=>r.json())
+    .then(d=>{
+      if (d.status === 'already_running') {
+        _showRetrainStatus('info', '⏳ Переобучение уже идёт в фоне…');
+        _startRetrainPoll();
+        return;
+      }
+      if (d.ok) {
+        _showRetrainStatus('info', '🚀 Переобучение запущено. Займёт несколько минут…');
+        _startRetrainPoll();
+      } else {
+        _showRetrainStatus('error', '❌ ' + (d.msg || 'Ошибка запуска'));
+        _resetRetrainBtn();
+      }
+    })
+    .catch(()=>{ _showRetrainStatus('error','❌ Сетевая ошибка'); _resetRetrainBtn(); });
+}
+
+function _startRetrainPoll() {
+  if (_deepRetainPollTimer) clearInterval(_deepRetainPollTimer);
+  _deepRetainPollTimer = setInterval(_pollRetrainStatus, 5000);
+}
+
+function _pollRetrainStatus() {
+  fetch('/api/ai/deep-retrain/status')
+    .then(r=>r.json())
+    .then(d=>{
+      if (d.running) {
+        _showRetrainStatus('info', '⏳ Переобучение идёт… (это нормально занимает 2–5 минут)');
+        return;
+      }
+      clearInterval(_deepRetainPollTimer);
+      _deepRetainPollTimer = null;
+      if (d.error) {
+        _showRetrainStatus('error', '❌ Ошибка: ' + d.error);
+      } else {
+        const ts = d.last ? ` (${d.last})` : '';
+        _showRetrainStatus('ok', `✅ Переобучение завершено${ts}. Обновляю данные…`);
+        setTimeout(()=>{ loadAiHistory(); _hideRetrainStatus(); }, 1800);
+      }
+      _resetRetrainBtn();
+    })
+    .catch(()=>{});
+}
+
+function _showRetrainStatus(type, msg) {
+  const el = document.getElementById('ai-retrain-status');
+  if (!el) return;
+  const styles = {
+    info:  'background:rgba(0,212,255,.10);border:1px solid rgba(0,212,255,.25);color:#00d4ff',
+    ok:    'background:rgba(0,255,136,.10);border:1px solid rgba(0,255,136,.25);color:var(--green)',
+    error: 'background:rgba(255,107,107,.10);border:1px solid rgba(255,107,107,.25);color:var(--red)',
+  };
+  el.setAttribute('style', `display:block;margin-bottom:8px;padding:8px 12px;border-radius:8px;font-size:12px;${styles[type]||styles.info}`);
+  el.textContent = msg;
+}
+
+function _hideRetrainStatus() {
+  const el = document.getElementById('ai-retrain-status');
+  if (el) el.style.display = 'none';
+}
+
+function _resetRetrainBtn() {
+  const btn = document.getElementById('btn-deep-retrain');
+  if (!btn) return;
+  btn.disabled = false;
+  btn.textContent = '🔁 Запустить переобучение';
+}
+
+// Проверяем статус при каждом открытии вкладки (мог быть запущен ранее)
+const _origLoadAiHistory = loadAiHistory;
+loadAiHistory = function() {
+  _origLoadAiHistory();
+  fetch('/api/ai/deep-retrain/status').then(r=>r.json()).then(d=>{
+    if (d.running) {
+      const btn = document.getElementById('btn-deep-retrain');
+      if (btn) { btn.disabled = true; btn.textContent = '⏳ Идёт переобучение…'; }
+      _showRetrainStatus('info', '⏳ Переобучение идёт в фоне…');
+      _startRetrainPoll();
+    }
+  }).catch(()=>{});
+};
+
+// ─── AI Советник — Полная Автономия ──────────────────────────────────────────
+const ADV_COLORS = {'НАКАПЛИВАТЬ':'#00ff88','АКТИВНО_ТОРГОВАТЬ':'#00d4ff','ОСТОРОЖНО':'#ffd166','ПАУЗА':'#ff6b6b'};
+let _advCountdownTimer = null;
+let _advNextRunSec = 0;
+
+function advLoadStatus() {
+  fetch('/api/advisor/status').then(r => r.json()).then(s => {
+    const dot = document.getElementById('adv-status-dot');
+    if (dot) dot.style.background = s.enabled ? '#00ff88' : '#444';
+
+    const autoBadge = document.getElementById('adv-auto-badge');
+    const autoLbl   = document.getElementById('adv-auto-label');
+    if (autoBadge) autoBadge.style.display = s.auto_apply ? 'inline-block' : 'none';
+    if (autoLbl)   autoLbl.textContent = s.auto_apply ? 'ВКЛ' : 'ВЫКЛ';
+
+    const runBadge = document.getElementById('adv-running-badge');
+    if (runBadge) runBadge.style.display = s.running ? 'inline-block' : 'none';
+
+    const cnt = document.getElementById('adv-adapt-count');
+    if (cnt) cnt.textContent = (s.total_adaptations || 0) + ' адаптаций';
+
+    const tc = document.getElementById('adv-trades-count');
+    if (tc) tc.textContent = (s.trades_since_last || 0) + ' / ' + (s.trades_trigger || 3);
+
+    // Обратный отсчёт
+    if (s.next_run_in_sec > 0) {
+      _advNextRunSec = s.next_run_in_sec;
+      advStartCountdown();
+    }
+
+    advRenderRateLimit(s.rate_limit);
+
+    if (s.last_advice) advRenderResult(s.last_advice);
+    if (s.history && s.history.length) advRenderHistory(s.history);
+    if (s.adaptation_log && s.adaptation_log.length) advRenderAdaptLog(s.adaptation_log);
+    if (s.strategy_toggles) advRenderStrategyToggles(s.strategy_toggles, s.strategy_labels || {});
+    if (typeof s.ai_size_mult === 'number') advRenderSizeMult(s.ai_size_mult);
+
+    // Заполняем cfg inputs
+    const intEl = document.getElementById('adv-cfg-interval');
+    const trEl  = document.getElementById('adv-cfg-trades');
+    if (intEl) intEl.value = s.interval_min || 15;
+    if (trEl)  trEl.value  = s.trades_trigger || 3;
+  }).catch(() => {});
+}
+
+function advRenderRateLimit(rl) {
+  const wrap = document.getElementById('adv-ratelimit-wrap');
+  const text = document.getElementById('adv-ratelimit-text');
+  if (!wrap || !text) return;
+  if (!rl || !rl.limited) { wrap.style.display = 'none'; return; }
+  wrap.style.display = 'block';
+  const parts = [];
+  if (rl.used != null && rl.limit != null) parts.push(`использовано ${rl.used.toLocaleString('ru')} из ${rl.limit.toLocaleString('ru')} токенов/день`);
+  if (rl.reset_in_sec != null) {
+    const m = Math.floor(rl.reset_in_sec / 60), s = rl.reset_in_sec % 60;
+    parts.push(`сброс через ${m > 0 ? m + 'м ' : ''}${s}с`);
+  }
+  text.textContent = parts.length ? parts.join(' · ') : 'советник временно не отвечает, попробуйте позже';
+}
+
+function advStartCountdown() {
+  if (_advCountdownTimer) clearInterval(_advCountdownTimer);
+  _advCountdownTimer = setInterval(() => {
+    _advNextRunSec = Math.max(0, _advNextRunSec - 1);
+    const el = document.getElementById('adv-countdown');
+    if (!el) return;
+    if (_advNextRunSec <= 0) { el.textContent = '⚡ скоро'; return; }
+    const m = Math.floor(_advNextRunSec / 60);
+    const s = _advNextRunSec % 60;
+    el.textContent = (m > 0 ? m + 'м ' : '') + s + 'с';
+  }, 1000);
+}
+
+function advRun(apply) {
+  const btn1 = document.getElementById('adv-btn-run');
+  const btn2 = document.getElementById('adv-btn-apply');
+  const spin = document.getElementById('adv-spinner');
+  const errEl= document.getElementById('adv-error-msg');
+  const msg  = (document.getElementById('adv-user-msg') || {}).value || '';
+  [btn1,btn2].forEach(b => b && (b.disabled = true));
+  if (spin)  spin.style.display  = 'block';
+  if (errEl) errEl.style.display = 'none';
+  fetch('/api/advisor/run', {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({auto_apply: apply, message: msg})
+  }).then(r => r.json()).then(res => {
+    if (spin) spin.style.display = 'none';
+    [btn1,btn2].forEach(b => b && (b.disabled = false));
+    if (!res.ok) {
+      if (errEl) { errEl.textContent = '⚠️ ' + (res.error||'Ошибка'); errEl.style.display = 'block'; }
+      return;
+    }
+    advRenderResult(res);
+    if (res.applied && res.applied.length)
+      showToast('⚡ AI советник применил ' + res.applied.length + ' изменений', 'success');
+    setTimeout(advLoadStatus, 500);
+  }).catch(e => {
+    if (spin) spin.style.display = 'none';
+    [btn1,btn2].forEach(b => b && (b.disabled = false));
+    if (errEl) { errEl.textContent = '⚠️ ' + e; errEl.style.display = 'block'; }
+  });
+}
+
+function advRenderResult(res) {
+  const vRow  = document.getElementById('adv-verdict-row');
+  const vBadge= document.getElementById('adv-verdict-badge');
+  const vMini = document.getElementById('adv-verdict-mini');
+  const vConf = document.getElementById('adv-conf-label');
+  const vTrig = document.getElementById('adv-trigger-label');
+  const vTime = document.getElementById('adv-time-label');
+  const vText = document.getElementById('adv-analysis-text');
+  const recsW = document.getElementById('adv-recs-wrap');
+  const recsL = document.getElementById('adv-recs-list');
+  const appW  = document.getElementById('adv-applied-wrap');
+  const appL  = document.getElementById('adv-applied-list');
+
+  const v = res.market_verdict || 'ОСТОРОЖНО';
+  const col = ADV_COLORS[v] || '#ffd166';
+  if (vRow)   vRow.style.display = 'block';
+  if (vBadge) { vBadge.textContent = v; vBadge.style.color = col; vBadge.style.background = col+'22'; }
+  if (vMini)  { vMini.textContent = v; vMini.style.color = col; }
+  if (vConf)  vConf.textContent  = res.confidence ? 'уверенность ' + Math.round(res.confidence*100)+'%' : '';
+  if (vTrig)  vTrig.textContent  = res.trigger ? '· триггер: ' + res.trigger : '';
+  if (vTime)  vTime.textContent  = (res.timestamp||'') + (res.elapsed_s ? ' · '+res.elapsed_s+'s' : '');
+  if (vText)  vText.textContent  = res.analysis || '';
+
+  const recs = res.recommendations || [];
+  if (recsW) recsW.style.display = recs.length ? 'block' : 'none';
+  if (recsL) _smoothHTML(recsL, recs.map(r => {
+    const up = parseFloat(r.suggested) > parseFloat(r.current);
+    return `<div style="background:rgba(255,255,255,.04);border-radius:7px;padding:6px 10px">
+      <div style="display:flex;align-items:center;gap:6px;margin-bottom:2px">
+        <code style="color:#00d4ff;font-size:10px">${r.param}</code>
+        <span style="color:#666;font-size:10px">${r.current} →</span>
+        <strong style="color:${up?'#00ff88':'#ffd166'};font-size:11px">${r.suggested} ${up?'↑':'↓'}</strong>
+      </div>
+      <div style="font-size:10px;color:var(--text-mid);line-height:1.45">${r.reason||''}</div>
+    </div>`;
+  }).join(''));
+
+  const applied = res.applied || [];
+  if (appW) appW.style.display = applied.length ? 'block' : 'none';
+  if (appL) _smoothHTML(appL, applied.map(a => `<div style="padding:1px 0">✅ ${a}</div>`).join(''));
+}
+
+function advRenderHistory(history) {
+  const wrap = document.getElementById('adv-history-wrap');
+  const list = document.getElementById('adv-history-list');
+  if (!wrap||!list) return;
+  wrap.style.display = 'block';
+  _smoothHTML(list, [...history].reverse().map(h => {
+    const col = ADV_COLORS[h.verdict] || '#ffd166';
+    const app = h.applied&&h.applied.length ? ` <span style="color:var(--green)">✅${h.applied.length}</span>` : '';
+    return `<div style="font-size:10px;color:#666;padding:1px 0">${h.ts} <span style="color:${col};font-weight:700">${h.verdict||''}</span> ·${h.trigger||'manual'}${app}</div>`;
+  }).join(''));
+}
+
+function advRenderAdaptLog(log) {
+  const wrap = document.getElementById('adv-adapt-log-wrap');
+  const list = document.getElementById('adv-adapt-log-list');
+  if (!wrap||!list||!log.length) return;
+  wrap.style.display = 'block';
+  _smoothHTML(list, [...log].reverse().map(l =>
+    `<div style="font-size:10px;color:var(--text-mid);padding:1px 0">${l.ts} <span style="color:var(--green)">✅</span> ${l.change}</div>`
+  ).join(''));
+}
+
+function advRenderStrategyToggles(toggles, labels) {
+  const wrap = document.getElementById('adv-strategy-toggles');
+  if (!wrap) return;
+  _smoothHTML(wrap, Object.keys(toggles).map(key => {
+    const on = !!toggles[key];
+    const label = labels[key] || key;
+    const col = on ? '#00ff88' : '#666';
+    const bg  = on ? 'rgba(0,255,136,.08)' : 'rgba(255,255,255,.03)';
+    const border = on ? 'rgba(0,255,136,.25)' : 'rgba(255,255,255,.08)';
+    return `<div style="display:flex;align-items:center;gap:6px;background:${bg};border:1px solid ${border};border-radius:8px;padding:6px 9px">
+      <span style="width:7px;height:7px;border-radius:50%;background:${col};flex-shrink:0"></span>
+      <span style="font-size:10px;color:var(--text-dim);line-height:1.3">${label}</span>
+      <span style="margin-left:auto;font-size:9px;font-weight:700;color:${col};white-space:nowrap">${on?'ВКЛ':'ВЫКЛ'}</span>
+    </div>`;
+  }).join(''));
+}
+
+function advRenderSizeMult(mult) {
+  const lbl = document.getElementById('adv-size-mult');
+  const bar = document.getElementById('adv-size-bar');
+  if (lbl) lbl.textContent = '×' + mult.toFixed(2);
+  if (bar) {
+    const pct = Math.max(0, Math.min(100, ((mult - 0.3) / (1.5 - 0.3)) * 100));
+    bar.style.width = pct + '%';
+  }
+}
+
+function advToggleAuto() {
+  fetch('/api/advisor/toggle_auto', {method:'POST'}).then(r => r.json()).then(res => {
+    const lbl   = document.getElementById('adv-auto-label');
+    const badge = document.getElementById('adv-auto-badge');
+    if (lbl)   lbl.textContent = res.auto_apply ? 'ВКЛ' : 'ВЫКЛ';
+    if (badge) badge.style.display = res.auto_apply ? 'inline-block' : 'none';
+    showToast('AI автономия: ' + (res.auto_apply ? '⚡ ВКЛЮЧЕНА — советник адаптирует бот самостоятельно' : '⏸ ВЫКЛЮЧЕНА'), res.auto_apply?'success':'info');
+  });
+}
+
+function advSaveCfg() {
+  const intv = parseInt(document.getElementById('adv-cfg-interval')?.value||15);
+  const trig = parseInt(document.getElementById('adv-cfg-trades')?.value||3);
+  fetch('/api/advisor/config', {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({interval_min: intv, trades_trigger: trig})
+  }).then(r => r.json()).then(res => {
+    showToast('⚙️ Настройки автономии сохранены: каждые ' + res.interval_min + ' мин / ' + res.trades_trigger + ' сделок', 'info');
+    advLoadStatus();
+  });
+}
+
+function advLoadKey() {
+  fetch('/api/advisor/apikey').then(r => r.json()).then(res => {
+    const el = document.getElementById('adv-key-status');
+    const dot = document.getElementById('adv-status-dot');
+    if (!el) return;
+    if (res.has_key) {
+      el.textContent = '✅ Ключ задан: ' + (res.masked || '');
+      el.style.color = '#00ff88';
+      if (dot) dot.style.background = '#00ff88';
+    } else {
+      el.textContent = '⚠️ Ключ не задан — AI советник отключён';
+      el.style.color = '#ff6b6b';
+    }
+  }).catch(() => {});
+}
+
+function alSaveConfig() {
+  const token   = document.getElementById('al-token-inp')?.value.trim();
+  const chatId  = document.getElementById('al-chatid-inp')?.value.trim();
+  const enabled = document.getElementById('al-enabled')?.checked;
+  fetch('/api/alerts/config', {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({bot_token: token, chat_id: chatId, enabled: enabled})
+  }).then(r => r.json()).then(res => {
+    const el = document.getElementById('al-status-msg');
+    if (res.ok) {
+      if (el) { el.textContent = '✅ Настройки сохранены'; el.style.color = '#00ff88'; }
+      showToast('🔔 Настройки Telegram-алертов сохранены', 'success');
+      document.getElementById('al-token-inp').value = '';
+      alLoadConfig();
+    } else if (el) {
+      el.textContent = '⚠️ Ошибка сохранения'; el.style.color = '#ff6b6b';
+    }
+  }).catch(() => {});
+}
+
+function alSendTest() {
+  const el = document.getElementById('al-status-msg');
+  if (el) { el.textContent = 'Отправляю тест...'; el.style.color = '#8892b0'; }
+  fetch('/api/alerts/test', {method:'POST'}).then(r => r.json()).then(res => {
+    if (!el) return;
+    if (res.ok) {
+      el.textContent = '✅ Тестовое сообщение отправлено — проверьте Telegram';
+      el.style.color = '#00ff88';
+      showToast('🔔 Тестовое уведомление отправлено', 'success');
+    } else {
+      el.textContent = '⚠️ ' + (res.error || 'Ошибка отправки');
+      el.style.color = '#ff6b6b';
+    }
+  }).catch(() => {
+    if (el) { el.textContent = '⚠️ Ошибка сети'; el.style.color = '#ff6b6b'; }
+  });
+}
+
+function alLoadConfig() {
+  fetch('/api/alerts/config').then(r => r.json()).then(res => {
+    const el = document.getElementById('al-status-msg');
+    const tokenInp = document.getElementById('al-token-inp');
+    const chatInp  = document.getElementById('al-chatid-inp');
+    const enabledCb = document.getElementById('al-enabled');
+    if (chatInp && res.chat_id) chatInp.value = res.chat_id;
+    if (enabledCb) enabledCb.checked = !!res.enabled;
+    if (tokenInp) tokenInp.placeholder = res.has_token ? res.masked_token : '123456:ABC-...';
+    if (el) {
+      if (res.has_token && res.chat_id) {
+        el.textContent = res.enabled ? '✅ Оповещения настроены и включены' : '⏸ Оповещения настроены, но выключены';
+        el.style.color = res.enabled ? '#00ff88' : '#8892b0';
+      } else {
+        el.textContent = 'ℹ️ Заполните токен и chat ID, чтобы получать оповещения';
+        el.style.color = '#8892b0';
+      }
+    }
+  }).catch(() => {});
+}
+
+function showToast(msg, type) {
+  const c = document.getElementById('toast-container');
+  if (!c) return;
+  const t = document.createElement('div');
+  const colors = {success:'#00ff88', info:'#00d4ff', error:'#ff6b6b'};
+  t.style.cssText = `background:#0d1117;border:1px solid ${colors[type]||'#555'};color:${colors[type]||'#fff'};padding:10px 16px;border-radius:8px;font-size:12px;margin-top:6px;box-shadow:0 4px 20px rgba(0,0,0,.5)`;
+  t.textContent = msg;
+  c.appendChild(t);
+  setTimeout(() => t.remove(), 4000);
+}
+
+// Авто-обновление статуса советника каждые 5 секунд
+setInterval(advLoadStatus, 5000);
+</script>
+
+<!-- ═══════════════════════════════════════════════════════════════════════════
+     КОШЕЛЁК: Полное отслеживание TON + GRINCH (wallet_manager.py)
+     ══════════════════════════════════════════════════════════════════════════ -->
+<script>
+(function() {
+'use strict';
+
+// ── состояние ──────────────────────────────────────────────────────────────
+let _walletData    = null;       // последний ответ /api/wallet/full
+let _walletHistory = [];         // последняя загруженная история
+let _eqTab         = 'equity';   // активная вкладка графика
+let _eqChart       = null;       // Chart.js instance
+let _eqChartTab    = null;       // текущая вкладка, для которой создан _eqChart
+let _walletTimer   = null;       // таймер автообновления
+
+// ── форматирование ──────────────────────────────────────────────────────────
+function fmtTon(v, decimals)  { if (v==null) return '\u2014'; const d=decimals!=null?decimals:4; return Number(v).toFixed(d)+' TON'; }
+function fmtUsd(v)  { if (v==null) return '\u2014'; return '\u2248 \u0024'+Number(v).toLocaleString('ru',{minimumFractionDigits:2,maximumFractionDigits:4}); }
+function fmtGrn(v)  { if (v==null) return '\u2014'; const n=Number(v); return n>=1000 ? n.toLocaleString('ru',{maximumFractionDigits:0}) : n.toFixed(2); }
+function fmtPrice(v){ if (v==null) return '\u2014'; return Number(v).toFixed(10).replace(/0+$/,'').replace(/\.$/,''); }
+function fmtPct(v)  { if (v==null) return '\u2014'; const n=Number(v); return (n>=0?'+':'')+n.toFixed(2)+'%'; }
+function fmtTs(ts)  {
+  if (!ts) return '';
+  try { return new Date(ts+'Z').toLocaleTimeString('ru',{hour:'2-digit',minute:'2-digit',second:'2-digit'}); }
+  catch(e){ return ts.slice(11,19)||''; }
+}
+// Форматирование числа как USD строку без проблем с $ в шаблонизаторе
+function usdStr(n)  { return '\u0024'+Number(n).toFixed(2); }
+function usdStr8(n) { return '\u0024'+Number(n).toFixed(8).replace(/0+$/,'').replace(/\.$/,''); }
+
+function pnlColor(v) { return v==null?'#6a7d9f':Number(v)>0?'#00ff88':Number(v)<0?'#ff453a':'#ffd700'; }
+
+// ── /api/wallet/full ────────────────────────────────────────────────────────
+function refreshWalletFull() {
+  fetch('/api/wallet/full')
+    .then(r=>r.json())
+    .then(renderWalletFull)
+    .catch(e=>console.warn('[Wallet]',e));
+}
+
+function renderWalletFull(d) {
+  if (!d || !d.ok) return;
+  _walletData = d;
+
+  const snap  = d.snapshot || {};
+  const pnl   = d.pnl_ton;
+  const pnlPct= d.pnl_pct;
+  const inPos = d.in_position;
+
+  // ── TON card ──
+  const tonBal   = snap.ton_balance;
+  const tonUsd   = snap.ton_price_usd;
+  const tonUsdVal= (tonBal!=null&&tonUsd)?tonBal*tonUsd:null;
+  _setTxt('wf-ton-bal',  tonBal!=null ? Number(tonBal).toFixed(4) : '\u2014');
+  _setTxt('wf-ton-usd',  fmtUsd(tonUsdVal));
+  _setTxt('wf-ton-price',tonUsd ? usdStr(tonUsd) : '\u2014');
+
+  // ── GRINCH card ──
+  const grnBal    = snap.grinch_balance;
+  const grnUsd    = snap.grinch_value_usd;
+  const grnTonVal = snap.grinch_value_ton;
+  const grnPrice  = snap.grinch_price_usd;
+  _setTxt('wf-grn-bal',  grnBal!=null ? fmtGrn(grnBal)+' \uD83D\uDC38' : '\u2014');
+  _setTxt('wf-grn-usd',  '\u2248 '+(grnUsd!=null ? usdStr8(grnUsd) : '\u0024\u2014')+' \u00B7 \u2248 '+(grnTonVal!=null ? Number(grnTonVal).toFixed(4)+' TON' : '\u2014 TON'));
+  _setTxt('wf-grn-price',grnPrice ? usdStr8(grnPrice) : '\u2014');
+
+  // ── portfolio total ──
+  const totTon = snap.total_equity_ton;
+  const totUsd = snap.total_equity_usd;
+  _setTxt('pt-total', totTon!=null ? Number(totTon).toFixed(4)+' TON'+(totUsd?' / '+usdStr(totUsd):'') : '\u2014');
+
+  // Also update legacy header/wallet balance fields
+  _setTxt('wb-ton-bal', tonBal!=null ? Number(tonBal).toFixed(4) : '—');
+  _setTxt('wb-ton-usd', fmtUsd(tonUsdVal));
+  _setTxt('wb-grn-bal', grnBal!=null ? fmtGrn(grnBal) : '—');
+  _setTxt('wb-grn-usd', fmtUsd(grnUsd));
+
+  // ── GRINCH position card ──
+  const posBadge   = document.getElementById('wf-position-badge');
+  const noBadge    = document.getElementById('wf-no-position-badge');
+  if (posBadge) posBadge.style.display   = inPos ? 'inline-block' : 'none';
+  if (noBadge)  noBadge.style.display    = inPos ? 'none' : 'inline-block';
+
+  _setTxt('wf-pos-grinch', grnBal!=null ? fmtGrn(grnBal)+' GRINCH' : '—');
+
+  const entryTon = d.entry_price_ton;
+  const entryUsd = d.entry_price_usd;
+  const curTon   = d.current_price_ton;
+  const curUsd   = d.current_price_usd;
+
+  _setTxt('wf-entry-ton', entryTon ? fmtPrice(entryTon)+' TON' : '\u043D\u0435\u0442 \u043F\u043E\u0437\u0438\u0446\u0438\u0438');
+  _setTxt('wf-entry-usd', entryUsd ? '\u2248 '+usdStr8(entryUsd) : '');
+  _setTxt('wf-entry-price-display', entryTon ? fmtPrice(entryTon)+' TON' : '—');
+  _setTxt('wf-cur-price-display',   curTon   ? fmtPrice(curTon)+'  TON' : '—');
+
+  // P&L card
+  const pnlCard = document.getElementById('wf-pnl-card');
+  if (pnlCard) pnlCard.style.background = pnl!=null ? (pnl>0?'rgba(0,255,136,.07)':pnl<0?'rgba(255,69,58,.07)':'rgba(255,255,136,.06)') : 'rgba(255,255,136,.06)';
+  const pnlTonEl = document.getElementById('wf-pnl-ton');
+  const pnlPctEl = document.getElementById('wf-pnl-pct');
+  if (pnlTonEl) { pnlTonEl.textContent = pnl!=null ? (pnl>=0?'+':'')+Number(pnl).toFixed(4)+' TON' : '—'; pnlTonEl.style.color = pnlColor(pnl); }
+  if (pnlPctEl) { pnlPctEl.textContent = pnlPct!=null ? fmtPct(pnlPct) : '—'; pnlPctEl.style.color = pnlColor(pnlPct); }
+
+  // Price movement bar
+  if (entryTon && curTon) {
+    const movePct = (curTon - entryTon) / entryTon * 100;
+    const bar = document.getElementById('wf-price-move-bar');
+    const lbl = document.getElementById('wf-price-move-pct');
+    if (bar) {
+      // 0%→50%, +10%→75%, -10%→25% etc  (clamped 0-100)
+      const pos = Math.max(0, Math.min(100, 50 + movePct * 2.5));
+      bar.style.width = pos+'%';
+      bar.style.background = movePct>=0 ? 'linear-gradient(90deg,#0098ea,#00ff88)' : 'linear-gradient(90deg,#ff453a,#ff8c00)';
+    }
+    if (lbl) { lbl.textContent = fmtPct(movePct); lbl.style.color = pnlColor(movePct); }
+  }
+
+  // Potential profit table
+  const potential = d.potential || {};
+  const potGrid   = document.getElementById('wf-potential-grid');
+  const potBlock  = document.getElementById('wf-potential-block');
+  if (potBlock) potBlock.style.display = inPos && Object.keys(potential).length ? 'block' : 'none';
+  if (potGrid && inPos) {
+    _smoothHTML(potGrid, Object.entries(potential).map(([k,v]) => {
+      const p   = v?.pnl_ton;
+      const col = p!=null ? (p>0?'#00ff88':p<0?'#ff453a':'#ffd700') : '#6a7d9f';
+      return `<div style="background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.08);border-radius:6px;padding:6px 4px;text-align:center">
+        <div style="font-size:9px;color:var(--text2);margin-bottom:2px">${k}</div>
+        <div style="font-size:12px;font-weight:800;font-family:var(--mono);color:${col}">${p!=null?(p>=0?'+':'')+Number(p).toFixed(3):'—'}</div>
+        <div style="font-size:9px;color:var(--text3)">TON</div>
+      </div>`;
+    }).join(''));
+  }
+
+  // ROI ring / goal (P&L % towards 20% target)
+  if (pnlPct!=null) {
+    const progress = Math.max(0, Math.min(100, (Number(pnlPct) / 20) * 100));
+    const arc = document.getElementById('roi-ring-arc');
+    const pctTxt = document.getElementById('roi-ring-pct');
+    const goalPct= document.getElementById('roi-goal-pct');
+    const goalBar= document.getElementById('roi-goal-bar');
+    const goalSub= document.getElementById('roi-goal-sub');
+    if (arc) { const c=175.9; arc.setAttribute('stroke-dasharray', (c*progress/100)+' '+c); arc.setAttribute('stroke', Number(pnlPct)>=20?'#ffd700':Number(pnlPct)>0?'#00ff88':'#ff453a'); }
+    if (pctTxt)  pctTxt.textContent  = Math.round(Number(pnlPct))+'%';
+    if (goalPct) goalPct.textContent = fmtPct(pnlPct);
+    if (goalBar) goalBar.style.width = progress+'%';
+    if (goalSub) goalSub.textContent = Number(pnlPct)>=20 ? '🎯 Цель достигнута! Можно фиксировать прибыль.' : (Number(pnlPct)>0 ? '📈 '+fmtPct(pnlPct)+' к цели +20% — продолжаем.' : '⏳ Ждём точку выхода…');
+  }
+
+  // Equity change badge
+  if (d.equity_change_pct!=null) {
+    const el = document.getElementById('pt-change');
+    if (el) { el.textContent = fmtPct(d.equity_change_pct); el.style.color = pnlColor(d.equity_change_pct); }
+  }
+
+  // Load history for chart
+  if (d.history && d.history.length) {
+    _walletHistory = d.history;
+    drawEqChart();
+  }
+  
+  // Update equity range label
+  if (_walletHistory.length) {
+    const first = _walletHistory[0];
+    const last  = _walletHistory[_walletHistory.length-1];
+    const el = document.getElementById('eq-range-lbl');
+    if (el && first && last) el.textContent = fmtTs(first.ts)+' – '+fmtTs(last.ts);
+  }
+}
+
+// ── equity chart tabs ────────────────────────────────────────────────────────
+const EQ_TABS = {
+  equity: { field:'total_equity_ton',  label:'Портфель TON',   color:'#00ff88' },
+  ton:    { field:'ton_balance',        label:'TON баланс',     color:'#0098ea' },
+  grinch: { field:'grinch_value_ton',   label:'GRINCH (в TON)', color:'#00ff88' },
+  pnl:    { field:'pnl_ton',            label:'P&L TON',        color:'#ffd700' },
+};
+
+function switchEqTab(tab) {
+  _eqTab = tab;
+  Object.keys(EQ_TABS).forEach(k => {
+    const btn = document.getElementById('eq-tab-'+k);
+    if (!btn) return;
+    const active = k===tab;
+    btn.style.background  = active ? 'rgba(0,255,136,.15)' : 'transparent';
+    btn.style.borderColor = active ? 'rgba(0,255,136,.3)' : 'rgba(255,255,255,.1)';
+    btn.style.color       = active ? '#00ff88' : '#6a7d9f';
+    btn.style.fontWeight  = active ? '700' : '400';
+  });
+  drawEqChart();
+}
+
+// Экспоненциальное сглаживание ряда только для отображения на графике.
+// null (нет данных в эту точку) пропускается без сброса сглаживания.
+function _emaSmooth(arr, alpha) {
+  let ema = null;
+  const out = [];
+  for (const v of arr) {
+    if (v == null) { out.push(ema); continue; }
+    ema = (ema == null) ? v : (alpha * v + (1 - alpha) * ema);
+    out.push(ema);
+  }
+  return out;
+}
+
+function drawEqChart() {
+  const canvas = document.getElementById('eq-chart');
+  const empty  = document.getElementById('eq-empty');
+  if (!canvas) return;
+
+  const hist = _walletHistory;
+  if (!hist || hist.length < 2) {
+    if (empty) empty.style.display = 'flex';
+    return;
+  }
+  if (empty) empty.style.display = 'none';
+
+  const cfg  = EQ_TABS[_eqTab] || EQ_TABS.equity;
+  const rawVals = hist.map(h => h[cfg.field] != null ? Number(h[cfg.field]) : null);
+  // Визуальное сглаживание ТОЛЬКО для отображения (EMA по нескольким соседним
+  // точкам). Раз в 30с курс GRINCH/TON берётся свежим из пула (низкая
+  // ликвидность мем-коина) — сырые данные реально "дёргаются" каждый снимок,
+  // хотя портфель по факту не меняется. Сглаживаем именно ряд на графике,
+  // сырые данные в БД и торговая логика (price_feed) не трогаются.
+  const vals = _emaSmooth(rawVals, 0.35);
+  const labels = hist.map(h => fmtTs(h.ts));
+
+  const ctx = canvas.getContext('2d');
+  const hasNonNull = vals.some(v=>v!=null);
+  if (!hasNonNull) { if (empty) empty.style.display = 'flex'; return; }
+
+  // Decide color (pnl goes red for negatives)
+  const last = vals.filter(v=>v!=null).slice(-1)[0];
+  let lineColor = cfg.color;
+  if (_eqTab==='pnl' && last!=null && last<0) lineColor='#ff453a';
+
+  // Обновляем существующий график «на месте» (без destroy/recreate), чтобы
+  // не было мигания/рывка при каждом автообновлении (каждые 30с). Полное
+  // пересоздание нужно только при смене вкладки (_eqChartTab) или canvas.
+  if (_eqChart && _eqChartTab === _eqTab) {
+    _eqChart.data.labels = labels;
+    _eqChart.data.datasets[0].data = vals;
+    _eqChart.data.datasets[0].borderColor = lineColor;
+    _eqChart.data.datasets[0].backgroundColor = lineColor+'1a';
+    _eqChart.data.datasets[0].pointRadius = 0;
+    _eqChart.update();
+    return;
+  }
+  if (_eqChart) { try { _eqChart.destroy(); } catch(e){} _eqChart=null; }
+  _eqChartTab = _eqTab;
+
+  _eqChart = new Chart(ctx, {
+    type: 'line',
+    data: {
+      labels,
+      datasets: [{
+        data: vals,
+        borderColor: lineColor,
+        backgroundColor: lineColor+'1a',
+        borderWidth: 2,
+        pointRadius: 0,
+        pointHoverRadius: 4,
+        tension: 0.4,
+        cubicInterpolationMode: 'monotone',
+        fill: true,
+        spanGaps: true,
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: { display:false },
+        tooltip: {
+          mode: 'index',
+          callbacks: {
+            label: (item) => {
+              const v = item.raw;
+              if (v==null) return '—';
+              return cfg.label+': '+(v>=0?'+':'')+Number(v).toFixed(4)+' TON';
+            }
+          }
+        }
+      },
+      scales: {
+        x: { display:false },
+        y: {
+          grid: { color:'rgba(255,255,255,.04)' },
+          ticks: { color:'#6a7d9f', font:{size:9}, maxTicksLimit:4,
+            callback: v => v!=null ? Number(v).toFixed(2) : '' }
+        }
+      }
+    }
+  });
+}
+
+// ── analytics tab ────────────────────────────────────────────────────────────
+function loadWalletAnalytics() {
+  fetch('/api/wallet/analytics')
+    .then(r=>r.json())
+    .then(renderWalletAnalytics)
+    .catch(e=>console.warn('[WalletAnalytics]',e));
+}
+
+function renderWalletAnalytics(d) {
+  if (!d||!d.ok) return;
+  const cum = d.cumulative || {};
+  const pos = d.position  || {};
+
+  _setTxt('wfa-bought', cum.total_bought_grinch!=null ? fmtGrn(cum.total_bought_grinch)+' 🐸' : '—');
+  _setTxt('wfa-sold',   cum.total_sold_grinch  !=null ? fmtGrn(cum.total_sold_grinch)  +' 🐸' : '—');
+  const netPnl = cum.net_pnl_ton;
+  const netEl  = document.getElementById('wfa-pnl');
+  if (netEl) { netEl.textContent = netPnl!=null ? (netPnl>=0?'+':'')+Number(netPnl).toFixed(4)+' TON' : '—'; netEl.style.color = pnlColor(netPnl); }
+  _setTxt('wfa-ton-spent', cum.total_ton_spent!=null ? Number(cum.total_ton_spent).toFixed(4)+' TON' : '—');
+  _setTxt('wfa-ton-recv',  cum.total_ton_received!=null ? Number(cum.total_ton_received).toFixed(4)+' TON' : '—');
+
+  const list = document.getElementById('wfa-trades-list');
+  if (list) {
+    const trades = d.recent_trades || [];
+    if (!trades.length) {
+      _smoothHTML(list, '<div style="text-align:center;color:var(--text-muted);font-size:11px;padding:20px">Нет торговых данных</div>');
+      return;
+    }
+    _smoothHTML(list, trades.map(t => {
+      const isBuy  = (t.side||t.type||'').toString().includes('buy');
+      const col    = isBuy ? '#00ff88' : '#ff453a';
+      const icon   = isBuy ? '🟢 BUY' : '🔴 SELL';
+      const profit = (isBuy && t.status !== 'closed') ? null : (t.profit_ton ?? t.pnl_ton ?? t.net_profit ?? t.pnl ?? null);
+      const amount = t.amount  ? fmtGrn(t.amount)+' 🐸' : '—';
+      const stake  = t.stake_ton || t.ton_spent;
+      const ts     = t.timestamp || t.close_time || t.created_at || t.closed_at || t.opened_at || '';
+      return `<div style="background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.06);border-radius:6px;padding:7px 10px;display:flex;align-items:center;gap:8px;font-size:11px">
+        <span style="font-size:10px;font-weight:700;color:${col};min-width:50px">${icon}</span>
+        <div style="flex:1">
+          <div style="font-weight:700;color:var(--text-dim)">${amount}</div>
+          ${stake ? '<div style="color:var(--text2);font-size:10px">Стейк: '+Number(stake).toFixed(4)+' TON</div>' : ''}
+        </div>
+        ${profit!=null ? `<div style="text-align:right"><div style="font-weight:700;color:${pnlColor(profit)}">${profit>=0?'+':''}${Number(profit).toFixed(4)} TON</div></div>` : ''}
+        <div style="color:var(--text3);font-size:10px;min-width:40px;text-align:right">${fmtTs(ts)}</div>
+      </div>`;
+    }).join(''));
+  }
+}
+
+// ── AI советник: контекст позиции ────────────────────────────────────────────
+function loadWalletAI() {
+  const body = document.getElementById('wallet-ai-body');
+  if (!body) return;
+  body.innerHTML = '<span style="color:var(--text2)">⚙️ Загружаем AI-анализ позиции GRINCH…</span>';
+
+  // Используем статус /api/advisor/status + текущий снимок кошелька
+  Promise.all([
+    fetch('/api/advisor/status').then(r=>r.json()),
+    fetch('/api/wallet/full').then(r=>r.json()),
+  ]).then(([adv, wf]) => {
+    const snap  = wf?.snapshot || {};
+    const inPos = wf?.in_position;
+    const pnl   = wf?.pnl_ton;
+    const pnlPct= wf?.pnl_pct;
+    const entry = wf?.entry_price_ton;
+    const cur   = wf?.current_price_ton;
+
+    let lines = [];
+
+    // Состояние позиции
+    if (inPos) {
+      lines.push(`<div style="margin-bottom:6px;padding:8px;background:rgba(0,255,136,.06);border-radius:6px;border:1px solid rgba(0,255,136,.15)">
+        <div style="color:var(--green);font-weight:700;margin-bottom:4px">🐸 Открытая позиция GRINCH</div>
+        <div style="color:var(--text-mid);font-size:10px;line-height:1.6">
+          Количество: <b style="color:var(--text-dim)">${fmtGrn(snap.grinch_balance)} GRINCH</b><br>
+          Куплено по: <b style="color:var(--ton)">${entry?fmtPrice(entry)+' TON':'—'}</b><br>
+          Текущая: <b style="color:var(--green)">${cur?fmtPrice(cur)+' TON':'—'}</b><br>
+          P&amp;L: <b style="color:${pnlColor(pnl)}">${pnl!=null?(pnl>=0?'+':'')+Number(pnl).toFixed(4)+' TON':'—'} (${pnlPct!=null?fmtPct(pnlPct):'—'})</b>
+        </div>
+      </div>`);
+    } else {
+      lines.push(`<div style="margin-bottom:6px;padding:8px;background:rgba(255,255,255,.03);border-radius:6px;border:1px solid rgba(255,255,255,.06);color:var(--text2)">
+        ⏸️ Нет открытой позиции GRINCH.
+      </div>`);
+    }
+
+    // Последний совет
+    const last = adv?.last_advice;
+    if (last) {
+      const v   = last.market_verdict || '—';
+      const col = {'НАКАПЛИВАТЬ':'#00ff88','АКТИВНО_ТОРГОВАТЬ':'#00d4ff','ОСТОРОЖНО':'#ffd166','ПАУЗА':'#ff6b6b'}[v] || '#ffd166';
+      lines.push(`<div style="padding:8px;background:rgba(255,255,255,.02);border-radius:6px;border:1px solid rgba(255,255,255,.06)">
+        <div style="font-size:10px;font-weight:700;color:var(--text-mid);margin-bottom:4px">📊 Последний AI-совет (${last.timestamp||''})</div>
+        <div style="font-size:12px;font-weight:700;color:${col};margin-bottom:4px">${v}</div>
+        <div style="font-size:10px;color:var(--text-mid);line-height:1.55">${last.analysis||''}</div>
+      </div>`);
+    } else {
+      lines.push('<div style="color:var(--text-muted);font-size:11px">AI советник ещё не запускался. Откройте вкладку Настройки → AI Советник и нажмите «Анализ».</div>');
+    }
+
+    _smoothHTML(body, lines.join(''));
+  }).catch(e => {
+    _smoothHTML(body, '<span style="color:var(--red)">Ошибка: '+e+'</span>');
+  });
+}
+
+// ── helpers ──────────────────────────────────────────────────────────────────
+function _setTxt(id, txt) {
+  const el = document.getElementById(id);
+  if (el) el.textContent = txt;
+}
+
+// ── legacy refreshTon (compat) ───────────────────────────────────────────────
+// Оригинальная функция refreshTon() вызывает /api/wallet и заполняет
+// старые поля.  Мы её перезаписываем, чтобы она вызывала и полный /api/wallet/full.
+window.refreshTon = function() {
+  // legacy /api/wallet
+  fetch('/api/wallet').then(r=>r.json()).then(data => {
+    const addr  = document.getElementById('ton-addr');
+    const deps  = document.getElementById('ton-deposits');
+    const err   = document.getElementById('ton-error');
+    if (addr) addr.textContent = data.address || '—';
+    if (err)  err.style.display = 'none';
+    if (deps) {
+      const txs = data.transactions || [];
+      if (!txs.length) { _smoothHTML(deps, '<div class="ton-empty">Нет поступлений</div>'); return; }
+      _smoothHTML(deps, txs.map(tx => {
+        const amt = tx.value_ton ? parseFloat(tx.value_ton).toFixed(2) : '?';
+        const msg = tx.message_text || tx.comment || '';
+        const ts  = fmtTs(tx.timestamp || tx.ts || '');
+        return `<div class="ton-tx"><span class="ton-tx-amt">+${amt} TON</span><span class="ton-tx-msg">${msg}</span><span class="ton-tx-ts">${ts}</span></div>`;
+      }).join(''));
+    }
+  }).catch(e => {
+    const err = document.getElementById('ton-error');
+    if (err) { err.textContent='⚠️ '+e; err.style.display='block'; }
+  });
+};
+
+window.copyTon = function() {
+  const addr = document.getElementById('ton-addr');
+  if (!addr) return;
+  navigator.clipboard.writeText(addr.textContent).then(() => {
+    const c = document.getElementById('ton-copied');
+    if (c) { c.style.display='block'; setTimeout(()=>c.style.display='none',2000); }
+  });
+};
+
+// ── auto-refresh ─────────────────────────────────────────────────────────────
+function _startWalletAutoRefresh() {
+  clearInterval(_walletTimer);
+  refreshWalletFull();
+  loadWalletAnalytics();
+  _walletTimer = setInterval(() => {
+    const tab = document.getElementById('tab-wallet');
+    if (tab && !tab.classList.contains('tab-hidden')) {
+      refreshWalletFull();
+    }
+  }, 15000);
+}
+
+// ── hook into tab switch ──────────────────────────────────────────────────────
+// Wrap switchMainTab to load wallet data when wallet tab is opened
+const _origSwitchMainTab = window.switchMainTab;
+window.switchMainTab = function(tab) {
+  _origSwitchMainTab && _origSwitchMainTab(tab);
+  if (tab === 'wallet') {
+    refreshWalletFull();
+    loadWalletAnalytics();
+  }
+};
+
+// ── Chart.js ensure loaded ───────────────────────────────────────────────────
+// Локальная копия, а не CDN: скрипт с внешнего CDN может тихо не загрузиться
+// (сеть/CSP на клиенте, блокировщики) — тогда график молча падает в fallback
+// без ошибки в консоли (см. память chart-and-api-latency.md).
+function _waitChartJs(cb) {
+  if (typeof Chart !== 'undefined') { cb(); return; }
+  const script = document.createElement('script');
+  script.src = '/static/js/chart.umd.min.js';
+  script.onload = cb;
+  script.onerror = () => {
+    // Локальный файл не найден/не отдался — последний шанс: CDN.
+    const cdn = document.createElement('script');
+    cdn.src = 'https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js';
+    cdn.onload = cb;
+    document.head.appendChild(cdn);
+  };
+  document.head.appendChild(script);
+}
+
+// ── init on DOM ready ─────────────────────────────────────────────────────────
+document.addEventListener('DOMContentLoaded', () => {
+  _waitChartJs(() => {
+    _startWalletAutoRefresh();
+    refreshTon();
+  });
+});
+
+// Expose globally
+window.refreshWalletFull = refreshWalletFull;
+window.loadWalletAI      = loadWalletAI;
+window.loadWalletAnalytics = loadWalletAnalytics;
+window.switchEqTab       = switchEqTab;
+
+})(); // IIFE end
+</script>
+
+<div id="toast-container"></div>
+<script>window._csrfToken = "{{ session.get('_csrf', '') | e }}";</script>
+<script src="/static/js/app.js?v=2"></script>
+
+<script>
+// ══════════════════════════════════════════════════════
+//  AMM LIVE PREVIEW — polling /api/amm/preview каждые 12с
+// ══════════════════════════════════════════════════════
+(function() {
+  const POLL_INTERVAL = 12000; // мс — совпадает с кэшем сервера
+  let _ammTimer = null;
+  let _countdownTimer = null;
+  let _nextUpdate = 0;
+
+  function fmt(v, d=2) { return v == null ? '—' : Number(v).toFixed(d); }
+  function fmtK(v) {
+    if (v == null) return '—';
+    if (v >= 1e6)  return (v/1e6).toFixed(2) + 'M';
+    if (v >= 1e3)  return (v/1e3).toFixed(1) + 'K';
+    return Number(v).toFixed(0);
+  }
+
+  function _el(id) { return document.getElementById(id); }
+
+  function updateAmmWidget(d) {
+    if (d.error) {
+      if (_el('amm-age')) _el('amm-age').textContent = '⚠️ ошибка API';
+      return;
+    }
+
+    const hasPos   = d.has_position;
+    const netTon   = d.net_ton;
+    const minTon   = d.min_net_ton;
+    const delta    = d.shortfall_ton;   // >0 = запас, <0 = дефицит
+    const ok       = d.ok;
+    const impact   = d.price_impact_pct;
+    const grinch   = d.grinch_amount;
+
+    // Цвета
+    const colorOk  = '#00ff88';
+    const colorWarn= '#ffd166';
+    const colorBad = '#ff5a78';
+    const colorNeu = '#8892b0';
+
+    // ── Пул вернёт (нетто) ──────────────────────────
+    const netEl = _el('amm-net-ton');
+    if (netEl) {
+      netEl.textContent = netTon != null ? fmt(netTon, 3) + ' TON' : '—';
+      netEl.style.color = ok === true ? colorOk : ok === false ? colorBad : colorNeu;
+    }
+    if (_el('amm-impact')) {
+      _el('amm-impact').textContent = impact != null ? `impact ${fmt(impact,2)}%` : 'impact —';
+    }
+
+    // ── Нужно для безубытка ─────────────────────────
+    if (_el('amm-min-ton')) {
+      _el('amm-min-ton').textContent = hasPos ? fmt(minTon, 3) + ' TON' : '—';
+    }
+    if (_el('amm-entries-lbl')) {
+      _el('amm-entries-lbl').textContent = hasPos ? `${d.n_entries} позиц.` : 'нет позиции';
+    }
+
+    // ── Дефицит / запас ─────────────────────────────
+    const sfEl = _el('amm-shortfall');
+    const vdEl = _el('amm-verdict');
+    const dlEl = _el('amm-delta-lbl');
+    if (sfEl && delta != null) {
+      if (ok === true) {
+        sfEl.textContent = '+' + fmt(delta, 3) + ' TON';
+        sfEl.style.color = colorOk;
+        if (vdEl) { vdEl.textContent = '✅ можно продать'; vdEl.style.color = colorOk; }
+        if (dlEl) { dlEl.textContent = '✅ Запас'; }
+      } else if (ok === false) {
+        sfEl.textContent = fmt(delta, 3) + ' TON';
+        sfEl.style.color = colorBad;
+        if (vdEl) { vdEl.textContent = '🛡️ AMM заблокирует'; vdEl.style.color = colorBad; }
+        if (dlEl) { dlEl.textContent = '⚠️ Дефицит'; }
+      }
+    } else if (sfEl && !hasPos) {
+      sfEl.textContent = '—';
+      sfEl.style.color = colorNeu;
+      if (vdEl) { vdEl.textContent = 'нет позиции'; vdEl.style.color = '#3d4f6a'; }
+      if (dlEl) { dlEl.textContent = '⚖️ Баланс'; }
+    }
+
+    // ── Прогресс-бар ────────────────────────────────
+    const bar    = _el('amm-bar');
+    const marker = _el('amm-bar-marker');
+    const barLbl = _el('amm-bar-label');
+    const barTgt = _el('amm-bar-target');
+    if (bar && netTon != null) {
+      let pct = 0;
+      if (minTon > 0) {
+        pct = Math.min(Math.max((netTon / minTon) * 100, 0), 140);
+      } else {
+        pct = 80; // нет позиции — просто показываем заполненность
+      }
+      bar.style.width = Math.min(pct, 100) + '%';
+      bar.style.background =
+        ok === true  ? 'linear-gradient(90deg,#00ff88,#00d4aa)' :
+        ok === false ? 'linear-gradient(90deg,#ff5a78,#ff8c00)' :
+                       'linear-gradient(90deg,#3d4f6a,#8892b0)';
+
+      // Маркер цели на 100% от minTon
+      if (marker && minTon > 0 && netTon != null) {
+        const markerPct = (minTon / Math.max(netTon, minTon) * 100);
+        marker.style.left = Math.min(markerPct, 98) + '%';
+        marker.style.display = 'block';
+      }
+      if (barLbl) barLbl.textContent = (netTon != null ? fmt(netTon,2) : '—') + ' TON нетто';
+      if (barTgt) barTgt.textContent = hasPos ? fmt(minTon,2) + ' TON нужно' : 'нет позиции';
+    }
+
+    // ── Резервы ─────────────────────────────────────
+    if (_el('amm-reserves')) {
+      const rt = d.pool_ton_reserve, rg = d.pool_grinch_reserve;
+      _el('amm-reserves').textContent =
+        rt != null ? fmtK(rt) + ' TON / ' + fmtK(rg) + ' GRINCH' : '—';
+    }
+    if (_el('amm-grinch-amt')) {
+      _el('amm-grinch-amt').textContent = grinch > 0 ? fmtK(grinch) : '—';
+    }
+  }
+
+  function updateCountdown() {
+    const ageEl = _el('amm-age');
+    if (!ageEl) return;
+    const secsLeft = Math.max(0, Math.ceil((_nextUpdate - Date.now()) / 1000));
+    if (secsLeft > 0) {
+      ageEl.textContent = `обновление через ${secsLeft}с`;
+    } else {
+      ageEl.textContent = 'загрузка…';
+    }
+  }
+
+  async function pollAmm() {
+    try {
+      const d = await fetch('/api/amm/preview').then(r => r.json());
+      updateAmmWidget(d);
+      _nextUpdate = Date.now() + POLL_INTERVAL;
+    } catch(e) {
+      console.warn('[AMM preview]', e);
+      if (_el('amm-age')) _el('amm-age').textContent = '⚠️ нет ответа';
+    }
+  }
+
+  // Первый запрос — сразу, затем каждые 12с
+  pollAmm();
+  _nextUpdate = Date.now() + POLL_INTERVAL;
+  _ammTimer = setInterval(pollAmm, POLL_INTERVAL);
+
+  // Обратный отсчёт каждую секунду
+  _countdownTimer = setInterval(updateCountdown, 1000);
+})();
+
+// ══ 🌐 MARKET HUB — polling /api/market_hub каждые 30с ═══════════════
+(function() {
+  const POLL_HUB = 30000;
+  const _el = id => document.getElementById(id);
+
+  function fmt(v, digits, suffix) {
+    if (v == null || v === '' || isNaN(+v)) return '—';
+    const n = (+v).toFixed(digits || 0);
+    return suffix ? n + suffix : n;
+  }
+  function fmtPct(v) {
+    if (v == null || isNaN(+v)) return '—';
+    const n = +v, s = n >= 0 ? '+' : '';
+    return s + n.toFixed(2) + '%';
+  }
+  function fmtM(v) {
+    if (!v) return '—';
+    if (v >= 1e9) return '\u0024' + (v/1e9).toFixed(2) + 'B';
+    if (v >= 1e6) return '\u0024' + (v/1e6).toFixed(1) + 'M';
+    if (v >= 1e3) return '\u0024' + (v/1e3).toFixed(0) + 'K';
+    return '\u0024' + v.toFixed(0);
+  }
+  function colorPct(v) { return +v > 0 ? '#00ff88' : +v < 0 ? '#ef4444' : '#8892b0'; }
+
+  function updateHub(snap) {
+    if (!snap) return;
+
+    // Fear & Greed
+    const fgEl = _el('hub-fg-val');
+    const fgLb = _el('hub-fg-lbl');
+    const fgBar= _el('hub-fg-bar');
+    const fg = snap.fg_value;
+    if (fgEl) { fgEl.textContent = fg ?? '—'; }
+    if (fgLb && snap.fg_label) { fgLb.textContent = snap.fg_label; }
+    if (fgBar && fg != null) {
+      fgBar.style.width = fg + '%';
+      fgBar.style.background = fg < 30 ? '#ef4444' : fg < 45 ? '#f97316' : fg < 55 ? '#8892b0' : fg < 75 ? '#00ff88' : '#ffd166';
+    }
+
+    // BTC
+    const btcEl = _el('hub-btc');
+    if (btcEl) {
+      const ch = snap.btc_change24h;
+      btcEl.textContent = fmtPct(ch);
+      btcEl.style.color = colorPct(ch);
+    }
+    const btcPrEl = _el('hub-btc-price');
+    if (btcPrEl && snap.btc_price) {
+      btcPrEl.textContent = '\u0024' + Math.round(snap.btc_price).toLocaleString();
+    }
+
+    // TON CEX
+    const tonEl = _el('hub-ton-price');
+    if (tonEl) {
+      const ch = snap.ton_cex_change24h;
+      const pr = snap.ton_cex_price;
+      const chStr = ch != null ? ' (' + fmtPct(ch) + ')' : '';
+      tonEl.textContent = pr ? '\u0024' + (+pr).toFixed(4) + chStr : '\u2014';
+      tonEl.style.color = ch != null ? colorPct(ch) : '#38bdf8';
+    }
+    const tonVolEl = _el('hub-ton-vol');
+    if (tonVolEl && snap.ton_cex_volume24h) {
+      tonVolEl.textContent = 'объём: ' + fmtM(snap.ton_cex_volume24h);
+    }
+
+    // Funding rate
+    const fundEl = _el('hub-funding');
+    if (fundEl) {
+      const fr = snap.bybit_funding_rate_pct;
+      if (fr != null) {
+        const sign = +fr >= 0 ? '+' : '';
+        fundEl.textContent = sign + (+fr).toFixed(4) + '%';
+        fundEl.style.color = +fr > 0.01 ? '#ef4444' : +fr < -0.01 ? '#00ff88' : '#8892b0';
+        fundEl.title = +fr > 0 ? 'Лонги перегреты — давление вниз' : +fr < 0 ? 'Шорты перегреты — давление вверх' : 'Нейтрально';
+      }
+    }
+    const oiEl = _el('hub-oi');
+    if (oiEl && snap.bybit_oi) {
+      oiEl.textContent = 'OI: ' + fmtM(snap.bybit_oi);
+    }
+
+    // TVL
+    const tvlEl = _el('hub-tvl');
+    if (tvlEl) {
+      const tvl = snap.ton_tvl;
+      const ch  = snap.ton_tvl_change;
+      const chStr = ch != null ? ' ' + fmtPct(ch) : '';
+      tvlEl.textContent = tvl ? fmtM(tvl) + chStr : '—';
+      tvlEl.style.color = ch != null ? colorPct(ch) : '#a78bfa';
+    }
+    const stonEl = _el('hub-stonfi');
+    if (stonEl && snap.stonfi_tvl) {
+      stonEl.textContent = 'STON.fi: ' + fmtM(snap.stonfi_tvl);
+    }
+
+    // GRINCH trending
+    const trEl = _el('hub-trend');
+    if (trEl) {
+      const rank = snap.grinch_trend_rank;
+      if (rank && rank > 0) {
+        trEl.textContent = '\ud83d\udd25 #' + (snap.ton_trending_pools - rank + 1) + ' в топе TON';
+        trEl.style.color = '#00ff88';
+      } else {
+        trEl.textContent = 'не в трендах';
+        trEl.style.color = '#4a5568';
+      }
+    }
+    const trVolEl = _el('hub-trend-vol');
+    if (trVolEl && snap.grinch_trend_vol24h != null) {
+      trVolEl.textContent = 'vol: ' + fmtM(snap.grinch_trend_vol24h);
+    }
+
+    // Timestamp
+    const updEl = _el('hub-updated');
+    if (updEl) {
+      const now = new Date();
+      updEl.textContent = now.toLocaleTimeString('ru-RU', {hour:'2-digit', minute:'2-digit', second:'2-digit'});
+    }
+  }
+
+  function updateSources(sources) {
+    const el = _el('hub-sources');
+    if (!el || !sources) return;
+    el.innerHTML = sources.map(s => {
+      const key = Object.keys(s)[0];
+      const ico = Object.values(s)[0];
+      const names = {'fear_greed':'F&G','kraken':'Kraken','bybit':'Bybit','cg_trending':'CG','defillama':'DFL','geckotrend':'GT','ton_stats':'TON'};
+      return `<span style="font-size:9px;padding:2px 6px;border-radius:6px;background:rgba(255,255,255,.05);color:var(--text2)">${ico} ${names[key]||key}</span>`;
+    }).join('');
+  }
+
+  async function pollHub() {
+    try {
+      const r = await fetch('/api/market_hub').then(x => x.json());
+      if (r.ok) {
+        updateHub(r.data);
+        updateSources(r.sources ? r.sources.map(s => {
+          const k = s.source;
+          return {[k]: s.fresh ? '\u2705' : s.stale ? '\u274c' : '\u26a0\ufe0f'};
+        }) : []);
+      }
+    } catch(e) { console.warn('[Hub]', e); }
+  }
+
+  pollHub();
+  setInterval(pollHub, POLL_HUB);
+})();
+
+// ══ 🧬 ЖИВОЙ ОРГАНИЗМ — polling /api/organism каждые 10с ══════════════
+(function() {
+  const POLL_ORG = 10000;
+  const _el = id => document.getElementById(id);  // локальный алиас
+
+  function pct(v) { return Math.round((v || 0) * 100) + '%'; }
+
+  function setBar(id, frac) {
+    const el = _el(id);
+    if (el) el.style.width = Math.max(0, Math.min(100, Math.round((frac || 0) * 100))) + '%';
+  }
+
+  function updateOrganism(d) {
+    if (!d || d.error) return;
+
+    // ── 7. Здоровье — бейдж ──────────────────────────────────────────────
+    const hEl = _el('org-health-badge');
+    if (hEl) {
+      const hc = d.health > 0.75 ? '#00ff88' : d.health > 0.55 ? '#ffd166' : d.health > 0.35 ? '#f97316' : '#ef4444';
+      hEl.textContent = '\u2764\ufe0f ' + (d.health_label || '\u2014');
+      hEl.style.color = hc;
+      hEl.style.background = hc + '22';
+    }
+
+    // ── 1. Настроение ─────────────────────────────────────────────────────
+    const emoEl = _el('org-emotion');
+    if (emoEl) emoEl.textContent = d.emotion_label || '\u2014';
+    const moodFrac = ((d.mood || 0) + 1) / 2;
+    setBar('org-mood-bar', moodFrac);
+    const mBarEl = _el('org-mood-bar');
+    if (mBarEl) mBarEl.style.background = d.mood > 0.2 ? '#00ff88' : d.mood < -0.2 ? '#ef4444' : '#8892b0';
+
+    // ── 2. Голод ──────────────────────────────────────────────────────────
+    const huEl = _el('org-hunger-val');
+    if (huEl) huEl.textContent = pct(d.hunger);
+    setBar('org-hunger-bar', d.hunger);
+    const huBarEl = _el('org-hunger-bar');
+    if (huBarEl) huBarEl.style.background = (d.hunger || 0) > 0.7 ? '#ef4444' : '#ffd166';
+
+    // ── 3. Энергия ────────────────────────────────────────────────────────
+    const enEl = _el('org-energy-val');
+    if (enEl) {
+      const ph = {'awake': '\ud83c\udf1f \u0431\u043e\u0434\u0440', 'drowsy': '\ud83d\ude2a \u043a\u043b\u044e\u0451\u0442', 'sleeping': '\ud83d\ude34 \u0441\u043f\u0438\u0442'}[d.sleep_phase] || d.sleep_phase;
+      enEl.textContent = pct(d.energy) + ' ' + ph;
+    }
+    setBar('org-energy-bar', d.energy);
+    const enBarEl = _el('org-energy-bar');
+    if (enBarEl) enBarEl.style.background = (d.energy || 0) > 0.6 ? '#64ffda' : (d.energy || 0) > 0.35 ? '#ffd166' : '#6366f1';
+
+    // ── 6. Сны ────────────────────────────────────────────────────────────
+    const drEl = _el('org-dream-val');
+    if (drEl) drEl.textContent = (d.dreaming ? '\ud83d\udcad ' : '') + pct(d.dream_quality);
+    setBar('org-dream-bar', d.dream_quality);
+
+    // ── 5. Инстинкты ──────────────────────────────────────────────────────
+    const instEl = _el('org-instinct');
+    if (instEl) {
+      if (d.panic_mode) {
+        instEl.textContent = '\ud83d\udd34 \u041f\u0410\u041d\u0418\u041a\u0410';
+        instEl.style.color = '#ef4444';
+      } else if (d.defensive_mode) {
+        instEl.textContent = '\ud83d\udee1\ufe0f \u0437\u0430\u0449\u0438\u0442\u0430 \u00d7' + (d.consecutive_losses || 0);
+        instEl.style.color = '#f97316';
+      } else if (d.flash_crash) {
+        instEl.textContent = '\u26a1 \u0444\u043b\u044d\u0448';
+        instEl.style.color = '#ffd166';
+      } else {
+        instEl.textContent = '\u2705 \u043d\u043e\u0440\u043c\u0430';
+        instEl.style.color = '#00ff88';
+      }
+    }
+
+    // ── 4. Эволюция ───────────────────────────────────────────────────────
+    const evoEl = _el('org-evo');
+    if (evoEl) {
+      const fit = Math.round((d.evolution_fitness || 0) * 100);
+      const dlt = (d.evolved_conf_delta >= 0 ? '+' : '') + (d.evolved_conf_delta || 0).toFixed(1);
+      evoEl.textContent = '#' + (d.generation || 0) + ' | ' + fit + '% | ' + dlt + '\u043f\u043f';
+    }
+
+    // Поправки
+    const modEl = _el('org-mods');
+    if (modEl) {
+      const cm = d.conf_modifier || 0;
+      modEl.textContent = '\u0394' + (cm >= 0 ? '+' : '') + cm.toFixed(1) + '\u043f\u043f \u00d7' + (d.size_multiplier || 1).toFixed(2);
+      modEl.style.color = cm < -2 ? '#00ff88' : cm > 5 ? '#ef4444' : '#8892b0';
+    }
+  }
+
+  async function pollOrganism() {
+    try {
+      const d = await fetch('/api/organism').then(r => r.json());
+      updateOrganism(d);
+    } catch(e) {
+      console.warn('[Organism]', e);
+    }
+  }
+
+  pollOrganism();
+  setInterval(pollOrganism, POLL_ORG);
+})();
+
+// ══ 🤖 AI-МОДУЛИ — polling /api/ai-modules каждые 20с ═══════════════════════
+(function() {
+  const POLL_AIM = 20000;
+  const _e = id => document.getElementById(id);
+
+  function updateAiModules(d) {
+    if (!d) return;
+
+    // Entry Optimizer
+    const eo = d.entry_optimizer || {};
+    const eoModel = _e('aim-entry-model');
+    const eoSamples = _e('aim-entry-samples');
+    if (eoModel) {
+      eoModel.textContent = eo.trained ? '✅ ML обучен' : '⚙️ эвристика';
+      eoModel.style.color = eo.trained ? '#00ff88' : '#ffd166';
+    }
+    if (eoSamples) eoSamples.textContent = (eo.samples || 0) + ' примеров';
+
+    // TP Optimizer
+    const tp = d.tp_optimizer || {};
+    const tpModel = _e('aim-tp-model');
+    const tpSamples = _e('aim-tp-samples');
+    if (tpModel) {
+      tpModel.textContent = tp.trained ? '✅ ML обучен' : '⚙️ правила';
+      tpModel.style.color = tp.trained ? '#00ff88' : '#ffd166';
+    }
+    if (tpSamples) {
+      const avg = tp.avg_real_tp > 0 ? 'avg ' + tp.avg_real_tp.toFixed(1) + '%' : 'нет данных';
+      tpSamples.textContent = avg + ' · ' + (tp.samples || 0) + ' сд.';
+    }
+
+    // Market Scanner
+    const sc = d.market_scanner || {};
+    const scPattern = _e('aim-scan-pattern');
+    const scConf = _e('aim-scan-conf');
+    const scBadge = _e('aim-scanner-badge');
+    const sig = sc.active_signal;
+    if (scPattern) {
+      scPattern.textContent = sig ? sig.label : (sc.running ? '🔭 сканирую…' : '⛔ выкл.');
+      scPattern.style.color = sig ? '#a78bfa' : '#8892b0';
+    }
+    if (scConf) {
+      scConf.textContent = sig
+        ? Math.round((sig.confidence || 0) * 100) + '% · ' + (sig.signal || '')
+        : '—';
+    }
+    if (scBadge && sig) {
+      scBadge.textContent = sig.signal === 'BUY' ? '🟢 ' + sig.signal : '🔴 ' + sig.signal;
+      scBadge.style.color = sig.signal === 'BUY' ? '#00ff88' : '#ef4444';
+      scBadge.style.background = sig.signal === 'BUY' ? 'rgba(0,255,136,.12)' : 'rgba(239,68,68,.12)';
+    } else if (scBadge) {
+      scBadge.textContent = sc.running ? '🔭 сканер' : '⛔ выкл.';
+      scBadge.style.color = '#64b4ff';
+      scBadge.style.background = 'rgba(100,180,255,.12)';
+    }
+  }
+
+  async function pollAiModules() {
+    try {
+      const d = await fetch('/api/ai-modules').then(r => r.json());
+      updateAiModules(d);
+    } catch(e) {
+      console.warn('[AiModules]', e);
+    }
+  }
+
+  pollAiModules();
+  setInterval(pollAiModules, POLL_AIM);
+})();
+
+// ══ 📊 ПРОИЗВОДИТЕЛЬНОСТЬ — polling /api/performance каждые 15с ═════════════
+(function() {
+  const POLL_PERF = 15000;
+
+  function fmtTon(v) {
+    if (v == null) return '—';
+    const n = parseFloat(v);
+    const sign = n >= 0 ? '+' : '';
+    return sign + n.toFixed(3) + ' TON';
+  }
+  function colorPnl(el, v) {
+    if (!el) return;
+    const n = parseFloat(v);
+    el.style.color = n > 0 ? 'var(--green)' : n < 0 ? 'var(--red)' : '';
+  }
+
+  async function pollPerformance() {
+    try {
+      const r = await fetch('/api/performance').then(x => x.json());
+      if (!r.ok) return;
+
+      // ── Trades stats bar ─────────────────────────────────────────────────
+      const streak    = parseInt(r.win_streak    || 0);
+      const maxStreak = parseInt(r.max_win_streak || 0);
+      const daily     = r.daily_pnl_ton;
+      const sharpe    = r.sharpe_ratio;
+
+      const elStreak    = document.getElementById('stat-streak');
+      const elMaxStreak = document.getElementById('stat-max-streak');
+      const elSharpe    = document.getElementById('stat-sharpe');
+      const elDaily     = document.getElementById('stat-daily-pnl');
+
+      if (elStreak)    elStreak.textContent    = streak > 0 ? '🔥 ' + streak : streak + '';
+      if (elMaxStreak) elMaxStreak.textContent  = maxStreak + '';
+      if (elSharpe)    elSharpe.textContent     = sharpe != null ? sharpe.toFixed(2) : '—';
+      if (elDaily) {
+        elDaily.textContent = fmtTon(daily);
+        colorPnl(elDaily, daily);
+      }
+
+      // ── AI Ticker bar ────────────────────────────────────────────────────
+      const elTickerDaily  = document.getElementById('at-daily-pnl');
+      const elTickerStreak = document.getElementById('at-streak');
+      const elStreakWrap   = document.getElementById('at-streak-wrap');
+      const elStreakSep    = document.getElementById('at-streak-sep');
+      const elCbWrap       = document.getElementById('at-cb-wrap');
+      const elCbSep        = document.getElementById('at-cb-sep');
+
+      if (elTickerDaily) {
+        elTickerDaily.textContent = fmtTon(daily);
+        colorPnl(elTickerDaily, daily);
+      }
+
+      // Серия побед — показываем только при ≥ 2
+      if (elStreakWrap && elStreakSep) {
+        const show = streak >= 2;
+        elStreakWrap.style.display = show ? '' : 'none';
+        elStreakSep.style.display  = show ? '' : 'none';
+        if (elTickerStreak) elTickerStreak.textContent = streak;
+      }
+
+      // Circuit Breaker — мигающий красный баннер
+      if (elCbWrap && elCbSep) {
+        const cbActive = !!r.circuit_breaker;
+        elCbWrap.style.display = cbActive ? '' : 'none';
+        elCbSep.style.display  = cbActive ? '' : 'none';
+      }
+
+    } catch(e) { console.warn('[Perf]', e); }
+  }
+
+  pollPerformance();
+  setInterval(pollPerformance, POLL_PERF);
+})();
+</script>
+<script src="/static/js/ai-perf.js" defer></script>
+<script src="/static/js/ai-prefetch.js" defer></script>
+<script src="/static/js/theme-toggle.js" defer></script>
+</body>
+</html>    </div>
+
+

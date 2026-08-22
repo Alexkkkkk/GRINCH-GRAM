@@ -1,0 +1,20 @@
+name: ✨ Feature Request
+description: Предложить идею
+labels: [enhancement]
+body:
+  - type: textarea
+    id: description
+    attributes:
+      label: Описание
+      description: Что хотите добавить и зачем?
+      placeholder: "Добавить поддержку новой сети..."
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Альтернативы
+      description: Рассматривали ли другие варианты?
+    validations:
+      required: false

@@ -1,0 +1,88 @@
+version: 2
+updates:
+  # Python dependencies
+  - package-ecosystem: "pip"
+    directory: "/"
+    target-branch: "main"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "03:00"
+      timezone: "UTC"
+    open-pull-requests-limit: 5
+    assignees:
+      - "Alexkkkkk"
+    reviewers:
+      - "Alexkkkkk"
+    labels:
+      - "dependencies"
+      - "python"
+      - "automerge-candidate"
+    commit-message:
+      prefix: "chore(deps-pip)"
+      include: "scope"
+    rebase-strategy: "auto"
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
+    groups:
+      python-patches:
+        applies-to: version-updates
+        patterns:
+          - "*"
+        update-types:
+          - "patch"
+          - "minor"
+
+  # GitHub Actions
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    target-branch: "main"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "03:30"
+      timezone: "UTC"
+    open-pull-requests-limit: 3
+    assignees:
+      - "Alexkkkkk"
+    reviewers:
+      - "Alexkkkkk"
+    labels:
+      - "ci/cd"
+      - "github-actions"
+      - "automerge-candidate"
+    commit-message:
+      prefix: "ci(actions)"
+      include: "scope"
+    rebase-strategy: "auto"
+    groups:
+      actions-dependencies:
+        applies-to: version-updates
+        patterns:
+          - "*"
+
+  # Docker
+  - package-ecosystem: "docker"
+    directory: "/"
+    target-branch: "main"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "04:00"
+      timezone: "UTC"
+    open-pull-requests-limit: 2
+    assignees:
+      - "Alexkkkkk"
+    reviewers:
+      - "Alexkkkkk"
+    labels:
+      - "docker"
+      - "infrastructure"
+    commit-message:
+      prefix: "chore(docker)"
+      include: "scope"
+    rebase-strategy: "auto"
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]

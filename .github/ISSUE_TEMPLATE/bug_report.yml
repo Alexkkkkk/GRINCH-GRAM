@@ -1,0 +1,58 @@
+name: 🐛 Bug Report
+description: Сообщить об ошибке в GRINCH-GRAM
+title: "[BUG] "
+labels: ["bug", "triage"]
+assignees:
+  - Alexkkkkk
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Спасибо за репорт! Пожалуйста, заполните форму максимально подробно.
+
+  - type: textarea
+    id: description
+    attributes:
+      label: Описание бага
+      description: Что произошло? Что ожидалось?
+      placeholder: Бот открыл сделку, но не установил TP/SL...
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Шаги воспроизведения
+      description: Как повторить ошибку?
+      placeholder: |
+        1. Запустить бота с конфигом X
+        2. Дождаться сигнала на паре GRINCH/TON
+        3. ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Логи / Traceback
+      description: Вставьте релевантные логи (уберите секреты!)
+      render: shell
+
+  - type: input
+    id: version
+    attributes:
+      label: Версия / Commit
+      description: Хэш коммита или дата деплоя
+      placeholder: main@a1b2c3d
+
+  - type: dropdown
+    id: severity
+    attributes:
+      label: Критичность
+      options:
+        - 🔴 Critical — потеря средств / краш
+        - 🟠 High — некорректная торговля
+        - 🟡 Medium — деградация функционала
+        - 🟢 Low — косметический баг
+    validations:
+      required: true

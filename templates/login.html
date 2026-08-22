@@ -1,0 +1,276 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Вход · GRINCH-GRAM</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800;900&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:     #030508;
+      --bg2:    #07090f;
+      --cyan:   #00e5ff;
+      --green:  #00ff88;
+      --ton:    #0098ea;
+      --red:    #ff2d55;
+      --text:   #e8eef8;
+      --text2:  #6a7d9f;
+      --text3:  #3d4f6a;
+    }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: 'Inter', system-ui, sans-serif;
+      min-height: 100vh;
+      display: flex; align-items: center; justify-content: center;
+      padding: 20px;
+      -webkit-font-smoothing: antialiased;
+      overflow-x: hidden;
+      overflow-y: auto;
+    }
+
+    @media (max-width: 480px) {
+      body { align-items: flex-start; padding: 24px 16px 40px; }
+      .login-card { padding: 28px 20px 24px; border-radius: 16px; }
+      .orb-1 { width: 300px; height: 300px; }
+      .orb-2 { width: 210px; height: 210px; }
+      .orb-3 { width: 130px; height: 130px; }
+      .brand-name { font-size: 20px; }
+      .brand-icon { font-size: 26px; }
+      .field-input { font-size: 16px; } /* предотвращает zoom на iOS */
+      .login-btn { font-size: 13px; }
+    }
+
+    /* Фон: сетка + блики */
+    body::before {
+      content: '';
+      position: fixed; inset: 0;
+      background-image:
+        linear-gradient(rgba(0,229,255,.03) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(0,229,255,.03) 1px, transparent 1px);
+      background-size: 48px 48px;
+      pointer-events: none;
+    }
+    body::after {
+      content: '';
+      position: fixed; inset: 0; pointer-events: none;
+      background:
+        radial-gradient(ellipse 60% 50% at 30% 20%, rgba(0,229,255,.06) 0%, transparent 60%),
+        radial-gradient(ellipse 50% 50% at 70% 80%, rgba(0,255,136,.05) 0%, transparent 60%),
+        radial-gradient(ellipse 40% 40% at 80% 20%, rgba(124,58,237,.05) 0%, transparent 55%);
+    }
+
+    /* Орбитальные кольца — декор */
+    .orbs {
+      position: fixed; inset: 0; pointer-events: none; overflow: hidden;
+    }
+    .orb {
+      position: absolute; border-radius: 50%;
+      border: 1px solid; animation: orb-spin linear infinite;
+    }
+    .orb-1 {
+      width: 500px; height: 500px;
+      top: 50%; left: 50%;
+      transform: translate(-50%, -50%);
+      border-color: rgba(0,229,255,.06);
+      animation-duration: 40s;
+    }
+    .orb-2 {
+      width: 340px; height: 340px;
+      top: 50%; left: 50%;
+      transform: translate(-50%, -50%);
+      border-color: rgba(0,255,136,.05);
+      animation-duration: 28s; animation-direction: reverse;
+    }
+    .orb-3 {
+      width: 200px; height: 200px;
+      top: 50%; left: 50%;
+      transform: translate(-50%, -50%);
+      border-color: rgba(124,58,237,.07);
+      animation-duration: 18s;
+    }
+    @keyframes orb-spin { from{transform:translate(-50%,-50%) rotate(0deg)} to{transform:translate(-50%,-50%) rotate(360deg)} }
+
+    /* Карточка */
+    .login-card {
+      position: relative; z-index: 10;
+      width: 100%; max-width: 400px;
+      background: rgba(7,9,15,.85);
+      border: 1px solid rgba(0,229,255,.12);
+      border-radius: 20px;
+      padding: 40px 36px 36px;
+      backdrop-filter: blur(24px);
+      box-shadow:
+        0 0 0 1px rgba(255,255,255,.03),
+        0 32px 80px rgba(0,0,0,.6),
+        0 0 60px rgba(0,229,255,.04);
+    }
+    .login-card::before {
+      content: '';
+      position: absolute; top: 0; left: 10%; right: 10%; height: 1px;
+      background: linear-gradient(90deg, transparent, rgba(0,229,255,.4), transparent);
+      border-radius: 1px;
+    }
+
+    /* Бренд */
+    .brand {
+      display: flex; align-items: center; gap: 12px;
+      justify-content: center; margin-bottom: 8px;
+    }
+    .brand-icon {
+      font-size: 32px; filter: drop-shadow(0 0 16px rgba(0,255,136,.5));
+    }
+    .brand-name {
+      font-size: 24px; font-weight: 900; letter-spacing: .06em;
+      background: linear-gradient(135deg, #00e5ff, #00ff88);
+      -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+      background-clip: text;
+      filter: drop-shadow(0 0 20px rgba(0,229,255,.3));
+    }
+    .brand-sub {
+      text-align: center; color: var(--text3); font-size: 12px;
+      margin-bottom: 32px; letter-spacing: .02em;
+    }
+
+    /* Статус-чип */
+    .status-chip {
+      display: flex; align-items: center; gap: 7px;
+      padding: 8px 16px; border-radius: 100px;
+      background: rgba(0,255,136,.06); border: 1px solid rgba(0,255,136,.15);
+      margin: 0 auto 28px; width: fit-content;
+      font-size: 11px; font-weight: 700; color: var(--green);
+      text-transform: uppercase; letter-spacing: .07em;
+    }
+    .status-dot {
+      width: 7px; height: 7px; border-radius: 50%;
+      background: var(--green); box-shadow: 0 0 8px var(--green);
+      animation: dot-pulse 1.5s ease-in-out infinite;
+    }
+    @keyframes dot-pulse { 0%,100%{opacity:1;transform:scale(1)} 50%{opacity:.4;transform:scale(.6)} }
+
+    /* Поля */
+    .field { margin-bottom: 14px; }
+    .field-label {
+      display: block; font-size: 10px; font-weight: 700;
+      color: var(--text3); text-transform: uppercase; letter-spacing: .07em;
+      margin-bottom: 7px;
+    }
+    .field-input {
+      width: 100%; padding: 13px 16px;
+      background: rgba(255,255,255,.04);
+      color: var(--text); font-size: 14px; font-weight: 500;
+      border: 1px solid rgba(255,255,255,.08);
+      border-radius: 12px; outline: none;
+      transition: border-color .2s, box-shadow .2s;
+      font-family: 'Inter', system-ui, sans-serif;
+    }
+    .field-input:focus {
+      border-color: rgba(0,229,255,.4);
+      box-shadow: 0 0 0 3px rgba(0,229,255,.08), 0 0 20px rgba(0,229,255,.08);
+    }
+    .field-input::placeholder { color: var(--text3); }
+
+    /* Кнопка */
+    .login-btn {
+      width: 100%; margin-top: 8px; padding: 14px;
+      background: linear-gradient(135deg, #00cc6a, #00ff88);
+      color: #001a0d; font-size: 14px; font-weight: 900;
+      letter-spacing: .05em; text-transform: uppercase;
+      border: none; border-radius: 12px; cursor: pointer;
+      transition: all .2s cubic-bezier(.4,0,.2,1);
+      position: relative; overflow: hidden;
+      box-shadow: 0 4px 24px rgba(0,255,136,.25);
+    }
+    .login-btn::before {
+      content: '';
+      position: absolute; inset: 0;
+      background: linear-gradient(135deg, rgba(255,255,255,.15), transparent);
+      opacity: 0; transition: opacity .2s;
+    }
+    .login-btn:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 8px 36px rgba(0,255,136,.45);
+    }
+    .login-btn:hover::before { opacity: 1; }
+    .login-btn:active { transform: translateY(0); }
+
+    /* Ошибка */
+    .error-msg {
+      margin-top: 14px; padding: 11px 14px; border-radius: 10px;
+      background: rgba(255,45,85,.08); border: 1px solid rgba(255,45,85,.25);
+      color: var(--red); font-size: 12px; text-align: center; font-weight: 600;
+      box-shadow: 0 0 16px rgba(255,45,85,.08);
+    }
+
+    /* Футер */
+    .login-footer {
+      margin-top: 24px; text-align: center;
+      color: var(--text3); font-size: 10px; letter-spacing: .03em;
+    }
+
+    /* Декоративные плашки снизу карточки */
+    .tech-tags {
+      display: flex; gap: 6px; justify-content: center; margin-top: 20px; flex-wrap: wrap;
+    }
+    .tech-tag {
+      padding: 3px 10px; border-radius: 100px; font-size: 9px; font-weight: 700;
+      text-transform: uppercase; letter-spacing: .06em;
+      border: 1px solid;
+    }
+    .tt-ton    { background: rgba(0,152,234,.08); border-color: rgba(0,152,234,.2); color: #33b5ff; }
+    .tt-ai     { background: rgba(124,58,237,.08); border-color: rgba(124,58,237,.2); color: #a78bfa; }
+    .tt-dedust { background: rgba(0,255,136,.06); border-color: rgba(0,255,136,.15); color: #00ff88; }
+  </style>
+</head>
+<body>
+  <div class="orbs">
+    <div class="orb orb-1"></div>
+    <div class="orb orb-2"></div>
+    <div class="orb orb-3"></div>
+  </div>
+
+  <form class="login-card" method="POST" action="/login{% if next %}?next={{ next }}{% endif %}">
+    <div class="brand">
+      <span class="brand-icon">🐸</span>
+      <span class="brand-name">GRINCH-GRAM</span>
+    </div>
+    <p class="brand-sub">Торговый агент TON × GRINCH · DeDust DEX</p>
+
+    <div class="status-chip">
+      <span class="status-dot"></span>
+      AI РАБОТАЕТ · АВТО-РЕЖИМ
+    </div>
+
+    <div class="field">
+      <label class="field-label" for="username">Логин</label>
+      <input class="field-input" id="username" name="username"
+        type="text" autocomplete="username" autofocus required
+        placeholder="Введите логин">
+    </div>
+
+    <div class="field">
+      <label class="field-label" for="password">Пароль</label>
+      <input class="field-input" id="password" name="password"
+        type="password" autocomplete="current-password" required
+        placeholder="••••••••">
+    </div>
+
+    {% if error %}<div class="error-msg">⚠ {{ error }}</div>{% endif %}
+
+    <button class="login-btn" type="submit">▶ Войти в панель</button>
+
+    <div class="tech-tags">
+      <span class="tech-tag tt-ton">◆ TON Blockchain</span>
+      <span class="tech-tag tt-ai">🧠 AI Sklearn</span>
+      <span class="tech-tag tt-dedust">🐸 DeDust DEX</span>
+    </div>
+
+    <p class="login-footer">Доступ только для владельца платформы</p>
+  </form>
+</body>
+</html>

@@ -1,0 +1,52 @@
+# Автолейблинг на основе путей файлов
+python:
+  - "**/*.py"
+  - "requirements*.txt"
+  - "pyproject.toml"
+
+frontend:
+  - "static/**/*"
+  - "templates/**/*"
+  - "**/*.html"
+  - "**/*.css"
+  - "**/*.js"
+
+docker:
+  - "Dockerfile"
+  - "docker-compose.yml"
+  - ".dockerignore"
+
+ai-ml:
+  - "ai_*.py"
+  - "brain_fusion.py"
+  - "experience.json"
+  - "deep_retrain_worker.py"
+
+security:
+  - "security.py"
+  - "wallet_manager.py"
+  - "wallet_tracker.py"
+  - ".github/workflows/security.yml"
+  - ".github/workflows/codeql.yml"
+
+dependencies:
+  - "requirements*.txt"
+  - "pyproject.toml"
+  - "uv.lock"
+
+documentation:
+  - "**/*.md"
+  - "README*"
+
+infrastructure:
+  - ".github/**/*"
+  - "nginx.conf"
+  - "*.service"
+  - "*.sh"
+
+blockchain:
+  - "*ton*.py"
+  - "*wallet*.py"
+  - "*dedust*.py"
+  - "*liquidity*.py"
+  - "*grinch*.py"

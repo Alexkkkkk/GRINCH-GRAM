@@ -1,0 +1,268 @@
+/* ════════════════════════════════════════════════════════════
+   DEX PRO THEME — GRINCH/TON Trading Chart Styling
+   Based on Dedux/DEX pro terminal aesthetic
+   ════════════════════════════════════════════════════════════ */
+
+:root {
+  /* DEX Pro Candle Colors */
+  --dex-up:        #2dd4bf;
+  --dex-up-dim:    #14b8a6;
+  --dex-up-glow:   rgba(45, 212, 191, 0.25);
+  --dex-down:      #f87171;
+  --dex-down-dim:  #ef4444;
+  --dex-down-glow: rgba(248, 113, 113, 0.25);
+
+  /* DEX Pro Backgrounds */
+  --dex-bg:        #080c18;
+  --dex-bg-panel:  #0d1220;
+  --dex-bg-card:   #111827;
+  --dex-border:    rgba(45, 212, 191, 0.08);
+  --dex-border-hover: rgba(45, 212, 191, 0.18);
+
+  /* DEX Pro Text */
+  --dex-text:      #e2e8f0;
+  --dex-text-muted:#64748b;
+  --dex-text-bright: #f8fafc;
+
+  /* DEX Pro Accents */
+  --dex-accent:    #2dd4bf;
+  --dex-accent-dim:#0d9488;
+  --dex-volume-up: rgba(45, 212, 191, 0.35);
+  --dex-volume-down: rgba(248, 113, 113, 0.35);
+}
+
+/* ═══ Chart Container ═══ */
+.dex-chart-wrap {
+  background: var(--dex-bg-panel);
+  border: 1px solid var(--dex-border);
+  border-radius: 16px;
+  padding: 16px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4), inset 0 1px 0 rgba(255,255,255,0.03);
+  position: relative;
+  overflow: hidden;
+}
+
+.dex-chart-wrap::before {
+  content: '';
+  position: absolute;
+  top: 0; left: 0; right: 0; height: 1px;
+  background: linear-gradient(90deg, transparent, var(--dex-accent), transparent);
+  opacity: 0.3;
+}
+
+/* ═══ Chart Header ═══ */
+.dex-chart-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 12px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--dex-border);
+}
+
+.dex-chart-pair {
+  font-size: 14px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  color: var(--dex-text-bright);
+  font-family: var(--mono);
+}
+
+.dex-chart-tf {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--dex-text-muted);
+  background: rgba(255,255,255,0.04);
+  padding: 2px 8px;
+  border-radius: 6px;
+  font-family: var(--mono);
+}
+
+.dex-chart-price {
+  margin-left: auto;
+  font-size: 16px;
+  font-weight: 900;
+  color: var(--dex-accent);
+  font-family: var(--mono);
+  letter-spacing: -0.02em;
+  text-shadow: 0 0 16px var(--dex-up-glow);
+}
+
+.dex-chart-dex-badge {
+  font-size: 10px;
+  font-weight: 800;
+  color: var(--dex-text-muted);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+/* ═══ Lightweight Charts Overrides ═══ */
+/* These target the canvas-based chart library used in GRINCH-GRAM */
+
+/* If the chart is wrapped in .dex-chart-wrap, style the container */
+.dex-chart-wrap canvas,
+.dex-chart-wrap .tv-lightweight-charts {
+  border-radius: 8px;
+}
+
+/* ═══ Candlestick Colors (for any custom SVG/Canvas rendering) ═══ */
+.candle-up {
+  fill: var(--dex-up);
+  stroke: var(--dex-up-dim);
+}
+.candle-down {
+  fill: var(--dex-down);
+  stroke: var(--dex-down-dim);
+}
+.wick-up {
+  stroke: var(--dex-up-dim);
+}
+.wick-down {
+  stroke: var(--dex-down-dim);
+}
+
+/* ═══ Volume Bars ═══ */
+.vol-up {
+  fill: var(--dex-volume-up);
+}
+.vol-down {
+  fill: var(--dex-volume-down);
+}
+
+/* ═══ Price Labels on Chart ═══ */
+.dex-price-label {
+  background: var(--dex-accent);
+  color: var(--dex-bg);
+  font-family: var(--mono);
+  font-size: 12px;
+  font-weight: 900;
+  padding: 4px 10px;
+  border-radius: 6px;
+  box-shadow: 0 0 16px var(--dex-up-glow);
+}
+
+.dex-price-label.down {
+  background: var(--dex-down);
+  box-shadow: 0 0 16px var(--dex-down-glow);
+}
+
+/* ═══ Crosshair / Cursor ═══ */
+.dex-crosshair {
+  stroke: var(--dex-accent);
+  stroke-width: 1;
+  stroke-dasharray: 4 4;
+  opacity: 0.5;
+}
+
+/* ═══ Grid Lines ═══ */
+.dex-grid-line {
+  stroke: rgba(45, 212, 191, 0.06);
+  stroke-width: 1;
+}
+
+/* ═══ Tooltip / Legend ═══ */
+.dex-chart-tooltip {
+  background: var(--dex-bg-card);
+  border: 1px solid var(--dex-border-hover);
+  border-radius: 10px;
+  padding: 10px 14px;
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--dex-text);
+  box-shadow: 0 8px 24px rgba(0,0,0,0.5);
+  backdrop-filter: blur(12px);
+}
+
+.dex-tooltip-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 3px;
+}
+
+.dex-tooltip-label {
+  color: var(--dex-text-muted);
+}
+
+.dex-tooltip-value.up {
+  color: var(--dex-up);
+}
+.dex-tooltip-value.down {
+  color: var(--dex-down);
+}
+
+/* ═══ Time Axis ═══ */
+.dex-time-label {
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--dex-text-muted);
+  fill: var(--dex-text-muted);
+}
+
+/* ═══ Price Axis ═══ */
+.dex-price-label-axis {
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--dex-text-muted);
+  fill: var(--dex-text-muted);
+}
+
+/* ═══ Current Price Line ═══ */
+.dex-current-price-line {
+  stroke: var(--dex-accent);
+  stroke-width: 1;
+  stroke-dasharray: 4 4;
+  opacity: 0.6;
+}
+
+.dex-current-price-label {
+  background: var(--dex-accent);
+  color: var(--dex-bg);
+  font-family: var(--mono);
+  font-size: 10px;
+  font-weight: 800;
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+
+/* ═══ Liquidation / Stop Levels ═══ */
+.dex-level-line {
+  stroke-width: 1;
+  stroke-dasharray: 6 3;
+  opacity: 0.7;
+}
+.dex-level-line.stop-loss {
+  stroke: var(--dex-down);
+}
+.dex-level-line.take-profit {
+  stroke: var(--dex-up);
+}
+
+/* ═══ Animations ═══ */
+@keyframes dex-pulse-up {
+  0%, 100% { box-shadow: 0 0 0 0 var(--dex-up-glow); }
+  50% { box-shadow: 0 0 0 8px transparent; }
+}
+
+@keyframes dex-pulse-down {
+  0%, 100% { box-shadow: 0 0 0 0 var(--dex-down-glow); }
+  50% { box-shadow: 0 0 0 8px transparent; }
+}
+
+.dex-pulse-up {
+  animation: dex-pulse-up 2s ease-in-out infinite;
+}
+.dex-pulse-down {
+  animation: dex-pulse-down 2s ease-in-out infinite;
+}
+
+/* ═══ Responsive ═══ */
+@media (max-width: 768px) {
+  .dex-chart-wrap {
+    padding: 10px;
+    border-radius: 12px;
+  }
+  .dex-chart-price {
+    font-size: 13px;
+  }
+}

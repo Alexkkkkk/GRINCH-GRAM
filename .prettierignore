@@ -1,0 +1,3 @@
+.github/workflows/
+deploy-vps.yml
+static/css/style.min.css
