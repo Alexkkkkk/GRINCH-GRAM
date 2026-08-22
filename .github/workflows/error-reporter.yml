@@ -1,0 +1,15 @@
+name: Error Reporter Monitor
+
+on:
+  issues:
+    types: [opened]
+
+jobs:
+  notify:
+    runs-on: ubuntu-latest
+    if: contains(github.event.issue.labels.*.name, 'bot-error')
+    steps:
+      - name: Log error issue
+        run: |
+          echo "New bot error reported: ${{ github.event.issue.title }}"
+          echo "Issue URL: ${{ github.event.issue.html_url }}"
