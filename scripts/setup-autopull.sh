@@ -1,34 +1,44 @@
 #!/bin/bash
-# Установка systemd таймера для авто-обновления бота с GitHub
-# Запускать на VPS: sudo bash /opt/bot/scripts/setup-autopull.sh
-
 set -euo pipefail
 
 BOT_DIR="/opt/bot"
-USER_NAME="${SUDO_USER:-$USER}"
+SERVICE_FILE="/etc/systemd/system/auto-pull.service"
+TIMER_FILE="/etc/systemd/system/auto-pull.timer"
 
 mkdir -p "$BOT_DIR/logs"
+chmod 755 "$BOT_DIR/auto-pull.sh"
 
-# Копируем unit-файлы в systemd пользователя
-SYSTEMD_DIR="$HOME/.config/systemd/user"
-mkdir -p "$SYSTEMD_DIR"
+cat > "$SERVICE_FILE" <<UNIT
+[Unit]
+Description=GRINCH-GRAM auto git-pull and redeploy
+After=docker.service network-online.target
+Requires=docker.service
 
-cp "$BOT_DIR/scripts/auto-pull.service" "$SYSTEMD_DIR/"
-cp "$BOT_DIR/scripts/auto-pull.timer" "$SYSTEMD_DIR/"
+[Service]
+Type=oneshot
+WorkingDirectory=$BOT_DIR
+ExecStart=$BOT_DIR/auto-pull.sh
+StandardOutput=append:$BOT_DIR/logs/auto-pull.log
+StandardError=append:$BOT_DIR/logs/auto-pull.log
+UNIT
 
-# Заменяем %h на реальный home
-sed -i "s|%h|$HOME|g" "$SYSTEMD_DIR/auto-pull.service"
+cat > "$TIMER_FILE" <<UNIT
+[Unit]
+Description=Run GRINCH-GRAM auto-pull every 2 minutes
 
-# Перезагружаем systemd
-systemctl --user daemon-reload
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=2min
+AccuracySec=10s
 
-# Включаем и запускаем таймер
-systemctl --user enable auto-pull.timer
-systemctl --user start auto-pull.timer
+[Install]
+WantedBy=timers.target
+UNIT
 
-# Разрешаем пользовательские systemd сервисы работать без логина
-sudo loginctl enable-linger "$USER_NAME" 2>/dev/null || true
+systemctl daemon-reload
+systemctl enable --now auto-pull.timer
+systemctl start auto-pull.service
 
-echo "✅ Auto-pull таймер установлен!"
-echo "   Проверка: systemctl --user status auto-pull.timer"
-echo "   Логи:     tail -f $BOT_DIR/logs/auto-pull.log"
+echo "✅ Auto-pull timer installed"
+echo "   Check: systemctl status auto-pull.timer"
+echo "   Logs:  tail -f $BOT_DIR/logs/auto-pull.log"
