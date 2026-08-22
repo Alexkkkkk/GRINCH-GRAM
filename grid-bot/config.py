@@ -1,4 +1,5 @@
 """Configuration for GRINCH-GRAM Spot Grid Bot."""
+
 import os
 
 

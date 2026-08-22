@@ -1,17 +1,19 @@
 """Core grid trading engine with GitHub error reporting."""
+
 import json
 import logging
 import math
 import os
 import threading
 import time
-from dataclasses import dataclass, field, asdict
-from typing import List, Optional, Dict
+from dataclasses import asdict, dataclass
+from typing import Dict, List, Optional
+
+from exchange_client import BinanceExchangeClient
+from github_reporter import get_reporter
 
 from config import Config
 from database import GridDatabase
-from exchange_client import BinanceExchangeClient
-from github_reporter import get_reporter
 
 log = logging.getLogger("grid_engine")
 STATE_FILE = "grid_state.json"
@@ -98,8 +100,13 @@ class GridTradingEngine:
                 "step_pct": self.stats.step_pct,
             }
 
-    def build_grid(self, upper: float = None, lower: float = None,
-                   grid_count: int = None, investment: float = None) -> Dict:
+    def build_grid(
+        self,
+        upper: float = None,
+        lower: float = None,
+        grid_count: int = None,
+        investment: float = None,
+    ) -> Dict:
         with self._lock:
             self.client.cancel_all_orders()
             self.db.clear_levels(self.symbol)
@@ -107,7 +114,9 @@ class GridTradingEngine:
             if not price:
                 err = "Cannot get price"
                 if Config.REPORT_ERRORS:
-                    self.reporter.create_issue("Build Grid Failed", f"Failed to get price for {self.symbol}")
+                    self.reporter.create_issue(
+                        "Build Grid Failed", f"Failed to get price for {self.symbol}"
+                    )
                 return {"ok": False, "error": err}
             grid_count = grid_count or Config.GRID_COUNT
             investment = investment or Config.TOTAL_INVESTMENT
@@ -152,25 +161,42 @@ class GridTradingEngine:
                         lvl.order_id = res["order_id"]
                         lvl.status = "open"
                     elif Config.REPORT_ERRORS:
-                        self.reporter.report_trade_error("BUY", lvl.id, p, res.get("error", "Unknown"))
+                        self.reporter.report_trade_error(
+                            "BUY", lvl.id, p, res.get("error", "Unknown")
+                        )
                 elif side == "sell" and qty > 0:
                     res = self.client.place_limit_sell(qty, p)
                     if res["ok"]:
                         lvl.order_id = res["order_id"]
                         lvl.status = "open"
                     elif Config.REPORT_ERRORS:
-                        self.reporter.report_trade_error("SELL", lvl.id, p, res.get("error", "Unknown"))
-                self.db.save_level(self.symbol, lvl.id, lvl.side, lvl.price,
-                                   lvl.quantity, lvl.status, lvl.order_id)
+                        self.reporter.report_trade_error(
+                            "SELL", lvl.id, p, res.get("error", "Unknown")
+                        )
+                self.db.save_level(
+                    self.symbol,
+                    lvl.id,
+                    lvl.side,
+                    lvl.price,
+                    lvl.quantity,
+                    lvl.status,
+                    lvl.order_id,
+                )
             self.stats.upper_price = upper
             self.stats.lower_price = lower
             self.stats.grid_count = len(self.levels)
             self.stats.current_price = price
             self._save_state()
-            self.db.save_grid_config(self.symbol, upper, lower, grid_count,
-                                     investment, self.stats.step_pct)
-            log.info("[GridEngine] Built %d levels %.4f-%.4f step %.2f%%",
-                     len(self.levels), lower, upper, self.stats.step_pct)
+            self.db.save_grid_config(
+                self.symbol, upper, lower, grid_count, investment, self.stats.step_pct
+            )
+            log.info(
+                "[GridEngine] Built %d levels %.4f-%.4f step %.2f%%",
+                len(self.levels),
+                lower,
+                upper,
+                self.stats.step_pct,
+            )
             return {
                 "ok": True,
                 "levels_count": len(self.levels),
@@ -188,7 +214,9 @@ class GridTradingEngine:
                 log.error("[GridEngine] Tick error: %s", e)
                 if Config.REPORT_ERRORS:
                     try:
-                        self.reporter.report_exception(e, context="GridEngine tick loop")
+                        self.reporter.report_exception(
+                            e, context="GridEngine tick loop"
+                        )
                     except Exception as rep_err:
                         log.error("Failed to report to GitHub: %s", rep_err)
             time.sleep(Config.TICK_INTERVAL)
@@ -209,7 +237,9 @@ class GridTradingEngine:
                 log.info("[GridEngine] Recenter triggered")
                 self.build_grid()
                 if Config.REPORT_ERRORS:
-                    self.reporter.report_grid_rebuild(old_center, price, "Price drift exceeded threshold")
+                    self.reporter.report_grid_rebuild(
+                        old_center, price, "Price drift exceeded threshold"
+                    )
                 return
             self._check_orders()
             self._update_stats()
@@ -218,8 +248,13 @@ class GridTradingEngine:
     def _should_recenter(self, price: float) -> bool:
         if not self.levels or not self.stats.step_pct:
             return False
-        steps = abs(math.log(price / self.stats.current_price)) / math.log(1 + self.stats.step_pct / 100)
-        return steps >= Config.RECENTER_THRESHOLD and (time.time() - self.last_rebuild) >= Config.RECENTER_COOLDOWN
+        steps = abs(math.log(price / self.stats.current_price)) / math.log(
+            1 + self.stats.step_pct / 100
+        )
+        return (
+            steps >= Config.RECENTER_THRESHOLD
+            and (time.time() - self.last_rebuild) >= Config.RECENTER_COOLDOWN
+        )
 
     def _check_orders(self):
         for lvl in self.levels:
@@ -253,14 +288,23 @@ class GridTradingEngine:
                     sell_lvl.order_id = res["order_id"]
                     sell_lvl.status = "open"
                 elif Config.REPORT_ERRORS:
-                    self.reporter.report_trade_error("SELL (follow-up)", sell_lvl.id, sell_price, res.get("error", "Unknown"))
+                    self.reporter.report_trade_error(
+                        "SELL (follow-up)",
+                        sell_lvl.id,
+                        sell_price,
+                        res.get("error", "Unknown"),
+                    )
         elif lvl.side == "sell":
             self.stats.sell_trades += 1
             if lvl.paired_level_id:
-                buy_lvl = next((l for l in self.levels if l.id == lvl.paired_level_id), None)
+                buy_lvl = next(
+                    (l for l in self.levels if l.id == lvl.paired_level_id), None
+                )
                 if buy_lvl:
                     buy_cost = buy_lvl.quantity * buy_lvl.price
-                    sell_rev = executed_qty * executed_price * (1 - Config.FEE_PCT / 100)
+                    sell_rev = (
+                        executed_qty * executed_price * (1 - Config.FEE_PCT / 100)
+                    )
                     profit = sell_rev - buy_cost
                     lvl.profit_usdt = round(profit, 4)
                     self.stats.total_profit_usdt += profit
@@ -282,14 +326,27 @@ class GridTradingEngine:
                         buy_lvl.order_id = res["order_id"]
                         buy_lvl.status = "open"
                     elif Config.REPORT_ERRORS:
-                        self.reporter.report_trade_error("BUY (follow-up)", buy_lvl.id, buy_price, res.get("error", "Unknown"))
+                        self.reporter.report_trade_error(
+                            "BUY (follow-up)",
+                            buy_lvl.id,
+                            buy_price,
+                            res.get("error", "Unknown"),
+                        )
         self.stats.total_trades = self.stats.buy_trades + self.stats.sell_trades
         self._update_stats()
         amount_usdt = executed_qty * executed_price
         fee = amount_usdt * Config.FEE_PCT / 100
-        self.db.save_trade(self.symbol, lvl.side, lvl.id, executed_price,
-                           executed_qty, amount_usdt, lvl.profit_usdt, fee,
-                           str(lvl.order_id))
+        self.db.save_trade(
+            self.symbol,
+            lvl.side,
+            lvl.id,
+            executed_price,
+            executed_qty,
+            amount_usdt,
+            lvl.profit_usdt,
+            fee,
+            str(lvl.order_id),
+        )
 
     def _find_level_by_price(self, price: float) -> Optional[GridLevel]:
         for lvl in self.levels:
@@ -305,8 +362,12 @@ class GridTradingEngine:
         if cycles > 0:
             self.stats.avg_profit_per_grid = self.stats.total_profit_usdt / cycles
         self.stats.active_orders = sum(1 for l in self.levels if l.status == "open")
-        self.db.save_pnl_snapshot(self.symbol, self.stats.total_profit_usdt,
-                                  self.stats.roi_pct, self.stats.current_price)
+        self.db.save_pnl_snapshot(
+            self.symbol,
+            self.stats.total_profit_usdt,
+            self.stats.roi_pct,
+            self.stats.current_price,
+        )
 
     def _calc_atr_pct(self) -> float:
         if len(self.price_history) < 14:
