@@ -1,0 +1,10 @@
+[Unit]
+Description=Run GRINCH-GRAM auto-pull every 2 minutes
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=2min
+AccuracySec=10s
+
+[Install]
+WantedBy=timers.target

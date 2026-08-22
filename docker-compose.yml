@@ -35,6 +35,7 @@ services:
       retries: 10
 
   # ── Торговый бот (порт НЕ выставляем наружу — только nginx) ───────────
+  # ВАРИАНТ 1: Локальная сборка (fallback — используется сейчас)
   bot:
     build: .
     restart: unless-stopped
@@ -47,12 +48,37 @@ services:
       - bot_data:/app/data
     env_file:
       - .env
+    labels:
+      # Watchtower будет следить за обновлениями, когда перейдём на GHCR
+      com.centurylinklabs.watchtower.enable: "true"
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:3000/health"]
       interval: 60s
       timeout: 10s
       retries: 3
       start_period: 30s
+
+  # ВАРИАНТ 2: GHCR-образ (раскомментируй, когда образ будет в GHCR)
+  # bot:
+  #   image: ghcr.io/alexkkkkk/grinch-gram:latest
+  #   restart: unless-stopped
+  #   depends_on:
+  #     db:
+  #       condition: service_healthy
+  #   expose:
+  #     - "3000"
+  #   volumes:
+  #     - bot_data:/app/data
+  #   env_file:
+  #     - .env
+  #   labels:
+  #     com.centurylinklabs.watchtower.enable: "true"
+  #   healthcheck:
+  #     test: ["CMD", "curl", "-f", "http://localhost:3000/health"]
+  #     interval: 60s
+  #     timeout: 10s
+  #     retries: 3
+  #     start_period: 30s
 
 volumes:
   bot_data:

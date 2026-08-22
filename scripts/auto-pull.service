@@ -1,0 +1,11 @@
+[Unit]
+Description=GRINCH-GRAM auto git-pull and redeploy
+After=docker.service
+Requires=docker.service
+
+[Service]
+Type=oneshot
+WorkingDirectory=%h/GRINCH-GRAM
+ExecStart=%h/GRINCH-GRAM/auto-pull.sh
+StandardOutput=append:%h/GRINCH-GRAM/logs/auto-pull.log
+StandardError=append:%h/GRINCH-GRAM/logs/auto-pull.log
