@@ -1,85 +1,75 @@
-version: "3.9"
+name: grinch-gram
 
 services:
-  # ── nginx reverse-proxy: rate-limit, DDoS, scanner-block ──────────────
-  nginx:
-    image: nginx:1.27-alpine
+  grinch-bot:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: grinch-bot
+    restart: unless-stopped
+    ports:
+      - "5000:5000"
+    environment:
+      - BINANCE_API_KEY=${BINANCE_API_KEY}
+      - BINANCE_API_SECRET=${BINANCE_API_SECRET}
+      - USE_TESTNET=${USE_TESTNET:-true}
+      - GITHUB_TOKEN=${GITHUB_TOKEN}
+      - GITHUB_REPO=${GITHUB_REPO:-Alexkkkkk/GRINCH-GRAM}
+      - REPORT_ERRORS=${REPORT_ERRORS:-true}
+      - GRID_SYMBOL=${GRID_SYMBOL:-AUDIOUSDT}
+      - GRID_COUNT=${GRID_COUNT:-40}
+      - TOTAL_INVESTMENT=${TOTAL_INVESTMENT:-1000}
+      - SECRET_KEY=${SECRET_KEY:-grinch-grid-secret}
+      - HOST=0.0.0.0
+      - PORT=5000
+    volumes:
+      - bot-data:/app/data
+    networks:
+      - grinch-net
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:5000/api/status')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+  grinch-nginx:
+    image: nginx:alpine
+    container_name: grinch-nginx
     restart: unless-stopped
     ports:
       - "80:80"
     volumes:
+      - ./grid-bot/static:/usr/share/nginx/html/static:ro
+      - ./grid-bot/templates:/usr/share/nginx/html/templates:ro
+      - ./grid-bot/index.html:/usr/share/nginx/html/index.html:ro
       - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro
-      - ./nginx_proxy_params.conf:/etc/nginx/proxy_params.conf:ro
     depends_on:
-      - bot
-    healthcheck:
-      test: ["CMD", "nginx", "-t"]
-      interval: 30s
-      timeout: 5s
-      retries: 3
-
-  # ── Локальная PostgreSQL-база ───────────────────────────────────────
-  db:
-    image: postgres:16-alpine
-    restart: unless-stopped
-    environment:
-      POSTGRES_USER: ${POSTGRES_USER}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
-      POSTGRES_DB: ${POSTGRES_DB}
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
-      interval: 10s
-      timeout: 5s
-      retries: 10
-
-  # ── Торговый бот (порт НЕ выставляем наружу — только nginx) ───────────
-  # ВАРИАНТ 1: Локальная сборка (fallback — используется сейчас)
-  bot:
-    build: .
-    restart: unless-stopped
-    depends_on:
-      db:
+      grinch-bot:
         condition: service_healthy
-    expose:
-      - "3000"
-    volumes:
-      - bot_data:/app/data
-    env_file:
-      - .env
-    labels:
-      # Watchtower будет следить за обновлениями, когда перейдём на GHCR
-      com.centurylinklabs.watchtower.enable: "true"
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:3000/health"]
-      interval: 60s
-      timeout: 10s
-      retries: 3
-      start_period: 30s
+    networks:
+      - grinch-net
 
-  # ВАРИАНТ 2: GHCR-образ (раскомментируй, когда образ будет в GHCR)
-  # bot:
-  #   image: ghcr.io/alexkkkkk/grinch-gram:latest
-  #   restart: unless-stopped
-  #   depends_on:
-  #     db:
-  #       condition: service_healthy
-  #   expose:
-  #     - "3000"
-  #   volumes:
-  #     - bot_data:/app/data
-  #   env_file:
-  #     - .env
-  #   labels:
-  #     com.centurylinklabs.watchtower.enable: "true"
-  #   healthcheck:
-  #     test: ["CMD", "curl", "-f", "http://localhost:3000/health"]
-  #     interval: 60s
-  #     timeout: 10s
-  #     retries: 3
-  #     start_period: 30s
+  grinch-watchtower:
+    image: containrrr/watchtower:latest
+    container_name: grinch-watchtower
+    restart: unless-stopped
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    environment:
+      - WATCHTOWER_CLEANUP=true
+      - WATCHTOWER_POLL_INTERVAL=300
+      - WATCHTOWER_INCLUDE_STOPPED=true
+      - WATCHTOWER_REVIVE_STOPPED=false
+    command: --interval 300 grinch-bot grinch-nginx
+    networks:
+      - grinch-net
 
 volumes:
-  bot_data:
-  postgres_data:
+  bot-data:
+    name: grinch-bot-data
+
+networks:
+  grinch-net:
+    name: grinch-net
+    driver: bridge

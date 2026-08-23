@@ -1,49 +1,27 @@
 FROM python:3.11-slim
 
-# Системные зависимости для pytoniq / cryptography / psycopg2
+WORKDIR /app
+
+# System deps
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    gcc g++ libffi-dev libssl-dev libpq-dev curl \
+    gcc \
+    curl \
     && rm -rf /var/lib/apt/lists/*
 
-WORKDIR /usr/src/app
-
-# Сначала только requirements — чтобы docker кэшировал слой зависимостей
-COPY requirements.txt .
+# Python deps
+COPY grid-bot/requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Остальной код
-COPY . .
+# Copy bot code
+COPY grid-bot/ .
 
-# Постоянные данные
+# Create data dir for SQLite
 RUN mkdir -p /app/data
-VOLUME ["/app/data"]
 
-ENV DATA_DIR=/app/data
-ENV LOW_MEMORY_MODE=0
-ENV PORT=3000
+# Healthcheck
+HEALTHCHECK --interval=30s --timeout=10s --start-period=15s --retries=3 \
+    CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:5000/api/status')" || exit 1
 
-EXPOSE 3000
+EXPOSE 5000
 
-# Создаём непривилегированного пользователя
-RUN useradd -m -u 1000 appuser && chown -R appuser:appuser /usr/src/app /app/data
-USER appuser
-
-# HEALTHCHECK — проверяем, что приложение отвечает
-HEALTHCHECK --interval=30s --timeout=10s --start-period=10s --retries=3 \
-    CMD curl -f http://localhost:${PORT}/health || exit 1
-
-# JSON-формат CMD (exec) — корректно обрабатывает сигналы ОС
-# NOTE: flask-socketio требует eventlet/gevent worker для WebSocket.
-# Если SocketIO не используется (HTTP polling only) — gthread ок.
-# Для полноценного WebSocket замените --worker-class на eventlet:
-#   --worker-class eventlet --workers 1
-# Но eventlet может конфликтовать с pytoniq/dedust (чистый asyncio).
-# Рекомендуется: отдельный сервер для WebSocket или HTTP polling.
-CMD ["sh", "-c", "exec gunicorn main:app \
-    --worker-class gthread \
-    --threads 4 \
-    --workers 1 \
-    --bind 0.0.0.0:${PORT} \
-    --timeout 120 \
-    --keep-alive 5 \
-    --log-level info"]
+CMD ["python", "app.py"]
