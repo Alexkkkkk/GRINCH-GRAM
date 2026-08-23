@@ -3688,6 +3688,7 @@ def on_connect(auth=None):
         emit("status_update", _status_for_response())
         try:
             from grid_routes import get_engine
+
             grid = get_engine()
             emit("grid_status", grid.get_status())
         except Exception:
