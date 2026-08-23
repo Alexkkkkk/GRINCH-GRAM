@@ -653,6 +653,24 @@ class Config:
     # Жёстко ограничиваем диапазон 0.1..50%, чтобы ошибочная конфигурация
     # (0, отрицательное или ≥100) не отключила защиту и не создала некорректный min-out.
     SLIPPAGE_PCT = min(50.0, max(0.1, float(os.getenv("SLIPPAGE_PCT", "5"))))
+    # -- Binance Spot Grid Trading --
+    BINANCE_API_KEY = os.getenv("BINANCE_API_KEY", "")
+    BINANCE_API_SECRET = os.getenv("BINANCE_API_SECRET", "")
+    USE_BINANCE_TESTNET = os.getenv("USE_BINANCE_TESTNET", "true").lower() == "true"
+    GRID_SYMBOL = os.getenv("GRID_SYMBOL", "AUDIOUSDT")
+    GRID_COUNT = int(os.getenv("GRID_COUNT", "40"))
+    GRID_INVESTMENT = float(os.getenv("GRID_INVESTMENT", "1000"))
+    GRID_UPPER_PRICE = float(os.getenv("GRID_UPPER_PRICE", "0"))
+    GRID_LOWER_PRICE = float(os.getenv("GRID_LOWER_PRICE", "0"))
+    GRID_FEE_PCT = 0.1
+    GRID_MIN_ORDER_USDT = 10.0
+    GRID_TICK_INTERVAL = int(os.getenv("GRID_TICK_INTERVAL", "10"))
+    GRID_RECENTER_THRESHOLD = float(os.getenv("GRID_RECENTER_THRESHOLD", "1.5"))
+    GRID_RECENTER_COOLDOWN = int(os.getenv("GRID_RECENTER_COOLDOWN", "1800"))
+    GRID_DB_PATH = os.getenv("GRID_DB_PATH", "grid_bot.db")
+    GITHUB_TOKEN = os.getenv("GITHUB_TOKEN", "")
+    GITHUB_REPO = os.getenv("GITHUB_REPO", "Alexkkkkk/GRINCH-GRAM")
+    REPORT_ERRORS = os.getenv("REPORT_ERRORS", "true").lower() == "true"
 
 
 # ── Применяем сохранённые в дашборде настройки (settings.json) ─────────────────

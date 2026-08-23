@@ -1,6 +1,0 @@
-flask==3.0.0
-flask-socketio==5.3.0
-flask-cors==4.0.0
-python-binance==1.0.19
-eventlet==0.33.3
-requests==2.31.0

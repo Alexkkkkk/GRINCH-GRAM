@@ -44,3 +44,4 @@ openai==1.109.1
 email-validator==2.3.0
 apscheduler==3.11.3
 psutil==7.2.2
+python-binance==1.0.19
