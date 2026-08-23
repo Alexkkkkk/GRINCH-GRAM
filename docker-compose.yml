@@ -5,7 +5,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: grinch-bot
+    container_name: grinch-gram-bot
     restart: unless-stopped
     ports:
       - "5000:5000"
@@ -35,7 +35,7 @@ services:
 
   grinch-nginx:
     image: nginx:alpine
-    container_name: grinch-nginx
+    container_name: grinch-gram-nginx
     restart: unless-stopped
     ports:
       - "80:80"
@@ -52,7 +52,7 @@ services:
 
   grinch-watchtower:
     image: containrrr/watchtower:latest
-    container_name: grinch-watchtower
+    container_name: grinch-gram-watchtower
     restart: unless-stopped
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
@@ -61,15 +61,15 @@ services:
       - WATCHTOWER_POLL_INTERVAL=300
       - WATCHTOWER_INCLUDE_STOPPED=true
       - WATCHTOWER_REVIVE_STOPPED=false
-    command: --interval 300 grinch-bot grinch-nginx
+    command: --interval 300 grinch-gram-bot grinch-gram-nginx
     networks:
       - grinch-net
 
 volumes:
   bot-data:
-    name: grinch-bot-data
+    name: grinch-gram-bot-data
 
 networks:
   grinch-net:
-    name: grinch-net
+    name: grinch-gram-net
     driver: bridge

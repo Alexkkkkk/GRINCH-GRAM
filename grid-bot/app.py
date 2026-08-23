@@ -125,4 +125,4 @@ if __name__ == "__main__":
 
     t = threading.Thread(target=broadcast_loop, daemon=True)
     t.start()
-    socketio.run(app, host=Config.HOST, port=Config.PORT, debug=Config.DEBUG)
+    socketio.run(app, host=Config.HOST, port=Config.PORT, debug=Config.DEBUG, allow_unsafe_werkzeug=True)
